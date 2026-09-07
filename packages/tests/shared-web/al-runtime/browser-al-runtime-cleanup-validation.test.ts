@@ -7,10 +7,15 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { AL_ADMISSION_REVISION_KEY } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const read: BrowserALRuntimeCleanupRead = {
     revision: 4,
+    workRows: [],
     rows: [
         {
             key: 'browser:expired',
@@ -31,6 +36,7 @@ const deletionPolicy: BrowserALRuntimeDeletionPolicy = {
 };
 
 const validComputed: BrowserALRuntimeCleanupComputed = {
+    queueMutations: [],
     mutations: [{
         kind: 'remove-if-write-token',
         key: 'browser:expired',

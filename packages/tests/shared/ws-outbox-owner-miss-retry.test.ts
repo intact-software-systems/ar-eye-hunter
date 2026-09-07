@@ -113,7 +113,7 @@ describe('durable WS outbox owner misses', () => {
         const base = createALOutboundAdmissionStore({
             namespace: 'ws-owner-claim-conflict',
             supersedenceTrackTtlMs: 60_000,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
             retention: normalizeALRuntimeStoreRetention()
         });
         let claimCalls = 0;

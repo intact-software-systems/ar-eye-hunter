@@ -13,10 +13,20 @@ import {
     type ALInboundControlOwnerIndex,
     type ALInboundDurableEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import {
+    computeALInboundWorkEntry,
+    decodeALInboundWorkEntry,
+    toALInboundWorkKey,
+    toALInboundWorkType
+} from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 const message: ALMessage = {
     id: { v: 2, msgId: 'message', senderId: 'sender:with:delimiter', ts: 1_800_000_000_000 },
@@ -86,6 +96,7 @@ interface PendingAdmissionBundleInput {
 
 function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInboundCommitBundle {
     return {
+        admissionExpiresAtMs: null,
         senderId: input.senderId,
         observations: input.observations,
         mutations: [{
@@ -165,6 +176,7 @@ describe('inbound admission persisted values', () => {
         const expireAtTimestamp = Date.now() + 60_000;
         expect(
             await store.commitBundle({
+                admissionExpiresAtMs: null,
                 senderId: message.id.senderId,
                 observations: (await readIncoming(store, message)).observations,
                 mutations: [{
@@ -429,6 +441,7 @@ describe('inbound admission persisted values', () => {
         await store.workQueue.enqueue({ ...work.entry, resource: '{invalid-json' });
 
         await expect(store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
@@ -450,6 +463,7 @@ describe('inbound admission persisted values', () => {
     it('rejects a durable effect identity reused for different payload ownership', async () => {
         const { store } = createFixture();
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [],
@@ -457,6 +471,7 @@ describe('inbound admission persisted values', () => {
         });
 
         await expect(store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [],
@@ -474,6 +489,7 @@ describe('inbound admission persisted values', () => {
             id: { ...message.id, senderId: 'second-sender' }
         };
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
@@ -490,6 +506,7 @@ describe('inbound admission persisted values', () => {
         });
         expect(
             await store.commitBundle({
+                admissionExpiresAtMs: null,
                 senderId: secondMessage.id.senderId,
                 observations: (await readIncoming(store, secondMessage)).observations,
                 mutations: [{
@@ -664,6 +681,7 @@ describe('inbound admission persisted values', () => {
         const { store } = createFixture();
         const work = createWork('dispatch', { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') });
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [],
@@ -699,6 +717,7 @@ async function seedPendingAcknowledgement(
     const expireAtTimestamp = Date.now() + 60_000;
     expect(
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [{

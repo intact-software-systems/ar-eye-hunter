@@ -33,6 +33,7 @@ import {
 import { validateALOutboundControlAdmission } from './validate-al-outbound-control-admission.ts';
 
 export interface CreateALOutboundAdmissionControlStoreInput {
+    readonly nowMs: () => number;
     readonly backend: ALAdmissionWorkBackend;
     readonly effectStore: ALOutboundAdmissionEffectStore;
     readonly namespace: string;
@@ -41,12 +42,14 @@ export interface CreateALOutboundAdmissionControlStoreInput {
 
 export class ALOutboundAdmissionControlStore {
     private readonly backend: ALAdmissionWorkBackend;
+    private readonly nowMs: () => number;
     private readonly effectStore: ALOutboundAdmissionEffectStore;
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 
     constructor(input: CreateALOutboundAdmissionControlStoreInput) {
         this.backend = input.backend;
+        this.nowMs = input.nowMs;
         this.effectStore = input.effectStore;
         this.namespace = input.namespace;
         this.retention = input.retention;
@@ -60,27 +63,26 @@ export class ALOutboundAdmissionControlStore {
         if (decoded.left) {
             return { handled: false };
         }
-        const nowMs = Date.now();
+        const nowMs = this.nowMs();
         const read = await this.readControlAdmission(decoded.right!, nowMs);
-        const validated = validateALOutboundControlAdmission(
-            computeALOutboundControlAdmission(read, this.retention)
-        );
-        if (validated.left) {
+        const computed = computeALOutboundControlAdmission(read, this.retention);
+        const issues = validateALOutboundControlAdmission(computed);
+        if (issues.length > 0) {
             return { handled: false };
         }
         const effects = this.effectStore.computeEffects(
-            await this.effectStore.readEffects(validated.right!.repairEffect ? [validated.right!.repairEffect] : []),
+            await this.effectStore.readEffects(computed.repairEffect ? [computed.repairEffect] : [], decodePrepared),
             nowMs
         );
-        const workValidated = this.effectStore.validateEffects(effects, decodePrepared);
-        if (workValidated.left) {
-            throw workValidated.left;
+        const workValidated = this.effectStore.validateEffects(effects);
+        if (workValidated.length > 0) {
+            throw workValidated[0];
         }
         await this.backend.write(async (tx) => {
-            await this.assertControlAdmissionFence(tx, validated.right!.read);
+            await this.assertControlAdmissionFence(tx, computed.read);
             await this.effectStore.assertObservations(tx, effects);
             this.effectStore.writeEffects(tx, effects);
-            await this.applyControlAdmission(tx, validated.right!);
+            await this.applyControlAdmission(tx, computed);
         });
         return { handled: true };
     }

@@ -5,6 +5,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../qu
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
+import type { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundWorkType } from './al-inbound-work-entry.ts';
 import { readALInboundWorkSelection } from './read-al-inbound-work-selection.ts';
@@ -16,9 +17,10 @@ export namespace ALInboundWorkHandler {
         extends
             Pick<
                 ALInboundMessageRuntime.Resources,
-                'admissionStore' | 'effectWorkerId' | 'clock' | 'queueEngine' | 'ownsQueueEngine'
+                'admissionStore' | 'effectWorkerId' | 'clock' | 'random' | 'queueEngine' | 'ownsQueueEngine'
             > {
         readonly delivery: ALInboundAdmittedDelivery;
+        readonly admission: ALInboundMessageAdmission;
     }
 
     export interface Selection {
@@ -193,9 +195,18 @@ export class ALInboundWorkHandler {
     }
 
     private async deliverClaimed(effect: ALPersistedInboundEffect): Promise<void> {
-        let outcome: 'completed' | 'retry' | 'non-retryable';
+        let outcome: ALInboundMessageAdmission.ReplayResult | 'non-retryable';
         try {
-            outcome = await this.dependencies.delivery.deliver(effect);
+            if (effect.payload.kind === 'admit-message') {
+                outcome = await this.dependencies.admission.replay(effect.payload);
+                if (outcome === 'completed') {
+                    this.scan = { cursor: null, statusIndex: 0, nextReadyAt: undefined };
+                    this.dependencies.queueEngine.wake();
+                }
+            }
+            else {
+                outcome = await this.dependencies.delivery.deliver(effect);
+            }
         }
         catch (error) {
             outcome = error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException
@@ -203,6 +214,14 @@ export class ALInboundWorkHandler {
                 : 'retry';
         }
         if (this.shutdown.signal.aborted) {
+            return;
+        }
+        if (typeof outcome === 'object') {
+            await this.dependencies.admissionStore.rescheduleEffect({
+                reservation: effect.entry,
+                reason: 'not-ready',
+                retryAtMs: this.dependencies.clock.nowMs() + outcome.retryAfterMs
+            });
             return;
         }
         switch (outcome) {
@@ -219,7 +238,11 @@ export class ALInboundWorkHandler {
     }
 
     private async retry(effect: ALPersistedInboundEffect): Promise<void> {
-        const decision = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, effect.attempts, Math.random());
+        const decision = retryAfterAttempt(
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            effect.attempts,
+            this.dependencies.random()
+        );
         await this.dependencies.admissionStore.rescheduleEffect({
             reservation: effect.entry,
             retryAtMs: this.dependencies.clock.nowMs() + (decision.delayMs ?? 0)

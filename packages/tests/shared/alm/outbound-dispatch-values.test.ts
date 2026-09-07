@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+import { createOutboundCanonicalEntry } from './outbound-runtime-test-fixture.ts';
 
 import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
@@ -34,7 +39,7 @@ describe('outbound dispatch value ownership', () => {
         expect(result.computed.status).toBe('failed');
         expect(result.computed.reason).toBe('Outbound queue candidate differs from its message');
         expect(result.committed).toBe(false);
-        expect(await store.getSentMessage(message.id.msgId)).toBeUndefined();
+        expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         expect(await store.peekNextEffectReadyAt()).toBeUndefined();
         admission.dispose();
     });
@@ -42,12 +47,17 @@ describe('outbound dispatch value ownership', () => {
     it('computes from captured values and preserves the candidate through a real successful and conflicting commit', async () => {
         const store = createDefaultOutboundTestAdmissionStore();
         const message = createOutboundMessage('immutable-dispatch');
-        const read = await store.readOutgoingMessage(message, () => ({
+        const read = await store.readOutgoingMessage({
             msg: message,
-            persist: true,
-            preparedMessages: [] as readonly OutboundTestPayload[],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
-        }));
+            planner: () => ({
+                msg: message,
+                persist: true,
+                preparedMessages: [] as readonly OutboundTestPayload[],
+                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const outboxEntry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox');
         const input = freezeValues({
             read,
@@ -61,7 +71,8 @@ describe('outbound dispatch value ownership', () => {
         const computed = freezeValues(computeALOutboundDispatch(input));
         expect(computed).toEqual(computeALOutboundDispatch(input));
         expect(computed.status).toBe('enqueued');
-        expect(computed.bundle?.durableEffects[0].retryAtMs).toBe(1_000);
+        expect(computed.bundle?.canonicalEntry).toEqual(outboxEntry);
+        expect(computed.bundle?.durableEffects).toEqual([]);
         if (!computed.bundle) {
             throw new Error('Durable dispatch must produce a commit candidate');
         }
@@ -77,12 +88,14 @@ describe('outbound dispatch value ownership', () => {
                 )
             }
         };
-        expect(validateALOutboundDispatch(read, tampered).left?.code).toBe('malformed');
+        expect(validateALOutboundDispatch(read, tampered).left).toContainEqual(expect.objectContaining({ code: 'malformed' }));
 
         expect(await store.commitBundle(computed.bundle, decodeOutboundTestPayload)).toBe('committed');
         expect(await store.commitBundle(computed.bundle, decodeOutboundTestPayload)).toBe('conflict');
         expect(JSON.stringify(computed)).toBe(beforeCommit);
-        expect(await store.getSentMessage(message.id.msgId)).toMatchObject({ msg: message, outboxKey: outboxEntry.key });
+        const stored = await store.readSentMessage(message.id.msgId);
+        expect(JSON.stringify(stored?.msg)).toBe(JSON.stringify(message));
+        expect(stored?.outboxKey).toEqual(outboxEntry.key);
     });
 
     it.each(['enqueue', 'dequeue'] as const)('retains the observed outbox entry instead of rebuilding it during %s', async (intent) => {
@@ -107,10 +120,10 @@ describe('outbound dispatch value ownership', () => {
             options: { observedOutboxEntry }
         });
         expect(result.committed).toBe(true);
-        expect(result.computed.status).toBe(intent === 'enqueue' ? 'enqueued' : 'accepted');
+        expect(result.computed.status).toBe('enqueued');
         if (intent === 'enqueue') {
-            expect(result.computed.entries).toEqual([observedOutboxEntry]);
-            expect(result.computed.entries[0]).toBe(observedOutboxEntry);
+            expect(result.computed.entries).toEqual([{ ...observedOutboxEntry, status: 'COMPLETED' }]);
+            expect(result.computed.entries[0].resource).toBe(observedOutboxEntry.resource);
         }
         expect(result.computed.bundle?.durableEffects[0].expireAtTimestamp).toBe(observedOutboxEntry.audit.expiryTs.epochMilliseconds);
         admission.dispose();
@@ -119,11 +132,16 @@ describe('outbound dispatch value ownership', () => {
     it('uses the fresh repair count to stop an exhausted repair without creating work', async () => {
         const store = createDefaultOutboundTestAdmissionStore();
         const message = createOutboundMessage('exhausted-repair');
-        const observed = await store.readOutgoingMessage(message, () => ({
+        const observed = await store.readOutgoingMessage({
             msg: message,
-            persist: false,
-            preparedMessages: [{ resourceId: 'exhausted-repair' }]
-        }));
+            planner: () => ({
+                msg: message,
+                persist: false,
+                preparedMessages: [{ resourceId: 'exhausted-repair' }]
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const read: ALOutboundMessageReadDto<OutboundTestPayload> = freezeValues({
             ...observed,
             repairAttempt: { msgId: message.id.msgId, attempts: 3 }
@@ -131,7 +149,7 @@ describe('outbound dispatch value ownership', () => {
 
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 1_000,
             intent: 'repair',
             phase: 'immediate',

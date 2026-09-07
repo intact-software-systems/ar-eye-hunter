@@ -1,11 +1,15 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
+import { captureALOutboundPolicy } from './al-outbound-admission-validation.ts';
+import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
+import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
@@ -13,6 +17,12 @@ import type {
     ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeDiagnosticsSink
 } from './al-outbound-message-runtime.ts';
+import { toALOutboundPendingAdmissionId } from './al-outbound-pending-admission.ts';
+import {
+    decodeALOutboundWorkEntry,
+    isPendingALOutboundWork,
+    toALOutboundWorkKey
+} from './al-outbound-work-entry.ts';
 import {
     computeALOutboundDispatch,
     type ALOutboundCommitDispatchOptions,
@@ -100,14 +110,24 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
+        const pending = await this.readPendingDispatch(input);
+        if (pending) {
+            return pending;
+        }
+
         const computed = computeALOutboundDispatch(input);
-        const validated = validateALOutboundDispatch(input.read, computed);
-        if (validated.left) {
+        const issues = validateALOutboundDispatch(input.read, computed).left;
+        if (issues) {
             if (dispatch.intent !== 'enqueue') {
-                throw new NonRetryableException(validated.left.message);
+                throw new NonRetryableException(issues.map((issue) => issue.message).join('; '));
             }
             return {
-                computed: { msg: input.read.msg, status: 'failed', reason: validated.left.message, entries: [] },
+                computed: {
+                    msg: input.read.msg,
+                    status: 'failed',
+                    reason: issues.map((issue) => issue.message).join('; '),
+                    entries: []
+                },
                 committed: false
             };
         }
@@ -123,7 +143,86 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             computed.bundle,
             this.dependencies.decodePreparedMessage
         );
+        if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
+            return await this.retainPendingDispatch(input, computed);
+        }
+        if (status === 'conflict' && dispatch.options.pendingAdmission) {
+            throw new RetryableConflictError('Outbound pending admission commit conflict');
+        }
         return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+    }
+
+    private async retainPendingDispatch(
+        input: ComputeALOutboundDispatchInput<TPrepared>,
+        computed: ALOutboundComputedDto<TPrepared>
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        const canonicalEntry = computed.bundle?.canonicalEntry;
+        if (!canonicalEntry) {
+            throw new NonRetryableException('Pending admission requires its validated canonical candidate');
+        }
+        const status = await this.admissionStore.retainPendingAdmission({
+            canonicalEntry,
+            creationExpiry: input.read.creationExpiry,
+            payload: {
+                kind: 'admit-message',
+                message: toALOutboundMessageReference(
+                    this.admissionStore.canonicalScope,
+                    canonicalEntry,
+                    input.read.msg
+                ),
+                policy: captureALOutboundPolicy(input.read.plan),
+                preparedMessages: input.read.plan.preparedMessages
+            },
+            decodePrepared: this.dependencies.decodePreparedMessage
+        });
+        if (status !== 'pending') {
+            return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
+        }
+        return {
+            computed: { msg: input.read.msg, status: 'pending-admission', entries: [canonicalEntry] },
+            committed: false
+        };
+    }
+
+    private async readPendingDispatch(
+        input: ComputeALOutboundDispatchInput<TPrepared>
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared> | undefined> {
+        if (
+            input.intent !== 'enqueue' || input.options.pendingAdmission || !input.read.canonicalEntry ||
+            input.read.sentSnapshot
+        ) {
+            return undefined;
+        }
+        const reference = toALOutboundMessageReference(
+            this.admissionStore.canonicalScope,
+            input.outboxEntry,
+            input.read.msg
+        );
+        const key = toALOutboundWorkKey(this.admissionStore.namespace, toALOutboundPendingAdmissionId(reference));
+        const entry = await this.admissionStore.workQueue.getItem(key);
+        if (!entry || reference.expiresAtMs <= this.readNowMs()) {
+            return undefined;
+        }
+        const pending = decodeALOutboundWorkEntry(entry, this.admissionStore.namespace, {
+            decodePrepared: this.dependencies.decodePreparedMessage,
+            message: input.read.msg
+        }).payload;
+        if (
+            pending.kind !== 'admit-message' || !jsonEquals(pending.message, reference) ||
+            (input.options.explicitPlan && (!jsonEquals(pending.policy, captureALOutboundPolicy(input.read.plan)) ||
+                !jsonEquals(pending.preparedMessages, input.read.plan.preparedMessages)))
+        ) {
+            throw new NonRetryableException('Pending outbound admission differs from the supplied captured plan');
+        }
+        return {
+            computed: {
+                msg: input.read.msg,
+                status: isPendingALOutboundWork(entry) ? 'pending-admission' : 'skipped',
+                entries: [input.outboxEntry],
+                reason: isPendingALOutboundWork(entry) ? undefined : 'Pending admission has already terminated'
+            },
+            committed: false
+        };
     }
 
     private toCommitResult(
@@ -185,14 +284,20 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     private async readDispatch(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ComputeALOutboundDispatchInput<TPrepared>> {
-        const read = await this.admissionStore.readOutgoingMessage(dispatch.msg, dispatch.planner);
-        const needsEntry = !read.plan.dropReason && (read.sentSnapshot?.outboxKey !== undefined ||
-            read.plan.persist || read.plan.preparedMessages.length === 0);
+        const read = await this.admissionStore.readOutgoingMessage({
+            msg: dispatch.msg,
+            planner: dispatch.planner,
+            observedCanonicalEntry: dispatch.options.observedOutboxEntry,
+            intent: dispatch.intent
+        });
+        const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);
         return {
             read,
-            outboxEntry: needsEntry
-                ? dispatch.options.observedOutboxEntry ?? this.dependencies.toOutboxEntry(read.msg)
-                : undefined,
+            outboxEntry: {
+                ...entry,
+                key: read.canonicalEntry?.key ?? read.sentSnapshot?.outboxKey ??
+                    toALOutboundCanonicalKey(this.admissionStore.canonicalScope, read.msg)
+            },
             dispatchAtMs: this.readNowMs(),
             intent: dispatch.intent,
             phase: dispatch.phase,

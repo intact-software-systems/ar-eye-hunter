@@ -5,8 +5,17 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { describe, expect, it, vi } from 'vitest';
-import { createDefaultOutboundTestAdmissionStore, createDefaultOutboundTestRuntime, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    createDefaultOutboundTestAdmissionStore,
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage
+} from './outbound-runtime-test-fixture.ts';
 
 const malformedMessages = [undefined, {}, { id: { msgId: 'malformed' } }];
 
@@ -24,7 +33,7 @@ describe('outbound planner validation boundary', () => {
         });
         const result = await runtime.enqueueIfAbsent(original);
         expect(result).toMatchObject({ status: 'failed', message: original, entries: [] });
-        expect(await store.getSentMessage(original.id.msgId)).toBeUndefined();
+        expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
         expect(await store.peekNextEffectReadyAt()).toBeUndefined();
         expect(await outbox.getItem(QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox').key)).toBeUndefined();
         expect(send).not.toHaveBeenCalled();

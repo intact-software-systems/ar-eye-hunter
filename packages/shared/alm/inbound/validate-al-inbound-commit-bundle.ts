@@ -17,6 +17,12 @@ export function validateALInboundCommitBundle(
     bundle: ALInboundCommitBundle,
     namespace: string
 ): Either<ALMessageRejection, ALInboundCommitBundle> {
+    if (
+        bundle.admissionExpiresAtMs !== null &&
+        (!Number.isSafeInteger(bundle.admissionExpiresAtMs) || bundle.admissionExpiresAtMs < 0)
+    ) {
+        return invalidBundle('Inbound admission candidate has invalid delivery eligibility');
+    }
     if (!bundle.observations || bundle.observations.senderId !== bundle.senderId || !bundle.observations.msgId) {
         return invalidBundle('Inbound admission candidate has invalid original observations');
     }

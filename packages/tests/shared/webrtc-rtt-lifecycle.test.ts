@@ -12,7 +12,6 @@ import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/cr
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
@@ -193,7 +192,6 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         rtcSignalingTopicId: 'rtc-signaling'
     });
     const multicast = new WebRtcOverlayMulticastManager({
-        outbox: new InMemoryQueueBox(new Map()),
         connectionService: connectionService,
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),

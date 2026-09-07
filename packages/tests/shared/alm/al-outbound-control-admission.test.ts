@@ -1,12 +1,25 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    newALRepairControlMessage
+} from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import { computeOutboundTestAdmission } from './outbound-runtime-test-fixture.ts';
 
 interface OutboundObligationInput {
     readonly targets: NonNullable<ALMessage['targets']>;
@@ -25,6 +38,107 @@ describe('outbound control admission identity', () => {
         expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
     });
 
+    it.each(['ack', 'nack', 'repair'] as const)(
+        'authorizes full long message and ordering identities for %s without trusting its bounded route',
+        async (type) => {
+            const { store, state } = createFixture();
+            const msgId = 'runtime-message/'.repeat(20);
+            const message: ALMessage = {
+                id: { v: 2, msgId, senderId: 'sender', ts: Date.now() },
+                route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
+                payload: { typeId: 'command.v1', resource: '{}' },
+                targets: { mode: 'unicast', toPeerId: 'receiver' },
+                constraints: { expiresAtMs: Date.now() + 30_000 },
+                ordering: { orderingKey: 'ordered-stream/'.repeat(20), seq: 10, epoch: 7 }
+            };
+            const admission = await computeOutboundTestAdmission(store, message);
+            await store.commitBundle({
+                ...admission,
+                mutations: [...admission.mutations, {
+                    kind: 'set-pending-ack',
+                    snapshot: {
+                        msgId,
+                        expectedPeerIds: ['receiver'],
+                        ackedPeerIds: [],
+                        timeoutMs: 2_000,
+                        maxAttempts: 3,
+                        attempts: 0,
+                        deadlineAtMs: Date.now() + 2_000
+                    }
+                }]
+            }, decodeALOutboundPreparedMessage);
+            const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
+            const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
+            const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
+            const control = type === 'ack'
+                ? newALAckControlMessage(id, { ...common, ackedMsgId: msgId, status: 'delivered' })
+                : type === 'nack'
+                ? newALNackControlMessage(id, { ...common, ...ordering, msgId, reason: 'gap' })
+                : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
+            const before = [...state.data];
+            const wrongRoute = { ...control, route: { ...control.route, resourceId: 'another-locator' } };
+            expect(await store.acceptControlMessage(wrongRoute, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            const wrongIdentity = {
+                ...control,
+                payload: {
+                    ...control.payload,
+                    resource: JSON.stringify({
+                        ...JSON.parse(control.payload.resource),
+                        [type === 'ack' ? 'ackedMsgId' : 'msgId']: msgId + '-unowned'
+                    })
+                }
+            };
+            expect(await store.acceptControlMessage(wrongIdentity, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            const unknownIdentity = {
+                ...wrongIdentity,
+                route: toStrictAppInboxQueueKey({
+                    topicId: 'al-control',
+                    resourceId: msgId + '-unowned',
+                    contextId: 'sender'
+                })
+            };
+            expect(await store.acceptControlMessage(unknownIdentity, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            if (type !== 'ack') {
+                const wrongOrdering = {
+                    ...control,
+                    payload: {
+                        ...control.payload,
+                        resource: JSON.stringify({
+                            ...JSON.parse(control.payload.resource),
+                            orderingKey: ordering.orderingKey + '-unowned'
+                        })
+                    }
+                };
+                expect(await store.acceptControlMessage(wrongOrdering, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            }
+            const oversized = {
+                ...control,
+                payload: {
+                    ...control.payload,
+                    resource: JSON.stringify({
+                        ...JSON.parse(control.payload.resource),
+                        [type === 'ack' ? 'ackedMsgId' : 'msgId']: 'x'.repeat(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes + 1)
+                    })
+                }
+            };
+            expect(await store.acceptControlMessage(oversized, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            expect([...state.data]).toEqual(before);
+
+            expect(await store.acceptControlMessage(control, decodeALOutboundPreparedMessage)).toEqual({ handled: true });
+            if (type === 'ack') {
+                expect(await store.readPendingAck(msgId)).toBeUndefined();
+            }
+            else {
+                const effects = await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage);
+                expect(effects.map((effect) => effect.payload)).toContainEqual(expect.objectContaining({
+                    kind: 'repair-hint',
+                    msgId,
+                    request: expect.objectContaining({ orderingTrackKey: toALOrderingTrackKey(message), missingSeqs: [2] })
+                }));
+            }
+        }
+    );
+
     it('ignores an ACK from an unexpected peer and accepts the expected receiver without changing the input', async () => {
         const { store, state } = createFixture();
         await seedDirectObligation(store);
@@ -35,7 +149,7 @@ describe('outbound control admission identity', () => {
         const candidate = JSON.stringify(ack);
 
         expect(await store.acceptControlMessage(ack, decodeALOutboundPreparedMessage)).toEqual({ handled: true });
-        expect(await store.getPendingAck('message')).toBeUndefined();
+        expect(await store.readPendingAck('message')).toBeUndefined();
         expect(JSON.stringify(ack)).toBe(candidate);
         const acceptedState = [...state.data];
         expect(await store.acceptControlMessage(ack, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
@@ -190,7 +304,7 @@ describe('outbound control admission identity', () => {
 
         expect(await store.acceptControlMessage(controlMessage('ack', 'peer-255'), decodeALOutboundPreparedMessage))
             .toEqual({ handled: true });
-        expect(await store.getPendingAck('message')).toBeUndefined();
+        expect(await store.readPendingAck('message')).toBeUndefined();
         expect(decodeALAdmissionControlValue(state.data.get(key)?.value, 'message', 'acks').values).toHaveLength(256);
     });
 
@@ -260,13 +374,14 @@ async function seedObligation(
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
         targets: input.targets,
+        constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: input.ordering
     };
+    const admission = await computeOutboundTestAdmission(store, msg);
     await store.commitBundle({
-        senderId: 'sender',
+        ...admission,
         mutations: [
-            { kind: 'set-msg-owner', msgId: 'message', senderId: 'sender' },
-            { kind: 'set-sent-message', snapshot: { msgId: 'message', msg } },
+            ...admission.mutations,
             {
                 kind: 'set-pending-ack',
                 snapshot: {

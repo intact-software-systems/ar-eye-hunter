@@ -1,5 +1,13 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import {
+    decodeALOutboundCanonicalMessage,
+    decodeALOutboundIdentityEntry,
+    toALOutboundIdentityKey
+} from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -32,6 +40,7 @@ export interface QueueBoxPubSubWsService {
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
+    readonly clock?: ALOutboundMessageRuntime.Clock;
     readonly wsQBoxServerService: QueueBoxPubSubWsService;
     readonly bridge: QueueBoxPubSubBridge;
     readonly channel: string;
@@ -51,6 +60,7 @@ interface RegisterQueueBoxOutboxPublisherInput {
 }
 
 interface ReceiveQueueBoxPubSubMessageDependencies {
+    readonly clock: ALOutboundMessageRuntime.Clock;
     readonly wsQBoxServerService: QueueBoxPubSubWsService;
     readonly channel: string;
     readonly publisherId: string;
@@ -69,6 +79,7 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
 }
 
 interface ResolveResourceEntryFromPubSubMessageDependencies {
+    readonly clock: ALOutboundMessageRuntime.Clock;
     readonly loadByKey: (
         key: QueueBoxPubSubMessageKey
     ) => Promise<ResourceEntry | undefined>;
@@ -85,7 +96,8 @@ export function installQueueBoxPubSubBridge(
         publisherId,
         timing,
         retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-        jitterUnit = Math.random
+        jitterUnit = Math.random,
+        clock = { nowMs: Date.now }
     } = options;
 
     registerQueueBoxOutboxPublisher({
@@ -105,6 +117,7 @@ export function installQueueBoxPubSubBridge(
         async () => {
             await bridge.subscribe(channel, async (message) => {
                 await receiveQueueBoxPubSubMessage(message, {
+                    clock,
                     wsQBoxServerService,
                     channel,
                     publisherId,
@@ -191,6 +204,7 @@ async function receiveQueueBoxPubSubMessage(
         durationMs: 0
     });
     const entry = await resolveResourceEntryFromPubSubMessage(message, {
+        clock: options.clock,
         loadByKey: async (key) => await options.wsQBoxServerService.outbox.getItem(key),
         timing: options.timing
     });
@@ -277,34 +291,70 @@ export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMess
         throw new TypeError('QueueBox cluster notifications require admitted WS outbox work');
     }
 
-    return {
+    const message = decodePersistedALMessage(entry.resource);
+    const expiresAtMs = resolveALMessageExpireAtMs(message);
+    if (
+        expiresAtMs === undefined || !Number.isSafeInteger(expiresAtMs) ||
+        expiresAtMs > entry.audit.expiryTs.epochMilliseconds
+    ) {
+        throw new TypeError('Cluster notification requires a canonical logical deadline');
+    }
+    const notice: QueueBoxPubSubMessage = {
         key: entry.key,
         channel,
         publisherId,
         typeId: entry.typeId,
-        delivery: 'key'
+        delivery: 'key',
+        expiresAtMs
     };
+    if (!decodeQueueBoxPubSubMessage(notice, channel)) {
+        throw new TypeError('QueueBox notification exceeds physical key or wire bounds');
+    }
+    return notice;
 }
 
 async function resolveResourceEntryFromPubSubMessage(
     message: QueueBoxPubSubMessage,
     options: ResolveResourceEntryFromPubSubMessageDependencies
 ): Promise<ResourceEntry | undefined> {
+    if (message.expiresAtMs <= options.clock.nowMs()) {
+        return undefined;
+    }
     const entry = await options.loadByKey(message.key);
+    if (message.expiresAtMs <= options.clock.nowMs()) {
+        return undefined;
+    }
     if (!entry) {
         recordPubSubTiming({
             timing: options.timing,
             operation: 'key-load-miss',
             message
         });
-        return undefined;
+        throw new ALAdmissionCorruptionError(
+            JSON.stringify(message.key),
+            new TypeError('Live cluster canonical message is missing')
+        );
     }
-    if (!isKeysEqual(entry.key, message.key) || entry.typeId !== message.typeId) {
+    const canonical = decodePersistedALMessage(entry.resource);
+    if (
+        !isKeysEqual(entry.key, message.key) || entry.typeId !== message.typeId ||
+        resolveALMessageExpireAtMs(canonical) !== message.expiresAtMs ||
+        entry.audit.expiryTs.epochMilliseconds < message.expiresAtMs
+    ) {
         recordPubSubTiming({
             timing: options.timing,
             operation: 'key-load-mismatch',
             message
         });
+        throw new ALAdmissionCorruptionError(
+            JSON.stringify(message.key),
+            new TypeError('Cluster notification differs from canonical message')
+        );
+    }
+    if (message.expiresAtMs <= options.clock.nowMs()) {
+        return undefined;
+    }
+    if (!await readLiveCanonicalIdentityForNotice(entry, message, options)) {
         return undefined;
     }
     recordPubSubTiming({
@@ -314,6 +364,35 @@ async function resolveResourceEntryFromPubSubMessage(
     });
 
     return entry;
+}
+
+async function readLiveCanonicalIdentityForNotice(
+    entry: ResourceEntry,
+    message: QueueBoxPubSubMessage,
+    options: ResolveResourceEntryFromPubSubMessageDependencies
+): Promise<boolean> {
+    const identityEntry = await options.loadByKey(toALOutboundIdentityKey(entry.key));
+    if (message.expiresAtMs <= options.clock.nowMs()) {
+        return false;
+    }
+    if (!identityEntry) {
+        throw new ALAdmissionCorruptionError(
+            JSON.stringify(entry.key),
+            new TypeError('Live cluster canonical identity is missing')
+        );
+    }
+    const reference = decodeALOutboundIdentityEntry(identityEntry).reference;
+    decodeALOutboundCanonicalMessage(reference, entry, identityEntry);
+    if (
+        !isKeysEqual(reference.key, message.key) || reference.typeId !== message.typeId ||
+        reference.expiresAtMs !== message.expiresAtMs
+    ) {
+        throw new ALAdmissionCorruptionError(
+            JSON.stringify(entry.key),
+            new TypeError('Cluster notification differs from retained identity')
+        );
+    }
+    return true;
 }
 
 interface RecordPubSubTimingInput {

@@ -57,7 +57,7 @@ export class ALInboundAdmittedDelivery {
             return false;
         }
         const payload = effect.payload;
-        if (payload.kind === 'send-control') {
+        if (payload.kind === 'send-control' || payload.kind === 'admit-message') {
             return true;
         }
         if (payload.kind === 'release-buffered') {
@@ -104,6 +104,8 @@ export class ALInboundAdmittedDelivery {
         }
 
         switch (effect.payload.kind) {
+            case 'admit-message':
+                throw new NonRetryableException('Pending admission must run before admitted delivery');
             case 'dispatch-local':
                 return await this.dispatchAdmittedEntry(effect.payload.entry);
             case 'send-control':

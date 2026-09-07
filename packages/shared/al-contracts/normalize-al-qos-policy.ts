@@ -121,7 +121,7 @@ export function normalizeALQosPolicy(msg: ALMessage, input: ALQosNormalizationIn
     const defaults = mergeEffectivePolicy(toDefaultEffectivePolicy(msg), input.defaults);
     const normalized = normalizePolicyAspects({ requested, defaults, capabilities });
     const aligned = alignRequestedDurability(normalized.effective, requested, capabilities);
-    const clamped = clampEffectivePolicy(aligned.effective, capabilities);
+    const clamped = clampEffectivePolicy(aligned.effective, capabilities, msg.constraints);
     const authorized = applyAuthorization(clamped.effective, capabilities, input.authorization);
     const live = applyLiveState(authorized.effective, input.live);
     const consistent = enforceCrossAspectConsistency(live.effective);
@@ -153,7 +153,6 @@ function toALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
             }
             : undefined,
         ack: toAckRequest(msg.delivery),
-        expiry: toExpiryRequest(msg.constraints, msg),
         retry: msg.delivery?.reliability === 'at-least-once'
             ? {
                 algo: 'exp-backoff',
@@ -220,38 +219,6 @@ function toAckRequest(delivery: ALDelivery | undefined): ALQosPolicyRequest['ack
             timeoutMs: delivery.reliability === 'at-least-once' ? 2_000 : 250
         }
     };
-}
-
-function toExpiryRequest(
-    constraints: ALConstraints | undefined,
-    msg: ALMessage
-): ALQosPolicyRequest['expiry'] {
-    if (!constraints) {
-        return undefined;
-    }
-
-    if (constraints.expiresAtMs !== undefined) {
-        return {
-            algo: 'expires-at',
-            opts: {
-                ttlHops: constraints.ttlHops,
-                expiresAtMs: constraints.expiresAtMs,
-                maxStalenessMs: toDefaultMaxStalenessMs(msg)
-            }
-        };
-    }
-
-    if (constraints.ttlHops !== undefined) {
-        return {
-            algo: 'ttl-only',
-            opts: {
-                ttlHops: constraints.ttlHops,
-                maxStalenessMs: toDefaultMaxStalenessMs(msg)
-            }
-        };
-    }
-
-    return undefined;
 }
 
 function toDefaultEffectivePolicy(msg: ALMessage): ALQosEffectivePolicy {
@@ -622,7 +589,7 @@ function normalizeAspect<TAlgo extends string, TOpts extends object>(
     policy: ALAspectNormalizationInput<TAlgo, TOpts>
 ): ALAspectNormalization<TAlgo, TOpts> {
     const { requested, fallback, aspect, supported } = policy;
-    if (!requested) {
+    if (!requested && supported.includes(fallback.algo)) {
         return {
             effective: fallback,
             notes: [{
@@ -633,8 +600,8 @@ function normalizeAspect<TAlgo extends string, TOpts extends object>(
             }]
         };
     }
-    const opts = { ...fallback.opts, ...requested.opts };
-    if (supported.includes(requested.algo)) {
+    const opts = { ...fallback.opts, ...requested?.opts };
+    if (requested && supported.includes(requested.algo)) {
         return { effective: { algo: requested.algo, opts }, notes: [] };
     }
     const algo = supported.includes(fallback.algo) ? fallback.algo : pickFallbackAlgorithm(aspect, supported);
@@ -644,16 +611,21 @@ function normalizeAspect<TAlgo extends string, TOpts extends object>(
             aspect,
             kind: 'downgraded',
             reason: 'Requested algorithm is not supported locally',
-            requested: requested.algo,
+            requested: requested?.algo ?? fallback.algo,
             effective: algo
         }]
     };
 }
 
-function clampEffectivePolicy(effective: ALQosEffectivePolicy, capabilities: ALQosCapabilities): ALQosPolicyAdjustment {
-    const ttlHops = effective.expiry.opts.ttlHops === undefined
+function clampEffectivePolicy(
+    effective: ALQosEffectivePolicy,
+    capabilities: ALQosCapabilities,
+    constraints: ALConstraints | undefined
+): ALQosPolicyAdjustment {
+    const requestedHops = effective.expiry.opts.ttlHops ?? constraints?.ttlHops;
+    const ttlHops = requestedHops === undefined
         ? undefined
-        : Math.max(0, Math.min(effective.expiry.opts.ttlHops, capabilities.maxTtlHops));
+        : Math.max(0, Math.min(requestedHops, constraints?.ttlHops ?? requestedHops, capabilities.maxTtlHops));
     const limit = effective.fanout.opts.limit === undefined
         ? undefined
         : Math.max(1, Math.min(effective.fanout.opts.limit, capabilities.maxFanout));

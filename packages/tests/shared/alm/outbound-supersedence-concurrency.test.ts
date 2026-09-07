@@ -1,6 +1,11 @@
 import '../../setup-browser-indexeddb.ts';
+import { createOutboundCanonicalEntry } from './outbound-runtime-test-fixture.ts';
 
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -38,14 +43,14 @@ describe('outbound shared supersedence decisions', () => {
 
         expect(await store.commitBundle(newDecision.bundle!, decodeOutboundTestPayload)).toBe('committed');
         expect(await store.commitBundle(oldDecision.bundle!, decodeOutboundTestPayload)).toBe('conflict');
-        expect(await store.getSentMessage(older.id.msgId)).toBeUndefined();
+        expect(await store.readSentMessage(older.id.msgId)).toBeUndefined();
         const effects = await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload);
-        expect(effects.map((effect) => effect.payload.kind === 'send-prepared' ? effect.payload.msg.id.msgId : '')).toEqual([newer.id.msgId]);
+        expect(effects.map((effect) => effect.payload.kind === 'send-prepared' ? effect.payload.message.msgId : '')).toEqual([newer.id.msgId]);
 
         const refreshed = await readDecision(store, older);
         expect(refreshed.status).toBe('superseded');
         expect(refreshed.bundle).toBeUndefined();
-        expect(await store.getSentMessage(newer.id.msgId)).toMatchObject({ msg: newer });
+        expect(JSON.stringify((await store.readSentMessage(newer.id.msgId))?.msg)).toBe(JSON.stringify(newer));
     });
 
     it.each(['memory', 'indexeddb'] as const)('allows independent %s work and a newer message recomputed after conflict', async (storage) => {
@@ -62,21 +67,31 @@ describe('outbound shared supersedence decisions', () => {
         expect(await store.commitBundle(newDecision.bundle!, decodeOutboundTestPayload)).toBe('conflict');
         const retry = await readDecision(store, newer);
         expect(await store.commitBundle(retry.bundle!, decodeOutboundTestPayload)).toBe('committed');
-        const latest = await store.readOutgoingMessage(createMessage('observer', 4), (message) => ({
-            msg: message,
-            persist: false,
-            preparedMessages: [],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
-        }));
+        const latest = await store.readOutgoingMessage({
+            msg: createMessage('observer', 4),
+            planner: (message) => ({
+                msg: message,
+                persist: false,
+                preparedMessages: [],
+                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         expect(latest.supersedence.latest?.latestMsgId).toBe(newer.id.msgId);
-        expect(await store.getSentMessage(other.id.msgId)).toMatchObject({ msg: other });
+        expect(JSON.stringify((await store.readSentMessage(other.id.msgId))?.msg)).toBe(JSON.stringify(other));
     });
 });
 
 function createStore(storage: 'memory' | 'indexeddb') {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
-        : new IndexedDbAdmissionBackend(`supersedence-${crypto.randomUUID()}`, 'admission', Date.now);
+        : new IndexedDbAdmissionBackend({
+            dbName: `supersedence-${crypto.randomUUID()}`,
+            storeName: 'admission',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
     return createALOutboundAdmissionStore({
         namespace: 'outbound',
         backend,
@@ -91,15 +106,20 @@ function createMessage(senderId: string, sequence: number): ALMessage {
 }
 
 async function readDecision(store: ALOutboundAdmissionStore, message: ALMessage, supersedenceKey = 'shared-topic') {
-    const read = await store.readOutgoingMessage(message, () => ({
+    const read = await store.readOutgoingMessage({
         msg: message,
-        persist: false,
-        preparedMessages: [{ text: message.id.msgId }],
-        supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }
-    }));
+        planner: () => ({
+            msg: message,
+            persist: false,
+            preparedMessages: [{ text: message.id.msgId }],
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }
+        }),
+        observedCanonicalEntry: undefined,
+        intent: 'enqueue'
+    });
     return computeALOutboundDispatch({
         read,
-        outboxEntry: undefined,
+        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
         dispatchAtMs: Date.now(),
         intent: 'enqueue',
         phase: 'immediate',

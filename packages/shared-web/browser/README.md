@@ -178,12 +178,14 @@ The browser transport storage and WebSocket owners are feature-colocated:
   owns session-scoped AL runtime store factories;
   [browser-al-runtime-cleanup.ts](./al-runtime/browser-al-runtime-cleanup.ts)
   owns IndexedDB scanning, expiry scheduling, and session cleanup.
-- [browser-queuebox-persistence.ts](./queuebox/browser-queuebox-persistence.ts)
-  owns the browser QueueBox repositories, durable store names, and expiry
-  cleanup; [createBrowserQueueBoxEngine](./queuebox/create-browser-queue-box-engine.ts)
+- [browser-al-work-cleanup.ts](./al-runtime/browser-al-work-cleanup.ts)
+  selects canonical payload, identity and action rows in the shared admission
+  QueueBox for expiry and session cleanup. The current scan visits the AL work
+  range before selecting a session.
+- [createBrowserQueueBoxEngine](./queuebox/create-browser-queue-box-engine.ts)
   owns engine construction and startup.
 - [createBrowserWebSocketQueueBox](./websocket/create-browser-web-socket-queue-box.ts)
-  owns WS inbox/outbox repositories, AL stores, queue tasks, initial connect,
+  owns WS AL store composition, initial connect,
   and reconnect activation.
 - [BrowserRallarWsController](./websocket/browser-rallar-ws-controller.ts)
   owns public WS status, lifecycle observation, and wait cleanup.

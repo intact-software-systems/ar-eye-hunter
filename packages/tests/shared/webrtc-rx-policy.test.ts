@@ -9,7 +9,7 @@ import {
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage, decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -333,8 +333,7 @@ interface RtcReceiveFixture {
 
 function createRtcReceiveFixture(stores = shared.createDefaultInMemoryALInboundRuntimeStores()): RtcReceiveFixture {
     const transport = createRtcReceiveTransport();
-    const outbox = new shared.InMemoryQueueBox(new Map());
-    const multicast = createRtcRoomMulticast(transport.connections, outbox);
+    const multicast = createRtcRoomMulticast(transport.connections);
     const service = shared.createDefaultWebRtcRxStreamerService({
         multicast,
         sessionId: 'self',
@@ -355,14 +354,7 @@ function createRtcReceiveFixture(stores = shared.createDefaultInMemoryALInboundR
         stores,
         receive: transport.receive,
         async outbound(): Promise<shared.ALMessage[]> {
-            const messages = [...transport.sent];
-            for (const key of await outbox.getAllKeys()) {
-                const entry = await outbox.getItem(key);
-                if (entry) {
-                    messages.push(decodePersistedALMessage(entry.resource));
-                }
-            }
-            return messages;
+            return [...transport.sent];
         }
     };
 }
@@ -441,8 +433,7 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
 }
 
 function createRtcRoomMulticast(
-    connections: shared.WebRtcConnectionService,
-    outbox: shared.InMemoryQueueBox
+    connections: shared.WebRtcConnectionService
 ): shared.WebRtcOverlayMulticastManager {
     const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2', 'peer-3'] });
     const groupCache = new shared.LatestRepository<string, GroupSnapshot>();
@@ -467,7 +458,6 @@ function createRtcRoomMulticast(
         updatedAtEpochMs: 1
     });
     return new shared.WebRtcOverlayMulticastManager({
-        outbox,
         connectionService: connections,
         groupCache,
         overlayCache,

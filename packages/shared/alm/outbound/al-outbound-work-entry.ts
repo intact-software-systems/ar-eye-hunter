@@ -1,17 +1,19 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
-import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    type ResourceEntry
+} from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
 import type {
     ALOutboundDurableEffect,
-    ALOutboundEffectSnapshot,
-    ALOutboundPreparedMessageDecoder
+    ALOutboundEffectSnapshot
 } from './al-outbound-admission-store.ts';
-import { decodeALOutboundEffectPayload, encodeALOutboundEffectPayload } from './al-outbound-effect-validation.ts';
+import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from './al-outbound-effect-validation.ts';
 
 export const AL_OUTBOUND_WORK_LEASE_MS = 10_000;
 
@@ -44,7 +46,7 @@ export function computeALOutboundWorkEntry<TPrepared>(input: ALOutboundWorkEntry
         resource: JSON.stringify({
             namespace: input.namespace,
             effectId: input.effectId,
-            payload: encodeALOutboundEffectPayload(input.payload)
+            payload: input.payload
         }),
         audit: {
             createdBy: 'ALM',
@@ -61,7 +63,7 @@ export function computeALOutboundWorkEntry<TPrepared>(input: ALOutboundWorkEntry
 export function decodeALOutboundWorkEntry<TPrepared>(
     entry: ResourceEntry,
     namespace: string,
-    decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    preparedRead: ALOutboundPreparedRead<TPrepared>
 ): ALOutboundEffectSnapshot<TPrepared> {
     try {
         const raw: unknown = JSON.parse(entry.resource);
@@ -75,19 +77,17 @@ export function decodeALOutboundWorkEntry<TPrepared>(
         ) {
             throw new TypeError('Outbound work identity differs from its queue slot');
         }
-        const payload = decodeALOutboundEffectPayload(stored.payload, stored.effectId, decodePrepared);
-        if ('msg' in payload) {
-            const deadline = resolveALMessageExpireAtMs(payload.msg);
-            if (!Number.isSafeInteger(deadline) || deadline !== Number(entry.audit.expiryTs.epochMilliseconds)) {
-                throw new TypeError('Outbound work deadline differs from its message');
-            }
-            if ('entry' in payload && Number(payload.entry.audit.expiryTs.epochMilliseconds) !== deadline) {
-                throw new TypeError('Outbound physical queue deadline differs from its message');
-            }
+        const payload = decodeALOutboundEffectPayload(stored.payload, stored.effectId, preparedRead);
+        if (
+            (payload.kind === 'send-prepared' || payload.kind === 'admit-message') &&
+            payload.message.expiresAtMs !== Number(entry.audit.expiryTs.epochMilliseconds)
+        ) {
+            throw new TypeError('Outbound work deadline differs from its canonical message reference');
         }
         return {
             effectId: stored.effectId,
             payload,
+            canonicalMessage: preparedRead.message,
             entry,
             attempts: entry.dequeueAudit.attempts,
             retryAtMs: Number(

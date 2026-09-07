@@ -10,12 +10,24 @@ import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import {
+    computeALInboundWorkEntry,
+    decodeALInboundWorkEntry,
+    toALInboundWorkKey,
+    toALInboundWorkType
+} from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 describe('inbound durable effect worker lifecycle', () => {
     afterEach(() => {
@@ -32,6 +44,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         await resources.admissionStore.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [{
@@ -126,6 +139,7 @@ describe('inbound durable effect worker lifecycle', () => {
             { text: 'hello' }
         );
         await resources.admissionStore.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [{
@@ -279,6 +293,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'buffered', contextId: 'room' }, 'receiver', 'chat', {});
         await resources.admissionStore.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'sender',
             observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [],
@@ -358,6 +373,7 @@ describe('inbound durable effect worker lifecycle', () => {
             payload: { kind: 'release-buffered', trackKey, seq: 1 }
         });
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(store, message)).observations,
             mutations: [],
@@ -541,6 +557,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const expireAtTimestamp = Math.max(Date.now() + 60_000, externalEntry.audit.expiryTs.epochMilliseconds);
         const store = resources.admissionStore;
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: external.id.senderId,
             observations: (await readAdmission(store, external)).observations,
             mutations: [{
@@ -620,6 +637,7 @@ describe('inbound durable effect worker lifecycle', () => {
             payload: { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
         });
         await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(store, message)).observations,
             mutations: [{

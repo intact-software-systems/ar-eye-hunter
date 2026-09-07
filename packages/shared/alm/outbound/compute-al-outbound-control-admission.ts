@@ -5,16 +5,15 @@ import type {
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type {
-    ALOutboundPendingAckSnapshot,
-    ALOutboundSentMessageSnapshot
+    ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
 } from './al-outbound-admission-store.ts';
+import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
@@ -33,7 +32,7 @@ export interface ALControlAdmissionRead {
     readonly nowMs: number;
     readonly owner?: string;
     readonly ownerVersion?: ALOutboundVersionedClientRecord;
-    readonly sent?: ALOutboundSentMessageSnapshot;
+    readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
     readonly history: ALControlHistory;
 }
@@ -82,10 +81,10 @@ export function computeALOutboundControlAdmission(
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? toALOutboundPendingAckExpireAtTimestamp(pending.value)
             : Math.max(
-                read.sent ? resolveALMessageExpireAtMs(read.sent.msg) ?? 0 : 0,
+                read.sent?.reference.expiresAtMs ?? 0,
                 toExpireAtTimestampFromNow(retention.durableEffectTtlMs, read.nowMs)
             ),
-        repairEffect: toRepairHintEffect(read, retention),
+        repairEffect: toRepairHintEffect(read),
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
         versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
         nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
@@ -139,10 +138,12 @@ function computePendingAckWrite(
 }
 
 function toRepairHintEffect(
-    read: ALControlAdmissionRead,
-    retention: NormalizedALRuntimeStoreRetentionConfig
+    read: ALControlAdmissionRead
 ): ALRepairHintEffectWrite | undefined {
-    if (read.parsed.type === 'ack' || (read.parsed.type === 'nack' && read.parsed.payload.reason !== 'gap')) {
+    if (
+        !read.sent || read.sent.reference.expiresAtMs <= read.nowMs ||
+        read.parsed.type === 'ack' || (read.parsed.type === 'nack' && read.parsed.payload.reason !== 'gap')
+    ) {
         return undefined;
     }
     const payload = read.parsed.payload;
@@ -164,7 +165,7 @@ function toRepairHintEffect(
         ]),
         payload: { kind: 'repair-hint', msgId: read.targetMsgId, request },
         retryAtMs: read.nowMs,
-        expireAtTimestamp: toExpireAtTimestampFromNow(retention.durableEffectTtlMs, read.nowMs)
+        expireAtTimestamp: read.sent.reference.expiresAtMs
     };
 }
 

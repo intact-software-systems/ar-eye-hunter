@@ -13,6 +13,7 @@ export interface QueueBoxPubSubMessage extends JsonWireObject {
     readonly publisherId: string;
     readonly typeId: typeof EnqueuedType.WS_OUTBOX;
     readonly delivery: 'key';
+    readonly expiresAtMs: number;
 }
 
 export interface QueueBoxPubSubBridge {
@@ -27,7 +28,7 @@ export function decodeQueueBoxPubSubMessage(
     message: JsonWireValue,
     expectedChannel: string
 ): QueueBoxPubSubMessage | undefined {
-    if (!isJsonWireObject(message)) {
+    if (!isJsonWireObject(message) || new TextEncoder().encode(JSON.stringify(message)).length >= 8_000) {
         return undefined;
     }
     const key = decodeQueueBoxPubSubMessageKey(message.key);
@@ -36,7 +37,9 @@ export function decodeQueueBoxPubSubMessage(
         !isNonEmptyString(message.publisherId) ||
         message.typeId !== EnqueuedType.WS_OUTBOX ||
         message.delivery !== 'key' ||
-        !hasExactKeys(message, ['key', 'channel', 'publisherId', 'typeId', 'delivery']) ||
+        typeof message.expiresAtMs !== 'number' || !Number.isSafeInteger(message.expiresAtMs) ||
+        message.expiresAtMs < 0 ||
+        !hasExactKeys(message, ['key', 'channel', 'publisherId', 'typeId', 'delivery', 'expiresAtMs']) ||
         !key
     ) {
         return undefined;
@@ -46,7 +49,8 @@ export function decodeQueueBoxPubSubMessage(
         channel: message.channel,
         publisherId: message.publisherId,
         typeId: message.typeId,
-        delivery: 'key'
+        delivery: 'key',
+        expiresAtMs: message.expiresAtMs
     };
 }
 
@@ -56,9 +60,9 @@ function decodeQueueBoxPubSubMessageKey(
     if (
         !isJsonWireObject(key) ||
         !hasExactKeys(key, ['topicId', 'resourceId', 'contextId']) ||
-        !isNonEmptyString(key.topicId) ||
-        !isNonEmptyString(key.resourceId) ||
-        !isNonEmptyString(key.contextId)
+        !isNonEmptyString(key.topicId, 36) ||
+        !isNonEmptyString(key.resourceId, 128) ||
+        !isNonEmptyString(key.contextId, 128)
     ) {
         return undefined;
     }
@@ -83,6 +87,6 @@ function hasExactKeys(
         actual.every((key, index) => key === sortedExpected[index]);
 }
 
-function isNonEmptyString(value: JsonWireValue): value is string {
-    return typeof value === 'string' && value.length > 0;
+function isNonEmptyString(value: JsonWireValue, maxLength = 8_000): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
 }

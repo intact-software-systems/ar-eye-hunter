@@ -1,4 +1,6 @@
+import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { InMemoryQueueBox } from '../../queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
@@ -8,6 +10,9 @@ import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from './al-inbou
 
 export interface DefaultALInboundRuntimeResourceInput {
     readonly selfPeerId: string;
+    readonly nowMs?: () => number;
+    readonly random?: () => number;
+    readonly newControlId?: () => string;
     readonly toInboxEntry: (msg: ALMessage) => ResourceEntry;
     readonly stores?: ALInboundRuntimeStores;
     readonly queueEngine?: InboxOutboxEngine;
@@ -30,9 +35,18 @@ export function createDefaultALInboundMessageRuntime(
 export function createDefaultALInboundRuntimeResources(
     input: DefaultALInboundRuntimeResourceInput
 ): ALInboundMessageRuntime.Resources {
+    const nowMs = input.nowMs ?? Date.now;
+    const newControlId = input.newControlId ?? crypto.randomUUID.bind(crypto);
     const admissionStore = input.stores?.admissionStore ?? createALInboundAdmissionStore({
+        nowMs,
+        newControlId,
         namespace: 'al-inbound-runtime',
-        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+        backend: new InMemoryAdmissionBackend(
+            createInMemoryALAdmissionState(
+                new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+            ),
+            nowMs
+        ),
         orderingTrackTtlMs: 5 * 60_000,
         supersedenceTrackTtlMs: 5 * 60_000,
         retention: normalizeALRuntimeStoreRetention()
@@ -41,10 +55,12 @@ export function createDefaultALInboundRuntimeResources(
         admissionStore,
         effectWorkerId: `al-inbound:${crypto.randomUUID()}`,
         effectPreparation: {
+            newControlId,
             selfPeerId: input.selfPeerId,
             createInboxEntry: input.toInboxEntry
         },
-        clock: { nowMs: () => Date.now() },
+        clock: { nowMs },
+        random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         ownsQueueEngine: input.queueEngine === undefined
     };

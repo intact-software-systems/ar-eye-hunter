@@ -1,4 +1,5 @@
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { Temporal } from '@js-temporal/polyfill';
+import { newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
     AgentSessionTicketResponse,
     AuthSession,
@@ -9,10 +10,14 @@ import type {
     WebSocketTicketResponse
 } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-command-identity.ts';
@@ -107,6 +112,7 @@ export namespace AppAuthInboxService {
         readonly options?: AppInboxOptions;
         readonly wakeOwningQueue?: () => void;
         readonly authFactNowEpochMs?: () => number;
+        readonly newAuthMessageId?: () => string;
     }
 
     export interface RequestIdentity {
@@ -120,6 +126,7 @@ export class AppAuthInboxService {
     private readonly authInboxHandler: AuthInboxHandler;
     private readonly authInboxRepository: AuthInboxRepository;
     private readonly authFactNowEpochMs: () => number;
+    private readonly newAuthMessageId: () => string;
 
     public readonly authMutationService: AuthMutationService;
     public readonly credentialIssuer: AuthCredentialIssuer;
@@ -148,6 +155,7 @@ export class AppAuthInboxService {
         this.credentialIssuer = dependencies.credentialIssuer;
         this.authInboxRepository = dependencies.resourceInboxRepository;
         this.authFactNowEpochMs = config.authFactNowEpochMs ?? Date.now;
+        this.newAuthMessageId = config.newAuthMessageId ?? crypto.randomUUID.bind(crypto);
         this.authInboxHandler = new AuthInboxHandler({
             mutationService: dependencies.authMutationService,
             credentialIssuer: dependencies.credentialIssuer,
@@ -584,6 +592,7 @@ export class AppAuthInboxService {
         matches: (intent: AuthMutationIntent) => boolean | Promise<boolean>
     ): Promise<Either<AppInboxFailure, I>> {
         try {
+            const observedAtMs = this.authFactNowEpochMs();
             const placeholder = toAuthInboxEntry({
                 type: reservation.type,
                 topicId: reservation.type,
@@ -591,17 +600,19 @@ export class AppAuthInboxService {
                 contextId: reservation.contextId,
                 senderId: reservation.senderId,
                 data: null
-            });
+            }, { observedAtMs, messageId: this.newAuthMessageId() });
             const observations = await this.authInboxRepository.findAllByTopicAndResourceId(
                 placeholder.key.topicId,
                 placeholder.key.resourceId
             );
-            const observedAtMs = Date.now();
             const existing = observations.find((entry) =>
                 isKeysEqual(entry.key, placeholder.key) && entry.audit.expiryTs.epochMilliseconds > observedAtMs
             );
             const candidate = existing ??
-                toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())));
+                toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())), {
+                    observedAtMs,
+                    messageId: this.newAuthMessageId()
+                });
             const entry = existing ?? await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
                 placeholder,
                 async () => candidate
@@ -648,7 +659,12 @@ function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput {
     };
 }
 
-function toAuthInboxEntry(enqueue: AppInboxEnqueueInput): ResourceEntry {
+interface AuthInboxEntryFacts {
+    readonly observedAtMs: number;
+    readonly messageId: string;
+}
+
+function toAuthInboxEntry(enqueue: AppInboxEnqueueInput, facts: AuthInboxEntryFacts): ResourceEntry {
     if (!enqueue.topicId || !enqueue.contextId || !enqueue.resourceId) {
         throw new TypeError('Auth AppInbox queue identity is incomplete');
     }
@@ -657,15 +673,24 @@ function toAuthInboxEntry(enqueue: AppInboxEnqueueInput): ResourceEntry {
         contextId: enqueue.contextId,
         resourceId: enqueue.resourceId
     });
-    return QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUntargetedMessage(
-            toAppQueueCreatedBy('auth-fact-reservation'),
-            newALRoute(key.topicId, key.contextId, key.resourceId),
-            enqueue.type,
-            enqueue
-        ),
-        'APP_INBOX'
-    );
+    const createdBy = toAppQueueCreatedBy('auth-fact-reservation');
+    const message: ALMessage = {
+        id: { v: 2, msgId: facts.messageId, ts: facts.observedAtMs, senderId: createdBy },
+        route: newALRoute(key.topicId, key.contextId, key.resourceId),
+        payload: { typeId: enqueue.type, contentType: 'application/json', resource: JSON.stringify(enqueue) },
+        audit: { createdBy, createdTs: facts.observedAtMs }
+    };
+    const createdTs = Temporal.Instant.fromEpochMilliseconds(facts.observedAtMs).toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key,
+        resource: JSON.stringify(message),
+        typeId: 'APP_INBOX',
+        audit: { date: createdTs.toPlainTime(), createdBy, createdTs, expiryTs: NEVER_EXPIRE_TS },
+        status: EntityStatus.NEW,
+        dequeueAudit: { attempts: 0 },
+        db: undefined
+    };
 }
 
 function requireReservedIntent<K extends AuthMutationIntent['kind']>(

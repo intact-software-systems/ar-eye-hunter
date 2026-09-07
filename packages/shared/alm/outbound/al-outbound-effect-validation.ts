@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
-    decodePersistedALMessage,
     decodePersistedALMessageValue
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import {
@@ -8,12 +7,8 @@ import {
     requireOptionalPersistedALStringArray,
     requirePersistedALNonEmptyString
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
-import {
-    decodeALAdmissionResourceEntry,
-    encodeALAdmissionResourceEntry,
-    type StoredALAdmissionResourceEntry
-} from '../al-admission-resource-entry-validation.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -24,34 +19,23 @@ import type {
     ALOutboundPreparedMessageDecoder,
     ALOutboundRepairHint
 } from './al-outbound-admission-store.ts';
+import { decodeALOutboundCapturedPolicy } from './al-outbound-admission-validation.ts';
+import { decodeALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import { toALOutboundPendingAdmissionId, type ALOutboundPendingAdmission } from './al-outbound-pending-admission.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 
-type StoredALOutboundDurableEffect<TPrepared> =
-    | Readonly<{
-        kind: 'enqueue-outbox';
-        msg: ALMessage;
-        entry: StoredALAdmissionResourceEntry;
-        replaceExisting: boolean;
-    }>
-    | Exclude<ALOutboundDurableEffect<TPrepared>, { kind: 'enqueue-outbox'; }>;
+export interface ALOutboundPreparedRead<TPrepared> {
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+    readonly message: ALMessage | undefined;
+}
 
 interface RequireALOutboundSendEffectIdentityInput {
     readonly effectId: string;
     readonly msgId: string;
     readonly phase: 'dequeue' | 'immediate';
+    readonly attemptIdentity: string;
     readonly preparedFingerprint: string;
-}
-
-export function encodeALOutboundEffectPayload<TPrepared>(
-    payload: ALOutboundDurableEffect<TPrepared>
-): StoredALOutboundDurableEffect<TPrepared> {
-    switch (payload.kind) {
-        case 'enqueue-outbox':
-            return { ...payload, entry: encodeALAdmissionResourceEntry(payload.entry) };
-        default:
-            return payload;
-    }
 }
 
 export function decodeALOutboundPreparedMessage(value: unknown, msg: ALMessage): ALMessage {
@@ -103,24 +87,27 @@ function isPreparedTransportCopy(prepared: ALMessage, source: ALMessage): boolea
 export function decodeALOutboundEffectPayload<TPrepared>(
     value: unknown,
     effectId: string,
-    decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    preparedRead: ALOutboundPreparedRead<TPrepared>
 ): ALOutboundDurableEffect<TPrepared> {
     const payload = decodeALAdmissionRecord(value, ['kind'], [
-        'msg',
+        'message',
         'prepared',
         'preparedFingerprint',
+        'attemptIdentity',
         'phase',
         'entry',
         'replaceExisting',
         'msgId',
         'request',
-        'reason'
+        'reason',
+        'policy',
+        'preparedMessages'
     ]);
     switch (payload.kind) {
+        case 'admit-message':
+            return decodeALOutboundPendingAdmission(value, effectId, preparedRead);
         case 'send-prepared':
-            return decodeALOutboundSendEffect(value, effectId, decodePrepared);
-        case 'enqueue-outbox':
-            return decodeALOutboundEnqueueEffect(value);
+            return decodeALOutboundSendEffect(value, effectId, preparedRead);
         case 'ack-timeout':
             decodeALAdmissionRecord(value, ['kind', 'msgId']);
             requirePersistedALNonEmptyString(payload.msgId, 'acknowledgement timeout message id');
@@ -147,13 +134,54 @@ export function decodeALOutboundEffectPayload<TPrepared>(
     }
 }
 
+function decodeALOutboundPendingAdmission<TPrepared>(
+    value: unknown,
+    effectId: string,
+    read: ALOutboundPreparedRead<TPrepared>
+): ALOutboundPendingAdmission<TPrepared> {
+    const pending = decodeALAdmissionRecord(value, ['kind', 'message', 'policy', 'preparedMessages']);
+    const message = decodeALOutboundMessageReference(pending.message);
+    const canonical = read.message;
+    if (
+        !canonical || canonical.id.msgId !== message.msgId || canonical.id.senderId !== message.senderId ||
+        resolveALMessageExpireAtMs(canonical) !== message.expiresAtMs ||
+        effectId !== toALOutboundPendingAdmissionId(message)
+    ) {
+        throw new TypeError('Pending admission requires its exact canonical message');
+    }
+    return {
+        kind: 'admit-message',
+        message,
+        policy: decodeALOutboundCapturedPolicy(pending.policy),
+        preparedMessages: decodeALAdmissionArray(
+            pending.preparedMessages,
+            (prepared) => read.decodePrepared(prepared, canonical)
+        )
+    };
+}
+
 function decodeALOutboundSendEffect<TPrepared>(
     value: unknown,
     effectId: string,
-    decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    preparedRead: ALOutboundPreparedRead<TPrepared>
 ): Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }> {
-    const payload = decodeALAdmissionRecord(value, ['kind', 'msg', 'prepared', 'preparedFingerprint', 'phase']);
-    const msg = decodePersistedALMessageValue(payload.msg);
+    const payload = decodeALAdmissionRecord(value, [
+        'kind',
+        'message',
+        'prepared',
+        'preparedFingerprint',
+        'attemptIdentity',
+        'phase'
+    ]);
+    const message = decodeALOutboundMessageReference(payload.message);
+    const msg = preparedRead.message;
+    if (
+        !msg || msg.id.msgId !== message.msgId || msg.id.senderId !== message.senderId ||
+        resolveALMessageExpireAtMs(msg) !== message.expiresAtMs
+    ) {
+        throw new TypeError('Prepared attempt requires its exact canonical message');
+    }
+    requirePersistedALNonEmptyString(payload.attemptIdentity, 'prepared attempt identity');
     requirePersistedALNonEmptyString(payload.preparedFingerprint, 'prepared message fingerprint');
     if (payload.preparedFingerprint !== toALOutboundPreparedFingerprint(payload.prepared)) {
         throw new TypeError('Persisted AL prepared message fingerprint does not match its payload');
@@ -165,13 +193,15 @@ function decodeALOutboundSendEffect<TPrepared>(
         effectId,
         msgId: msg.id.msgId,
         phase: payload.phase,
+        attemptIdentity: payload.attemptIdentity as string,
         preparedFingerprint: payload.preparedFingerprint
     });
     return {
         kind: 'send-prepared',
-        msg,
-        prepared: decodePrepared(payload.prepared, msg),
+        message,
+        prepared: preparedRead.decodePrepared(payload.prepared, msg),
         preparedFingerprint: payload.preparedFingerprint,
+        attemptIdentity: payload.attemptIdentity as string,
         phase: payload.phase
     };
 }
@@ -199,8 +229,8 @@ function requireALOutboundNotYetInSyncRetryEffectIdentity(
 function requireALOutboundSendEffectIdentity(
     input: RequireALOutboundSendEffectIdentityInput
 ): void {
-    const { effectId, msgId, phase, preparedFingerprint } = input;
-    const prefix = `${toALOutboundEffectId(['send', msgId, phase])}:`;
+    const { effectId, msgId, phase, attemptIdentity, preparedFingerprint } = input;
+    const prefix = `${toALOutboundEffectId(['send', msgId, phase, attemptIdentity])}:`;
     const suffix = `:${encodeURIComponent(preparedFingerprint)}`;
     if (!effectId.startsWith(prefix) || !effectId.endsWith(suffix)) {
         throw new TypeError('Persisted AL prepared message fingerprint does not match its effect identity');
@@ -211,26 +241,10 @@ function requireALOutboundSendEffectIdentity(
         !Number.isSafeInteger(index) ||
         index < 0 ||
         String(index) !== encodedIndex ||
-        effectId !== toALOutboundEffectId(['send', msgId, phase, index, preparedFingerprint])
+        effectId !== toALOutboundEffectId(['send', msgId, phase, attemptIdentity, index, preparedFingerprint])
     ) {
         throw new TypeError('Persisted AL outbound send effect identity is invalid');
     }
-}
-
-function decodeALOutboundEnqueueEffect(
-    value: unknown
-): Extract<ALOutboundDurableEffect<never>, { kind: 'enqueue-outbox'; }> {
-    const payload = decodeALAdmissionRecord(value, ['kind', 'msg', 'entry', 'replaceExisting']);
-    const msg = decodePersistedALMessageValue(payload.msg);
-    const entry = decodeALAdmissionResourceEntry(payload.entry);
-    const entryMessage = decodePersistedALMessage(entry.resource);
-    if (!jsonEquals(entryMessage, msg)) {
-        throw new TypeError('Persisted AL outbound queue resource differs from its message');
-    }
-    if (payload.kind === 'enqueue-outbox' && typeof payload.replaceExisting === 'boolean') {
-        return { kind: 'enqueue-outbox', msg, entry, replaceExisting: payload.replaceExisting };
-    }
-    throw new TypeError('Persisted AL outbound queue effect is invalid');
 }
 
 function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {

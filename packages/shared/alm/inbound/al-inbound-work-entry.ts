@@ -1,4 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { isALControlTypeId } from '../../al-contracts/al-control.ts';
+import { toALInboundPendingAdmissionId } from './al-inbound-pending-admission.ts';
+import { decodeALInboundSource } from './al-inbound-source-validation.ts';
 
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import {
@@ -13,7 +16,11 @@ import {
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    type ResourceEntry
+} from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -40,6 +47,7 @@ type StoredALInboundDurableEffect =
         kind: 'dispatch-local';
         entry: StoredALAdmissionResourceEntry;
     }>
+    | Extract<ALInboundDurableEffect, Readonly<{ kind: 'admit-message'; }>>
     | Extract<ALInboundDurableEffect, Readonly<{ kind: 'send-control'; }>>
     | Extract<ALInboundDurableEffect, Readonly<{ kind: 'forward-message'; }>>
     | Extract<ALInboundDurableEffect, Readonly<{ kind: 'release-buffered'; }>>;
@@ -109,9 +117,18 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
         ) {
             throw new TypeError('Inbound work identity differs from its queue slot');
         }
+        const payload = decodeInboundDurableEffect(stored.payload);
+        if (
+            payload.kind === 'admit-message' && (
+                effectId !== toALInboundPendingAdmissionId(payload.msg) ||
+                payload.msg.constraints?.expiresAtMs !== entry.audit.expiryTs.epochMilliseconds
+            )
+        ) {
+            throw new TypeError('Pending inbound admission identity or deadline differs from its queue observation');
+        }
         return {
             effectId,
-            payload: decodeInboundDurableEffect(stored.payload),
+            payload,
             entry,
             attempts: entry.dequeueAudit.attempts,
             retryAtMs: Number(
@@ -150,6 +167,7 @@ function toStoredInboundDurableEffect(
                 ...effect,
                 entry: encodeALAdmissionResourceEntry(effect.entry)
             };
+        case 'admit-message':
         case 'send-control':
         case 'forward-message':
         case 'release-buffered':
@@ -158,8 +176,24 @@ function toStoredInboundDurableEffect(
 }
 
 function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEffect {
-    const effect = decodeALAdmissionRecord(value, ['kind'], ['msg', 'entry', 'plan', 'fromPeerId', 'trackKey', 'seq']);
+    const effect = decodeALAdmissionRecord(value, ['kind'], [
+        'msg',
+        'entry',
+        'plan',
+        'fromPeerId',
+        'trackKey',
+        'seq',
+        'source'
+    ]);
     switch (effect.kind) {
+        case 'admit-message': {
+            decodeALAdmissionRecord(effect, ['kind', 'msg', 'source']);
+            const msg = decodePersistedALMessageValue(effect.msg);
+            if (msg.payload.typeId.startsWith('al.control.') || isALControlTypeId(msg.payload.typeId)) {
+                throw new TypeError('Pending inbound admission cannot own a control message');
+            }
+            return { kind: effect.kind, msg, source: decodeALInboundSource(effect.source) };
+        }
         case 'dispatch-local': {
             decodeALAdmissionRecord(effect, ['kind', 'entry']);
             const entry = decodeALAdmissionResourceEntry(effect.entry);

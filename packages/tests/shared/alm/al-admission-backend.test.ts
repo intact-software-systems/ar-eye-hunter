@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import {
     createInMemoryALAdmissionState,
@@ -37,7 +43,13 @@ const backends: readonly BackendCase[] = [
     { name: 'memory', create: () => new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now) },
     {
         name: 'IndexedDB',
-        create: () => new IndexedDbAdmissionBackend(`admission-decode-${crypto.randomUUID()}`, 'entries', Date.now)
+        create: () =>
+            new IndexedDbAdmissionBackend({
+                dbName: `admission-decode-${crypto.randomUUID()}`,
+                storeName: 'entries',
+                nowMs: Date.now,
+                newWriteToken: crypto.randomUUID.bind(crypto)
+            })
     }
 ];
 
@@ -131,7 +143,12 @@ describe('admission storage envelopes', () => {
 
     it('persists a write token on every IndexedDB admission data row', async () => {
         const databaseName = `admission-write-token-${crypto.randomUUID()}`;
-        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: databaseName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
@@ -162,7 +179,12 @@ describe('admission storage envelopes', () => {
             seeded.close();
         }
 
-        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: databaseName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         await expect(backend.read('version:missing-token', decodeVersion)).rejects.toMatchObject({
             name: 'ALAdmissionCorruptionError',
             key: 'version:missing-token'
@@ -174,7 +196,12 @@ describe('admission storage envelopes', () => {
         const clock = () => nowMs;
         const stores = [
             new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), clock),
-            new IndexedDbAdmissionBackend(`admission-clock-${crypto.randomUUID()}`, 'entries', clock)
+            new IndexedDbAdmissionBackend({
+                dbName: `admission-clock-${crypto.randomUUID()}`,
+                storeName: 'entries',
+                nowMs: clock,
+                newWriteToken: crypto.randomUUID.bind(crypto)
+            })
         ];
         for (const backend of stores) {
             await backend.write((tx) => tx.set('version:timed', '7', 20));
@@ -217,7 +244,12 @@ describe('admission storage envelopes', () => {
     });
 
     it('keeps IndexedDB writes uncommitted while an asynchronous callback can still fail', async () => {
-        const backend = new IndexedDbAdmissionBackend(`admission-async-${crypto.randomUUID()}`, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: `admission-async-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         await backend.write((tx) => tx.set('version:bad', false));
         await expect(backend.write(async (tx) => {
             await tx.set('version:new', '8');
@@ -229,7 +261,12 @@ describe('admission storage envelopes', () => {
     });
 
     it('commits IndexedDB writes after an asynchronous callback succeeds', async () => {
-        const backend = new IndexedDbAdmissionBackend(`admission-async-success-${crypto.randomUUID()}`, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: `admission-async-success-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         const result = await backend.write(async (tx) => {
             await tx.set('version:new', '8');
             await new Promise<void>((resolve) => setTimeout(resolve, 20));
@@ -240,7 +277,12 @@ describe('admission storage envelopes', () => {
     });
 
     it('validates expired IndexedDB payloads before cleanup', async () => {
-        const backend = new IndexedDbAdmissionBackend(`admission-expired-${crypto.randomUUID()}`, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: `admission-expired-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         await backend.write((tx) => tx.set('version:bad', false, 1));
         const corruption = { name: 'ALAdmissionCorruptionError', key: 'version:bad' };
         await expect(backend.read('version:bad', decodeVersion)).rejects.toMatchObject(corruption);
@@ -251,7 +293,12 @@ describe('admission storage envelopes', () => {
         'does not let %s expiry cleanup delete a concurrent refresh',
         async (operation) => {
             const databaseName = `admission-expiry-race-${operation}-${crypto.randomUUID()}`;
-            const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', () => 10);
+            const backend = new IndexedDbAdmissionBackend({
+                dbName: databaseName,
+                storeName: 'entries',
+                nowMs: () => 10,
+                newWriteToken: crypto.randomUUID.bind(crypto)
+            });
             await backend.write((transaction) => transaction.set('version:refreshed', '7', 1));
             const transactionImplementation = IDBDatabase.prototype.transaction;
             let refreshWritten = false;
@@ -302,7 +349,12 @@ describe('admission storage envelopes', () => {
 
     it('rejects malformed IndexedDB envelopes on direct and listed reads', async () => {
         const databaseName = `admission-corrupt-${crypto.randomUUID()}`;
-        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: databaseName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(database, 'entries', [{
@@ -405,7 +457,12 @@ describe('admission storage envelopes', () => {
 
     it('lists a matching key whose suffix starts with the maximum UTF-16 code unit', async () => {
         const databaseName = `admission-prefix-bound-${crypto.randomUUID()}`;
-        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: databaseName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         const key = `version:\ufffftail`;
         await backend.write((transaction) => transaction.set(key, '7'));
 
@@ -416,7 +473,12 @@ describe('admission storage envelopes', () => {
 
     it('returns one row when requested prefixes overlap', async () => {
         const databaseName = `admission-overlapping-prefixes-${crypto.randomUUID()}`;
-        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: databaseName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {

@@ -200,8 +200,11 @@ but only the addressed recipient delivers locally.
 ### Multicast
 
 A scoped `GroupRef` names the logical group. Audience selection uses an
-authoritative membership snapshot. A supplied `minSnapshotVersion` prevents a
-node with stale group state from silently routing or accepting. Membership
+authoritative membership snapshot. A supplied `targets.minSnapshotVersion` prevents a
+receiver or relay with stale group state from silently accepting or forwarding.
+The origin requires valid current room and routing authority and preserves the
+recipient floor on the message; the floor does not raise the origin's own
+snapshot requirement. Membership
 fencing must use an authoritative membership epoch; its current field and
 ordering use do not establish that guarantee. Until that implementation lands,
 requests requiring membership fencing are explicitly unsupported. The outcome
@@ -454,7 +457,7 @@ use readonly transactions, lower-bound prefix cursors that stop when leaving
 the prefix, and an expiry index. Snapshot assembly still uses separate reads,
 so it is not one atomic snapshot.
 
-[Browser QueueBox persistence](../../packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
+[Browser QueueBox persistence at the reviewed revision](https://github.com/intact-software-systems/ar-eye-hunter/blob/02d65ac4a458b98b92ebda22cf3ff84041027eb9/packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
 creates one database per session queue and validates the current schema instead
 of adding stores through upgrades. The
 [session lifecycle](../../packages/shared-web/browser/session/session-auth-lifecycle.ts)

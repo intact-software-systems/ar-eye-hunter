@@ -42,10 +42,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('accepted');
-        expect(result.entries).toEqual([]);
+        expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sentJsonStrings).toHaveLength(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
-        expect((await outbox.getAllKeys()).length).toBe(0);
+        expect((await readQueueEntries(outbox)).filter((entry) => entry.status !== shared.EntityStatus.COMPLETED)).toEqual([]);
     });
 
     it('returns duplicate and does not resend the same volatile outbound message twice', async () => {
@@ -75,7 +75,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         expect(first.status).toBe('accepted');
         expect(second.status).toBe('duplicate');
-        expect(second.entries).toEqual([]);
+        expect(second.entry?.key).toEqual(first.entry?.key);
         expect(socket.sentJsonStrings).toHaveLength(1);
     });
 
@@ -119,8 +119,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         expect(result.status).toBe('enqueued');
         expect(result.entries).toHaveLength(1);
-        expect(socket.sentJsonStrings).toHaveLength(0);
-        expect((await outbox.getAllKeys()).length).toBe(1);
+        expect(socket.sentJsonStrings).toHaveLength(1);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
     it('retries outbound messages when receiver acknowledgements time out', async () => {
@@ -283,7 +283,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(decodePersistedALMessage(socket.sentJsonStrings[2]).id.msgId).toBe(seq1.id.msgId);
     });
 
-    it('replaces superseded queued outbound messages before dequeue', async () => {
+    it('retains immutable superseded payloads while dispatching only the latest waiting action', async () => {
         const socket = createFakeWsSocket();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxClientService({
@@ -346,22 +346,23 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
+        socket.native.readyState = 3;
         const firstResult = await service.enqueueOutboxIfAbsent(first);
         const secondResult = await service.enqueueOutboxIfAbsent(second);
 
         expect(firstResult.status).toBe('enqueued');
         expect(secondResult.status).toBe('enqueued');
-        expect((await outbox.getAllKeys()).length).toBe(1);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(2);
 
-        const stored = (await readQueueEntries(outbox))[0];
-        expect(decodePersistedALMessage(stored.resource).id.msgId).toBe(second.id.msgId);
+        expect(socket.sentJsonStrings).toEqual([]);
+        socket.native.readyState = 1;
 
         await service.dequeueOutbox(
             shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
             createResourceInboxResilience()
         );
 
-        expect(socket.sentJsonStrings).toHaveLength(1);
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(second.id.msgId);
     });
 
@@ -636,7 +637,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(seq2);
 
         expect(deliveredTexts).toEqual([]);
-        expect((await outbox.getAllKeys()).length).toBe(0);
+        expect((await readQueueEntries(outbox)).filter((entry) => entry.status !== shared.EntityStatus.COMPLETED)).toEqual([]);
 
         const sentTypeIds = socket.sentJsonStrings
             .map((serialized) => decodePersistedALMessage(serialized).payload.typeId)
@@ -664,6 +665,7 @@ function createFakeWsSocket() {
     });
     return {
         client,
+        native,
         sentJsonStrings: native.sent,
         async receive(message: shared.ALMessage): Promise<void> {
             if (callbacks.length === 0) {
@@ -685,7 +687,7 @@ class RecordingWebSocket extends EventTarget implements WebSocket {
     readonly bufferedAmount = 0;
     readonly extensions = '';
     readonly protocol = '';
-    readonly readyState = 1;
+    readyState: WebSocket['readyState'] = 1;
     readonly url = 'ws://client-qos-policy-test';
     onclose = null;
     onerror = null;

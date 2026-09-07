@@ -34,6 +34,7 @@ import {
 
 export namespace ALInboundDurableEffectStore {
     export interface Dependencies {
+        readonly nowMs: () => number;
         readonly backend: ALAdmissionWorkBackend;
         readonly namespace: string;
     }
@@ -42,10 +43,12 @@ export namespace ALInboundDurableEffectStore {
 /** Admission writes work atomically; QueueBox alone owns reservations and retry state. */
 export class ALInboundDurableEffectStore {
     private readonly backend: ALAdmissionWorkBackend;
+    private readonly nowMs: () => number;
     private readonly namespace: string;
 
     constructor(dependencies: ALInboundDurableEffectStore.Dependencies) {
         this.backend = dependencies.backend;
+        this.nowMs = dependencies.nowMs;
         this.namespace = dependencies.namespace;
     }
 
@@ -126,9 +129,14 @@ export class ALInboundDurableEffectStore {
             input.reservation.dequeueAudit.attempts,
             0.5
         );
-        const disposition: ResourceInboxReleaseDisposition = decision.status === 'failed'
-            ? { status: EntityStatus.FAILED, delayMs: null }
-            : { status: EntityStatus.RETRY, delayMs: Math.max(1, Math.ceil(input.retryAtMs - Date.now())) };
+        const disposition: ResourceInboxReleaseDisposition =
+            input.reason !== 'not-ready' && decision.status === 'failed'
+                ? { status: EntityStatus.FAILED, delayMs: null }
+                : {
+                    status: EntityStatus.RETRY,
+                    delayMs: Math.max(1, Math.ceil(input.retryAtMs - this.nowMs())),
+                    reason: input.reason
+                };
         await this.releaseEffect(input.reservation, disposition);
     }
 

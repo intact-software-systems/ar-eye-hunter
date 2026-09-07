@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
-import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -127,6 +126,7 @@ export type ALOutboundRuntimeDiagnosticsSink = (
 ) => void;
 
 export type ALOutboundEnqueueStatus =
+    | 'pending-admission'
     | 'enqueued'
     | 'accepted'
     | 'skipped'
@@ -147,7 +147,12 @@ export interface ALOutboundEnqueueResult {
 }
 
 export namespace ALOutboundMessageRuntime {
+    export type PendingAdmissionAuthority =
+        | Readonly<{ status: 'authorized'; }>
+        | Readonly<{ status: 'rejected'; reason: string; }>
+        | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
     export interface SendLifecycle {
+        readonly canonicalMessage: ALMessage;
         /** The runtime owns this cancellation signal; disposal stops remaining local transport work. */
         readonly signal: AbortSignal;
         readonly expiresAtMs: number | undefined;
@@ -167,19 +172,23 @@ export namespace ALOutboundMessageRuntime {
         readonly admissionStore: ALOutboundAdmissionStore;
         readonly effectWorkerId: string;
         readonly clock: Clock;
+        readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
         readonly browserLocks: BrowserLocks | undefined;
     }
 
     export interface Dependencies<TPrepared> extends Resources {
-        readonly outbox: QueueBoxResourceEntryRepository;
+        readonly readPendingAdmissionAuthority?: (
+            msg: ALMessage,
+            preparedMessages: readonly TPrepared[]
+        ) => Promise<PendingAdmissionAuthority>;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
         readonly planDequeuedMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
-        readonly beforeDequeueDispatch:
-            | ((msg: ALMessage, entry: ResourceEntry) => boolean | Promise<boolean>)
+        readonly afterDequeueAdmission:
+            | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly sendPreparedMessage: (
@@ -278,7 +287,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 : () => dispatchPlan,
             intent: 'enqueue',
             phase: 'immediate',
-            options: {}
+            options: { explicitPlan: dispatchPlan !== undefined }
         });
         return {
             status: computed.status,
@@ -302,30 +311,41 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
         await QueueBoxUtilities.defaultDequeue(
             {
-                qbox: this.dependencies.outbox,
+                qbox: this.dependencies.admissionStore.workQueue,
                 typesToDequeue: typesToDequeue,
                 resilience: resilience,
                 onDequeuedDo: async (entry) => {
                     const msg = this.readQueuedMessage(entry);
-                    const clusterDispatch = this.dependencies.beforeDequeueDispatch?.(msg, entry);
-                    const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
-                        ? clusterDispatch ?? false
-                        : await clusterDispatch;
+                    if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
+                        return;
+                    }
                     const computed = await this.commitDispatchPlan({
                         msg,
                         planner: this.dependencies.planDequeuedMessage,
                         intent: 'dequeue',
                         phase: 'dequeue',
                         options: {
-                            observedOutboxEntry: entry
+                            observedOutboxEntry: entry,
+                            attemptIdentity: JSON.stringify([
+                                'queue',
+                                entry.dequeueAudit.attempts,
+                                entry.dequeueAudit.startTs?.toString() ?? null
+                            ])
                         }
                     });
-                    if (computed.status === 'failed' || (computed.status === 'no-route' && !clusterPublished)) {
-                        if (computed.status === 'failed') {
-                            throw new NonRetryableException(computed.reason);
-                        }
+                    if (
+                        computed.status === 'expired' || computed.status === 'superseded' ||
+                        computed.status === 'skipped'
+                    ) {
+                        return;
+                    }
+                    if (computed.status === 'failed') {
+                        throw new NonRetryableException(computed.reason);
+                    }
+                    if (computed.status === 'no-route') {
                         throw new Error(computed.reason);
                     }
+                    await this.dependencies.afterDequeueAdmission?.(msg, entry);
                 },
                 options: {}
             }
@@ -364,7 +384,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);
 
-        if (result.committed) {
+        if (result.committed || result.computed.status === 'pending-admission') {
             await this.workHandler.processCommitted();
         }
 
@@ -388,35 +408,66 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
 
         switch (effect.payload.kind) {
+            case 'admit-message':
+                return await this.admitPendingMessage(effect);
             case 'send-prepared':
+                if (!effect.canonicalMessage) {
+                    throw new NonRetryableException('Prepared work has no canonical message');
+                }
                 return await this.writePreparedMessage(effect.payload, {
+                    canonicalMessage: effect.canonicalMessage,
                     signal: this.sendSignal,
                     expiresAtMs: effect.expireAtTimestamp,
                     leaseUntilMs: effect.leaseUntilMs
                 }, effect.attempts);
-            case 'enqueue-outbox':
-                if (effect.payload.replaceExisting) {
-                    await this.dependencies.outbox.enqueue(effect.payload.entry);
-                    return { status: 'completed' };
-                }
-
-                await this.dependencies.outbox.enqueueIfAbsent(effect.payload.entry);
-                return { status: 'completed' };
             case 'ack-timeout':
                 await this.repairAdmission.handlePendingAckTimeout(effect.payload.msgId);
                 return { status: 'completed' };
             case 'repair-hint':
                 await this.repairAdmission.executeRepairFromHint(
                     effect.payload.msgId,
-                    effect.payload.request
+                    effect.payload.request,
+                    effect.effectId
                 );
                 return { status: 'completed' };
             case 'nack-retry':
                 await this.repairAdmission.retransmitByMsgId(effect.payload.msgId, {
-                    replaceExistingOutbox: true
+                    attemptIdentity: effect.effectId
                 });
                 return { status: 'completed' };
         }
+    }
+
+    private async admitPendingMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALOutboundWorkDisposition> {
+        const pending = effect.payload;
+        const msg = effect.canonicalMessage;
+        if (pending.kind !== 'admit-message' || !msg) {
+            throw new NonRetryableException('Pending work has no canonical admission');
+        }
+        const authority = await this.dependencies.readPendingAdmissionAuthority?.(msg, pending.preparedMessages) ??
+            { status: 'authorized' };
+        if (this.disposed || pending.message.expiresAtMs <= this.readNowMs() || authority.status === 'rejected') {
+            return { status: 'completed' };
+        }
+        if (authority.status === 'not-ready') {
+            return { status: 'not-ready', readyAtMs: this.readNowMs() + authority.retryAfterMs };
+        }
+        await this.dispatchAdmission.commit({
+            msg,
+            planner: () => ({
+                msg,
+                persist: pending.policy.persist,
+                preparedMessages: pending.preparedMessages,
+                ackTracking: pending.policy.ackTracking ?? undefined,
+                retryTracking: pending.policy.retryTracking ?? undefined,
+                repairTracking: pending.policy.repairTracking ?? undefined,
+                supersedenceTracking: pending.policy.supersedenceTracking ?? undefined
+            }),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: { pendingAdmission: effect.entry }
+        });
+        return { status: 'completed' };
     }
 
     private async writePreparedMessage(
@@ -424,7 +475,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         lifecycle: ALOutboundMessageRuntime.SendLifecycle,
         attempts: number
     ): Promise<ALOutboundWorkAttemptResult> {
-        const receipts = await this.dependencies.admissionStore.readReceiptState(payload.msg.id.msgId);
+        if (await this.dependencies.admissionStore.isMessageSuperseded(lifecycle.canonicalMessage)) {
+            return { status: 'completed' };
+        }
+        const receipts = await this.dependencies.admissionStore.readReceiptState(payload.message.msgId);
         if (receipts && isALOutboundReceiptComplete(receipts)) {
             return { status: 'completed' };
         }
@@ -434,7 +488,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         ) {
             return { status: 'completed' };
         }
-        const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, attempts, Math.random());
+        const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, attempts, this.dependencies.random());
         const sendResult = await this.dependencies.sendPreparedMessage(
             payload.prepared,
             payload.phase,

@@ -9,6 +9,7 @@ import {
     validateResourceInboxReleaseDisposition
 } from './compute-resource-inbox-release.ts';
 import { InMemoryQueueWorkIndex } from './in-memory-queue-work-index.ts';
+import { matchesQueueBoxCompletedRetention, type QueueBoxCompletedRetention } from './queue-box-completed-retention.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
     QueueBoxResourceEntryRepository,
@@ -18,7 +19,6 @@ import {
     ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
-    ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
     ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
@@ -73,14 +73,20 @@ export namespace InMemoryQueueBox {
 
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
+    private readonly now: () => Temporal.Instant;
     private readonly workIndex = new InMemoryQueueWorkIndex();
+    private completedRetention: QueueBoxCompletedRetention = { typeIds: [], topicIds: [] };
 
     private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
         ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
     );
 
-    constructor(input: Map<Key, ResourceEntry> = new Map<Key, ResourceEntry>()) {
+    constructor(
+        input: Map<Key, ResourceEntry> = new Map<Key, ResourceEntry>(),
+        now: () => Temporal.Instant = Temporal.Now.instant
+    ) {
+        this.now = now;
         this.data = new Map<ResourceEntryKeyString, ResourceEntry>();
 
         for (const [key, entry] of input) {
@@ -114,11 +120,23 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         );
     }
 
+    /** Install the adopting owner's policy before exposing this queue to its workers. */
+    retainCompletedUntilExpiry(selection: QueueBoxCompletedRetention): void {
+        this.completedRetention = {
+            typeIds: [...new Set([...this.completedRetention.typeIds, ...selection.typeIds])],
+            topicIds: [...new Set([...this.completedRetention.topicIds, ...selection.topicIds])]
+        };
+    }
+
     cleanup(): boolean {
         const keysToRemove: ResourceEntryKeyString[] = [];
 
         for (const [key, entry] of this.data) {
-            if (COMPLETED_STATUSES.has(entry.status) || isExpiredResourceEntry(entry)) {
+            if (
+                isExpiredResourceEntry(entry) ||
+                (COMPLETED_STATUSES.has(entry.status) &&
+                    !matchesQueueBoxCompletedRetention(entry, this.completedRetention))
+            ) {
                 keysToRemove.push(key);
             }
         }
@@ -159,7 +177,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     /** The caller can commit its other in-memory state immediately after this synchronous batch. */
     writeIfAllObserved(writes: readonly InMemoryQueueBox.ComputedOperation[]): boolean {
-        const observedAt = Temporal.Now.instant();
+        const observedAt = this.now();
         const observations = writes.map((write) => {
             const key = toKeyAsString('entry' in write ? write.entry.key : write.key);
             return {
@@ -202,7 +220,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             },
             (value) => value
         );
-        const releasedAt = Temporal.Now.instant();
+        const releasedAt = this.now();
         const currentEntries = resources.map((resource) => {
             const current = this.data.get(toKeyAsString(resource.key));
             if (
@@ -254,7 +272,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         );
         const timedOut = new Map<Key, ResourceEntry>();
         const observations = captureResourceEntryObservations(observedEntries);
-        const now = Temporal.Now.instant();
+        const now = this.now();
 
         for (const candidate of observations?.values() ?? this.data.values()) {
             if (timedOut.size >= maxToReserve) {
@@ -288,7 +306,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         );
         const reserved = new Map<Key, ResourceEntry>();
         const observations = captureResourceEntryObservations(observedEntries);
-        const now = Temporal.Now.instant();
+        const now = this.now();
 
         for (const candidate of observations?.values() ?? this.data.values()) {
             if (reserved.size >= maxToReserve) {
@@ -325,7 +343,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         const overdueBefore = Temporal.Instant.fromEpochMilliseconds(overdueBeforeEpochMs);
-        const now = Temporal.Now.instant();
+        const now = this.now();
         const candidates = [...this.data.entries()]
             .filter(([, entry]) =>
                 !isExpiredResourceEntry(entry, now) &&
@@ -366,7 +384,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
-        const now = Temporal.Now.instant();
+        const now = this.now();
         const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
         const candidates = [...this.data.entries()].filter(([, entry]) =>
             typeIds.has(entry.typeId) &&
@@ -438,7 +456,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         if (!typeIds.has(EnqueuedType.APP_INBOX)) {
             return false;
         }
-        const now = Temporal.Now.instant();
+        const now = this.now();
         const staleBefore = now.subtract({ milliseconds: staleAfterMs });
         return [...this.data.values()].some((entry) =>
             entry.typeId === EnqueuedType.APP_INBOX &&
@@ -465,7 +483,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 entry.dequeueAudit.attempts < maxAttempts &&
                 (
                     !entry.dequeueAudit.nextTs ||
-                    Temporal.Instant.compare(Temporal.Now.instant(), entry.dequeueAudit.nextTs) >= 0
+                    Temporal.Instant.compare(this.now(), entry.dequeueAudit.nextTs) >= 0
                 )
             ) {
                 return true;
@@ -500,7 +518,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             entry.dequeueAudit.startTs
         ) {
             return Temporal.Instant.compare(
-                Temporal.Now.instant(),
+                this.now(),
                 entry.dequeueAudit.startTs.add(duration)
             ) >=
                 0;

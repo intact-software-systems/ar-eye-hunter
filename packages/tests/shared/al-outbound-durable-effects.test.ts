@@ -1,10 +1,23 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import { computeOutboundTestAdmission } from './alm/outbound-runtime-test-fixture.ts';
 
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import type { ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
-import { ALOutboundMessageRuntime, InMemoryQueueBox, newALAckControlMessage, newALNackControlMessage } from '@shared/mod.ts';
+import {
+    ALOutboundMessageRuntime,
+    InMemoryQueueBox,
+    newALAckControlMessage,
+    newALNackControlMessage
+} from '@shared/mod.ts';
 
 import {
     createDefaultOutboundTestAdmissionStore,
@@ -433,7 +446,7 @@ describe('AL outbound durable effect lifecycle', () => {
         runtime.dispose();
     });
 
-    it('returns an admission conflict to its owner before a fresh attempt', async () => {
+    it('retains a conflicted admission and rereads receipts before worker delivery', async () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
@@ -501,8 +514,7 @@ describe('AL outbound durable effect lifecycle', () => {
             })
         });
 
-        await expect(enqueueOutboundOrThrow(runtime, msg)).rejects.toThrow('Outbound commit conflict');
-        await enqueueOutboundOrThrow(runtime, msg);
+        expect((await runtime.enqueueIfAbsent(msg)).status).toBe('pending-admission');
         await vi.advanceTimersByTimeAsync(200);
 
         expect(rejectedFirstCommit).toBe(true);
@@ -539,18 +551,20 @@ describe('AL outbound durable effect lifecycle', () => {
         });
         expect(sent).toEqual([]);
         expect(await reserveOutbox(outbox)).toEqual([]);
-        expect(await admissionStore.getSentMessage(msg.id.msgId)).toBeUndefined();
+        expect(await admissionStore.readSentMessage(msg.id.msgId)).toBeUndefined();
     });
 
     it('ignores control messages after dispose without bootstrapping durable effects', async () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const sent: string[] = [];
         const msg = createOutboundMessage('pending-before-dispose');
+        const admission = await computeOutboundTestAdmission(admissionStore, msg);
         const prepared = { kind: 'send', msgId: msg.id.msgId } as const;
         const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
         const payload = {
             kind: 'send-prepared',
-            msg,
+            message: toALOutboundMessageReference(admissionStore.canonicalScope, admission.canonicalEntry!, msg),
+            attemptIdentity: 'initial',
             prepared,
             preparedFingerprint,
             phase: 'immediate'
@@ -559,12 +573,12 @@ describe('AL outbound durable effect lifecycle', () => {
             'send',
             msg.id.msgId,
             'immediate',
+            'initial',
             0,
             preparedFingerprint
         ]);
         await admissionStore.commitBundle({
-            senderId: 'self',
-            mutations: [],
+            ...admission,
             durableEffects: [{ effectId, payload }]
         }, decodeOutboundTestPayload);
         const runtime = createDefaultOutboundTestRuntime({

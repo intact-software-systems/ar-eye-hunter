@@ -14,7 +14,6 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 
@@ -163,7 +162,6 @@ function createDefaultSnapshotAdmissionManager(
     overlayCache = new LatestRepository<string, OverlayInfo>()
 ): WebRtcOverlayMulticastManager {
     return new WebRtcOverlayMulticastManager({
-        outbox: new InMemoryQueueBox(new Map()),
         connectionService: {
             input: { sessionId: 'self' },
             readyPeerIdsForLane: () => ['peer-1', 'peer-2', 'outsider'],

@@ -19,7 +19,6 @@ export {
 export * from './browser/rallar-ai.ts';
 export * from './browser/rallar-crdt.ts';
 export * from './browser/rallar.ts';
-export * from './browser/resilience-config.ts';
 export * from './browser/rooms/room-group-state-http-api.ts';
 export {
     archiveStateGroup,

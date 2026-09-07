@@ -14,6 +14,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import {
@@ -87,7 +88,10 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(sent.payload.typeId).toBe('rtc');
         expect(sent.id.senderId).toBe(payload.fromId);
         expect(JSON.parse(sent.payload.resource)).toEqual(payload);
-        expect(await service.outbox.getAllKeys()).toEqual([]);
+        const rows = await Promise.all((await service.outbox.getAllKeys()).map((key) => service.outbox.getItem(key)));
+        expect(rows.some((row) => row && isPendingALOutboundWork(row))).toBe(false);
+        const canonical = rows.find((row) => row?.key.topicId === 'AL_OUTBOUND_MESSAGE');
+        expect(canonical?.resource).toBe(socket.sent[0]);
         expect(wakes).toBe(0);
     });
 
@@ -103,8 +107,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
         expect(wakes).toBe(1);
         const keys = await service.outbox.getAllKeys();
-        expect(keys).toHaveLength(1);
-        const entry = await service.outbox.getItem(keys[0]);
+        const rows = await Promise.all(keys.map((key) => service.outbox.getItem(key)));
+        const entry = rows.find((row) => row?.key.topicId === 'AL_OUTBOUND_MESSAGE');
+        expect(rows.some((row) => row?.key.topicId === 'AL_OUTBOUND' && isPendingALOutboundWork(row))).toBe(true);
         if (!entry) {
             throw new Error('Accepted signaling must be present in the outbox');
         }
@@ -114,7 +119,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(JSON.parse(sent.payload.resource)).toEqual(payload);
 
         service.close(1000, 'test-disconnect');
-        await transport.send(payload);
+        await expect(transport.send(payload)).rejects.toThrow();
         expect(wakes).toBe(1);
         expect(await service.outbox.getAllKeys()).toEqual(keys);
     });

@@ -37,7 +37,9 @@ export async function publishRallarServerWsMessage(
             };
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(input.message);
-            if (result.status === 'enqueued' || result.status === 'duplicate') {
+            if (
+                result.status === 'enqueued' || result.status === 'duplicate' || result.status === 'pending-admission'
+            ) {
                 input.wakeOutbox?.();
             }
             return toOutboxPublishResult(input.message, input.fanout, result);
@@ -127,6 +129,7 @@ function toOutboxPublishStatus(
 ): RallarServerWsPublishStatus {
     switch (status) {
         case 'enqueued':
+        case 'pending-admission':
         case 'accepted':
             return 'queued-outbox';
         case 'skipped':

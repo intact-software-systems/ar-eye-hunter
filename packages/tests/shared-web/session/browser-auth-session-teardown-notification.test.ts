@@ -2,7 +2,12 @@ import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/brows
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import { BrowserSessionAuthLifecycle } from '@shared-web/browser/session/session-auth-lifecycle.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 type AuthModule = typeof import('@shared/api/auth.ts');
 
@@ -23,6 +28,8 @@ function createAuthLifecycle(
     const transportRuntime = new BrowserTransportRuntime();
     const runtime = new BrowserFacadeRuntimeState(transportRuntime);
     return new BrowserSessionAuthLifecycle({
+        nowMs: Date.now,
+        newRequestId: crypto.randomUUID.bind(crypto),
         connectionRuntime: runtime,
         transportRuntime,
         authRuntime: runtime,

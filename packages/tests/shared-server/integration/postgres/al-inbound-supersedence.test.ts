@@ -1,4 +1,9 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -162,6 +167,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
     const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
     const facts = readALInboundEffectFacts(message, nowMs, {
         selfPeerId: 'receiver',
+        newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
     });
     return { read, plan, bundle: computeALInboundAdmission({ read, plan, facts, canForward: false }) };

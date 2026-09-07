@@ -1,4 +1,10 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -164,6 +170,66 @@ describe('WS server bounded and authorized admission', () => {
         }
         else {
             expect(work.every((entry) => entry === undefined)).toBe(true);
+        }
+    });
+
+    it.each(['unauthorized', 'not-yet-in-sync'] as const)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        const fixture = await createServerIngressFixture();
+        let pending = false;
+        fixture.service.authorizeInboundMessagesWith({
+            authorize: async () =>
+                pending
+                    ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack: false }
+                    : { authorized: true, roomRecipientPeerIds: [] }
+        });
+        const commit = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
+        vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            expect(await commit({ ...bundle, mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'), durableEffects: [] })).toBe(
+                'committed'
+            );
+            const status = await commit(bundle);
+            expect(status).toBe('conflict');
+            return status;
+        });
+        const enqueue = fixture.admissionStore.workQueue.enqueueIfAbsent.bind(fixture.admissionStore.workQueue);
+        let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
+        vi.spyOn(fixture.admissionStore.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+            const retained = await enqueue(entry);
+            observedMetadata = new Map(fixture.admission.data);
+            pending = true;
+            return retained;
+        });
+        const message = { ...roomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('pending-admission');
+        for (let pass = 0; pass < 4; pass++) {
+            await fixture.engine.executeOnce();
+        }
+        expect(fixture.admission.data).toEqual(observedMetadata);
+        expect(fixture.socket.sent).toEqual([]);
+        expect(fixture.delivered).toEqual([]);
+        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        expect((await fixture.admissionStore.workQueue.getItem(keys[0]))?.status).toBe(reason === 'unauthorized' ? 'COMPLETED' : 'RETRY');
+        if (reason === 'not-yet-in-sync') {
+            const waiting = await fixture.admissionStore.workQueue.getItem(keys[0]);
+            expect(waiting?.dequeueAudit.attempts).toBe(0);
+            expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
+            nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
+            for (let pass = 0; pass < 4; pass++) {
+                await fixture.engine.executeOnce();
+            }
+            const stillWaiting = await fixture.admissionStore.workQueue.getItem(keys[0]);
+            expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
+            expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
+            pending = false;
+            nowMs = stillWaiting!.dequeueAudit.nextTs!.epochMilliseconds;
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.delivered.length;
+            }).toBe(1);
+            expect(fixture.delivered[0].constraints?.expiresAtMs).toBe(message.constraints.expiresAtMs);
         }
     });
 

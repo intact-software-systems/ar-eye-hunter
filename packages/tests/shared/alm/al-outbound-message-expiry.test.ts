@@ -3,14 +3,28 @@ import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultOutboundTestAdmissionStore, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    computeOutboundTestAdmission,
+    createDefaultOutboundTestAdmissionStore,
+    createOutboundCanonicalEntry,
+    createOutboundMessage
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound message expiry', () => {
@@ -31,20 +45,26 @@ describe('outbound message expiry', () => {
         expect(msg.qos?.expiry?.algo).toBe('ttl-only');
         vi.setSystemTime(2_000);
         const store = createDefaultOutboundTestAdmissionStore();
-        const read = await store.readOutgoingMessage(original, () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }));
+        const read = await store.readOutgoingMessage({
+            msg: original,
+            planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 2_000,
             intent: 'enqueue',
             phase: 'immediate',
             options: {}
         });
-        expect(validateALOutboundDispatch(read, candidate).right).toBe(candidate);
+        expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
         expect(await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload)).toBe('committed');
         const [work] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
         expect(work.expireAtTimestamp).toBe(31_000);
-        expect(work.payload).toMatchObject({ msg: JSON.parse(JSON.stringify(msg)), prepared: { message: JSON.stringify(msg) } });
+        expect(work.canonicalMessage).toEqual(JSON.parse(JSON.stringify(msg)));
+        expect(work.payload).toMatchObject({ prepared: { message: JSON.stringify(msg) } });
         expect(JSON.stringify(original)).toBe(before);
     });
 
@@ -73,15 +93,20 @@ describe('outbound message expiry', () => {
         expect(msg.constraints?.expiresAtMs).toBe(1_000 + ttlMs);
     });
 
-    it('returns expiry at commit without installing partial message state or queue work', async () => {
+    it.each([0, 1])('returns expiry at commit without partial state with %s prepared actions', async (preparedCount) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const store = createDefaultOutboundTestAdmissionStore();
         const msg = createOutboundMessage('commit-expiry', { ttlMs: 1_000 });
-        const read = await store.readOutgoingMessage(msg, () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }));
+        const read = await store.readOutgoingMessage({
+            msg: msg,
+            planner: () => ({ msg, persist: true, preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })) }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -90,12 +115,12 @@ describe('outbound message expiry', () => {
         const before = JSON.stringify(candidate);
         vi.setSystemTime(2_000);
         expect(await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload)).toBe('expired');
-        expect(await store.getSentMessage(msg.id.msgId)).toBeUndefined();
+        expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
         expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
         expect(JSON.stringify(candidate)).toBe(before);
     });
 
-    it('rechecks expiry after waiting for the backend without decoding or staging work inside the writer', async () => {
+    it.each([0, 1])('rechecks expiry after waiting for the backend with %s prepared actions', async (preparedCount) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const state = createInMemoryALAdmissionState();
@@ -107,10 +132,15 @@ describe('outbound message expiry', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('held-expiry', { ttlMs: 1_000 });
-        const read = await store.readOutgoingMessage(msg, () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }));
+        const read = await store.readOutgoingMessage({
+            msg: msg,
+            planner: () => ({ msg, persist: true, preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })) }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -140,10 +170,57 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(2_000);
         release.resolve();
         expect(await committed).toBe('expired');
-        expect(decoderObservations).toEqual([false]);
-        expect(await store.getSentMessage(msg.id.msgId)).toBeUndefined();
+        expect(decoderObservations).toEqual(preparedCount === 0 ? [] : [false]);
+        expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
         expect(await backend.workQueue.getAllKeys()).toEqual([]);
         expect(state.data.size).toBe(0);
+    });
+
+    it('retries a conflicting post-deadline acknowledgement cleanup before clearing its retained obligation', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const store = createDefaultOutboundTestAdmissionStore();
+        const message = createOutboundMessage('post-deadline-control', { ttlMs: 10 });
+        const bundle = await computeOutboundTestAdmission(store, message);
+        await store.commitBundle({
+            ...bundle,
+            mutations: [...bundle.mutations, {
+                kind: 'set-pending-ack',
+                snapshot: {
+                    msgId: message.id.msgId,
+                    expectedPeerIds: ['peer-1'],
+                    ackedPeerIds: [],
+                    timeoutMs: 50,
+                    deadlineAtMs: 1_050,
+                    attempts: 0,
+                    maxAttempts: 1
+                }
+            }]
+        }, decodeOutboundTestPayload);
+        const clock = { nowMs: Date.now };
+        const repair = new ALOutboundRepairAdmission({
+            admissionStore: store,
+            clock,
+            decodePreparedMessage: decodeOutboundTestPayload,
+            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
+            planRepairMessage: undefined,
+            dispatchAdmission: new ALOutboundDispatchAdmission({
+                admissionStore: store,
+                clock,
+                decodePreparedMessage: decodeOutboundTestPayload,
+                toOutboxEntry: (msg) => createOutboundCanonicalEntry(store, msg),
+                browserLocks: undefined,
+                diagnostics: undefined
+            })
+        });
+        vi.setSystemTime(1_050);
+        expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
+        const commit = vi.spyOn(store, 'commitBundle').mockResolvedValueOnce('conflict');
+        await expect(repair.handlePendingAckTimeout(message.id.msgId)).rejects.toBeInstanceOf(RetryableConflictError);
+        expect(await store.readPendingAck(message.id.msgId)).toBeDefined();
+        await repair.handlePendingAckTimeout(message.id.msgId);
+        expect(await store.readPendingAck(message.id.msgId)).toBeUndefined();
+        commit.mockRestore();
     });
 
     it('rejects a RESERVED observation without a start timestamp while valid siblings remain claimable', async () => {
@@ -159,10 +236,15 @@ describe('outbound message expiry', () => {
         });
         for (const name of ['malformed', 'valid']) {
             const msg = createOutboundMessage(name);
-            const read = await store.readOutgoingMessage(msg, () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }));
+            const read = await store.readOutgoingMessage({
+                msg: msg,
+                planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
+                observedCanonicalEntry: undefined,
+                intent: 'enqueue'
+            });
             const candidate = computeALOutboundDispatch({
                 read,
-                outboxEntry: undefined,
+                outboxEntry: createOutboundCanonicalEntry(store, read.msg),
                 dispatchAtMs: 1_000,
                 intent: 'enqueue',
                 phase: 'immediate',
@@ -196,17 +278,17 @@ describe('outbound message expiry', () => {
             persist: false,
             preparedMessages: [{ message: JSON.stringify(msg) }]
         };
-        const read = await store.readOutgoingMessage(msg, () => plan);
+        const read = await store.readOutgoingMessage({ msg: msg, planner: () => plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
             options: {}
         });
         const before = JSON.stringify({ read, candidate });
-        expect(validateALOutboundDispatch(read, candidate).right).toBe(candidate);
+        expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
         expect(candidate.status).toBe('accepted');
         expect(candidate.bundle?.durableEffects.map((effect) => effect.expireAtTimestamp)).toEqual([2_000]);
         if (!candidate.bundle) {
@@ -217,10 +299,10 @@ describe('outbound message expiry', () => {
         expect(JSON.stringify({ read, candidate })).toBe(before);
 
         vi.setSystemTime(1_999);
-        expect(await store.getSentMessage(msg.id.msgId)).toBeDefined();
+        expect(await store.readSentMessage(msg.id.msgId)).toBeDefined();
         vi.setSystemTime(2_000);
         expect(await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload)).toEqual([]);
-        expect(await store.getSentMessage(msg.id.msgId)).toBeUndefined();
+        expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
     });
 
     it.each(['enqueue', 'dequeue', 'repair'] as const)('rejects expiry during the admission read before %s can create work', async (intent) => {
@@ -228,24 +310,29 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(1_000);
         const store = createDefaultOutboundTestAdmissionStore();
         const msg = createOutboundMessage('expired-read', { ttlMs: 1_000 });
-        const read = await store.readOutgoingMessage<OutboundTestPayload>(msg, () => ({
+        const read = await store.readOutgoingMessage({
             msg: msg,
-            persist: false,
-            preparedMessages: [{ message: JSON.stringify(msg) }]
-        }));
+            planner: () => ({
+                msg: msg,
+                persist: false,
+                preparedMessages: [{ message: JSON.stringify(msg) }]
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 2_000,
             intent,
             phase: 'immediate',
             options: {}
         });
         expect(candidate).toMatchObject({ status: 'expired', reason: 'Message expired or is too stale', entries: [] });
-        expect(validateALOutboundDispatch(read, candidate).right).toBe(candidate);
+        expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
     });
 
-    it('uses the same expiry for enqueue-outbox work and its QueueBox entry', async () => {
+    it('retains one canonical QueueBox row at its logical deadline before physical expansion', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const store = createDefaultOutboundTestAdmissionStore();
@@ -253,11 +340,16 @@ describe('outbound message expiry', () => {
             ...createOutboundMessage('queued-work', { ttlMs: 10_000 }),
             qos: { expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } }
         };
-        const read = await store.readOutgoingMessage<OutboundTestPayload>(msg, () => ({
+        const read = await store.readOutgoingMessage({
             msg: msg,
-            persist: true,
-            preparedMessages: []
-        }));
+            planner: () => ({
+                msg: msg,
+                persist: true,
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
         const candidate = computeALOutboundDispatch({
             read,
@@ -268,9 +360,9 @@ describe('outbound message expiry', () => {
             options: {}
         });
         expect(entry.audit.expiryTs.epochMilliseconds).toBe(2_000);
-        expect(candidate.bundle?.durableEffects).toHaveLength(1);
-        expect(candidate.bundle?.durableEffects[0]).toMatchObject({ expireAtTimestamp: 2_000, payload: { kind: 'enqueue-outbox', msg, entry } });
-        expect(validateALOutboundDispatch(read, candidate).right).toBe(candidate);
+        expect(candidate.bundle?.durableEffects).toEqual([]);
+        expect(candidate.bundle?.canonicalEntry).toEqual(entry);
+        expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
     });
 
     it.each([undefined, 3_000])('rejects a transport-work deadline of %s that would remove or extend the message bound', async (expireAtTimestamp) => {
@@ -278,14 +370,19 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(1_000);
         const store = createDefaultOutboundTestAdmissionStore();
         const msg = createOutboundMessage('invalid-work-expiry', { ttlMs: 1_000 });
-        const read = await store.readOutgoingMessage<OutboundTestPayload>(msg, () => ({
+        const read = await store.readOutgoingMessage({
             msg: msg,
-            persist: false,
-            preparedMessages: [{ message: JSON.stringify(msg) }]
-        }));
+            planner: () => ({
+                msg: msg,
+                persist: false,
+                preparedMessages: [{ message: JSON.stringify(msg) }]
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: undefined,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -301,6 +398,6 @@ describe('outbound message expiry', () => {
                 durableEffects: candidate.bundle.durableEffects.map((effect) => ({ ...effect, expireAtTimestamp }))
             }
         };
-        expect(validateALOutboundDispatch(read, invalid).left).toMatchObject({ code: 'malformed' });
+        expect(validateALOutboundDispatch(read, invalid).left).toContainEqual(expect.objectContaining({ code: 'malformed' }));
     });
 });

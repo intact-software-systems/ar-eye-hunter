@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import { createBrowserQueueResilience } from '@shared-web/browser/resilience-config.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -15,8 +15,8 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { CircuitBreakerPolicy, toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import {
@@ -73,7 +73,6 @@ export class RtcEndpointFixture {
         vi.spyOn(service, 'readPeer').mockImplementation((id) => this.peers.get(id));
         vi.spyOn(service, 'readyPeerIdsForLane').mockImplementation(() => [...this.peers.keys()]);
         this.multicast = new WebRtcOverlayMulticastManager({
-            outbox: new InMemoryQueueBox(),
             connectionService: service,
             groupCache: this.groups,
             overlayCache: this.overlays,
@@ -130,7 +129,15 @@ export class RtcEndpointFixture {
     private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
         this.received.push(message);
         await this.messageCallbacks.get(senderId)!.receive(message);
-        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createBrowserQueueResilience());
+        const duration = Temporal.Duration.from({ seconds: 10 });
+        const resilience = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+            initialRate: 1,
+            maxRate: 10,
+            concurrencyIncreaseStep: 1,
+            concurrencyReduceStep: 1
+        });
+        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
     }
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {

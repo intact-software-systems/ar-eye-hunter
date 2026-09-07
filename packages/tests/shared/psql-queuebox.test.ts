@@ -2,10 +2,19 @@ import { Temporal } from '@js-temporal/polyfill';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import type { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
 describe('PSqlQueueBox', () => {
@@ -349,6 +358,33 @@ describe('PSqlQueueBox', () => {
                 ?.until(updated.dequeueAudit.nextTs!)
                 .total({ unit: 'milliseconds' })
         ).toBe(37);
+    });
+
+    it('captures the supplied release instant before the transaction while preserving its exact reservation', async () => {
+        const observedAt = Temporal.Instant.from('2025-01-01T00:00:00.123456Z');
+        const entry = {
+            ...createEntry('owned-release-clock', EntityStatus.RESERVED),
+            dequeueAudit: { attempts: 3, startTs: observedAt.subtract({ seconds: 1 }) }
+        };
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (candidate) => candidate.replacement.entry);
+        const repo = createRepo({ releaseReserved });
+        let insideTransaction = false;
+        repo.transaction.mockImplementation(async (operation) => {
+            insideTransaction = true;
+            return await operation(repo);
+        });
+        const queue = new PSqlQueueBox(repo as never, () => {
+            expect(insideTransaction).toBe(false);
+            return observedAt;
+        });
+
+        const result = await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 37 });
+
+        const released = [...result.values()][0];
+        expect(released.dequeueAudit.endTs?.toString()).toBe('2025-01-01T00:00:00.123Z');
+        expect(released.dequeueAudit.nextTs?.toString()).toBe('2025-01-01T00:00:00.16Z');
+        expect(released.dequeueAudit.attempts).toBe(3);
+        expect(releaseReserved.mock.calls[0][0].expected.entry).toEqual(entry);
     });
 
     it('surfaces a typed conflict when a stale PostgreSQL reservation loses release', async () => {

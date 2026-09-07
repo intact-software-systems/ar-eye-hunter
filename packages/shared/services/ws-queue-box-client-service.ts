@@ -19,7 +19,6 @@ import {
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { decodeALOutboundPreparedMessage } from '../alm/outbound/al-outbound-effect-validation.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
@@ -33,6 +32,12 @@ import {
     type ALOutboundSettledSendResult,
     type ALOutboundSupersedenceTrackingPlan
 } from '../alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    reconstructALOutboundTransportMessage,
+    toALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '../alm/outbound/al-outbound-transport-message.ts';
 import { createDefaultALOutboundRuntimeResources } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
@@ -112,7 +117,6 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Dependencies {
-        readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
         readonly qosProvider: ALQosInputProvider | undefined;
@@ -142,7 +146,7 @@ export class WsQueueBoxClientService {
     private readonly onAnyInboxMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
 
     private readonly inboundRuntime: ALInboundMessageRuntime;
-    private readonly outboundRuntime: ALOutboundMessageRuntime<ALMessage>;
+    private readonly outboundRuntime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
     private closed = false;
 
     private readonly reconnectStatus: WsQueueBoxClientService.ReconnectStatus = {
@@ -159,7 +163,7 @@ export class WsQueueBoxClientService {
     private readonly dependencies: WsQueueBoxClientService.Dependencies;
 
     constructor(dependencies: WsQueueBoxClientService.Dependencies) {
-        this.outbox = dependencies.outbox;
+        this.outbox = dependencies.outboundRuntime.admissionStore.workQueue;
         this.socket = dependencies.socket;
         this.sessionId = dependencies.sessionId;
         this.dependencies = dependencies;
@@ -167,13 +171,14 @@ export class WsQueueBoxClientService {
         this.inboundRuntime = this.createInboundRuntime(dependencies.inboundRuntime);
     }
 
-    private createOutboundRuntime(resources: ALOutboundMessageRuntime.Resources): ALOutboundMessageRuntime<ALMessage> {
-        return new ALOutboundMessageRuntime<ALMessage>(
+    private createOutboundRuntime(
+        resources: ALOutboundMessageRuntime.Resources
+    ): ALOutboundMessageRuntime<ALOutboundTransportMessage> {
+        return new ALOutboundMessageRuntime<ALOutboundTransportMessage>(
             {
                 ...resources,
-                decodePreparedMessage: decodeALOutboundPreparedMessage,
+                decodePreparedMessage: decodeALOutboundTransportMessage,
                 diagnostics: this.dependencies.outboundDiagnostics,
-                outbox: this.outbox,
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
@@ -182,9 +187,10 @@ export class WsQueueBoxClientService {
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
                 planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
-                beforeDequeueDispatch: undefined,
+                afterDequeueAdmission: undefined,
                 planRepairMessage: undefined,
-                sendPreparedMessage: async (msg, _phase, lifecycle) => {
+                sendPreparedMessage: async (prepared, _phase, lifecycle) => {
+                    const msg = reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage);
                     return await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(
                             msg,
@@ -215,7 +221,7 @@ export class WsQueueBoxClientService {
         );
     }
 
-    private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALMessage> {
+    private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const socketOpen = this.isSocketOpen();
         const normalizationInput = resolveALQosNormalizationInput(
             msg,
@@ -231,7 +237,7 @@ export class WsQueueBoxClientService {
         return {
             msg: message,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
-            preparedMessages: [message],
+            preparedMessages: [toALOutboundTransportMessage(message)],
             ackTracking: this.toAckTrackingPlan(normalized.effective, msg),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),
             repairTracking: {
@@ -616,7 +622,7 @@ export class WsQueueBoxClientService {
     }
 
     private requireInboxDeliveryTime(entry: ResourceEntry): void {
-        if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+        if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.outboundRuntime.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before consumer delivery');
         }
     }
@@ -650,7 +656,10 @@ export class WsQueueBoxClientService {
         if (this.closed || lifecycle.signal.aborted) {
             return { status: 'cancelled' };
         }
-        if (lifecycle.expiresAtMs !== undefined && Date.now() >= lifecycle.expiresAtMs) {
+        if (
+            lifecycle.expiresAtMs !== undefined &&
+            this.dependencies.outboundRuntime.clock.nowMs() >= lifecycle.expiresAtMs
+        ) {
             return { status: 'expired' };
         }
         return this.isSocketOpen() ? undefined : { status: 'not-ready' };
@@ -711,7 +720,6 @@ export class WsQueueBoxClientService {
 
 export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
     return new WsQueueBoxClientService({
-        outbox: input.outbox,
         socket: input.socket,
         sessionId: input.sessionId,
         qosProvider: input.qosProvider,
@@ -722,6 +730,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            canonicalQueue: input.outbox,
             stores: input.outboundStores,
             queueEngine: input.queueEngine
         }),

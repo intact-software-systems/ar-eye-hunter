@@ -18,7 +18,11 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         'observedAtEpochMs'
     ]);
     return {
-        ackedMsgId: decodeControlIdentifier(record.ackedMsgId, 'ACK message ID'),
+        ackedMsgId: decodeControlIdentifier(
+            record.ackedMsgId,
+            'ACK message ID',
+            AL_MESSAGE_RESOURCE_LIMITS.payloadBytes
+        ),
         fromPeerId: decodeControlIdentifier(record.fromPeerId, 'ACK sender identity'),
         toPeerId: decodeControlIdentifier(record.toPeerId, 'ACK receiver identity'),
         status: decodeAckStatus(record.status),
@@ -117,17 +121,21 @@ function decodeControlRoute(
     label: string
 ): Pick<ALNackPayload, 'msgId' | 'fromPeerId' | 'toPeerId' | 'observedAtEpochMs'> {
     return {
-        msgId: decodeControlIdentifier(record.msgId, `${label} message ID`),
+        msgId: decodeControlIdentifier(record.msgId, `${label} message ID`, AL_MESSAGE_RESOURCE_LIMITS.payloadBytes),
         fromPeerId: decodeControlIdentifier(record.fromPeerId, `${label} sender identity`),
         toPeerId: decodeControlIdentifier(record.toPeerId, `${label} receiver identity`),
         observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, `${label} observation time`)
     };
 }
 
-function decodeControlIdentifier(value: unknown, label: string): string {
+function decodeControlIdentifier(
+    value: unknown,
+    label: string,
+    maximumCharacters: number = AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters
+): string {
     if (
         typeof value !== 'string' || value.length === 0 ||
-        value.length > AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters
+        value.length > maximumCharacters
     ) {
         throw new TypeError(`${label} is invalid`);
     }
@@ -146,7 +154,9 @@ function decodeOptionalIdentifier(
     key: string,
     label: string
 ): Readonly<Record<string, string>> {
-    return Object.hasOwn(record, key) ? { [key]: decodeControlIdentifier(record[key], label) } : {};
+    return Object.hasOwn(record, key)
+        ? { [key]: decodeControlIdentifier(record[key], label, AL_MESSAGE_RESOURCE_LIMITS.payloadBytes) }
+        : {};
 }
 
 function decodeOptionalNumber(

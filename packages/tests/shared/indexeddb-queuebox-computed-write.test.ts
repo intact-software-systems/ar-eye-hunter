@@ -17,9 +17,20 @@ import {
 } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { readStoredQueueEntry } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { ResourceInboxLostReservationError } from '@shared/queuebox/queue-box-types.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    ResourceEntry,
+    toKeyAsString
+} from '@shared/queuebox/ResourceEntry.ts';
 import { writeComputedIndexedDbQueueMutations } from '@shared/queuebox/write-computed-indexed-db-queue-mutations.ts';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 describe('IndexedDbQueueBox computed writes', () => {
     it.each([
@@ -109,17 +120,25 @@ describe('IndexedDbQueueBox computed writes', () => {
         const initial = createEntry('initial');
         const keyString = toKeyAsString(initial.key);
         const initialWrite = computeIndexedDbQueuePut(undefined, initial);
-        await writeComputedIndexedDbQueueMutations(db, storeName, [initialWrite]);
+        await writeComputedIndexedDbQueueMutations({ db: db, storeName: storeName, mutations: [initialWrite] });
 
         const first = createEntry('first');
         const second = createEntry('second');
         const outcomes = await Promise.all([
-            writeComputedIndexedDbQueueMutations(db, storeName, [
-                computeIndexedDbQueuePut(initialWrite.value, first)
-            ]),
-            writeComputedIndexedDbQueueMutations(db, storeName, [
-                computeIndexedDbQueuePut(initialWrite.value, second)
-            ])
+            writeComputedIndexedDbQueueMutations({
+                db: db,
+                storeName: storeName,
+                mutations: [
+                    computeIndexedDbQueuePut(initialWrite.value, first)
+                ]
+            }),
+            writeComputedIndexedDbQueueMutations({
+                db: db,
+                storeName: storeName,
+                mutations: [
+                    computeIndexedDbQueuePut(initialWrite.value, second)
+                ]
+            })
         ]);
 
         expect(outcomes.toSorted()).toEqual([false, true]);
@@ -141,7 +160,7 @@ describe('IndexedDbQueueBox computed writes', () => {
         const secondKey = toKeyAsString(second.key);
         const firstInsert = computeIndexedDbQueuePut(undefined, first);
         const secondInsert = computeIndexedDbQueuePut(undefined, second);
-        await writeComputedIndexedDbQueueMutations(db, storeName, [firstInsert, secondInsert]);
+        await writeComputedIndexedDbQueueMutations({ db: db, storeName: storeName, mutations: [firstInsert, secondInsert] });
 
         const firstUpdate = computeIndexedDbQueuePut(
             firstInsert.value,
@@ -152,17 +171,25 @@ describe('IndexedDbQueueBox computed writes', () => {
             createEntry('changed-second', 'second-row')
         );
         const concurrentSecond = createEntry('concurrent-second', 'second-row');
-        await writeComputedIndexedDbQueueMutations(db, storeName, [
-            computeIndexedDbQueuePut(
-                secondInsert.value,
-                concurrentSecond
-            )
-        ]);
+        await writeComputedIndexedDbQueueMutations({
+            db: db,
+            storeName: storeName,
+            mutations: [
+                computeIndexedDbQueuePut(
+                    secondInsert.value,
+                    concurrentSecond
+                )
+            ]
+        });
 
-        const committed = await writeComputedIndexedDbQueueMutations(db, storeName, [
-            firstUpdate,
-            staleSecondUpdate
-        ]);
+        const committed = await writeComputedIndexedDbQueueMutations({
+            db: db,
+            storeName: storeName,
+            mutations: [
+                firstUpdate,
+                staleSecondUpdate
+            ]
+        });
 
         expect(committed).toBe(false);
         expect((await readStoredQueueEntry(db, storeName, firstKey))?.resource).toBe(first.resource);
@@ -179,7 +206,7 @@ describe('IndexedDbQueueBox computed writes', () => {
         );
         onTestFinished(() => db.close());
         const initial = computeIndexedDbQueuePut(undefined, createEntry('initial'));
-        await writeComputedIndexedDbQueueMutations(db, storeName, [initial]);
+        await writeComputedIndexedDbQueueMutations({ db: db, storeName: storeName, mutations: [initial] });
         const computed = computeIndexedDbQueuePut(initial.value, createEntry('replacement'));
         const transactionImplementation = IDBDatabase.prototype.transaction;
         let writeTransactionOpen = false;
@@ -207,7 +234,7 @@ describe('IndexedDbQueueBox computed writes', () => {
             return parseInstant(value);
         });
         try {
-            await expect(writeComputedIndexedDbQueueMutations(db, storeName, [computed]))
+            await expect(writeComputedIndexedDbQueueMutations({ db: db, storeName: storeName, mutations: [computed] }))
                 .resolves.toBe(true);
         }
         finally {
@@ -233,10 +260,14 @@ describe('IndexedDbQueueBox computed writes', () => {
             }
         });
 
-        await expect(writeComputedIndexedDbQueueMutations(transactionForbidden, storeName, [{
-            ...computed,
-            keyString: toKeyAsString(createEntry('value', 'other-key').key)
-        }])).rejects.toThrow('mutation key differs');
+        await expect(writeComputedIndexedDbQueueMutations({
+            db: transactionForbidden,
+            storeName: storeName,
+            mutations: [{
+                ...computed,
+                keyString: toKeyAsString(createEntry('value', 'other-key').key)
+            }]
+        })).rejects.toThrow('mutation key differs');
     });
 
     it.each(['mutation', 'expected state'] as const)(
@@ -248,7 +279,7 @@ describe('IndexedDbQueueBox computed writes', () => {
                 [{ name: storeName, keyPath: 'keyString' }]
             );
             const initial = computeIndexedDbQueuePut(undefined, createEntry('preserved'));
-            await writeComputedIndexedDbQueueMutations(db, storeName, [initial]);
+            await writeComputedIndexedDbQueueMutations({ db: db, storeName: storeName, mutations: [initial] });
             const next = computeIndexedDbQueuePut(initial.value, createEntry('replacement'));
             const invalid = field === 'mutation'
                 ? { ...next, kind: 'unsupported' as never }
@@ -262,7 +293,7 @@ describe('IndexedDbQueueBox computed writes', () => {
                 }
             });
             try {
-                await expect(writeComputedIndexedDbQueueMutations(transactionForbidden, storeName, [invalid]))
+                await expect(writeComputedIndexedDbQueueMutations({ db: transactionForbidden, storeName: storeName, mutations: [invalid] }))
                     .rejects.toThrow(`queue ${field}`);
                 expect((await readStoredQueueEntry(db, storeName, initial.keyString))?.resource).toBe('preserved');
             }

@@ -16,8 +16,9 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
-import { ALInboundMessageRuntime, validateALInboundMessage } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
@@ -25,6 +26,7 @@ import type {
     ALOutboundSettledSendResult
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import { reconstructALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import { createDefaultALOutboundRuntimeResources } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -79,7 +81,6 @@ export namespace WsQueueBoxServerService {
     }
 
     export interface Dependencies {
-        readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketServer;
         readonly name: string;
         readonly qosProvider: ALQosInputProvider | undefined;
@@ -95,6 +96,7 @@ export namespace WsQueueBoxServerService {
 }
 
 export class WsQueueBoxServerService {
+    private static readonly READINESS_RETRY_AFTER_MS = 50;
     private static readonly ALL_IN: string = '*';
 
     public static readonly OUTBOX_ENQUEUE_TYPE = EnqueuedType.WS_OUTBOX;
@@ -125,13 +127,17 @@ export class WsQueueBoxServerService {
     private readonly forwardsRoomScopedMessages: boolean;
     private inboundAuthorizer: WsServerInboundAuthorizer | undefined;
     private disposed = false;
+    private readonly clock: ALOutboundMessageRuntime.Clock;
+    private readonly newControlId: () => string;
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
 
     constructor(dependencies: WsQueueBoxServerService.Dependencies) {
+        this.clock = dependencies.outboundRuntime.clock;
+        this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
-        this.outbox = dependencies.outbox;
+        this.outbox = dependencies.outboundRuntime.admissionStore.workQueue;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.qosProvider = dependencies.qosProvider;
@@ -168,7 +174,6 @@ export class WsQueueBoxServerService {
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
             diagnostics: dependencies.outboundDiagnostics,
-            outbox: this.outbox,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(
                     message,
@@ -187,14 +192,11 @@ export class WsQueueBoxServerService {
                     'dequeue',
                     this.outboxClusterPublisher !== undefined
                 ),
-            beforeDequeueDispatch: (message, entry) => {
-                const publisher = this.outboxClusterPublisher;
-                if (!publisher) {
-                    return false;
-                }
-                return publisher(message, entry).then(() => message.targets !== undefined);
+            afterDequeueAdmission: async (message, entry) => {
+                await this.outboxClusterPublisher?.(message, entry);
             },
-            sendPreparedMessage: async (prepared) => await this.sendPreparedMessage(prepared),
+            sendPreparedMessage: async (prepared, _phase, lifecycle) =>
+                await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: (message, request) =>
                 Promise.resolve(this.outboundPlanning.planRepairMessage(message, request))
         });
@@ -205,6 +207,7 @@ export class WsQueueBoxServerService {
     ): ALInboundMessageRuntime {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
+            readPendingAdmissionAuthority: (message, source) => this.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.hasInboxConsumer(message),
@@ -416,9 +419,9 @@ export class WsQueueBoxServerService {
             });
         }
         if (authorization.sendNack) {
-            const observedAtEpochMs = Date.now();
+            const observedAtEpochMs = this.clock.nowMs();
             const nack = newALNackControlMessage(
-                { v: 2, msgId: crypto.randomUUID(), senderId: this.name, ts: observedAtEpochMs },
+                { v: 2, msgId: this.newControlId(), senderId: this.name, ts: observedAtEpochMs },
                 {
                     fromPeerId: this.name,
                     toPeerId: message.id.senderId,
@@ -480,7 +483,7 @@ export class WsQueueBoxServerService {
             return authority;
         }
 
-        if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+        if (entry.audit.expiryTs.epochMilliseconds <= this.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired during authorization');
         }
 
@@ -494,14 +497,14 @@ export class WsQueueBoxServerService {
             ? undefined
             : this.onInboxWebSocketMessageCallbacks.get(WsQueueBoxServerService.ALL_IN);
         if (wildcard !== undefined) {
-            if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+            if (entry.audit.expiryTs.epochMilliseconds <= this.clock.nowMs()) {
                 throw new NonRetryableException('Inbound message expired before wildcard delivery');
             }
             await wildcard.onMessage(message, entry, context);
         }
 
         for (const callback of this.onAnyInboxWebSocketMessageCallbacks.values()) {
-            if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+            if (entry.audit.expiryTs.epochMilliseconds <= this.clock.nowMs()) {
                 throw new NonRetryableException('Inbound message expired before observer delivery');
             }
             await callback.onMessage(message, entry, context);
@@ -529,28 +532,33 @@ export class WsQueueBoxServerService {
     }
 
     private async sendPreparedMessage(
-        prepared: WsQueueBoxServerPreparedMessage
+        prepared: WsQueueBoxServerPreparedMessage,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
         if (prepared.kind === 'cluster-local-complete') {
             return { status: 'sent' };
         }
+        const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        if (lifecycle.signal.aborted || this.clock.nowMs() >= (lifecycle.expiresAtMs ?? 0)) {
+            return { status: 'expired' };
+        }
         try {
-            const encoded = this.socket.encode(prepared.message);
+            const encoded = this.socket.encode(message);
             if (!this.socket.connections.get(prepared.connectionId)?.isOpen) {
                 return {
                     status: 'not-ready',
-                    retryAfterMs: 50,
+                    retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS,
                     reason: 'WS connection is not open before native submission'
                 };
             }
             this.socket.sendEncoded(prepared.connectionId, encoded);
             this.deliveryReporting.recordOutcome({
                 status: 'sent',
-                messageId: prepared.message.id.msgId
+                messageId: message.id.msgId
             });
             this.deliveryReporting.recordDiagnostics({
                 kind: 'outbox-send',
-                topicId: prepared.message.route.topicId,
+                topicId: message.route.topicId,
                 payloadBytes: encoded.text.length
             });
             return { status: 'sent' };
@@ -559,7 +567,7 @@ export class WsQueueBoxServerService {
             const runtimeError = error instanceof Error ? error : new Error(String(error));
             this.deliveryReporting.recordOutcome({
                 status: 'retryable-transport-failure',
-                messageId: prepared.message.id.msgId,
+                messageId: message.id.msgId,
                 reason: runtimeError.message
             });
             throw runtimeError;
@@ -576,7 +584,7 @@ export class WsQueueBoxServerService {
             return authority;
         }
         const expiresAtMs = resolveALMessageExpireAtMs(message, plan.effective);
-        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+        if (expiresAtMs !== undefined && expiresAtMs <= this.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before forwarding');
         }
         const nextHopPeerIds = plan.forwarding.nextHopPeerIds
@@ -615,6 +623,31 @@ export class WsQueueBoxServerService {
         return Promise.resolve();
     }
 
+    private async readPendingAdmissionAuthority(
+        message: ALMessage,
+        source: ALInboundMessageRuntime.Source
+    ): Promise<ALInboundMessageRuntime.PendingAuthority> {
+        const authority = await this.readCurrentDispatchAuthority(message);
+        if (typeof authority === 'string') {
+            return authority === 'retry'
+                ? { kind: 'retry', retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS }
+                : { kind: 'rejected' };
+        }
+        if (source.kind !== 'ws-client' || authority.roomRecipientPeerIds === undefined) {
+            return { kind: 'authorized', source };
+        }
+        const captured = source.roomRecipientPeerIds;
+        return {
+            kind: 'authorized',
+            source: {
+                ...source,
+                roomRecipientPeerIds: authority.roomRecipientPeerIds.filter((peerId) =>
+                    captured === undefined || captured.includes(peerId)
+                )
+            }
+        };
+    }
+
     private async readCurrentDispatchAuthority(
         message: ALMessage
     ): Promise<Extract<WsServerInboundAuthorization, { authorized: true; }> | 'completed' | 'retry'> {
@@ -642,7 +675,6 @@ export class WsQueueBoxServerService {
 
 export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerService.Input): WsQueueBoxServerService {
     return new WsQueueBoxServerService({
-        outbox: input.outbox,
         socket: input.socket,
         name: input.name,
         qosProvider: input.qosProvider,
@@ -654,6 +686,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            canonicalQueue: input.outbox,
             stores: input.outboundStores,
             queueEngine: input.queueEngine
         }),

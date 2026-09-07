@@ -1,6 +1,11 @@
 import '../../setup-browser-indexeddb.ts';
 
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -185,7 +190,7 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : storage === 'indexeddb'
-        ? new IndexedDbAdmissionBackend(namespace, 'admission', Date.now)
+        ? new IndexedDbAdmissionBackend({ dbName: namespace, storeName: 'admission', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) })
         : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace);
     return createALInboundAdmissionStore({
         namespace,
@@ -232,6 +237,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
 
 function readEffectFacts(message: ALMessage, nowMs: number) {
     return readALInboundEffectFacts(message, nowMs, {
+        newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
     });

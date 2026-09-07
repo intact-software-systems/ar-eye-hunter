@@ -256,12 +256,12 @@ describe('PSql admission optimistic retry', () => {
         const result = await runtime.enqueueIfAbsent(message);
         expect(events).toEqual(['planner-read', 'candidate-read', 'injected-version']);
         expect(result).toMatchObject({ status: 'failed', reason: 'Outbound commit conflict', message, entries: [] });
-        expect(await stores.admissionStore.getSentMessage(message.id.msgId)).toBeUndefined();
+        expect(await stores.admissionStore.readSentMessage(message.id.msgId)).toBeUndefined();
         expect(await stores.admissionStore.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
         expect(await outbox.getAllKeys()).toEqual([]);
         const fresh = await runtime.enqueueIfAbsent(message);
         expect(fresh.status).toBe('enqueued');
-        expect(await stores.admissionStore.getSentMessage(message.id.msgId)).toMatchObject({ msg: JSON.parse(JSON.stringify(message)) });
+        expect(await stores.admissionStore.readSentMessage(message.id.msgId)).toMatchObject({ msg: JSON.parse(JSON.stringify(message)) });
         expect(await outbox.getAllKeys()).toHaveLength(1);
     });
 });

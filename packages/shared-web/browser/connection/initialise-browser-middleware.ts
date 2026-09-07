@@ -1,6 +1,5 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -8,6 +7,7 @@ import type {
     IceConfig,
     RttMeasurementInfo
 } from '@shared/api/api-config.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -40,11 +40,9 @@ import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-r
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import { createBrowserQueueResilience } from '../resilience-config.ts';
 
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -201,9 +199,6 @@ function initialiseBrowserRuntimeStores(sessionId: string): void {
     initBrowserALRuntimeExpiryEviction().catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
-    initBrowserQueueBoxExpiryEviction().catch((error) =>
-        console.error('Failed to initialise browser queuebox expiry eviction:', toError(error))
-    );
 }
 
 async function initialiseBrowserWebSocketTransport(
@@ -219,7 +214,6 @@ async function initialiseBrowserWebSocketTransport(
         qboxEngine,
         socket,
         clientData: input.clientData,
-        resilience: createBrowserQueueResilience(),
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
@@ -272,7 +266,6 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcConnectionService,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            resilience: createBrowserQueueResilience(),
             outboundDiagnostics: input.options.outboundDiagnostics
         }
     );

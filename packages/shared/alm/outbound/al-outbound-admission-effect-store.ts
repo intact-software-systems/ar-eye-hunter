@@ -1,17 +1,22 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     ResourceInboxLostReservationError,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxWorkPage
 } from '../../queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
-import { EntityStatus, NEW_AND_RETRY_STATUSES, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEW_AND_RETRY_STATUSES,
+    type ResourceEntry
+} from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
-import { Either } from '../../resilience/Either.ts';
-import { toError } from '../../resilience/to-error.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
@@ -22,10 +27,18 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
 import {
+    captureALOutboundCreationExpiry,
+    decodeALOutboundCanonicalMessage,
+    decodeALOutboundMessageReference,
+    toALOutboundIdentityEntry,
+    toALOutboundIdentityKey,
+    type ALOutboundMessageReference
+} from './al-outbound-canonical-message.ts';
+import { decodeALOutboundEffectPayload } from './al-outbound-effect-validation.ts';
+import {
     AL_OUTBOUND_WORK_LEASE_MS,
     computeALOutboundWorkEntry,
     decodeALOutboundWorkEntry,
-    isPendingALOutboundWork,
     resolveALOutboundWorkReadyAt,
     toALOutboundWorkKey,
     toALOutboundWorkType
@@ -34,6 +47,8 @@ import {
 export interface ALOutboundEffectObservation<TPrepared> {
     readonly effect: ALOutboundDurableEffectWrite<TPrepared>;
     readonly existing: ResourceEntry | undefined;
+    readonly message: ALMessage | undefined;
+    readonly existingPayload: ALOutboundEffectSnapshot<TPrepared>['payload'] | undefined;
 }
 
 export interface ALOutboundEffectCandidate<TPrepared> {
@@ -53,14 +68,18 @@ export interface RescheduleALOutboundEffectInput {
 }
 
 export interface CreateALOutboundAdmissionEffectStoreInput {
+    readonly nowMs: () => number;
     readonly backend: ALAdmissionWorkBackend;
     readonly namespace: string;
+    readonly canonicalScope: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 }
 
 export class ALOutboundAdmissionEffectStore {
     private readonly backend: ALAdmissionWorkBackend;
+    private readonly nowMs: () => number;
     private readonly namespace: string;
+    private readonly canonicalScope: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private reservationCursor: ResourceInboxWorkPage.Cursor | null = null;
     private readonly scanCursors = new Map<string, ResourceInboxWorkPage.Cursor | null>();
@@ -68,17 +87,29 @@ export class ALOutboundAdmissionEffectStore {
 
     constructor(input: CreateALOutboundAdmissionEffectStoreInput) {
         this.backend = input.backend;
+        this.nowMs = input.nowMs;
         this.namespace = input.namespace;
+        this.canonicalScope = input.canonicalScope;
         this.retention = input.retention;
     }
 
     async readEffects<TPrepared>(
-        effects: readonly ALOutboundDurableEffectWrite<TPrepared>[]
+        effects: readonly ALOutboundDurableEffectWrite<TPrepared>[],
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>,
+        canonicalEntry?: ResourceEntry
     ): Promise<readonly ALOutboundEffectObservation<TPrepared>[]> {
-        return await Promise.all(effects.map(async (effect) => ({
-            effect,
-            existing: await this.backend.workQueue.getItem(toALOutboundWorkKey(this.namespace, effect.effectId))
-        })));
+        return await Promise.all(effects.map(async (effect) => {
+            const message = (effect.payload.kind === 'send-prepared' || effect.payload.kind === 'admit-message')
+                ? await this.readReferencedMessage(effect.payload.message, canonicalEntry)
+                : undefined;
+            const existing = await this.backend.workQueue.getItem(toALOutboundWorkKey(this.namespace, effect.effectId));
+            const preparedRead = { decodePrepared, message };
+            decodeALOutboundEffectPayload(effect.payload, effect.effectId, preparedRead);
+            const existingPayload = existing
+                ? decodeALOutboundWorkEntry(existing, this.namespace, preparedRead).payload
+                : undefined;
+            return { effect, message, existing, existingPayload };
+        }));
     }
 
     computeEffects<TPrepared>(
@@ -87,15 +118,15 @@ export class ALOutboundAdmissionEffectStore {
     ): readonly ALOutboundEffectCandidate<TPrepared>[] {
         return observations.map((read) => ({
             read,
-            write: read.existing === undefined || !isPendingALOutboundWork(read.existing),
+            write: read.existing === undefined,
             entry: computeALOutboundWorkEntry({
                 namespace: this.namespace,
                 effectId: read.effect.effectId,
                 payload: read.effect.payload,
                 observedAtMs,
                 expireAtTimestamp: read.effect.expireAtTimestamp ??
-                    ('msg' in read.effect.payload
-                        ? resolveALMessageExpireAtMs(read.effect.payload.msg) ?? observedAtMs
+                    ((read.effect.payload.kind === 'send-prepared' || read.effect.payload.kind === 'admit-message')
+                        ? read.effect.payload.message.expiresAtMs
                         : observedAtMs + this.retention.durableEffectTtlMs),
                 retryAtMs: read.effect.retryAtMs ?? observedAtMs
             })
@@ -103,21 +134,21 @@ export class ALOutboundAdmissionEffectStore {
     }
 
     validateEffects<TPrepared>(
-        candidates: readonly ALOutboundEffectCandidate<TPrepared>[],
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Either<Error, readonly ALOutboundEffectCandidate<TPrepared>[]> {
-        try {
-            for (const candidate of candidates) {
-                decodeALOutboundWorkEntry(candidate.entry, this.namespace, decodePrepared);
-                if (candidate.read.existing !== undefined) {
-                    decodeALOutboundWorkEntry(candidate.read.existing, this.namespace, decodePrepared);
-                }
+        candidates: readonly ALOutboundEffectCandidate<TPrepared>[]
+    ): readonly Error[] {
+        const issues: Error[] = [];
+        for (const candidate of candidates) {
+            if (
+                candidate.read.existingPayload &&
+                !jsonEquals(candidate.read.existingPayload, candidate.read.effect.payload)
+            ) {
+                issues.push(new TypeError('Outbound action identity has conflicting content'));
             }
-            return Either.ofRight(candidates);
+            if (candidate.entry.audit.expiryTs.epochMilliseconds <= 0) {
+                issues.push(new TypeError('Outbound action deadline is invalid'));
+            }
         }
-        catch (error) {
-            return Either.ofLeft(toError(error));
-        }
+        return issues;
     }
 
     async assertObservations<TPrepared>(
@@ -199,21 +230,82 @@ export class ALOutboundAdmissionEffectStore {
         entry: ResourceEntry,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<ALClaimedOutboundEffect<TPrepared> | undefined> {
+        if (entry.audit.expiryTs.epochMilliseconds <= this.nowMs()) {
+            await this.releaseEffect(entry, { status: EntityStatus.COMPLETED, delayMs: null });
+            return undefined;
+        }
         let effect: ALOutboundEffectSnapshot<TPrepared>;
         try {
-            effect = decodeALOutboundWorkEntry(entry, this.namespace, decodePrepared);
+            effect = decodeALOutboundWorkEntry(entry, this.namespace, {
+                decodePrepared,
+                message: await this.readCanonicalMessage(entry)
+            });
         }
         catch (error) {
-            if (!(error instanceof ALAdmissionCorruptionError)) {
+            if (
+                !(error instanceof ALAdmissionCorruptionError) && !(error instanceof TypeError) &&
+                !(error instanceof SyntaxError)
+            ) {
                 throw error;
             }
-            await this.releaseEffect(entry, { status: EntityStatus.NON_RETRYABLE, delayMs: null });
+            await this.releaseEffect(entry, {
+                status: entry.audit.expiryTs.epochMilliseconds <= this.nowMs()
+                    ? EntityStatus.COMPLETED
+                    : EntityStatus.NON_RETRYABLE,
+                delayMs: null
+            });
+            return undefined;
+        }
+        if (entry.audit.expiryTs.epochMilliseconds <= this.nowMs()) {
+            await this.releaseEffect(entry, { status: EntityStatus.COMPLETED, delayMs: null });
             return undefined;
         }
         if (entry.status !== EntityStatus.RESERVED || effect.leaseUntilMs === undefined) {
             throw new TypeError('Outbound work requires a complete QueueBox reservation');
         }
         return { ...effect, leaseUntilMs: effect.leaseUntilMs };
+    }
+
+    private async readCanonicalMessage(entry: ResourceEntry): Promise<ALMessage | undefined> {
+        const stored = decodeALAdmissionRecord(JSON.parse(entry.resource), ['namespace', 'effectId', 'payload']);
+        const payload = decodeALAdmissionRecord(stored.payload, ['kind'], [
+            'message',
+            'prepared',
+            'preparedFingerprint',
+            'attemptIdentity',
+            'phase',
+            'msgId',
+            'request',
+            'reason',
+            'policy',
+            'preparedMessages'
+        ]);
+        if (payload.kind !== 'send-prepared' && payload.kind !== 'admit-message') {
+            return undefined;
+        }
+        const reference = decodeALOutboundMessageReference(payload.message);
+        return await this.readReferencedMessage(reference);
+    }
+
+    private async readReferencedMessage(
+        reference: ALOutboundMessageReference,
+        candidate?: ResourceEntry
+    ): Promise<ALMessage> {
+        if (reference.scope !== this.canonicalScope) {
+            throw new ALAdmissionCorruptionError(
+                JSON.stringify(reference.key),
+                new TypeError('Outbound reference belongs to another local scope')
+            );
+        }
+        const canonical = candidate ?? await this.backend.workQueue.getItem(reference.key);
+        const identity = candidate
+            ? toALOutboundIdentityEntry(
+                reference,
+                candidate,
+                captureALOutboundCreationExpiry(decodePersistedALMessage(candidate.resource))
+            )
+            : await this.backend.workQueue.getItem(toALOutboundIdentityKey(reference.key));
+        return decodeALOutboundCanonicalMessage(reference, canonical, identity);
     }
 
     async rejectEffect(reservation: ResourceEntry): Promise<void> {
@@ -235,7 +327,7 @@ export class ALOutboundAdmissionEffectStore {
                 ? { status: EntityStatus.FAILED, delayMs: null }
                 : {
                     status: EntityStatus.RETRY,
-                    delayMs: Math.max(1, Math.ceil(input.retryAtMs - Date.now())),
+                    delayMs: Math.max(1, Math.ceil(input.retryAtMs - this.nowMs())),
                     reason: input.reason
                 };
         await this.releaseEffect(input.reservation, disposition);
@@ -258,7 +350,7 @@ export class ALOutboundAdmissionEffectStore {
 
     async peekNextReadyAt(): Promise<number | undefined> {
         const statuses = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED];
-        const nowMs = Date.now();
+        const nowMs = this.nowMs();
         let continueScan = false;
         for (const status of statuses) {
             const page = await this.backend.workQueue.readWorkPage({

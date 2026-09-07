@@ -559,7 +559,7 @@ test establishes only its existing assertions, not the entire row.
   [PostgreSQL validated reads](../../packages/tests/shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.test.ts).
 - **E5 — browser lifetime:** [AL cleanup](../../packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-validation.test.ts),
   [scope ownership](../../packages/tests/shared-web/al-runtime/browser-al-runtime-ownership.test.ts),
-  [QueueBox persistence](../../packages/tests/shared-web/queuebox/browser-queuebox-persistence.test.ts), and
+  [canonical outbound cleanup](../../packages/tests/shared-web/al-runtime/browser-outbound-cleanup.test.ts), and
   [effect-worker lifecycle](../../packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts).
 - **E6 — browser workload:** [three-browser RTC](../../tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts)
   and the [RTC benchmark catalog](../../packages/shared-rtc-bench/README.md).
@@ -619,6 +619,11 @@ test establishes only its existing assertions, not the entire row.
    multi-tab behavior.
 3. **Transport conformance:** run the same logical scenarios through RTC and WS, including direct
    delivery, three-peer relay, complete audience receipts, and cross-carrier duplicate arrival.
+   Distinguish the logical audience from the initial transport fanout. The current typed
+   `messages.rtc` API constructs room messages; `nextHopPeerIds` chooses entry peers, not a fixed
+   recipient list. Its one-entry-peer browser case must require delivery to the other room
+   member through relay. Keep direct realtime recipient checks strict. Do not claim typed
+   unicast or fixed-audience coverage from that room workload.
 4. **Browser workflows:** operate visible controls and verify delivery state, reconnect,
    cancellation, room changes, and session cleanup. Extend the existing three-browser suite.
 5. **Package validation:** affected shared/browser/server typechecks, public API snapshots,
@@ -716,9 +721,21 @@ While the first release remains open, finish its storage/retry corrections, full
 review, and selected release checks. In particular, verify first-admission contention recovery,
 current authority on replay, expiry after asynchronous reads/writes, signaling failure propagation,
 server queue activation, restart, and cleanup through the real owners. Run the unchanged
-three-browser workload and required storage/package/PostgreSQL/performance checks against the
-final candidate. Inspect actual results and their source/workload scope; a historical passing
-checkpoint or an artifact named `green` does not prove the current release passes.
+three-browser send workload with audience-correct delivery assertions, plus the required
+storage/package/PostgreSQL/performance checks against the final candidate. Preserve the receiver
+NACK, closed-send, artifact, and cleanup checks. The room case requires relay progress rather than
+treating a next-hop hint as a recipient restriction. Inspect actual results and their
+source/workload scope; a historical passing checkpoint or an artifact named `green` does not
+prove the current release passes.
+
+Release acceptance also covers the directly affected HTTP control-observation decoder and WS
+report contracts, owned clocks in the existing queue/auth and black-box execution adapters, and
+malformed performance-artifact rejection before derived calculations. Invalid measurements must
+retain precise field errors through both artifact validation and baseline/candidate comparison.
+These are review and acceptance repairs for this release, not new ALM capabilities. Complete
+their focused regressions and full affected-file review before the final package, browser,
+PostgreSQL, and comparative performance gates. Keep current command results and publication
+status in the PR.
 
 After merge, use the merged source as the starting point for a new branch and PR. Reassess the
 next useful delivery/receipt capability from current code, keeping only two slices concrete.

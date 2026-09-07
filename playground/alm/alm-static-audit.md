@@ -257,7 +257,7 @@ and hard work bounds, not merely small returned batches.
 **Status:** Original upgrade/never-cleaned-store claim superseded.
 **Severity:** Medium. **Confidence:** Proven from code; abandoned-session cost needs measurement.
 
-[Browser QueueBox persistence](../../packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
+[Browser QueueBox persistence at the reviewed revision](https://github.com/intact-software-systems/ar-eye-hunter/blob/02d65ac4a458b98b92ebda22cf3ff84041027eb9/packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
 creates a database per session queue. [Session termination](../../packages/shared-web/browser/session/session-auth-lifecycle.ts)
 calls `deleteBrowserQueueBoxDatabasesForSession` for its four queue databases.
 [Database opening](../../packages/shared/persistence/open-indexed-db.ts) creates the initial
@@ -265,7 +265,8 @@ schema and rejects incompatible existing schemas; it no longer adds session stor
 upgrades. Periodic cleanup enumerates remaining queue databases.
 
 **Correction and proof:** bound database count and cleanup cost, including abandoned sessions
-and blocked deletion. Reuse the inspected [session-deletion tests](../../packages/tests/shared-web/queuebox/browser-queuebox-persistence.test.ts).
+and blocked deletion. The inspected [session-deletion tests at that revision](https://github.com/intact-software-systems/ar-eye-hunter/blob/02d65ac4a458b98b92ebda22cf3ff84041027eb9/packages/tests/shared-web/queuebox/browser-queuebox-persistence.test.ts)
+record the baseline behavior; the roadmap links to maintained cleanup coverage.
 The future fixed schema uses a coordinated explicit reset. Do not add silent schema rewrites
 or assume normal sign-out proves crash cleanup.
 

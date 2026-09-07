@@ -3,14 +3,20 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import { createDefaultOutboundTestRuntime, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound admission observation order', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('rejects a stale same-message enqueue using the version captured before its sent-state read', async () => {
+    it('keeps the raced normal admission authoritative while recovering its stale same-message enqueue', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
             namespace: 'read-race',
@@ -58,16 +64,27 @@ describe('outbound admission observation order', () => {
             options: {},
             planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
         });
-        const winningSnapshot = await store.getSentMessage(message.id.msgId);
+        const winningSnapshot = await store.readSentMessage(message.id.msgId);
         resume.resolve();
         const rejected = await pending;
         expect(won.committed).toBe(true);
         expect(rejected.committed).toBe(false);
-        expect(rejected.computed.reason).toBe('Outbound commit conflict');
-        expect(await store.getSentMessage(message.id.msgId)).toEqual(winningSnapshot);
+        expect(rejected.computed.status).toBe('pending-admission');
+        expect(await store.readSentMessage(message.id.msgId)).toEqual(winningSnapshot);
         expect(winningSnapshot?.outboxKey).toBeDefined();
-        const work = await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload);
-        expect(work.map((entry) => entry.payload.kind)).toEqual(['enqueue-outbox']);
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore: store },
+            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'changed' }] }),
+            sendPreparedMessage: async () => {
+                sent.push('sent');
+                return { status: 'sent' };
+            }
+        });
+        await runtime.ready();
+        expect(sent).toEqual([]);
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await store.workQueue.getItem(winningSnapshot!.outboxKey!)).toMatchObject({ status: 'NEW' });
         stale.dispose();
         winner.dispose();
     });

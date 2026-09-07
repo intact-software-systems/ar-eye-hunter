@@ -1,5 +1,12 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
@@ -20,7 +27,6 @@ import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
     enqueueOutboundOrThrow,
-    firstValue,
     reserveOutbox,
     waitUntil
 } from './alm/outbound-runtime-test-fixture.ts';
@@ -48,13 +54,13 @@ describe('ALOutboundMessageRuntime', () => {
             queueEngine,
             ownsQueueEngine: false,
             browserLocks: undefined,
-            outbox: new InMemoryQueueBox(new Map()),
+            random: () => 0,
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
             planDequeuedMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
-            beforeDequeueDispatch: undefined,
+            afterDequeueAdmission: undefined,
             planRepairMessage: undefined,
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared.resourceId);
@@ -150,7 +156,7 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('returns accepted with no entries for immediate prepared dispatch', async () => {
+    it('returns accepted with a retained canonical fact for immediate prepared dispatch', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const sent: Array<OutboundTestPayload> = [];
         const runtime = createDefaultOutboundTestRuntime({
@@ -171,7 +177,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(msg);
 
         expect(result.status).toBe('accepted');
-        expect(result.entries).toEqual([]);
+        expect(result.entries).toMatchObject([{ status: EntityStatus.COMPLETED }]);
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
@@ -205,7 +211,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
         const plan = (msg: ALMessage) => ({ msg: msg, persist: false, preparedMessages: [] });
-        const beforeAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
+        const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         await runtime.acceptControlMessage(newALAckControlMessage(
             { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
             {
@@ -216,12 +222,17 @@ describe('ALOutboundMessageRuntime', () => {
                 observedAtEpochMs: 1
             }
         ));
-        const afterAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
+        const afterAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(afterAck.clientRecord?.senderId).toBe('self');
         expect(afterAck.clientRecord).not.toEqual(beforeAck.clientRecord);
 
         vi.setSystemTime(new Date('2026-01-01T00:00:15.000Z'));
-        const beforeLateAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
+        const beforeLateAck = await admissionStore.readOutgoingMessage({
+            msg: nextMessage,
+            planner: plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         await runtime.acceptControlMessage(newALAckControlMessage(
             { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
             {
@@ -232,7 +243,12 @@ describe('ALOutboundMessageRuntime', () => {
                 observedAtEpochMs: 2
             }
         ));
-        const afterLateAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
+        const afterLateAck = await admissionStore.readOutgoingMessage({
+            msg: nextMessage,
+            planner: plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         expect(afterLateAck.clientRecord).toEqual(beforeLateAck.clientRecord);
         runtime.dispose();
     });
@@ -510,7 +526,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(result.status).toBe('enqueued');
         expect(result.entries).toHaveLength(1);
-        expect(result.entries[0]?.key.resourceId).toBe('msg-persisted');
+        expect(result.entries[0]?.key.topicId).toBe('AL_OUTBOUND_MESSAGE');
         const stored = await reserveOutbox(outbox);
         expect(stored).toHaveLength(1);
         expect(decodePersistedALMessage(stored[0]?.resource ?? '')).toMatchObject({
@@ -539,7 +555,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(first.status).toBe('enqueued');
         expect(second.status).toBe('duplicate');
-        expect(second.entry?.key.resourceId).toBe('msg-duplicate');
+        expect(second.entry?.key).toEqual(first.entry?.key);
         expect(second.entries).toHaveLength(1);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
         runtime.dispose();
@@ -805,7 +821,7 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('can re-enter the outbox for a not-yet-in-sync retry when planning requires durability', async () => {
+    it('admits a durable prepared attempt for a not-yet-in-sync retry without reopening the canonical fact', async () => {
         vi.useFakeTimers();
 
         const outbox = new InMemoryQueueBox(new Map());
@@ -824,7 +840,7 @@ describe('ALOutboundMessageRuntime', () => {
                     ? {
                         msg: msg,
                         persist: true,
-                        preparedMessages: [],
+                        preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
                             enabled: true,
                             maxAttempts: 2,
@@ -861,13 +877,10 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(msg.id.msgId);
+        expect(await reserveOutbox(outbox)).toEqual([]);
         runtime.dispose();
     });
 
@@ -988,7 +1001,7 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('reuses the prior outbox key when supersedence replaces a persisted message', async () => {
+    it('retains immutable message rows while supersedence skips the older physical attempt', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
@@ -1037,14 +1050,13 @@ describe('ALOutboundMessageRuntime', () => {
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, first);
         const [secondEntry] = await enqueueOutboundOrThrow(runtime, second);
 
-        expect(secondEntry.key).toEqual(firstEntry.key);
+        expect(secondEntry.key).not.toEqual(firstEntry.key);
 
         const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(second.id.msgId);
+        expect(reserved.size).toBe(2);
+        expect([...reserved.values()].map((entry) => decodePersistedALMessage(entry.resource).id.msgId).sort())
+            .toEqual([first.id.msgId, second.id.msgId].sort());
     });
 
     it('serializes concurrent supersedence enqueues through the versioned sender record', async () => {
@@ -1113,10 +1125,9 @@ describe('ALOutboundMessageRuntime', () => {
         ]);
 
         const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(second.id.msgId);
+        expect(reserved.size).toBe(2);
+        expect([...reserved.values()].map((entry) => decodePersistedALMessage(entry.resource).id.msgId).sort())
+            .toEqual([first.id.msgId, second.id.msgId].sort());
     });
 
     it('does not miss acknowledgements that arrive while the send effect is running', async () => {
@@ -1219,11 +1230,15 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('persists repair dispatches when the repair planner requests outbox durability', async () => {
+    it('dispatches durable prepared repair work while retaining one completed canonical payload', async () => {
         const outbox = new InMemoryQueueBox(new Map());
+        const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.msgId));
+                return { status: 'sent' as const };
+            },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 persist: false,
@@ -1237,7 +1252,7 @@ describe('ALOutboundMessageRuntime', () => {
             planRepairMessage: async (msg) => ({
                 msg: msg,
                 persist: true,
-                preparedMessages: []
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
         const msg = createOutboundMessage('msg-persisted-repair');
@@ -1256,11 +1271,8 @@ describe('ALOutboundMessageRuntime', () => {
             )
         );
 
-        await expect.poll(() => outbox.getItem(msg.route)).toBeDefined();
-        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(msg.id.msgId);
+        await expect.poll(() => sent.length).toBe(2);
+        expect(sent).toEqual([msg.id.msgId, msg.id.msgId]);
+        expect(await reserveOutbox(outbox)).toEqual([]);
     });
 });

@@ -1,3 +1,4 @@
+import { computeOutboundTestAdmission } from './alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 
 import {
@@ -404,11 +405,11 @@ describe('IndexedDB AL runtime stores', () => {
         const msg = createOutboundUnicastMessage('msg-outbound-default-retention');
 
         await enqueueOutboundOrThrow(runtime, msg);
-        expect(await admissionStore.getSentMessage(msg.id.msgId)).toBeDefined();
+        expect(await admissionStore.readSentMessage(msg.id.msgId)).toBeDefined();
 
         await vi.advanceTimersByTimeAsync(30_000);
 
-        expect(await admissionStore.getSentMessage(msg.id.msgId)).toBeUndefined();
+        expect(await admissionStore.readSentMessage(msg.id.msgId)).toBeUndefined();
         runtime.dispose();
     });
 
@@ -431,32 +432,11 @@ describe('IndexedDB AL runtime stores', () => {
         const msg = createOutboundUnicastMessage('msg-outbound-ephemeral-retention');
         const planner = createOutboundPlanner();
 
+        const bundle = await computeOutboundTestAdmission(admissionStore, msg);
         expect(
             await admissionStore.commitBundle({
-                senderId: msg.id.senderId,
-                expectedVersion: undefined,
-                mutations: [
-                    {
-                        kind: 'set-msg-owner',
-                        msgId: msg.id.msgId,
-                        senderId: msg.id.senderId
-                    },
-                    {
-                        kind: 'set-sent-message',
-                        snapshot: {
-                            msgId: msg.id.msgId,
-                            msg
-                        }
-                    },
-                    {
-                        kind: 'set-repair-attempt',
-                        snapshot: {
-                            msgId: msg.id.msgId,
-                            attempts: 1
-                        }
-                    }
-                ],
-                durableEffects: []
+                ...bundle,
+                mutations: [...bundle.mutations, { kind: 'set-repair-attempt', snapshot: { msgId: msg.id.msgId, attempts: 1 } }]
             }, decodeOutboundTestPayload)
         ).toBe('committed');
 
@@ -474,14 +454,14 @@ describe('IndexedDB AL runtime stores', () => {
             decodeOutboundTestPayload
         );
 
-        const beforeExpiry = await admissionStore.readOutgoingMessage(msg, planner);
+        const beforeExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(beforeExpiry.sentSnapshot).toBeDefined();
         expect(beforeExpiry.repairAttempt?.attempts).toBe(1);
         expect(beforeExpiry.nacks).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(21);
 
-        const afterExpiry = await admissionStore.readOutgoingMessage(msg, planner);
+        const afterExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(afterExpiry.sentSnapshot).toBeDefined();
         expect(afterExpiry.repairAttempt).toBeUndefined();
         expect(afterExpiry.nacks).toEqual([]);

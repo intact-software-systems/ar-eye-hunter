@@ -1,7 +1,13 @@
 import '../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
@@ -19,7 +25,11 @@ import {
 import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
 import { computeIndexedDbQueuePut } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 const admissionStore = 'admission';
 
@@ -267,7 +277,12 @@ interface AdmissionQueueStorage {
 function createWorkBackend(storage: 'memory' | 'indexeddb'): ALAdmissionWorkBackend {
     return storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
-        : new IndexedDbAdmissionBackend(`backend-work-${crypto.randomUUID()}`, admissionStore, Date.now);
+        : new IndexedDbAdmissionBackend({
+            dbName: `backend-work-${crypto.randomUUID()}`,
+            storeName: admissionStore,
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto)
+        });
 }
 
 async function createStorage(): Promise<AdmissionQueueStorage> {

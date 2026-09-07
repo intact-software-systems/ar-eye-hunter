@@ -35,7 +35,7 @@ export async function readALInboundWorkSelection(
                 continue;
             }
             const effect = decodeALInboundWorkEntry(entry, input.namespace);
-            if (await delivery.readReadiness(effect, input.nowMs)) {
+            if (effect.payload.kind === 'admit-message' || await delivery.readReadiness(effect, input.nowMs)) {
                 entries.push(entry);
             }
         }

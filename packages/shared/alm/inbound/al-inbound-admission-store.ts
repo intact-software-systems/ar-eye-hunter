@@ -15,6 +15,10 @@ import type {
     ALReadyable
 } from '../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import {
+    PersistenceWriteExpiredError,
+    requireLivePersistenceWrite
+} from '../../persistence/persistence-write-deadline.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
@@ -44,6 +48,7 @@ import {
     decodeALInboundOrderingSnapshot,
     type ALInboundOrderedDeliverySnapshot
 } from './al-inbound-ordering-validation.ts';
+import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import type { ALInboundPlannerSnapshot } from './al-inbound-planner-snapshot.ts';
 import {
     decodeALInboundControlOwnerIndex,
@@ -267,6 +272,7 @@ export interface ALInboundWriteRequest {
 }
 
 export type ALInboundDurableEffect =
+    | ALInboundPendingAdmission
     | Readonly<{
         kind: 'dispatch-local';
         entry: ResourceEntry;
@@ -305,6 +311,8 @@ export interface ALPersistedInboundEffect {
 }
 
 export interface ALInboundCommitBundle {
+    /** Original data-admission eligibility; null identifies later control/finalization bookkeeping. */
+    readonly admissionExpiresAtMs: number | null;
     readonly senderId: string;
     readonly observations: ALInboundAdmissionObservations;
     readonly mutations: readonly ALInboundAdmissionMutation[];
@@ -312,6 +320,8 @@ export interface ALInboundCommitBundle {
 }
 
 export interface CreateALInboundAdmissionStoreInput {
+    readonly newControlId?: () => string;
+    readonly nowMs?: () => number;
     readonly namespace: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly orderingTrackTtlMs: number;
@@ -332,11 +342,11 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 
     commitMutations(
         request: ALInboundWriteRequest
-    ): Promise<'committed' | 'conflict'>;
+    ): Promise<'committed' | 'conflict' | 'expired'>;
 
     commitBundle(
         bundle: ALInboundCommitBundle
-    ): Promise<'committed' | 'conflict'>;
+    ): Promise<'committed' | 'conflict' | 'expired'>;
 
     claimReadyEffects(input: ClaimALInboundEffectsInput): Promise<readonly ALPersistedInboundEffect[]>;
 
@@ -362,6 +372,7 @@ export interface FinalizeALInboundEffectsInput {
 }
 
 export interface RescheduleALInboundEffectInput {
+    readonly reason?: 'not-ready';
     readonly reservation: ResourceEntry;
     readonly retryAtMs: number;
 }
@@ -375,7 +386,8 @@ export function createALInboundAdmissionStore(
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
         retention: input.retention,
         backend: input.backend,
-        nowMs: () => Date.now()
+        newControlId: input.newControlId ?? crypto.randomUUID.bind(crypto),
+        nowMs: input.nowMs ?? Date.now
     });
 }
 
@@ -393,6 +405,7 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly retention: NormalizedALRuntimeStoreRetentionConfig;
         readonly backend: ALAdmissionWorkBackend;
         readonly nowMs: () => number;
+        readonly newControlId: () => string;
     }
 
     export interface CorrelatedControlRead {
@@ -413,6 +426,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private readonly backend: ALAdmissionWorkBackend;
     private readonly effects: ALInboundDurableEffectStore;
     private readonly nowMs: () => number;
+    private readonly newControlId: () => string;
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
@@ -422,7 +436,9 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         this.retention = input.retention;
         this.backend = input.backend;
         this.nowMs = input.nowMs;
+        this.newControlId = input.newControlId;
         this.effects = new ALInboundDurableEffectStore({
+            nowMs: this.nowMs,
             backend: input.backend,
             namespace: input.namespace
         });
@@ -589,8 +605,9 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async commitMutations(
         request: ALInboundWriteRequest
-    ): Promise<'committed' | 'conflict'> {
+    ): Promise<'committed' | 'conflict' | 'expired'> {
         return await this.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: request.senderId,
             observations: request.observations,
             mutations: request.mutations,
@@ -600,7 +617,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async commitBundle(
         bundle: ALInboundCommitBundle
-    ): Promise<'committed' | 'conflict'> {
+    ): Promise<'committed' | 'conflict' | 'expired'> {
         if (bundle.mutations.length === 0 && bundle.durableEffects.length === 0) {
             return 'committed';
         }
@@ -610,9 +627,15 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
 
         try {
-            return await this.backend.write((transaction) => this.writeCommitBundle(transaction, validated.right!));
+            return await this.backend.write(
+                (transaction) => this.writeCommitBundle(transaction, validated.right!),
+                bundle.admissionExpiresAtMs
+            );
         }
         catch (error) {
+            if (error instanceof PersistenceWriteExpiredError) {
+                return 'expired';
+            }
             if (error instanceof ALAdmissionBackendConflictError) {
                 return 'conflict';
             }
@@ -625,12 +648,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         bundle: ALInboundCommitBundle
     ): Promise<'committed' | 'conflict'> {
         await this.requireOriginalObservations(transaction, bundle.observations);
+        requireLivePersistenceWrite(bundle.admissionExpiresAtMs, this.nowMs());
         for (const mutation of bundle.mutations) {
             await this.applyMutation(transaction, mutation);
         }
         for (const effect of bundle.durableEffects) {
             await this.effects.persistEffect(transaction, effect);
         }
+        requireLivePersistenceWrite(bundle.admissionExpiresAtMs, this.nowMs());
         return 'committed';
     }
 
@@ -721,7 +746,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             return { handled: false, completedPendingAcks: [] };
         }
         const nowMs = this.nowMs();
-        const read = await this.readControlAdmission(parsed.payload, nowMs, crypto.randomUUID());
+        const read = await this.readControlAdmission(parsed.payload, nowMs, this.newControlId());
         if (!read) {
             return { handled: false, completedPendingAcks: [] };
         }

@@ -22,6 +22,60 @@ afterEach(() => {
 });
 
 describe('RTC scoped snapshot-floor admission', () => {
+    it('sends a receiver floor through actual origin admission and receives a NACK before receiver catch-up', async () => {
+        const sender = new RtcEndpointFixture('sender', 'receiver');
+        const receiver = new RtcEndpointFixture('receiver', 'sender');
+        endpoints.push(sender, receiver);
+        sender.connect(receiver);
+        receiver.connect(sender);
+        for (const endpoint of [sender, receiver]) {
+            endpoint.observe(1);
+            endpoint.observeOverlay(1);
+        }
+        const message = roomMessage(2);
+        const result = await sender.multicast.enqueueIfAbsent(message);
+        expect(result.status).toBe('accepted');
+        await sender.waitForDeliveries();
+        await receiver.waitForDeliveries();
+        expect(sender.sent.find((sent) => sent.id.msgId === message.id.msgId)?.targets).toEqual(message.targets);
+        expect(receiver.delivered).toEqual([]);
+        expect(await sender.nacks(message)).toEqual([expect.objectContaining({
+            msgId: message.id.msgId,
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            reason: 'not-yet-in-sync'
+        })]);
+    });
+
+    it.each(['missing-room', 'expired-session', 'removed-overlay'] as const)(
+        'still rejects origin %s authority when the receiver floor is higher',
+        async (failure) => {
+            const sender = new RtcEndpointFixture('sender', 'receiver');
+            endpoints.push(sender);
+            if (failure !== 'missing-room') {
+                sender.observe(1);
+            }
+            sender.observeOverlay(1);
+            const key = toScopedOverlayId(room);
+            if (failure === 'expired-session') {
+                const snapshot = sender.groups.read(key)!;
+                sender.groups.set(key, {
+                    ...snapshot,
+                    activeSessions: snapshot.activeSessions.map((session) =>
+                        session.sessionId === 'sender' ? { ...session, expiresAtEpochMs: Date.now() } : session
+                    )
+                });
+            }
+            if (failure === 'removed-overlay') {
+                sender.overlays.set(key, { ...sender.overlays.read(key)!, state: 'removed' });
+            }
+            expect((await sender.multicast.enqueueIfAbsent(roomMessage(2))).status).toBe(
+                failure === 'expired-session' ? 'skipped' : 'no-route'
+            );
+            expect(sender.sent).toEqual([]);
+        }
+    );
+
     it.each([undefined, 1, 2, 3])('checks receiver snapshot %s before delivery without an overlay', async (version) => {
         const sender = new RtcEndpointFixture('sender', 'receiver');
         const receiver = new RtcEndpointFixture('receiver', 'sender');

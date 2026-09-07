@@ -1,8 +1,11 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { IndexedDbStringPersistenceProvider } from '../persistence/indexed-db-string-persistence-provider.ts';
+import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend
 } from './al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from './al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './inbound/al-inbound-admission-store.ts';
@@ -13,7 +16,10 @@ import { createALOutboundAdmissionStore } from './outbound/al-outbound-admission
 import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
 
 export interface CreateInMemoryALRuntimeStoresInput {
+    readonly nowMs: () => number;
     readonly namespace: string;
+    readonly canonicalScope?: string;
+    readonly outboundBackend?: ALAdmissionWorkBackend;
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
@@ -24,7 +30,10 @@ export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRun
 }
 
 export interface CreateDefaultALRuntimeStoresInput {
+    readonly nowMs?: () => number;
     readonly namespace?: string;
+    readonly canonicalScope?: string;
+    readonly outboundBackend?: ALAdmissionWorkBackend;
     readonly dbName?: string;
     readonly orderingTrackTtlMs?: number;
     readonly supersedenceTrackTtlMs?: number;
@@ -39,8 +48,14 @@ export function createInMemoryALInboundRuntimeStores(
 ): ALInboundRuntimeStores {
     return {
         admissionStore: createALInboundAdmissionStore({
+            nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            backend: new InMemoryAdmissionBackend(
+                createInMemoryALAdmissionState(
+                    new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
+                ),
+                input.nowMs
+            ),
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
@@ -53,8 +68,16 @@ export function createInMemoryALOutboundRuntimeStores(
 ): ALOutboundRuntimeStores {
     return {
         admissionStore: createALOutboundAdmissionStore({
+            nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            canonicalScope: input.canonicalScope ?? input.namespace,
+            backend: input.outboundBackend ??
+                new InMemoryAdmissionBackend(
+                    createInMemoryALAdmissionState(
+                        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
+                    ),
+                    input.nowMs
+                ),
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
         })
@@ -66,12 +89,14 @@ export function createIndexedDbALInboundRuntimeStores(
 ): ALInboundRuntimeStores {
     return {
         admissionStore: createALInboundAdmissionStore({
+            nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,
-            backend: new IndexedDbAdmissionBackend(
-                input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-                IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-                Date.now
-            ),
+            backend: new IndexedDbAdmissionBackend({
+                dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
+                storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+                nowMs: input.nowMs,
+                newWriteToken: crypto.randomUUID.bind(crypto)
+            }),
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
@@ -84,12 +109,16 @@ export function createIndexedDbALOutboundRuntimeStores(
 ): ALOutboundRuntimeStores {
     return {
         admissionStore: createALOutboundAdmissionStore({
+            nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
-            backend: new IndexedDbAdmissionBackend(
-                input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-                IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-                Date.now
-            ),
+            canonicalScope: input.canonicalScope ?? input.namespace,
+            backend: input.outboundBackend ??
+                new IndexedDbAdmissionBackend({
+                    dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
+                    storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+                    nowMs: input.nowMs,
+                    newWriteToken: crypto.randomUUID.bind(crypto)
+                }),
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
         })
@@ -128,7 +157,10 @@ function toDefaultInMemoryInput(
     options: CreateDefaultALRuntimeStoresInput
 ): CreateInMemoryALRuntimeStoresInput {
     return {
+        nowMs: options.nowMs ?? Date.now,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
+        canonicalScope: options.canonicalScope,
+        outboundBackend: options.outboundBackend,
         orderingTrackTtlMs: options.orderingTrackTtlMs ?? 5 * 60_000,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
         retention: options.retention

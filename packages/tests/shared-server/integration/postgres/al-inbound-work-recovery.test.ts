@@ -1,4 +1,9 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -236,6 +241,7 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
     });
     const facts = readALInboundEffectFacts(message, nowMs, {
         selfPeerId: 'receiver',
+        newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
     });
     expect(await store.commitBundle(computeALInboundAdmission({ read, plan, facts, canForward: false }))).toBe('committed');

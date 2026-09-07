@@ -1,3 +1,4 @@
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { CreateDefaultALRuntimeStoresInput } from '@shared/alm/al-runtime-stores.ts';
 import {
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -44,8 +45,8 @@ function createBrowserALRuntimeStores(
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
     if (!isIndexedDbALRuntimeStoreSupported()) {
         return direction === 'inbound'
-            ? createDefaultInMemoryALInboundRuntimeStores(options)
-            : createDefaultInMemoryALOutboundRuntimeStores(options);
+            ? createDefaultInMemoryALInboundRuntimeStores({ ...options, namespace: `browser:${name}` })
+            : createDefaultInMemoryALOutboundRuntimeStores({ ...options, namespace: `browser:${name}` });
     }
 
     const persistentOptions = {
@@ -153,7 +154,14 @@ export function configureBrowserALRuntimeStores(
     sessionId: string,
     options: BrowserALRuntimeOptions = {}
 ): void {
-    configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, options));
+    const scoped = {
+        ...options,
+        canonicalScope: `browser-session:${sessionId}`,
+        outboundBackend: !isIndexedDbALRuntimeStoreSupported()
+            ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
+            : options.outboundBackend
+    };
+    configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped));
 }
 
 export function resolveBrowserWsClientALInboundRuntimeStores(

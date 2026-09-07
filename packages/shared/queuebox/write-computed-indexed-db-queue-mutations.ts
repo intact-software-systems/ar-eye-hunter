@@ -1,4 +1,8 @@
-import { waitForIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
+import { IndexedDbWriteDeadline, waitForIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
+import {
+    requireLivePersistenceWrite,
+    type PersistenceWriteDeadline
+} from '../persistence/persistence-write-deadline.ts';
 import { toError } from '../resilience/to-error.ts';
 import type {
     ComputedIndexedDbQueueMutation,
@@ -11,26 +15,37 @@ interface IndexedDbQueueWriteState {
     storedValueError: Error | undefined;
 }
 
+export interface WriteComputedIndexedDbQueueMutationsInput {
+    readonly db: IDBDatabase;
+    readonly storeName: string;
+    readonly mutations: readonly ComputedIndexedDbQueueMutation[];
+    readonly deadline?: PersistenceWriteDeadline;
+}
+
 export async function writeComputedIndexedDbQueueMutations(
-    db: IDBDatabase,
-    storeName: string,
-    mutations: readonly ComputedIndexedDbQueueMutation[]
+    input: WriteComputedIndexedDbQueueMutationsInput
 ): Promise<boolean> {
+    const { db, storeName, mutations, deadline } = input;
     const validated = validateComputedIndexedDbQueueMutations(mutations);
     if (validated.left) {
         throw validated.left;
     }
+    requireLivePersistenceWrite(deadline?.expiresAtMs ?? null, deadline?.nowMs() ?? 0);
     if (mutations.length === 0) {
         return true;
     }
     const transaction = db.transaction(storeName, 'readwrite');
     const completed = waitForIndexedDbTransaction(transaction);
-    const state = submitComputedIndexedDbQueueMutations(transaction.objectStore(storeName), mutations);
+    const eligibility = new IndexedDbWriteDeadline(transaction, deadline);
+    const state = submitComputedIndexedDbQueueMutations(transaction.objectStore(storeName), mutations, eligibility);
     try {
         await completed;
         return true;
     }
     catch (error) {
+        if (eligibility.expired) {
+            throw eligibility.expired;
+        }
         if (state.storedValueError) {
             throw state.storedValueError;
         }
@@ -44,17 +59,19 @@ export async function writeComputedIndexedDbQueueMutations(
 /** The transaction owner validates the candidate before opening its transaction and observes completion. */
 export function submitComputedIndexedDbQueueMutations(
     store: IDBObjectStore,
-    mutations: readonly ComputedIndexedDbQueueMutation[]
+    mutations: readonly ComputedIndexedDbQueueMutation[],
+    deadline?: IndexedDbWriteDeadline
 ): Readonly<IndexedDbQueueWriteState> {
+    const eligibility = deadline ?? new IndexedDbWriteDeadline(store.transaction, undefined);
     const state: IndexedDbQueueWriteState = { conflict: false, storedValueError: undefined };
     for (const mutation of mutations) {
         if (mutation.kind === 'delete-unconditionally') {
-            store.delete(mutation.keyString);
+            eligibility.observe(store.delete(mutation.keyString));
             continue;
         }
-        const request = store.get(mutation.keyString);
+        const request = eligibility.observe(store.get(mutation.keyString));
         request.onsuccess = () => {
-            if (state.conflict || state.storedValueError) {
+            if (state.conflict || state.storedValueError || eligibility.expired) {
                 return;
             }
             let matches: boolean;
@@ -72,10 +89,10 @@ export function submitComputedIndexedDbQueueMutations(
                 return;
             }
             if (mutation.kind === 'put') {
-                store.put(mutation.value);
+                eligibility.observe(store.put(mutation.value));
             }
             else if (mutation.kind === 'delete') {
-                store.delete(mutation.keyString);
+                eligibility.observe(store.delete(mutation.keyString));
             }
         };
     }

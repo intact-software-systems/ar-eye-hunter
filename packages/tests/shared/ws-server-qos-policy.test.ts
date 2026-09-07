@@ -99,11 +99,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('accepted');
-        expect(result.entries).toEqual([]);
+        expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
-        expect(await outbox.getAllKeys()).toEqual([]);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
     it('broadcasts volatile targeted broadcast messages directly from the server outbox', async () => {
@@ -152,11 +152,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('accepted');
-        expect(result.entries).toEqual([]);
+        expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
         expect(socket.sent.every((entry) => entry.data.id.msgId === msg.id.msgId)).toBe(true);
-        expect(await outbox.getAllKeys()).toEqual([]);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
         expect(providerEvaluationCount).toBe(1);
     });
 
@@ -284,7 +284,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await service.enqueueOutboxIfAbsent(msg);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-2']);
-        expect(await outbox.getAllKeys()).toEqual([]);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
     it('persists server outbox entries with the message expiry timestamp', async () => {

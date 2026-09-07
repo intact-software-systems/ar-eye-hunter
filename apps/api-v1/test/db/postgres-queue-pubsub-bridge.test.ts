@@ -42,7 +42,8 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
         channel: 'ws-channel',
         publisherId: 'publisher-local',
         typeId: 'WS_OUTBOX',
-        delivery: 'key'
+        delivery: 'key',
+        expiresAtMs: 1_800_000_000_000
     });
     assert.equal('payload' in notifications[0].message, false);
 });
@@ -83,6 +84,19 @@ function createMessage(
         channel: options.channel ?? 'ws-channel',
         publisherId: options.publisherId,
         typeId: 'WS_OUTBOX',
-        delivery: 'key'
+        delivery: 'key',
+        expiresAtMs: 1_800_000_000_000
     };
 }
+
+Deno.test('postgres queue pub/sub bridge rejects notices outside the wire budget before notify', async () => {
+    let notified = false;
+    const bridge = createPostgresQueuePubSubBridge({
+        notify: async () => {
+            notified = true;
+        },
+        listen: async () => {}
+    });
+    await assert.rejects(() => bridge.publish('ws-channel', createMessage({ publisherId: 'p'.repeat(8_000) })));
+    assert.equal(notified, false);
+});

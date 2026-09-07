@@ -32,8 +32,45 @@ The transport decoding owners are
 client and RTC envelopes, and
 [`decodeWsQueueBoxServerPreparedMessage`](../../services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts)
 for the server's recipient/cluster-completion union. Prepared transport values
-are decoded from the persisted effect; replay never regenerates them by
-rerunning a planner.
+are reconstructed from a canonical envelope and compact persisted transport
+descriptors. Admitted send-action replay does not regenerate its recipients or
+policy by rerunning a planner.
+
+## Canonical message storage
+
+[`al-outbound-canonical-message.ts`](./al-outbound-canonical-message.ts) owns the
+canonical key, full message reference, identity fact, and their validation.
+[`al-outbound-canonical-storage.ts`](./al-outbound-canonical-storage.ts) reads and
+compares those observations and writes new facts through the admission transaction.
+Each message has one raw envelope. Sent metadata, recipient actions, and repair work
+refer to it; [`al-outbound-transport-message.ts`](./al-outbound-transport-message.ts)
+captures and reconstructs the permitted transport differences.
+
+Browser RTC and WS for the same local session share the canonical scope and queue,
+with separate admission/action namespaces. The bounded hashed physical key is a
+locator; the retained full-identity fact and exact content establish valid reuse.
+Different sessions cannot share authority through a matching locator.
+
+Canonical payload and identity retention ends at the original delivery deadline.
+Their `COMPLETED` queue status denotes a retained fact, not a receiver receipt.
+Compact receipt/control state can remain useful after the payload expires, but
+payload-dependent sends and repair stop at the deadline. Live missing or mismatched
+references are corruption. Superseding messages retain separate canonical payloads;
+they do not overwrite a predecessor's envelope.
+
+An initial admission conflict can retain a validated message and compact
+`admit-message` work through
+[`retainALOutboundPendingAdmission`](./al-outbound-pending-admission.ts).
+The worker rereads current admission facts for one new attempt. The retained policy,
+original deadline, and authorized transport provenance remain unchanged; the stored
+candidate contains no prior mutable write context. A terminal pending descriptor
+cannot be revived or reported as a retryable owner merely because its content matches.
+
+The server's independently produced `WS_OUTBOX` rows remain active canonical
+sources. Cluster notifications carry bounded key/type/deadline claims, which the
+[`QueueBoxPubSubBridge`](../../../shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts)
+checks against the retained message and identity before delivery. Publication is a
+transport action and does not confirm the logical audience.
 
 ## Runtime paths
 
@@ -72,8 +109,8 @@ string representation through the shared
 work payload is encoded through the canonical envelope/entry codec. QueueBox's own
 codec preserves reservation and retry timestamps as ISO strings: IndexedDB structured
 cloning does not preserve Temporal instances. An old empty-object timestamp remains corrupt.
-Supersedence intentionally reuses a predecessor's outbox key, so the queue key is
-validated structurally while the embedded AL message must match its effect.
+Each work row validates its full namespace, effect identity, queue slot, and deadline
+against its canonical reference.
 
 ## Transport attempt settlement
 
@@ -117,18 +154,31 @@ rolls back the whole transaction. A native abort also preserves neither write.
 Reopened QueueBox instances can reserve the committed work through the ordinary
 queue API.
 
+Message admission supplies its original execution deadline to this write boundary,
+including queue-only pending retention. Native IndexedDB request completion and the
+last awaited PostgreSQL mutations check it while rollback remains possible. Expiry
+preserves neither new admission metadata nor new work. Control retention and terminal
+bookkeeping may continue separately without permitting an expired payload to be sent.
+
+A write context that uses only `readWork` and `writeWork` uses QueueBox's existing
+atomic observed-row writer. Unrelated admission metadata cannot invalidate that
+queue-only ownership decision. Any metadata read, list, set, or removal retains
+the metadata revision check, including a metadata-dependent decision that writes
+only queue rows. Empty mutation output alone does not establish independence.
+
 [`ALAdmissionWorkBackend`](../al-admission-work-backend.ts) connects admission to its
 QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and its
 admission decision together. Browser composition supplies its existing engine to the
 outbound runtime. Due-work inspection uses the bounded QueueBox `readWorkPage` port;
-namespace cleanup and remaining storage/performance work stay in the broader roadmap.
+the existing browser cleanup owner removes expired and session-owned work from the
+shared store. Its scan cost and other storage/performance goals still require measurement.
 
 An existing incompatible database is rejected without changing its schema or data.
 Cutover requires stopping the affected producers and workers before an explicit reset
 of incompatible ALM-owned browser storage. Unrelated application storage is preserved.
 
 Inbound and outbound execution use their direct ALM owners with QueueBox and
-InboxOutboxEngine. The separate outbound effect scheduler has been removed. Physical
-transport outboxes still repeat envelope storage; canonical envelope storage and the
-application-facing delivery handle remain roadmap work. Existing paged due-work reads
+InboxOutboxEngine. The separate outbound effect scheduler and browser physical
+transport queues have been removed. The application-facing delivery handle and
+complete logical audience receipts remain roadmap work. Existing paged due-work reads
 do not establish that every backend query or cleanup path has met its performance goal.

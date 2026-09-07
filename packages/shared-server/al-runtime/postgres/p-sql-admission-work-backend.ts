@@ -1,9 +1,15 @@
+import { Temporal } from '@js-temporal/polyfill';
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { requireLivePersistenceWrite } from '@shared/persistence/persistence-write-deadline.ts';
 import { toResourceEntrySnapshot } from '@shared/queuebox/resource-entry-observations.ts';
-import { toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    toKeyAsString,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -29,14 +35,20 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     private readonly sql: PSqlSql;
     private readonly repository: PSqlRuntimeStateRepository;
     private readonly namespace: string;
+    private readonly nowMs: () => number;
 
     constructor(
         sql: PSqlSql,
-        namespace: string
+        namespace: string,
+        nowMs: () => number = Date.now
     ) {
         this.sql = sql;
+        this.nowMs = nowMs;
         this.repository = new PSqlRuntimeStateRepository(sql);
-        this.workQueue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql));
+        this.workQueue = new PSqlQueueBox(
+            createPSqlResourceInboxRepository(sql),
+            () => Temporal.Instant.fromEpochMilliseconds(this.nowMs())
+        );
         this.namespace = namespace;
     }
 
@@ -46,7 +58,7 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
         return await new PSqlAdmissionMutationCollector(
             this.repository,
             this.namespace,
-            Date.now
+            this.nowMs
         ).read(key, decode);
     }
 
@@ -54,20 +66,30 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
         return await new PSqlAdmissionMutationCollector(
             this.repository,
             this.namespace,
-            Date.now
+            this.nowMs
         ).list(prefix, decode);
     }
 
-    async write<T>(fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>): Promise<T> {
-        const collector = new PSqlAdmissionWorkWriteBuffer(this.repository, this.namespace, this.workQueue);
+    async write<T>(
+        fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
+        executionExpiresAtMs: number | null = null
+    ): Promise<T> {
+        const collector = new PSqlAdmissionWorkWriteBuffer({
+            repository: this.repository,
+            namespace: this.namespace,
+            workQueue: this.workQueue,
+            nowMs: this.nowMs
+        });
         const result = await fn(collector);
         const mutations = collector.mutations();
         const workWrites = collector.workWrites();
+        requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
         if (mutations.length === 0 && workWrites.length === 0) {
             return result;
         }
         try {
             await this.sql.begin(async (sql) => {
+                requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
                 const transaction = createTransactionBoundPSqlRuntimeStateRepository(sql);
                 const work = new PSqlResourceInboxEntryRepository(sql);
                 await collector.writeMutations(transaction, mutations);
@@ -79,6 +101,7 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
                         throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
                     }
                 }
+                requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
             });
         }
         catch (error) {
@@ -98,14 +121,23 @@ type PSqlAdmissionWorkWrite =
     | { readonly kind: 'insert'; readonly values: ResourceInboxEntryInsertValues; }
     | { readonly kind: 'replace'; readonly computed: ResourceInboxObservedReplacement; };
 
+namespace PSqlAdmissionWorkWriteBuffer {
+    export interface Input {
+        readonly repository: PSqlRuntimeStateRepository;
+        readonly namespace: string;
+        readonly workQueue: PSqlQueueBox;
+        readonly nowMs: () => number;
+    }
+}
+
 class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implements ALAdmissionWorkWriteContext {
     private readonly workQueue: PSqlQueueBox;
     private readonly workObservations = new Map<string, ResourceEntry | undefined>();
     private readonly pendingWork = new Map<string, ResourceEntry>();
 
-    constructor(repository: PSqlRuntimeStateRepository, namespace: string, workQueue: PSqlQueueBox) {
-        super(repository, namespace, Date.now);
-        this.workQueue = workQueue;
+    constructor(input: PSqlAdmissionWorkWriteBuffer.Input) {
+        super(input.repository, input.namespace, input.nowMs);
+        this.workQueue = input.workQueue;
     }
 
     async readWork(key: Key): Promise<ResourceEntry | undefined> {

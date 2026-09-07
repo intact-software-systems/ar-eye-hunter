@@ -1,3 +1,5 @@
+import { PersistenceWriteExpiredError, type PersistenceWriteDeadline } from './persistence-write-deadline.ts';
+
 export function readIndexedDbRequest<Result>(request: IDBRequest<Result>): Promise<Result> {
     return new Promise((resolve, reject) => {
         request.onsuccess = () => resolve(request.result);
@@ -31,4 +33,36 @@ export async function readIndexedDbTransaction<Result>(
         throw completionOutcome.reason;
     }
     return readOutcome.value;
+}
+
+/** Observes native request completion while abort can still roll back the whole transaction. */
+export class IndexedDbWriteDeadline {
+    readonly #transaction: IDBTransaction;
+    readonly #deadline: PersistenceWriteDeadline | undefined;
+    #expired: PersistenceWriteExpiredError | undefined;
+
+    constructor(transaction: IDBTransaction, deadline: PersistenceWriteDeadline | undefined) {
+        this.#transaction = transaction;
+        this.#deadline = deadline;
+    }
+
+    get expired(): PersistenceWriteExpiredError | undefined {
+        return this.#expired;
+    }
+
+    observe<T>(request: IDBRequest<T>): IDBRequest<T> {
+        if (this.#deadline === undefined) {
+            return request;
+        }
+        request.addEventListener('success', () => {
+            if (this.#expired || this.#deadline === undefined) {
+                return;
+            }
+            if (this.#deadline.expiresAtMs <= this.#deadline.nowMs()) {
+                this.#expired = new PersistenceWriteExpiredError();
+                this.#transaction.abort();
+            }
+        });
+        return request;
+    }
 }

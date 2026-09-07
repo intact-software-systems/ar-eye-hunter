@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -75,6 +79,22 @@ describe('AL control message codec', () => {
             });
         }
     );
+
+    it.each([128, 129, 600])('keeps a full %i-character referenced message ID behind bounded control routes', (length) => {
+        const msgId = 'm'.repeat(length);
+        const orderingKey = 'stream:'.repeat(40);
+        const controls = [
+            newALAckControlMessage(controlId, { ...ack, ackedMsgId: msgId }),
+            newALNackControlMessage(controlId, { ...nack, msgId, orderingKey }),
+            newALRepairControlMessage(controlId, { ...repair, msgId, orderingKey })
+        ];
+        for (const control of controls) {
+            expect(control.route.resourceId.length).toBeLessThanOrEqual(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters);
+            const decoded = decodeALControlMessage(control);
+            expect(decoded.left).toBeUndefined();
+            expect(decoded.right?.payload).toMatchObject(decoded.right?.type === 'ack' ? { ackedMsgId: msgId } : { msgId, orderingKey });
+        }
+    });
 
     it('returns undefined for application messages and unknown control type identifiers', () => {
         expect(parseALControlMessage(controlMessage('application.event.v1', ack))).toBeUndefined();

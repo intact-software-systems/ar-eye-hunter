@@ -12,7 +12,6 @@ import '../../setup-browser-indexeddb.ts';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import { createBrowserQueueResilience } from '@shared-web/browser/resilience-config.ts';
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager
@@ -167,8 +166,7 @@ describe('browser RTC runtime composition', () => {
         expect(fixture.service.readyPeerIdsForLane()).toEqual(['accepted-peer', 'planned-peer']);
         const manager = initialiseRtcOverlayMulticastManager({
             webRtcConnectionService: fixture.service,
-            qboxEngine: new InboxOutboxEngine(),
-            resilience: createBrowserQueueResilience()
+            qboxEngine: new InboxOutboxEngine()
         });
         onTestFinished(() => manager.dispose());
 
@@ -187,7 +185,9 @@ describe('browser RTC runtime composition', () => {
             )
         );
 
-        expect(result).toMatchObject({ status: 'accepted', entries: [] });
+        expect(result).toMatchObject({ status: 'accepted' });
+        expect(result.entries).toHaveLength(1);
+        expect(result.entry?.status).toBe('COMPLETED');
         const acceptedMessages = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
         const plannedMessages = fixture.nativePeer('planned-peer').channels.flatMap((channel) => channel.sent);
         expect(acceptedMessages).toHaveLength(1);

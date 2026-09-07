@@ -1,3 +1,5 @@
+import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
+import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
 import type { ALMessage } from './al-contract.ts';
 import {
@@ -124,8 +126,10 @@ export function decodeALControlMessage(msg: ALMessage): Either<ALMessageRejectio
     }
     try {
         const parsed = parseALControlMessage(msg)!;
-        validateControlEnvelope(msg, parsed.payload);
-        return Either.ofRight(parsed);
+        const issues = validateControlEnvelope(msg, parsed.payload);
+        return issues.length === 0
+            ? Either.ofRight(parsed)
+            : Either.ofLeft({ code: 'malformed', message: issues.join('; ') });
     }
     catch (error) {
         return Either.ofLeft({
@@ -148,14 +152,13 @@ export function newALRepairControlMessage(id: ALMessage['id'], payload: ALRepair
 }
 
 function newALControlMessage(id: ALMessage['id'], typeId: string, payload: ALControlPayload): ALMessage {
-    const targetMsgId = 'ackedMsgId' in payload ? payload.ackedMsgId : payload.msgId;
     const resource = JSON.stringify(payload);
     if (utf8Length(resource) > AL_MESSAGE_RESOURCE_LIMITS.payloadBytes) {
         throw new TypeError('Control payload exceeds the byte limit');
     }
     const message: ALMessage = {
         id,
-        route: { topicId: 'al-control', resourceId: targetMsgId, contextId: payload.toPeerId },
+        route: toALControlRoute(payload),
         targets: { mode: 'unicast', toPeerId: payload.toPeerId },
         qos: {
             delivery: { algo: 'best-effort' },
@@ -171,29 +174,36 @@ function newALControlMessage(id: ALMessage['id'], typeId: string, payload: ALCon
     return message;
 }
 
-function validateControlEnvelope(msg: ALMessage, payload: ALControlPayload): void {
-    const targetMsgId = 'ackedMsgId' in payload ? payload.ackedMsgId : payload.msgId;
+function validateControlEnvelope(msg: ALMessage, payload: ALControlPayload): readonly string[] {
+    const issues: string[] = [];
     if (payload.fromPeerId !== msg.id.senderId) {
-        throw new TypeError('Control payload sender does not match its envelope identity');
+        issues.push('Control payload sender does not match its envelope identity');
     }
     if (msg.targets?.mode !== 'unicast' || payload.toPeerId !== msg.targets.toPeerId) {
-        throw new TypeError('Control payload receiver does not match its unicast target');
+        issues.push('Control payload receiver does not match its unicast target');
     }
-    if (
-        msg.route.topicId !== 'al-control' || msg.route.resourceId !== targetMsgId ||
-        msg.route.contextId !== payload.toPeerId
-    ) {
-        throw new TypeError('Control route does not match its payload identities');
+    if (!isKeysEqual(msg.route, toALControlRoute(payload))) {
+        issues.push('Control route does not match its payload identities');
     }
     if (msg.delivery && (msg.delivery.reliability !== 'best-effort' || msg.delivery.ack !== 'none')) {
-        throw new TypeError('Control messages cannot request reliable delivery or acknowledgements');
+        issues.push('Control messages cannot request reliable delivery or acknowledgements');
     }
     if (
         msg.qos?.delivery?.algo !== 'best-effort' || msg.qos.durability?.algo !== 'volatile' ||
         msg.qos.ack?.algo !== 'none' || (msg.qos.retry !== undefined && msg.qos.retry.algo !== 'none')
     ) {
-        throw new TypeError('Control QoS must be volatile, best effort, and acknowledgement free');
+        issues.push('Control QoS must be volatile, best effort, and acknowledgement free');
     }
+    return issues;
+}
+
+function toALControlRoute(payload: ALControlPayload): ALMessage['route'] {
+    // The bounded locator routes a control; authorization compares its full payload identities.
+    return toStrictAppInboxQueueKey({
+        topicId: 'al-control',
+        resourceId: 'ackedMsgId' in payload ? payload.ackedMsgId : payload.msgId,
+        contextId: payload.toPeerId
+    });
 }
 
 function parseControlPayload(resource: string): unknown {

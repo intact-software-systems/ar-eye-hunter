@@ -4,8 +4,7 @@ import {
     beforeEach,
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 import { createAuthSessionApiHttpError } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
@@ -100,7 +99,6 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         );
 
         expect(deletedSessionIds).toEqual(['session-1']);
-        expect(mocks.deleteBrowserQueueBoxDatabasesForSession).toHaveBeenCalledWith('session-1');
     });
 
     it('does not reconnect with a stale session while manual logout is in progress', async () => {

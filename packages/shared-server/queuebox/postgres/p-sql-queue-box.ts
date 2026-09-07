@@ -45,11 +45,14 @@ import { computeResourceInboxObservedReplacement } from './p-sql-resource-inbox-
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
+    private readonly now: () => Temporal.Instant;
 
     constructor(
-        resourceInbox: PSqlResourceInboxRepository
+        resourceInbox: PSqlResourceInboxRepository,
+        now: () => Temporal.Instant = Temporal.Now.instant
     ) {
         this.resourceInbox = resourceInbox;
+        this.now = now;
     }
 
     cleanup(): void {
@@ -292,7 +295,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             },
             (value) => value
         );
-        const releasedAt = Temporal.Instant.fromEpochMilliseconds(Number(Temporal.Now.instant().epochMilliseconds));
+        const releasedAt = Temporal.Instant.fromEpochMilliseconds(this.now().epochMilliseconds);
         const candidates = resources.map((entry) =>
             computeResourceInboxObservedReplacement(entry, computeResourceInboxRelease(entry, disposition, releasedAt))
         );

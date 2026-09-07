@@ -9,7 +9,14 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 describe('WS server pre-submission readiness', () => {
@@ -21,7 +28,7 @@ describe('WS server pre-submission readiness', () => {
     it.each(['missing', 'closed'] as const)('waits when the connection becomes %s after admission, then sends the original message', async (unavailable) => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        const { backend, store, server, native, context, service } = createServerRuntime();
+        const { backend, store, server, native, context, service, selectedRecipient } = createServerRuntime();
         const commit = store.commitBundle.bind(store);
         vi.spyOn(store, 'commitBundle').mockImplementation(async (...args) => {
             const result = await commit(...args);
@@ -44,7 +51,7 @@ describe('WS server pre-submission readiness', () => {
             concurrencyReduceStep: 1
         });
         for (let cycle = 0; cycle < 25; cycle += 1) {
-            const keys = await backend.workQueue.getAllKeys();
+            const keys = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
             expect(keys).toHaveLength(1);
             const work = await backend.workQueue.getItem(keys[0]);
             expect(work?.status).toBe(EntityStatus.RETRY);
@@ -54,6 +61,7 @@ describe('WS server pre-submission readiness', () => {
             await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience);
         }
         expect(native.sent).toEqual([]);
+        selectedRecipient.connectionId = 'later-resolution-must-not-replace-captured-connection';
         native.open();
         server.connections.set(context.id, context);
         await vi.advanceTimersByTimeAsync(51);
@@ -74,7 +82,7 @@ describe('WS server pre-submission readiness', () => {
         });
         const message = createMessage();
         await service.enqueueOutboxIfAbsent(message);
-        const [key] = await backend.workQueue.getAllKeys();
+        const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
         vi.setSystemTime(message.constraints!.expiresAtMs!);
         native.open();
         await vi.advanceTimersByTimeAsync(50);
@@ -92,7 +100,7 @@ describe('WS server pre-submission readiness', () => {
         });
         await service.enqueueOutboxIfAbsent(createMessage());
         expect(send).toHaveBeenCalledTimes(1);
-        const [key] = await backend.workQueue.getAllKeys();
+        const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
         const work = await backend.workQueue.getItem(key);
         expect(work?.status).toBe(EntityStatus.RETRY);
         expect(work?.dequeueAudit.attempts).toBe(1);
@@ -106,6 +114,7 @@ interface ServerRuntime {
     readonly native: TestWebSocket;
     readonly context: ConnectionContext;
     readonly service: WsQueueBoxServerService;
+    readonly selectedRecipient: { peerId: string; connectionId: string; };
 }
 
 function createServerRuntime(): ServerRuntime {
@@ -121,20 +130,21 @@ function createServerRuntime(): ServerRuntime {
     native.open();
     const context = new ConnectionContext({ id: 'connection', socket: native });
     server.addConnection(context);
+    const selectedRecipient = { peerId: 'peer', connectionId: context.id };
     const service = createDefaultWsQueueBoxServerService({
         name: 'server',
         socket: server,
         outbox: new InMemoryQueueBox(),
         outboundStores: { admissionStore: store },
         targetResolver: {
-            resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: context.id }],
+            resolvePeerRecipients: () => [{ ...selectedRecipient }],
             resolveGroupRecipients: () => [],
             resolveBroadcastRecipients: () => [],
             resolvePeerIdForConnection: () => 'peer'
         }
     });
     onTestFinished(() => service.dispose());
-    return { backend, store, server, native, context, service };
+    return { backend, store, server, native, context, service, selectedRecipient };
 }
 
 function createMessage(): ALMessage {

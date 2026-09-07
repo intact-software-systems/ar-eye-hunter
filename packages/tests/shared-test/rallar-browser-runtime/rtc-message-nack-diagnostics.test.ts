@@ -1,3 +1,4 @@
+import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
@@ -20,7 +21,7 @@ describe('RTC message diagnostic receipts', () => {
             const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
             await admitAttemptedMessage(admissionStore, sessionId);
-            const sentBefore = await admissionStore.getAllSentMessages();
+            const sentBefore = await admissionStore.readSentMessage('attempted');
             await admissionStore.acceptControlMessage(
                 newALNackControlMessage(
                     {
@@ -48,7 +49,7 @@ describe('RTC message diagnostic receipts', () => {
             })]);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'another')).toEqual([]);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual(receipt);
-            expect(await admissionStore.getAllSentMessages()).toEqual(sentBefore);
+            expect(await admissionStore.readSentMessage('attempted')).toEqual(sentBefore);
         }
         finally {
             await deleteBrowserALRuntimeEntriesForSession(sessionId);
@@ -57,22 +58,19 @@ describe('RTC message diagnostic receipts', () => {
 });
 
 async function admitAttemptedMessage(store: ALOutboundAdmissionStore, sessionId: string): Promise<void> {
+    const nowMs = Date.now();
+    const message = {
+        id: { v: 2 as const, msgId: 'attempted', senderId: sessionId, ts: nowMs },
+        route: { topicId: 'diagnostic-test', resourceId: 'attempted', contextId: 'room' },
+        targets: { mode: 'unicast' as const, toPeerId: 'receiver' },
+        payload: { typeId: 'diagnostic-test', resource: '{}' },
+        constraints: { expiresAtMs: nowMs + 30_000 }
+    };
+    const bundle = await computeOutboundTestAdmission(store, message);
     await store.commitBundle({
-        senderId: sessionId,
+        ...bundle,
         mutations: [
-            { kind: 'set-msg-owner', msgId: 'attempted', senderId: sessionId },
-            {
-                kind: 'set-sent-message',
-                snapshot: {
-                    msgId: 'attempted',
-                    msg: {
-                        id: { v: 2, msgId: 'attempted', senderId: sessionId, ts: Date.now() },
-                        route: { topicId: 'diagnostic-test', resourceId: 'attempted', contextId: 'room' },
-                        targets: { mode: 'unicast', toPeerId: 'receiver' },
-                        payload: { typeId: 'diagnostic-test', resource: '{}' }
-                    }
-                }
-            },
+            ...bundle.mutations,
             {
                 kind: 'set-pending-ack',
                 snapshot: {

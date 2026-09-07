@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import { computeOutboundTestAdmission } from '../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
@@ -192,6 +199,7 @@ describe('PostgreSQL outbound admission', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-1');
+        const bundle = await computeOutboundTestAdmission(store, msg);
         const prepared = {
             kind: 'send',
             msgId: msg.id.msgId
@@ -201,27 +209,21 @@ describe('PostgreSQL outbound admission', () => {
             'send',
             msg.id.msgId,
             'immediate',
+            'initial',
             0,
             preparedFingerprint
         ]);
 
         const status = await store.commitBundle({
-            senderId: 'self',
-            expectedVersion: undefined,
-            mutations: [
-                {
-                    kind: 'set-msg-owner',
-                    msgId: msg.id.msgId,
-                    senderId: 'self'
-                }
-            ],
+            ...bundle,
             durableEffects: [
                 {
                     effectId,
-                    expireAtTimestamp: Date.now() + 60_000,
+                    expireAtTimestamp: msg.constraints!.expiresAtMs,
                     payload: {
                         kind: 'send-prepared',
-                        msg,
+                        message: toALOutboundMessageReference(store.canonicalScope, bundle.canonicalEntry!, msg),
+                        attemptIdentity: 'initial',
                         prepared,
                         preparedFingerprint,
                         phase: 'immediate'
@@ -268,19 +270,11 @@ describe('PostgreSQL outbound admission', () => {
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
+        const bundle = await computeOutboundTestAdmission(store, msg);
         await store.commitBundle({
-            senderId: 'self',
-            expectedVersion: undefined,
+            ...bundle,
             mutations: [
-                {
-                    kind: 'set-msg-owner',
-                    msgId: msg.id.msgId,
-                    senderId: 'self'
-                },
-                {
-                    kind: 'set-sent-message',
-                    snapshot: { msgId: msg.id.msgId, msg }
-                },
+                ...bundle.mutations,
                 {
                     kind: 'set-pending-ack',
                     snapshot: {
@@ -374,7 +368,8 @@ function createOutboundMessage(resourceId: string) {
         'chat.private-text.v1',
         {
             text: resourceId
-        }
+        },
+        { ttlMs: 30_000 }
     );
 }
 

@@ -1,4 +1,8 @@
-import { waitForIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
+import { IndexedDbWriteDeadline, waitForIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
+import {
+    requireLivePersistenceWrite,
+    type PersistenceWriteDeadline
+} from '../persistence/persistence-write-deadline.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import {
     validateComputedIndexedDbQueueMutations,
@@ -32,6 +36,7 @@ interface IndexedDbAdmissionRevisionWrite {
 }
 
 export interface WriteIndexedDbAdmissionMutationsInput {
+    readonly deadline?: PersistenceWriteDeadline;
     readonly db: IDBDatabase;
     readonly expectedRevision: number;
     readonly mutations: readonly IndexedDbAdmissionMutation[];
@@ -41,6 +46,7 @@ export interface WriteIndexedDbAdmissionMutationsInput {
 }
 
 interface IndexedDbAdmissionWriteContext {
+    readonly eligibility: IndexedDbWriteDeadline;
     readonly guardedRemovals: readonly IndexedDbAdmissionGuardedRemoval[];
     readonly input: WriteIndexedDbAdmissionMutationsInput;
     readonly store: IDBObjectStore;
@@ -69,20 +75,24 @@ export async function writeIndexedDbAdmissionMutations(
     if (validatedQueue.left) {
         throw validatedQueue.left;
     }
+    requireLivePersistenceWrite(input.deadline?.expiresAtMs ?? null, input.deadline?.nowMs() ?? 0);
     const storeNames = input.queueMutations.length === 0
         ? [input.storeName]
         : [input.storeName, AL_ADMISSION_WORK_STORE_NAME];
     const transaction = input.db.transaction(storeNames, 'readwrite');
     const completed = waitForIndexedDbTransaction(transaction);
     const store = transaction.objectStore(input.storeName);
+    const eligibility = new IndexedDbWriteDeadline(transaction, input.deadline);
     const queueWrite = input.queueMutations.length === 0
         ? undefined
         : submitComputedIndexedDbQueueMutations(
             transaction.objectStore(AL_ADMISSION_WORK_STORE_NAME),
-            input.queueMutations
+            input.queueMutations,
+            eligibility
         );
-    const revisionRequest = store.get(AL_ADMISSION_REVISION_KEY);
+    const revisionRequest = eligibility.observe(store.get(AL_ADMISSION_REVISION_KEY));
     const context: IndexedDbAdmissionWriteContext = {
+        eligibility,
         guardedRemovals,
         input,
         store,
@@ -96,6 +106,9 @@ export async function writeIndexedDbAdmissionMutations(
         return true;
     }
     catch (error) {
+        if (eligibility.expired) {
+            throw eligibility.expired;
+        }
         if (context.storedValueError) {
             throw context.storedValueError;
         }
@@ -113,6 +126,9 @@ function continueIndexedDbAdmissionWrite(
     context: IndexedDbAdmissionWriteContext,
     revisionValue: IDBRequest['result']
 ): void {
+    if (context.eligibility.expired) {
+        return;
+    }
     let actualRevision: number;
     try {
         actualRevision = decodeIndexedDbAdmissionRevision(revisionValue);
@@ -127,7 +143,7 @@ function continueIndexedDbAdmissionWrite(
         return;
     }
     if (context.guardedRemovals.length === 0) {
-        applyIndexedDbAdmissionMutations(context.store, context.input);
+        applyIndexedDbAdmissionMutations(context);
         return;
     }
     readGuardedIndexedDbAdmissionRemovals(context, context.guardedRemovals);
@@ -139,9 +155,9 @@ function readGuardedIndexedDbAdmissionRemovals(
 ): void {
     let remaining = removals.length;
     for (const removal of removals) {
-        const request = context.store.get(removal.key);
+        const request = context.eligibility.observe(context.store.get(removal.key));
         request.onsuccess = () => {
-            if (context.conflict || context.storedValueError) {
+            if (context.conflict || context.storedValueError || context.eligibility.expired) {
                 return;
             }
             let currentWriteToken: string | undefined;
@@ -159,7 +175,7 @@ function readGuardedIndexedDbAdmissionRemovals(
             }
             remaining -= 1;
             if (remaining === 0) {
-                applyIndexedDbAdmissionMutations(context.store, context.input);
+                applyIndexedDbAdmissionMutations(context);
             }
         };
     }
@@ -198,13 +214,13 @@ function readIndexedDbAdmissionWriteToken(
 }
 
 function applyIndexedDbAdmissionMutations(
-    store: IDBObjectStore,
-    input: WriteIndexedDbAdmissionMutationsInput
+    context: IndexedDbAdmissionWriteContext
 ): void {
+    const { store, input, eligibility } = context;
     for (const mutation of input.mutations) {
         mutation.kind === 'set'
-            ? store.put(mutation.stored)
-            : store.delete(mutation.key);
+            ? eligibility.observe(store.put(mutation.stored))
+            : eligibility.observe(store.delete(mutation.key));
     }
-    store.put(input.revisionWrite);
+    eligibility.observe(store.put(input.revisionWrite));
 }

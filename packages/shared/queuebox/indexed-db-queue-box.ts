@@ -30,6 +30,7 @@ import {
     toIndexedDbQueueStoreDefinition
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
+import { matchesQueueBoxCompletedRetention, type QueueBoxCompletedRetention } from './queue-box-completed-retention.ts';
 import {
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
@@ -37,7 +38,6 @@ import {
     ResourceInboxFinalizationReservationOptions,
     ResourceInboxFinalizationSelection,
     ResourceInboxReleaseDisposition,
-    ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
     ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
@@ -82,15 +82,29 @@ interface RetryExhaustionSelectionInput {
 }
 
 export type IndexedDbQueueBoxOptions =
-    | Readonly<{ dbName?: string; storeName?: string; connection?: never; }>
-    | Readonly<{ connection: IndexedDbConnection; storeName: string; dbName?: never; }>;
+    | Readonly<{
+        dbName?: string;
+        storeName?: string;
+        connection?: never;
+        completedRetention?: QueueBoxCompletedRetention;
+        now?: () => Temporal.Instant;
+    }>
+    | Readonly<{
+        connection: IndexedDbConnection;
+        storeName: string;
+        dbName?: never;
+        completedRetention?: QueueBoxCompletedRetention;
+        now?: () => Temporal.Instant;
+    }>;
 
 export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     static readonly DEFAULT_DB_NAME = 'ar-eye-hunter-queuebox';
     static readonly DEFAULT_STORE_NAME = 'entries';
 
     readonly #connection: IndexedDbConnection;
+    readonly #now: () => Temporal.Instant;
     readonly #storeName: string;
+    readonly #completedRetention: QueueBoxCompletedRetention;
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
@@ -98,6 +112,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     );
 
     constructor(options: IndexedDbQueueBoxOptions = {}) {
+        this.#now = options.now ?? Temporal.Now.instant;
+        this.#completedRetention = {
+            typeIds: [...options.completedRetention?.typeIds ?? []],
+            topicIds: [...options.completedRetention?.topicIds ?? []]
+        };
         const dbName = options.dbName ?? IndexedDbQueueBox.DEFAULT_DB_NAME;
         this.#storeName = options.storeName ?? IndexedDbQueueBox.DEFAULT_STORE_NAME;
         this.#connection = options.connection ?? new IndexedDbConnection(async () => {
@@ -139,12 +158,13 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             this.#cleanupRateLimiter,
             async () => {
                 const db = await this.#connection.open();
-                const now = Temporal.Now.instant();
+                const now = this.#now();
                 const entries = await readAllStoredQueueEntries(db, this.#storeName);
                 const expired = entries.filter(
                     (stored) =>
-                        COMPLETED_STATUSES.has(stored.status) ||
-                        isStoredQueueEntryExpired(stored, now)
+                        isStoredQueueEntryExpired(stored, now) ||
+                        (COMPLETED_STATUSES.has(stored.status) &&
+                            !matchesQueueBoxCompletedRetention(stored, this.#completedRetention))
                 );
                 const removedEntries = await this.#write(db, {
                     mutations: expired.map(computeIndexedDbQueueDelete),
@@ -176,7 +196,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             this.#storeName,
             toKeyAsString(resourceEntry.key)
         );
-        if (stored && !isStoredQueueEntryExpired(stored, Temporal.Now.instant())) {
+        if (stored && !isStoredQueueEntryExpired(stored, this.#now())) {
             return decodeStoredResourceEntry(stored);
         }
         const computed = {
@@ -210,7 +230,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
         if (
             !stored ||
-            isStoredQueueEntryExpired(stored, Temporal.Now.instant()) ||
+            isStoredQueueEntryExpired(stored, this.#now()) ||
             !hasSameResourceEntryValue(decodeStoredResourceEntry(stored), expected)
         ) {
             return null;
@@ -246,7 +266,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         const db = await this.#connection.open();
-        const releasedAt = Temporal.Now.instant();
+        const releasedAt = this.#now();
         const keyStrings = resources.map((resource) => toKeyAsString(resource.key));
         const storedEntries = await readStoredQueueEntries(db, this.#storeName, keyStrings);
         const currentEntries = new Map(
@@ -277,7 +297,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             return new Map();
         }
         const db = await this.#connection.open();
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const entries = observations === undefined
             ? await readAllStoredQueueEntries(db, this.#storeName)
             : (await readStoredQueueEntries(
@@ -327,7 +347,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             return new Map();
         }
         const db = await this.#connection.open();
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const entries = observations === undefined
             ? await readAllStoredQueueEntries(db, this.#storeName)
             : (await readStoredQueueEntries(
@@ -389,7 +409,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         const db = await this.#connection.open();
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const requestedTypes = [...typeIds];
         const entriesByType = await readFairnessStoredQueueEntries({
             db,
@@ -419,7 +439,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             return new Map();
         }
         const db = await this.#connection.open();
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
         const entries = await readAllStoredQueueEntries(db, this.#storeName);
         const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
@@ -462,7 +482,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
         const entries = await readAllStoredQueueEntries(db, this.#storeName);
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>
@@ -489,21 +509,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         );
         const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkFinalization,
-            async () => {
-                if (!typeIds.has(EnqueuedType.APP_INBOX)) {
-                    return false;
-                }
-                const staleBefore = now.subtract({ milliseconds: finalizationStaleAfterMs });
-                return entries.some((stored) =>
-                    selectRetryExhaustionDueTimestamp({
-                        typeIds: new Set([EnqueuedType.APP_INBOX]),
-                        stored,
-                        processingAttempts: maxAttempts,
-                        now,
-                        staleBefore
-                    }) !== undefined
-                );
-            },
+            async () => hasIndexedDbFinalizationWork({ entries, typeIds, now, maxAttempts, finalizationStaleAfterMs }),
             false
         );
 
@@ -521,7 +527,13 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (computed.mutations.length === 0) {
             return computed.result;
         }
-        if (!await writeComputedIndexedDbQueueMutations(db, this.#storeName, computed.mutations)) {
+        if (
+            !await writeComputedIndexedDbQueueMutations({
+                db: db,
+                storeName: this.#storeName,
+                mutations: computed.mutations
+            })
+        ) {
             throw new IndexedDbQueueWriteConflictError('IndexedDB queue write conflicted');
         }
         return computed.result;
@@ -535,7 +547,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             return undefined;
         }
         const computed: IndexedDbQueueComputedWrite<ResourceEntry | undefined> =
-            isStoredQueueEntryExpired(stored, Temporal.Now.instant())
+            isStoredQueueEntryExpired(stored, this.#now())
                 ? { mutations: [computeIndexedDbQueueDelete(stored)], result: undefined }
                 : { mutations: [], result: decodeStoredResourceEntry(stored) };
         return await this.#write(db, computed);
@@ -561,15 +573,19 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async removeItem(key: Key): Promise<void> {
         const db = await this.#connection.open();
-        await writeComputedIndexedDbQueueMutations(db, this.#storeName, [
-            computeIndexedDbQueueUnconditionalDelete(toKeyAsString(key))
-        ]);
+        await writeComputedIndexedDbQueueMutations({
+            db: db,
+            storeName: this.#storeName,
+            mutations: [
+                computeIndexedDbQueueUnconditionalDelete(toKeyAsString(key))
+            ]
+        });
     }
 
     async getAllKeys(): Promise<Key[]> {
         const db = await this.#connection.open();
         const entries = await readAllStoredQueueEntries(db, this.#storeName);
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const keys: Key[] = [];
         const mutations: ComputedIndexedDbQueueMutation[] = [];
         for (const stored of entries) {
@@ -585,7 +601,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async deleteExpired(): Promise<number> {
         const db = await this.#connection.open();
-        const now = Temporal.Now.instant();
+        const now = this.#now();
         const entries = await readAllStoredQueueEntries(db, this.#storeName);
         const expired = entries.filter((stored) => isStoredQueueEntryExpired(stored, now));
         return await this.#write(db, {
@@ -613,4 +629,28 @@ function selectRetryExhaustionDueTimestamp(
         return undefined;
     }
     return startTs;
+}
+
+interface IndexedDbFinalizationWorkInput {
+    readonly entries: readonly StoredResourceEntry[];
+    readonly typeIds: ReadonlySet<string>;
+    readonly now: Temporal.Instant;
+    readonly maxAttempts: number;
+    readonly finalizationStaleAfterMs: number;
+}
+
+function hasIndexedDbFinalizationWork(input: IndexedDbFinalizationWorkInput): boolean {
+    if (!input.typeIds.has(EnqueuedType.APP_INBOX)) {
+        return false;
+    }
+    const staleBefore = input.now.subtract({ milliseconds: input.finalizationStaleAfterMs });
+    return input.entries.some((stored) =>
+        selectRetryExhaustionDueTimestamp({
+            typeIds: new Set([EnqueuedType.APP_INBOX]),
+            stored,
+            processingAttempts: input.maxAttempts,
+            now: input.now,
+            staleBefore
+        }) !== undefined
+    );
 }

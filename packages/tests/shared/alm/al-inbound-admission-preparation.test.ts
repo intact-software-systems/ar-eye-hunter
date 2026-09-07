@@ -25,7 +25,13 @@ import {
 import { validateALInboundCommitBundle } from '@shared/alm/inbound/validate-al-inbound-commit-bundle.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('inbound admission preparation boundary', () => {
     afterEach(() => {
@@ -48,6 +54,36 @@ describe('inbound admission preparation boundary', () => {
         await expect(stores.admissionStore.commitBundle({ ...bundle, observations })).rejects.toThrow(TypeError);
 
         expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+    });
+
+    it.each([1, 2])('commits and emits controls for a long logical ID at sequence %i', async (seq) => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...createRuntimeDependencies(stores.admissionStore),
+            sendControlMessage: async (message) => {
+                controls.push(message);
+            }
+        });
+        const original = createMessage(seq);
+        const message = {
+            ...original,
+            id: { ...original.id, msgId: 'runtime-generated-message/'.repeat(12) },
+            ordering: { orderingKey: 'runtime-ordering-stream/'.repeat(12), epoch: 7, seq }
+        };
+        try {
+            expect(decodeALMessageValue(message).right).toBeDefined();
+            const result = await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            expect(result.left).toBeUndefined();
+            const parsed = controls.map((control) => decodeALControlMessage(control).right!);
+            expect(parsed.map((control) => control.type)).toEqual(expect.arrayContaining(seq === 1 ? ['ack'] : ['nack', 'repair']));
+            for (const control of parsed) {
+                expect(control.payload).toMatchObject(control.type === 'ack' ? { ackedMsgId: message.id.msgId } : { msgId: message.id.msgId });
+            }
+        }
+        finally {
+            runtime.dispose();
+        }
     });
 
     it('computes one repeatable final bundle from captured read, policy, and effect facts', async () => {
@@ -304,10 +340,10 @@ describe('inbound admission preparation boundary', () => {
         expect(replay.supersedenceKey).toBeNull();
     });
 
-    it('discards a conflicted candidate and requires a fresh ingress before committing', async () => {
+    it('retains a conflicted candidate and admits it through one fresh QueueBox attempt', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const candidates: ALInboundCommitBundle[] = [];
-        const statuses: ('committed' | 'conflict')[] = [];
+        const statuses: ('committed' | 'conflict' | 'expired')[] = [];
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let injectConflict = true;
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
@@ -338,11 +374,10 @@ describe('inbound admission preparation boundary', () => {
         });
         try {
             const first = await runtime.handleIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
-            expect(first.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
+            expect(first.right).toEqual({ kind: 'pending-admission' });
             expect(controls).toEqual([]);
 
-            const second = await runtime.handleIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
-            expect(second.right).toEqual({ kind: 'admitted' });
+            await expect.poll(() => controls.length).toBeGreaterThan(0);
             expect(statuses).toEqual(['conflict', 'committed']);
             expect(candidates).toHaveLength(2);
             const committedControls = candidates[1]!.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg] : []);
@@ -434,6 +469,7 @@ async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmissi
 
 function createPreparationDependencies(): ALInboundEffectPreparationDependencies {
     return {
+        newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
         createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
     };
@@ -449,6 +485,7 @@ function createRuntimeDependencies(admissionStore: ALInboundAdmissionStore): ALI
         effectPreparation: createPreparationDependencies(),
         effectWorkerId: 'test-worker',
         clock: { nowMs: () => Date.now() },
+        random: () => 0.5,
         queueEngine: new InboxOutboxEngine(),
         ownsQueueEngine: true
     };

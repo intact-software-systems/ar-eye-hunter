@@ -1,8 +1,17 @@
-import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../al-contracts/al-contract.ts';
+import {
+    isRoomScopedALMessage,
+    readALTargetGroupRef,
+    type ALMessage
+} from '../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
-import type { GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '../api/group-types.ts';
+import type {
+    GroupMember,
+    GroupPresenceSession,
+    GroupRef,
+    GroupSnapshot
+} from '../api/group-types.ts';
 
 export interface RtcRoomSnapshotAdmissionInput {
     readonly message: ALMessage;
@@ -69,7 +78,8 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     }
     const targets = input.message.targets;
     const floor = targets && targets.mode !== 'unicast' ? targets.minSnapshotVersion : undefined;
-    if (floor !== undefined && snapshot.group.snapshotVersion < floor) {
+    // The target floor applies at receiver/relay ingress; origin authority is checked above.
+    if (input.fromPeerId !== undefined && floor !== undefined && snapshot.group.snapshotVersion < floor) {
         return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
     }
     const memberPeerIds = snapshot.activeSessions.filter((session) =>

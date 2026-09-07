@@ -1,5 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -7,7 +13,13 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import {
+    captureALOutboundCreationExpiry,
+    toALOutboundCanonicalKey,
+    toALOutboundIdentityEntry,
+    toALOutboundMessageReference
+} from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { decodeALOutboundTransportMessage, toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
@@ -31,13 +43,13 @@ describe('outbound admission persisted-record validation', () => {
         });
         vi.spyOn(backend.workQueue, 'releaseEntries').mockRejectedValueOnce(new Error('Terminal write unavailable'));
 
-        await expect(store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundPreparedMessage))
+        await expect(store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundTransportMessage))
             .rejects.toThrow('Terminal write unavailable');
         expect(await backend.workQueue.getItem(entry.key))
             .toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
 
         vi.setSystemTime(Date.now() + 10_001);
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundPreparedMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundTransportMessage)).toEqual([]);
         expect(await backend.workQueue.getItem(entry.key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             resource: entry.resource,
@@ -65,7 +77,7 @@ describe('outbound admission persisted-record validation', () => {
         const valid = createEffect(createMessage());
         await writeRawOutboundWork(backend, valid.effectId, valid);
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundPreparedMessage);
+        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage);
 
         expect(claimed.map((effect) => effect.payload)).toEqual([valid.payload]);
         expect(await backend.workQueue.getItem(corruptedEntry.key)).toMatchObject({
@@ -74,25 +86,28 @@ describe('outbound admission persisted-record validation', () => {
             dequeueAudit: { attempts: attempts + 1, nextTs: undefined }
         });
         await store.completeEffect(claimed[0]!.entry);
-        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundPreparedMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage)).toEqual([]);
         expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
-    it('rejects wrong-slot and malformed sent snapshots in point and list reads', async () => {
+    it('rejects wrong-slot and malformed sent snapshots in point and ordering lookup reads', async () => {
         const { backend, store } = createAdmission();
         const msg = createMessage();
         await backend.write(async (tx) => {
             await tx.set('outbound:sent:wrong-slot', { msgId: msg.id.msgId, msg });
         });
 
-        await expect(store.getSentMessage('wrong-slot')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        await expect(store.getAllSentMessages()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readSentMessage('wrong-slot')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await backend.write(async (tx) => {
+            await tx.set('outbound:ordering-message:["track",1]', 'wrong-slot');
+        });
+        await expect(store.readSentMessageByOrdering('track', 1)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
         await backend.write(async (tx) => {
             await tx.remove('outbound:sent:wrong-slot');
             await tx.set(`outbound:sent:${msg.id.msgId}`, { msgId: msg.id.msgId, msg: { ...msg, payload: {} } });
         });
-        await expect(store.getSentMessage(msg.id.msgId)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readSentMessage(msg.id.msgId)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('rejects malformed ack state and mismatched control history before mutation', async () => {
@@ -108,13 +123,20 @@ describe('outbound admission persisted-record validation', () => {
                 deadlineAtMs: Date.now() + 100
             });
         });
-        await expect(store.getPendingAck('msg')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readPendingAck('msg')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
         const msg = createMessage();
         await backend.write(async (tx) => {
             await tx.set(`outbound:control:acks:${msg.id.msgId}`, { kind: 'nacks', values: [] });
         });
-        await expect(store.readOutgoingMessage(msg, () => ({ msg: msg, persist: false, preparedMessages: [] })))
+        await expect(
+            store.readOutgoingMessage({
+                msg: msg,
+                planner: () => ({ msg: msg, persist: false, preparedMessages: [] }),
+                observedCanonicalEntry: undefined,
+                intent: 'enqueue'
+            })
+        )
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -125,7 +147,7 @@ describe('outbound admission persisted-record validation', () => {
         await writeRawOutboundWork(backend, effect.effectId, effect);
         const [claimed] = await store.claimReadyEffects({
             maxCount: 1
-        }, decodePersistedALMessageValue);
+        }, decodeALOutboundTransportMessage);
         expect(claimed.payload).toEqual(effect.payload);
         expect(claimed.entry.status).toBe(EntityStatus.RESERVED);
     });
@@ -136,20 +158,20 @@ describe('outbound admission persisted-record validation', () => {
         const effect = createEffect(msg);
         const corrupt = {
             ...effect,
-            payload: { kind: 'send-prepared', msg, prepared: { id: msg.id }, phase: 'immediate' }
+            payload: { ...effect.payload, prepared: { id: msg.id } }
         };
         await writeRawOutboundWork(backend, effect.effectId, corrupt);
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodePersistedALMessageValue)
+            }, decodeALOutboundTransportMessage)
         ).toEqual([]);
         expect(await store.peekNextEffectReadyAt()).toBeUndefined();
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
             durableEffects: [{ effectId: effect.effectId, payload: effect.payload }]
-        }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        }, decodeALOutboundTransportMessage)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         const persisted = await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId));
         expect(persisted?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect(JSON.parse(persisted!.resource).payload).toEqual(corrupt.payload);
@@ -170,12 +192,12 @@ describe('outbound admission persisted-record validation', () => {
         const runtime = createDefaultALOutboundMessageRuntime({
             stores: { admissionStore: store },
             outbox: new InMemoryQueueBox(new Map()),
-            decodePreparedMessage: decodeALOutboundPreparedMessage,
+            decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
             planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
-            sendPreparedMessage: async (message) => {
-                sent.push(message.id.msgId);
+            sendPreparedMessage: async (_message, _phase, lifecycle) => {
+                sent.push(lifecycle.canonicalMessage.id.msgId);
 
                 return { status: 'sent' as const };
             }
@@ -183,7 +205,7 @@ describe('outbound admission persisted-record validation', () => {
         try {
             await runtime.ready();
             await runtime.ready();
-            expect(sent).toEqual([valid.payload.msg.id.msgId]);
+            expect(sent).toEqual([valid.payload.message.msgId]);
             expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))
                 .toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1 } });
             expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', valid.effectId)))
@@ -194,31 +216,15 @@ describe('outbound admission persisted-record validation', () => {
         }
     });
 
-    it.each(['temporal', 'serialized'])('replays a %s queue entry with the original message and supersedence queue key', async (representation) => {
+    it.each(['payload', 'identity'] as const)('rejects a live reference whose canonical %s row is missing', async (missing) => {
         const { backend, store } = createAdmission();
-        const msg = createMessage();
-        const entry = {
-            ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-            key: { topicId: 'chat', resourceId: 'previous-superseded-resource', contextId: 'context' }
-        };
-        const effect = createEffect(msg);
-        await writeRawOutboundWork(backend, effect.effectId, {
-            ...effect,
-            payload: {
-                kind: 'enqueue-outbox',
-                msg,
-                entry: representation === 'serialized' ? JSON.parse(JSON.stringify(entry)) : entry,
-                replaceExisting: true
-            }
-        });
-        const [claimed] = await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundPreparedMessage);
-        if (claimed.payload.kind !== 'enqueue-outbox') {
-            throw new Error('Expected the durable outbox effect');
-        }
-        expect(claimed.payload.entry.key.resourceId).toBe('previous-superseded-resource');
-        expect(claimed.payload.entry.resource).toBe(JSON.stringify(msg));
-        expect(claimed.payload.entry.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
-        expect(claimed.payload.replaceExisting).toBe(true);
+        const effect = createEffect(createMessage());
+        await writeRawOutboundWork(backend, effect.effectId, effect);
+        await backend.workQueue.removeItem(missing === 'payload' ? effect.canonicalEntry.key : effect.identityEntry.key);
+        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))
+            .toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it.each(['ack-timeout', 'repair-hint', 'nack-retry'])('terminates corrupt %s replay as non-retryable', async (kind) => {
@@ -240,7 +246,7 @@ describe('outbound admission persisted-record validation', () => {
         const runtime = createDefaultALOutboundMessageRuntime({
             stores: { admissionStore: store },
             outbox: new InMemoryQueueBox(new Map()),
-            decodePreparedMessage: decodeALOutboundPreparedMessage,
+            decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
             planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
@@ -263,12 +269,13 @@ describe('outbound admission persisted-record validation', () => {
 
     it('rejects valid prepared messages for a different envelope and malformed WS recipient identities', async () => {
         const msg = createMessage();
-        const foreign = { ...msg, targets: { mode: 'unicast', toPeerId: 'foreign-peer' } };
-        expect(() => decodeALOutboundPreparedMessage(foreign, msg)).toThrow(TypeError);
+        const foreign = { ...toALOutboundTransportMessage(msg), targets: { mode: 'unicast', toPeerId: 'foreign-peer' } };
+        const prepared = toALOutboundTransportMessage(msg);
+        expect(() => decodeALOutboundTransportMessage(foreign, msg)).toThrow(TypeError);
         expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', message: msg }, msg)).toThrow(TypeError);
-        expect(decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', connectionId: 'connection', message: msg }, msg))
-            .toEqual({ kind: 'recipient', peerId: 'peer', connectionId: 'connection', message: msg });
-        expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'cluster-local-complete', message: msg }, msg)).not.toThrow();
+        expect(decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', connectionId: 'connection', message: prepared }, msg))
+            .toEqual({ kind: 'recipient', peerId: 'peer', connectionId: 'connection', message: prepared });
+        expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'cluster-local-complete', message: prepared }, msg)).not.toThrow();
     });
 
     it('rejects a prepared transport copy that removes durable relay diagnostics', () => {
@@ -277,11 +284,11 @@ describe('outbound admission persisted-record validation', () => {
             diagnostics: { visitedPeerIds: ['relay-self'] }
         };
         const corrupted = {
-            ...msg,
+            ...toALOutboundTransportMessage(msg),
             diagnostics: { visitedPeerIds: [] }
         };
 
-        expect(() => decodeALOutboundPreparedMessage(corrupted, msg)).toThrow(TypeError);
+        expect(() => decodeALOutboundTransportMessage(corrupted, msg)).toThrow(TypeError);
     });
 
     it('rejects a persisted prepared transport target that no longer matches its effect fingerprint', async () => {
@@ -293,7 +300,7 @@ describe('outbound admission persisted-record validation', () => {
             payload: {
                 ...effect.payload,
                 prepared: {
-                    ...msg,
+                    ...effect.payload.prepared,
                     forwarding: { nextHopPeerIds: ['redirected-peer'] }
                 }
             }
@@ -302,7 +309,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundPreparedMessage)
+            }, decodeALOutboundTransportMessage)
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -313,7 +320,7 @@ describe('outbound admission persisted-record validation', () => {
         const msg = createMessage();
         const effect = createEffect(msg);
         const redirected = {
-            ...msg,
+            ...effect.payload.prepared,
             forwarding: { nextHopPeerIds: ['redirected-peer'] }
         };
         await writeRawOutboundWork(backend, effect.effectId, {
@@ -328,7 +335,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundPreparedMessage)
+            }, decodeALOutboundTransportMessage)
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -396,7 +403,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodePersistedALMessageValue)
+            }, decodeALOutboundTransportMessage)
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -413,7 +420,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodePersistedALMessageValue)
+            }, decodeALOutboundTransportMessage)
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -443,7 +450,7 @@ async function scheduleNotYetInSyncRetry(
         maxAttempts: 3,
         expireAtTimestamp: Date.now() + 60_000,
         retryAtMs: Date.now()
-    }, decodePersistedALMessageValue);
+    }, decodeALOutboundTransportMessage);
 }
 
 function createMessage() {
@@ -462,19 +469,30 @@ function createMessage() {
 }
 
 function createEffect(msg: ReturnType<typeof createMessage>) {
-    const preparedFingerprint = toALOutboundPreparedFingerprint(msg);
+    const prepared = toALOutboundTransportMessage(msg);
+    const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
+    const canonicalEntry = {
+        ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        key: toALOutboundCanonicalKey('outbound', msg),
+        status: EntityStatus.COMPLETED
+    };
+    const reference = toALOutboundMessageReference('outbound', canonicalEntry, msg);
     return {
         effectId: toALOutboundEffectId([
             'send',
             msg.id.msgId,
             'immediate',
+            'initial',
             0,
             preparedFingerprint
         ]),
+        canonicalEntry,
+        identityEntry: toALOutboundIdentityEntry(reference, canonicalEntry, captureALOutboundCreationExpiry(msg)),
         payload: {
             kind: 'send-prepared' as const,
-            msg,
-            prepared: msg,
+            message: reference,
+            attemptIdentity: 'initial',
+            prepared,
             preparedFingerprint,
             phase: 'immediate' as const
         }
@@ -484,15 +502,28 @@ function createEffect(msg: ReturnType<typeof createMessage>) {
 async function writeRawOutboundWork(
     backend: InMemoryAdmissionBackend,
     effectId: string,
-    raw: Readonly<{ namespace?: unknown; effectId: unknown; payload: unknown; }>
+    raw: Readonly<{
+        namespace?: unknown;
+        effectId: unknown;
+        payload: unknown;
+        canonicalEntry?: ReturnType<typeof createEffect>['canonicalEntry'];
+        identityEntry?: ReturnType<typeof createEffect>['identityEntry'];
+    }>
 ) {
+    if (raw.canonicalEntry) {
+        await backend.workQueue.enqueueIfAbsent(raw.canonicalEntry);
+    }
+    if (raw.identityEntry) {
+        await backend.workQueue.enqueueIfAbsent(raw.identityEntry);
+    }
     const entry = toResourceEntryWithKey(
         toALOutboundWorkKey('outbound', effectId),
         toALOutboundWorkType('outbound'),
         { namespace: raw.namespace ?? 'outbound', effectId: raw.effectId, payload: raw.payload },
         Temporal.Instant.fromEpochMilliseconds(
-            typeof raw.payload === 'object' && raw.payload !== null && 'msg' in raw.payload
-                ? decodePersistedALMessageValue(raw.payload.msg).constraints!.expiresAtMs!
+            typeof raw.payload === 'object' && raw.payload !== null && 'message' in raw.payload && typeof raw.payload.message === 'object' &&
+                raw.payload.message !== null && 'expiresAtMs' in raw.payload.message
+                ? Number(raw.payload.message.expiresAtMs)
                 : Date.now() + 60_000
         )
     );

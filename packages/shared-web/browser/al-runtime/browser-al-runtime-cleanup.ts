@@ -11,7 +11,14 @@ import {
     type IndexedDbAdmissionMutation
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import type { StoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
+import type { ComputedIndexedDbQueueMutation } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
+import {
+    computeBrowserALWorkCleanupMutations,
+    readBrowserALWorkCleanupRows
+} from './browser-al-work-cleanup.ts';
 
 import {
     BROWSER_AL_RUNTIME_DB_NAME,
@@ -25,6 +32,7 @@ export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 export interface BrowserALRuntimeCleanupRead {
     readonly revision: number;
     readonly rows: readonly BrowserALRuntimeCleanupRow[];
+    readonly workRows: readonly StoredResourceEntry[];
 }
 
 export interface BrowserALRuntimeCleanupRow {
@@ -35,6 +43,7 @@ export interface BrowserALRuntimeCleanupRow {
 
 export interface BrowserALRuntimeCleanupComputed {
     readonly mutations: readonly IndexedDbAdmissionMutation[];
+    readonly queueMutations: readonly ComputedIndexedDbQueueMutation[];
     readonly revisionWrite: Readonly<{
         key: typeof AL_ADMISSION_REVISION_KEY;
         value: number;
@@ -53,7 +62,8 @@ export interface BrowserALRuntimeCleanupValidationIssue {
         | 'revision-write-mismatch'
         | 'unexpected-mutation'
         | 'unexpected-mutation-kind'
-        | 'write-token-mismatch';
+        | 'write-token-mismatch'
+        | 'queue-mutations-mismatch';
     readonly message: string;
 }
 
@@ -163,8 +173,8 @@ async function deleteBrowserALRuntimeEntriesMatching(
         await writeBrowserALRuntimeCleanup(db, read.revision, computed);
         return toBrowserALRuntimeCleanupResult(
             keyPrefixes,
-            read.rows.length,
-            computed.mutations.length
+            read.rows.length + read.workRows.length,
+            computed.mutations.length + computed.queueMutations.length
         );
     }
     finally {
@@ -189,6 +199,7 @@ async function readBrowserALRuntimeCleanup(
     );
     return {
         revision: snapshot.revision,
+        workRows: await readBrowserALWorkCleanupRows(db, keyPrefixes, policy),
         rows: snapshot.stored
             .filter((stored) =>
                 stored.key !== AL_ADMISSION_REVISION_KEY &&
@@ -207,6 +218,7 @@ function computeBrowserALRuntimeCleanup(
     deletionPolicy: BrowserALRuntimeDeletionPolicy
 ): BrowserALRuntimeCleanupComputed {
     return {
+        queueMutations: computeBrowserALWorkCleanupMutations(read.workRows, deletionPolicy),
         mutations: read.rows
             .filter((row) => (deletionPolicy.kind === 'all' ||
                 row.expireAtTimestamp <= deletionPolicy.nowMs)
@@ -230,6 +242,15 @@ export function validateBrowserALRuntimeCleanup(
     );
     return [
         ...validateBrowserALRuntimeCleanupMutations(eligibleRows, computed.mutations),
+        ...(!jsonEquals(
+                computed.queueMutations,
+                computeBrowserALWorkCleanupMutations(read.workRows, deletionPolicy)
+            )
+            ? [{
+                code: 'queue-mutations-mismatch' as const,
+                message: 'Browser AL work cleanup mutations differ from the owned queue observations'
+            }]
+            : []),
         ...validateBrowserALRuntimeCleanupRevision(read.revision, computed.revisionWrite)
     ];
 }
@@ -323,11 +344,11 @@ async function writeBrowserALRuntimeCleanup(
     expectedRevision: number,
     computed: BrowserALRuntimeCleanupComputed
 ): Promise<void> {
-    if (computed.mutations.length === 0) {
+    if (computed.mutations.length === 0 && computed.queueMutations.length === 0) {
         return;
     }
     const committed = await writeIndexedDbAdmissionMutations({
-        queueMutations: [],
+        queueMutations: computed.queueMutations,
         db,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
         expectedRevision,

@@ -10,13 +10,13 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     ALAdmissionCorruptionError,
     createALInboundAdmissionStore,
     createDefaultInMemoryALInboundRuntimeStores,
-    InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
     normalizeALRuntimeStoreRetention,
@@ -30,6 +30,7 @@ import {
     type ALMessageHandlingPlan,
     type ResourceEntry
 } from '@shared/mod.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -125,39 +126,63 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
-    it('returns a stale optimistic write to the caller and admits a fresh redelivery', async () => {
+    it('retains a stale optimistic write for fresh admission after runtime restart', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
-
         const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const baseAdmission = stores.admissionStore;
-        const commitBundle = baseAdmission.commitBundle.bind(baseAdmission);
-        let rejectedFirstCommit = false;
-        vi.spyOn(baseAdmission, 'commitBundle').mockImplementation(async (bundle) => {
-            if (!rejectedFirstCommit && bundle.senderId === 'peer-1') {
-                rejectedFirstCommit = true;
+        const admission = stores.admissionStore;
+        const commitBundle = admission.commitBundle.bind(admission);
+        const conflict = vi.spyOn(admission, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            expect(
                 await commitBundle({
                     ...bundle,
                     mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'),
                     durableEffects: []
-                });
-            }
+                })
+            ).toBe('committed');
             return await commitBundle(bundle);
         });
+        const first = createInboundHarness(stores);
+        const enqueue = admission.workQueue.enqueueIfAbsent.bind(admission.workQueue);
+        const retention = vi.spyOn(admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+            const stored = await enqueue(entry);
+            first.runtime.dispose(); // Stop after durable retention, before its first claim.
+            return stored;
+        });
+        const seq2 = { ...createOrderedMessage(2, 'two'), constraints: { expiresAtMs: Date.now() + 60_000 } };
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
 
-        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(stores);
-        const seq2 = createOrderedMessage(2, 'two');
+        const queued = await first.runtime.handleIncomingMessage(seq2, source);
+
+        expect(queued.right).toEqual({ kind: 'pending-admission' });
+        expect(conflict).toHaveBeenCalledTimes(1);
+        expect(first.dispatchedTexts).toEqual([]);
+        expect(first.forwardedIds).toEqual([]);
+        expect(first.controlMessages).toEqual([]);
+        const entry = await admission.workQueue.getItem(retention.mock.calls[0][0].key);
+        expect(entry).toBeDefined();
+        const pending = decodeALInboundWorkEntry(entry!, admission.namespace);
+        expect(pending.entry.status).toBe(EntityStatus.NEW);
+        expect(pending.payload).toEqual({ kind: 'admit-message', msg: decodePersistedALMessage(JSON.stringify(seq2)), source });
+        expect(pending.expireAtTimestamp).toBe(seq2.constraints?.expiresAtMs);
+        conflict.mockRestore();
+        retention.mockRestore();
+
+        const restarted = createInboundHarness(stores);
+        await restarted.runtime.ready();
+        await expect.poll(() => restarted.forwardedIds).toEqual([seq2.id.msgId]);
+        expect((await admission.workQueue.getItem(entry!.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect(restarted.dispatchedTexts).toEqual([]);
+        expect(readAckPayloads(restarted.controlMessages)).toEqual([]);
         const seq1 = createOrderedMessage(1, 'one');
+        const admitted = await restarted.runtime.handleIncomingMessage(seq1, source);
 
-        const rejected = await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
-        expect(rejected.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
-        expect(dispatchedTexts).toEqual([]);
-        expect(forwardedIds).toEqual([]);
-        await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
-        await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
-
-        expect(rejectedFirstCommit).toBe(true);
-        await expect.poll(() => dispatchedTexts).toEqual(['one', 'two']);
-        expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
+        expect(admitted.right).toEqual({ kind: 'admitted' });
+        await expect.poll(() => restarted.dispatchedTexts).toEqual(['one', 'two']);
+        expect(restarted.forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
+        const duplicate = await restarted.runtime.handleIncomingMessage(seq2, source);
+        expect(duplicate.right).toEqual({ kind: 'duplicate' });
+        expect(restarted.dispatchedTexts).toEqual(['one', 'two']);
+        expect(restarted.forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
     it('preserves persisted corruption discovered during normal inbound admission', async () => {

@@ -1,9 +1,7 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 import type {
     ALControlAdmissionCandidate,
     ALControlAdmissionRead
@@ -11,26 +9,24 @@ import type {
 
 export function validateALOutboundControlAdmission(
     candidate: ALControlAdmissionCandidate
-): Either<ALMessageRejection, ALControlAdmissionCandidate> {
+): readonly ALMessageRejection[] {
     const { read } = candidate;
-    if (!read.owner || !read.sent || read.sent.msg.id.senderId !== read.owner) {
-        return rejectedControl('AL control has no retained outbound message obligation');
+    if (!read.owner || !read.sent || read.sent.reference.senderId !== read.owner) {
+        return [{ code: 'unauthorized', message: 'AL control has no retained outbound message obligation' }];
     }
+    const issues: ALMessageRejection[] = [];
     if (
         candidate.nextVersion?.senderId !== read.owner ||
         !Number.isSafeInteger(candidate.nextVersion.version) ||
         candidate.nextVersion.version !== (read.ownerVersion?.version ?? 0) + 1
     ) {
-        return Either.ofLeft({
-            code: 'malformed',
-            message: 'AL control version differs from its captured owner observation'
-        });
+        issues.push({ code: 'malformed', message: 'AL control version differs from its captured owner observation' });
     }
     if (read.parsed.payload.toPeerId !== read.owner) {
-        return rejectedControl('AL control is addressed to another outbound message owner');
+        issues.push({ code: 'unauthorized', message: 'AL control is addressed to another outbound message owner' });
     }
     if (isDuplicateControl(read)) {
-        return rejectedControl('AL control was already admitted');
+        issues.push({ code: 'unauthorized', message: 'AL control was already admitted' });
     }
     if (read.parsed.type === 'ack') {
         const payload = read.parsed.payload;
@@ -38,22 +34,24 @@ export function validateALOutboundControlAdmission(
             !read.pending || !read.pending.expectedPeerIds.includes(payload.fromPeerId) ||
             read.pending.ackedPeerIds.includes(payload.fromPeerId)
         ) {
-            return rejectedControl('AL acknowledgement sender has no pending outbound obligation');
+            issues.push({
+                code: 'unauthorized',
+                message: 'AL acknowledgement sender has no pending outbound obligation'
+            });
         }
-        return Either.ofRight(candidate);
+        return issues;
     }
     const payload = read.parsed.payload;
-    if (!isExpectedRepairPeer(read.sent.msg, read.pending, payload.fromPeerId)) {
-        return rejectedControl('AL repair sender has no retained outbound obligation');
+    if (!isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
+        issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
     }
-    if (!hasValidOrderingHints(read.sent.msg, payload)) {
-        return rejectedControl('AL repair ordering hints do not match the retained outbound message');
+    if (!hasValidOrderingHints(read.sent, payload)) {
+        issues.push({
+            code: 'unauthorized',
+            message: 'AL repair ordering hints do not match the retained outbound message'
+        });
     }
-    return Either.ofRight(candidate);
-}
-
-function rejectedControl(message: string): Either<ALMessageRejection, ALControlAdmissionCandidate> {
-    return Either.ofLeft({ code: 'unauthorized', message });
+    return issues;
 }
 
 function isDuplicateControl(read: ALControlAdmissionRead): boolean {
@@ -88,18 +86,18 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
 }
 
 function isExpectedRepairPeer(
-    sent: ALMessage,
+    sent: ALStoredOutboundMessage,
     pending: ALOutboundPendingAckSnapshot | undefined,
     peerId: string
 ): boolean {
-    if (sent.targets?.mode === 'unicast') {
-        return sent.targets.toPeerId === peerId;
+    if (sent.unicastPeerId !== null) {
+        return sent.unicastPeerId === peerId;
     }
     return pending?.expectedPeerIds.includes(peerId) === true;
 }
 
 function hasValidOrderingHints(
-    sent: ALMessage,
+    sent: ALStoredOutboundMessage,
     payload: ALNackPayload | ALRepairPayload
 ): boolean {
     const missingSeqs = payload.missingSeqs ?? [];
@@ -107,9 +105,9 @@ function hasValidOrderingHints(
     if (!hasHints) {
         return true;
     }
-    const trackKey = toALOrderingTrackKey(sent);
-    const triggerSeq = sent.ordering?.seq;
-    if (trackKey === undefined || triggerSeq === undefined || payload.orderingKey !== trackKey) {
+    const trackKey = sent.orderingTrackKey;
+    const triggerSeq = sent.orderingSeq;
+    if (trackKey === null || triggerSeq === null || payload.orderingKey !== trackKey) {
         return false;
     }
     if (payload.expectedSeq !== undefined && payload.expectedSeq > triggerSeq) {

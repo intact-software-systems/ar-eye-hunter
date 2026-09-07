@@ -5,6 +5,7 @@ import {
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -22,6 +23,7 @@ import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-val
 import { computeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 
 export interface ALInboundEffectPreparationDependencies {
+    readonly newControlId: () => string;
     readonly selfPeerId: string;
     readonly createInboxEntry: (msg: ALMessage) => ResourceEntry;
 }
@@ -63,7 +65,7 @@ export function readALInboundEffectFacts(
     return {
         selfPeerId: dependencies.selfPeerId,
         observedAtEpochMs: nowMs,
-        controlIdPrefix: crypto.randomUUID(),
+        controlIdPrefix: dependencies.newControlId(),
         inboxEntry: {
             ...entry,
             key: { ...entry.key },
@@ -108,6 +110,9 @@ export function prepareALInboundCommitBundle(
         )
     );
     return {
+        admissionExpiresAtMs: read.kind === 'incoming'
+            ? resolveALMessageExpireAtMs(msg) ?? read.nowMs + read.retention.durableEffectTtlMs
+            : null,
         senderId: msg.id.senderId,
         observations: read.observations,
         mutations: mutations.map((mutation) =>

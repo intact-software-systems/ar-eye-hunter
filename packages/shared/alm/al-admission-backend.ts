@@ -1,11 +1,21 @@
+import { requireLivePersistenceWrite } from '../persistence/persistence-write-deadline.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
 import { toResourceEntrySnapshot } from '../queuebox/resource-entry-observations.ts';
-import { toKeyAsString, toResourceEntryKey, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import {
+    toKeyAsString,
+    toResourceEntryKey,
+    type Key,
+    type ResourceEntry
+} from '../queuebox/ResourceEntry.ts';
 
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber, decodeALAdmissionRecord } from './al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from './al-admission-work-backend.ts';
+import {
+    AL_ADMISSION_WORK_COMPLETED_RETENTION,
+    type ALAdmissionWorkBackend,
+    type ALAdmissionWorkWriteContext
+} from './al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 
 export interface ALAdmissionStoredValue {
@@ -29,7 +39,7 @@ export interface ALAdmissionBackend {
     ready(): Promise<void>;
     read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined>;
     list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]>;
-    write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T>;
+    write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>, executionExpiresAtMs?: number | null): Promise<T>;
 }
 
 export interface ALAdmissionWriteContext {
@@ -39,10 +49,10 @@ export interface ALAdmissionWriteContext {
     remove(key: string): Promise<void>;
 }
 
-export function createInMemoryALAdmissionState(): ALAdmissionMemoryState {
+export function createInMemoryALAdmissionState(workQueue = new InMemoryQueueBox()): ALAdmissionMemoryState {
     return {
         data: new Map<string, ALAdmissionStoredValue>(),
-        workQueue: new InMemoryQueueBox(),
+        workQueue,
         writeTail: Promise.resolve()
     };
 }
@@ -58,6 +68,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     ) {
         this.state = state;
         this.workQueue = state.workQueue;
+        this.workQueue.retainCompletedUntilExpiry(AL_ADMISSION_WORK_COMPLETED_RETENTION);
         this.nowMs = nowMs;
     }
 
@@ -104,7 +115,10 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         return entries;
     }
 
-    async write<T>(fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>): Promise<T> {
+    async write<T>(
+        fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
+        executionExpiresAtMs: number | null = null
+    ): Promise<T> {
         const previous = this.state.writeTail;
         let release: (() => void) | undefined;
         this.state.writeTail = new Promise<void>((resolve) => {
@@ -118,6 +132,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
             const result = await fn(pending);
             const mutations = pending.mutations();
             const queueWrites = pending.queueWrites();
+            requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
             if (!this.workQueue.writeIfAllObserved(queueWrites)) {
                 throw new ALAdmissionBackendConflictError('In-memory AL admission work write conflicted');
             }

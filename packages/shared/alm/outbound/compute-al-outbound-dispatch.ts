@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAdmissionMutation,
@@ -8,6 +9,8 @@ import type {
     ALOutboundDurableEffectWrite,
     ALOutboundMessageReadDto
 } from './al-outbound-admission-store.ts';
+import { captureALOutboundPolicy } from './al-outbound-admission-validation.ts';
+import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPhase, ALOutboundEnqueueStatus } from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
@@ -19,8 +22,10 @@ import {
 export type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
 
 export interface ALOutboundCommitDispatchOptions {
+    readonly explicitPlan?: boolean;
+    readonly pendingAdmission?: ResourceEntry;
     readonly observedOutboxEntry?: ResourceEntry;
-    readonly replaceExistingOutbox?: boolean;
+    readonly attemptIdentity?: string;
     readonly repairBudget?: Readonly<{ priorAttempts: number; maxAttempts: number; }>;
 }
 
@@ -34,33 +39,11 @@ export interface ALOutboundComputedDto<TPrepared> {
 
 export interface ComputeALOutboundDispatchInput<TPrepared> {
     readonly read: ALOutboundMessageReadDto<TPrepared>;
-    readonly outboxEntry: ResourceEntry | undefined;
+    readonly outboxEntry: ResourceEntry;
     readonly dispatchAtMs: number;
     readonly intent: ALOutboundComputeIntent;
     readonly phase: ALOutboundDispatchPhase;
     readonly options: ALOutboundCommitDispatchOptions;
-}
-
-interface ALOutboundDispatchStrategy {
-    readonly dispatchPrepared: boolean;
-    readonly enqueueOutbox: boolean;
-}
-
-interface AppendALOutboundDispatchEffectsInput<TPrepared> {
-    readonly input: ComputeALOutboundDispatchInput<TPrepared>;
-    readonly strategy: ALOutboundDispatchStrategy;
-    readonly entries: ResourceEntry[];
-    readonly mutations: ALOutboundAdmissionMutation[];
-    readonly effects: ALOutboundDurableEffectWrite<TPrepared>[];
-}
-
-interface ToALOutboundComputedResultInput<TPrepared> {
-    readonly read: ALOutboundMessageReadDto<TPrepared>;
-    readonly strategy: ALOutboundDispatchStrategy;
-    readonly entries: readonly ResourceEntry[];
-    readonly mutations: readonly ALOutboundAdmissionMutation[];
-    readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
-    readonly dispatchAtMs: number;
 }
 
 export function computeALOutboundDispatch<TPrepared>(
@@ -70,22 +53,115 @@ export function computeALOutboundDispatch<TPrepared>(
     if (earlyResult) {
         return { ...earlyResult, msg: input.read.msg };
     }
-
-    const strategy = toALOutboundDispatchStrategy(input);
-    const extraMutations = computeRepairAttemptMutations(input.read, input.options.repairBudget);
-    if (extraMutations === 'skip') {
-        return toSkippedDispatchResult(input.read.msg.id.msgId);
+    const { read, options } = input;
+    const repairMutations = computeRepairAttemptMutations(read, options.repairBudget);
+    if (repairMutations === 'skip') {
+        return { status: 'skipped', reason: `Skipped outbound dispatch for message ${read.msg.id.msgId}`, entries: [] };
     }
 
-    return buildALOutboundDispatchResult(input, strategy, extraMutations);
+    const awaitPhysicalDispatch = input.intent === 'enqueue' && read.plan.preparedMessages.length === 0;
+    const canonicalEntry = {
+        ...input.outboxEntry,
+        status: awaitPhysicalDispatch ? EntityStatus.NEW : EntityStatus.COMPLETED
+    };
+    const mutations = [...computeMessageMutations(read, canonicalEntry), ...repairMutations];
+    const durableEffects = computePreparedEffects(input, canonicalEntry);
+    if (read.plan.preparedMessages.length > 0) {
+        appendAckTrackingMutationsAndEffects(mutations, durableEffects, read);
+    }
+
+    const status: ALOutboundEnqueueStatus = awaitPhysicalDispatch || read.plan.persist
+        ? 'enqueued'
+        : read.plan.preparedMessages.length > 0
+        ? 'accepted'
+        : 'no-route';
+    return {
+        msg: read.msg,
+        status,
+        reason: status === 'no-route' ? `No outbound transport route for message ${read.msg.id.msgId}` : undefined,
+        entries: [canonicalEntry],
+        bundle: {
+            pendingAdmission: options.pendingAdmission,
+            senderId: read.msg.id.senderId,
+            expectedVersion: read.clientRecord?.version,
+            canonicalEntry,
+            mutations,
+            durableEffects: durableEffects.map((effect) => ({
+                ...effect,
+                retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
+            }))
+        }
+    };
+}
+
+function computeMessageMutations<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>,
+    canonicalEntry: ResourceEntry
+): ALOutboundAdmissionMutation[] {
+    const expiresAtMs = resolveALMessageExpireAtMs(read.msg);
+    const mutations: ALOutboundAdmissionMutation[] = [
+        {
+            kind: 'set-msg-owner',
+            msgId: read.msg.id.msgId,
+            senderId: read.msg.id.senderId,
+            expireAtTimestamp: expiresAtMs
+        },
+        toSentMessageMutation(read, canonicalEntry)
+    ];
+    const trackKey = toALOrderingTrackKey(read.msg);
+    if (trackKey && read.msg.ordering?.seq !== undefined && expiresAtMs !== undefined) {
+        mutations.push({
+            kind: 'set-ordering-message',
+            trackKey,
+            seq: read.msg.ordering.seq,
+            msgId: read.msg.id.msgId,
+            expireAtTimestamp: expiresAtMs
+        });
+    }
+    appendSupersedenceMutations(mutations, read);
+    return mutations;
+}
+
+function computePreparedEffects<TPrepared>(
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    canonicalEntry: ResourceEntry
+): ALOutboundDurableEffectWrite<TPrepared>[] {
+    const { read, options, phase } = input;
+    const reference = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg);
+    const attemptIdentity = options.attemptIdentity ?? 'initial';
+    return read.plan.preparedMessages.map((prepared, index) => {
+        const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
+        return {
+            effectId: toALOutboundEffectId([
+                'send',
+                read.msg.id.msgId,
+                phase,
+                attemptIdentity,
+                index,
+                preparedFingerprint
+            ]),
+            expireAtTimestamp: reference.expiresAtMs,
+            payload: {
+                kind: 'send-prepared',
+                message: reference,
+                prepared,
+                preparedFingerprint,
+                attemptIdentity,
+                phase
+            }
+        };
+    });
 }
 
 function toEarlyDispatchResult<TPrepared>(
     input: ComputeALOutboundDispatchInput<TPrepared>
 ): ALOutboundComputedDto<TPrepared> | undefined {
     const { read } = input;
-    const expiresAtMs = resolveALMessageExpireAtMs(read.msg);
-    if (expiresAtMs !== undefined && expiresAtMs <= input.dispatchAtMs) {
+    const expiresAtMs = Math.min(
+        resolveALMessageExpireAtMs(read.msg) ?? Infinity,
+        read.storedMessage?.reference.expiresAtMs ?? Infinity
+    );
+    if (expiresAtMs <= input.dispatchAtMs) {
         return { status: 'expired', reason: 'Message expired or is too stale', entries: [] };
     }
     if (read.plan.dropReason) {
@@ -94,6 +170,9 @@ function toEarlyDispatchResult<TPrepared>(
             reason: read.plan.dropReason,
             entries: []
         };
+    }
+    if (input.intent === 'repair' && read.plan.preparedMessages.length === 0) {
+        return { status: 'no-route', reason: 'Repair has no prepared recipient attempt', entries: [] };
     }
     if (input.intent === 'enqueue' && read.sentSnapshot) {
         return toDuplicateDispatchResult(read, input.outboxEntry);
@@ -105,134 +184,16 @@ function toEarlyDispatchResult<TPrepared>(
 
 function toDuplicateDispatchResult<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
-    outboxEntry: ResourceEntry | undefined
+    outboxEntry: ResourceEntry
 ): ALOutboundComputedDto<TPrepared> {
     const entry = read.sentSnapshot?.outboxKey
-        ? { ...requireOutboxEntry(outboxEntry), key: read.sentSnapshot.outboxKey }
+        ? { ...outboxEntry, key: read.sentSnapshot.outboxKey }
         : undefined;
     return {
         status: 'duplicate',
         reason: `Duplicate outbound message ${read.msg.id.msgId}`,
         entries: entry ? [entry] : []
     };
-}
-
-function toALOutboundDispatchStrategy<TPrepared>(
-    input: ComputeALOutboundDispatchInput<TPrepared>
-): ALOutboundDispatchStrategy {
-    const preparedMessagesAvailable = input.read.plan.preparedMessages.length > 0;
-    const dispatchPrepared = input.intent === 'enqueue'
-        ? preparedMessagesAvailable && !input.read.plan.persist
-        : preparedMessagesAvailable;
-    return {
-        dispatchPrepared,
-        enqueueOutbox: (input.intent === 'enqueue' || (input.intent === 'repair' && input.read.plan.persist)) &&
-            !dispatchPrepared
-    };
-}
-
-function buildALOutboundDispatchResult<TPrepared>(
-    input: ComputeALOutboundDispatchInput<TPrepared>,
-    strategy: ALOutboundDispatchStrategy,
-    extraMutations: readonly ALOutboundAdmissionMutation[]
-): ALOutboundComputedDto<TPrepared> {
-    const { read } = input;
-    const entries: ResourceEntry[] = [];
-    const mutations: ALOutboundAdmissionMutation[] = [
-        {
-            kind: 'set-msg-owner',
-            msgId: read.msg.id.msgId,
-            senderId: read.msg.id.senderId,
-            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg)
-        }
-    ];
-    const durableEffects: ALOutboundDurableEffectWrite<TPrepared>[] = [];
-    mutations.push(...extraMutations);
-    appendSupersedenceMutations(mutations, read);
-    appendALOutboundDispatchEffects({ input, strategy, entries, mutations, effects: durableEffects });
-    return toALOutboundComputedResult({
-        read,
-        strategy,
-        entries,
-        mutations,
-        durableEffects,
-        dispatchAtMs: input.dispatchAtMs
-    });
-}
-
-function appendALOutboundDispatchEffects<TPrepared>(
-    input: AppendALOutboundDispatchEffectsInput<TPrepared>
-): void {
-    const { read, options, outboxEntry, phase } = input.input;
-    if (input.strategy.enqueueOutbox) {
-        const entry = toPersistedOutboxEntry(read, requireOutboxEntry(outboxEntry));
-        input.entries.push(entry);
-        input.mutations.push(
-            toSentMessageMutation(read.msg, {
-                outboxKey: entry.key,
-                supersedenceKey: read.plan.supersedenceTracking?.key
-            })
-        );
-        input.effects.push({
-            effectId: toALOutboundEffectId(['outbox', read.msg.id.msgId]),
-            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
-            payload: {
-                kind: 'enqueue-outbox',
-                msg: read.msg,
-                entry,
-                replaceExisting: options.replaceExistingOutbox === true ||
-                    (read.plan.supersedenceTracking?.enabled === true &&
-                        read.plan.supersedenceTracking.key !== undefined)
-            }
-        });
-    }
-    if (input.strategy.dispatchPrepared) {
-        input.mutations.push(toSentMessageMutation(read.msg));
-        appendAckTrackingMutationsAndEffects(input.mutations, input.effects, read);
-        read.plan.preparedMessages.forEach((prepared, index) => {
-            const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
-            input.effects.push({
-                effectId: toALOutboundEffectId([
-                    'send',
-                    read.msg.id.msgId,
-                    phase,
-                    index,
-                    preparedFingerprint
-                ]),
-                expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
-                payload: { kind: 'send-prepared', msg: read.msg, prepared, preparedFingerprint, phase }
-            });
-        });
-    }
-}
-
-function toALOutboundComputedResult<TPrepared>(
-    input: ToALOutboundComputedResultInput<TPrepared>
-): ALOutboundComputedDto<TPrepared> {
-    const status: ALOutboundEnqueueStatus = input.strategy.enqueueOutbox
-        ? 'enqueued'
-        : input.strategy.dispatchPrepared
-        ? 'accepted'
-        : 'no-route';
-    const reason = status === 'no-route'
-        ? `No outbound transport route for message ${input.read.msg.id.msgId}`
-        : undefined;
-    const bundle = input.mutations.length === 0 && input.durableEffects.length === 0
-        ? undefined
-        : {
-            senderId: input.read.msg.id.senderId,
-            expectedVersion: input.read.clientRecord?.version,
-            mutations: input.mutations,
-            durableEffects: input.durableEffects.map((effect) => ({
-                ...effect,
-                retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
-            }))
-        } satisfies ALOutboundCommitBundle<TPrepared>;
-    return { msg: input.read.msg, status, reason, entries: input.entries, bundle };
-}
-
-function toSkippedDispatchResult<TPrepared>(msgId: string): ALOutboundComputedDto<TPrepared> {
-    return { status: 'skipped', reason: `Skipped outbound dispatch for message ${msgId}`, entries: [] };
 }
 
 function computeRepairAttemptMutations<TPrepared>(
@@ -314,41 +275,22 @@ function appendAckTrackingMutationsAndEffects<TPrepared>(
     });
 }
 
-function toPersistedOutboxEntry<TPrepared>(
+function toSentMessageMutation<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
-    entry: ResourceEntry
-): ResourceEntry {
-    const tracking = read.plan.supersedenceTracking;
-    if (!tracking?.enabled || !tracking.key || !read.priorOutboxKey) {
-        return entry;
-    }
-
-    return { ...entry, key: read.priorOutboxKey };
-}
-
-function requireOutboxEntry(entry: ResourceEntry | undefined): ResourceEntry {
-    if (!entry) {
-        throw new Error('Outbound dispatch requires a captured outbox entry');
-    }
-    return entry;
-}
-
-function toSentMessageMutation(
-    msg: ALMessage,
-    metadata: Readonly<{
-        outboxKey?: Key;
-        supersedenceKey?: string;
-    }> = {}
+    canonicalEntry: ResourceEntry
 ): ALOutboundAdmissionMutation {
     return {
         kind: 'set-sent-message',
+        reference: toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg),
+        policy: read.storedMessage?.policy ?? captureALOutboundPolicy(read.plan),
+        creationExpiry: read.creationExpiry,
         snapshot: {
-            msgId: msg.id.msgId,
-            msg,
-            outboxKey: metadata.outboxKey,
-            supersedenceKey: metadata.supersedenceKey
+            msgId: read.msg.id.msgId,
+            msg: read.msg,
+            outboxKey: canonicalEntry.key,
+            supersedenceKey: read.plan.supersedenceTracking?.key
         } satisfies ALOutboundSentMessageSnapshot,
-        expireAtTimestamp: resolveALMessageExpireAtMs(msg)
+        expireAtTimestamp: resolveALMessageExpireAtMs(read.msg)
     };
 }
 

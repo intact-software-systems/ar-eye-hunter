@@ -1,4 +1,8 @@
 import { Either } from '@shared/resilience/Either.ts';
+import {
+    toALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '../../alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
@@ -25,11 +29,11 @@ export type WsQueueBoxServerPreparedMessage =
         kind: 'recipient';
         peerId: string;
         connectionId: string;
-        message: ALMessage;
+        message: ALOutboundTransportMessage;
     }>
     | Readonly<{
         kind: 'cluster-local-complete';
-        message: ALMessage;
+        message: ALOutboundTransportMessage;
     }>;
 
 export type WsQueueBoxServerOutboundPhase = 'immediate' | 'dequeue';
@@ -45,6 +49,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
     export interface RecipientResolution {
         readonly resolveRecipients: boolean;
         readonly representNoCurrentRecipient: boolean;
+        readonly allowClusterRecipients: boolean;
     }
 }
 
@@ -72,7 +77,8 @@ export class WsQueueBoxServerOutboundPlanning {
 
         return this.validateMessage(message, {
             resolveRecipients: phase === 'dequeue' || !persist,
-            representNoCurrentRecipient: phase === 'dequeue'
+            representNoCurrentRecipient: phase === 'dequeue',
+            allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered
         }).fold(
             (error) =>
                 toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
@@ -80,12 +86,12 @@ export class WsQueueBoxServerOutboundPlanning {
                 msg: message,
                 persist,
                 preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
-                    ? [{ kind: 'cluster-local-complete', message }]
+                    ? [{ kind: 'cluster-local-complete', message: toALOutboundTransportMessage(message) }]
                     : recipients.map((recipient) => ({
                         kind: 'recipient',
                         peerId: recipient.peerId,
                         connectionId: recipient.connectionId,
-                        message
+                        message: toALOutboundTransportMessage(message)
                     })),
                 ackTracking: toAckTrackingPlan(normalized.effective, recipients),
                 repairTracking: toRepairTrackingPlan(normalized.effective),
@@ -112,7 +118,7 @@ export class WsQueueBoxServerOutboundPlanning {
                 kind: 'recipient',
                 peerId: recipient.peerId,
                 connectionId: recipient.connectionId,
-                message
+                message: toALOutboundTransportMessage(message)
             })),
             ackTracking: toAckTrackingPlan(
                 this.normalizePolicy(message).effective,
@@ -159,7 +165,9 @@ export class WsQueueBoxServerOutboundPlanning {
                 topicId: message.route.topicId
             });
         }
-        return Either.ofLeft(toNoResolvedRecipientsReason(targets.mode, message.id.msgId));
+        return resolution.allowClusterRecipients
+            ? Either.ofRight([])
+            : Either.ofLeft(toNoResolvedRecipientsReason(targets.mode, message.id.msgId));
     }
 
     private normalizePolicy(message: ALMessage): ReturnType<typeof normalizeALQosPolicy> {
@@ -193,7 +201,7 @@ function toAckTrackingPlan(
     recipients: readonly WsServerResolvedRecipient[],
     mode?: 'merge' | 'replace'
 ): ALOutboundAckTrackingPlan | undefined {
-    if (effective.ack.algo === 'none' || recipients.length === 0) {
+    if (effective.ack.algo === 'none') {
         return undefined;
     }
     return {
