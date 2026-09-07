@@ -23,12 +23,10 @@ export function isGroupMutationRejectionCode(code: GroupMutationRejectionCode): 
 }
 
 /**
- * `connect` names the exact planned layout it means to dial (product
- * decision 32): a caller that names no current plan, or one the store has
- * since replaced, receives its own conflict code and re-reads the current
- * identity before retrying. The denial is a typed rejection value through
- * compute and becomes this error only at the handler boundary, like every
- * other rejection code.
+ * The handler-boundary error for the conflicts `GROUP_CONNECT_REJECTION_CODES`
+ * owns; the AppInbox classifier reads the status from the instance. The
+ * denial is a typed rejection value through compute and becomes this error
+ * only at the handler boundary, like every other rejection code.
  *
  * A retry must carry a FRESH request id: the request id is the command
  * identity, so a retry that changes the fences under the old id is an

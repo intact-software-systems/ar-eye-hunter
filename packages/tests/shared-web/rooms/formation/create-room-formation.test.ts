@@ -58,6 +58,26 @@ function pointReadResponse(snapshot: GroupSnapshot): Response {
     });
 }
 
+function failureResponse(code: string, status: number): Response {
+    return new Response(
+        JSON.stringify({
+            type: 'api-mutation-failure',
+            version: 'canonical.v2',
+            code,
+            status,
+            message: 'Rejected',
+            issues: null,
+            denial: null,
+            retry: null
+        }),
+        { status, headers: { 'content-type': 'application/json' } }
+    );
+}
+
+function toRequestLine(input: RequestInfo | URL, init?: RequestInit): string {
+    return `${init?.method ?? 'GET'} ${String(input).split('/groups/room-1')[1] ?? ''}`;
+}
+
 const explicitLayout = { groupRevision: 6, presenceRevision: 2, version: 8, state: 'active' } as const;
 const commandInvocations = {
     plan: (formation) => formation.plan(),
@@ -292,21 +312,7 @@ describe('room formation commands', () => {
                 version: 2
             })
         );
-        const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-            new Response(
-                JSON.stringify({
-                    type: 'api-mutation-failure',
-                    version: 'canonical.v2',
-                    code: 'group-connect-planned-layout-superseded',
-                    status: 409,
-                    message: 'Rejected',
-                    issues: null,
-                    denial: null,
-                    retry: null
-                }),
-                { status: 409, headers: { 'content-type': 'application/json' } }
-            )
-        );
+        const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => failureResponse('group-connect-planned-layout-superseded', 409));
         vi.stubGlobal('fetch', fetchMock);
         const formation = createRallarFacade().rooms.formation(planned.group);
 
@@ -380,5 +386,111 @@ describe('room formation commands', () => {
         finally {
             warn.mockRestore();
         }
+    });
+
+    it('reads the room through on a stale-epoch refusal instead of forgetting the planned layout', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const cached = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        const current = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 2,
+            causalRevision: { groupRevision: 3, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([cached]);
+        setPlannedOverlayById(
+            toScopedOverlayId(cached.group),
+            createLayoutOverlay({ roomRef: cached.group, causalRevision: { groupRevision: 2, presenceRevision: 1 }, version: 3 })
+        );
+        const requests: string[] = [];
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(toRequestLine(input, init));
+            if (init?.method === 'POST') {
+                return failureResponse('group-connect-stale-epoch', 409);
+            }
+            if (String(input).endsWith('/topology')) {
+                return new Response(JSON.stringify(topologyView(current.group)), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' }
+                });
+            }
+            return pointReadResponse(current);
+        });
+        const formation = createRallarFacade().rooms.formation(cached.group);
+
+        await expect(formation.connect()).rejects.toMatchObject({ status: 409 });
+
+        expect(requests).toEqual([expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//), 'GET ', 'GET /topology']);
+        expect(formation.status()?.formationEpoch).toBe(2);
+        expect(formation.status()?.planned?.identity).toEqual({ groupRevision: 2, presenceRevision: 1, version: 3, state: 'active' });
+    });
+
+    it('reads the room through before posting a named layout when the cached snapshot lags the planned layout', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const stale = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        const fresh = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 2,
+            causalRevision: { groupRevision: 4, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([stale]);
+        setPlannedOverlayById(
+            toScopedOverlayId(stale.group),
+            createLayoutOverlay({ roomRef: stale.group, causalRevision: { groupRevision: 4, presenceRevision: 1 }, version: 3 })
+        );
+        const named = { groupRevision: 4, presenceRevision: 1, version: 3, state: 'active' } as const;
+        const requests: string[] = [];
+        let postedBody = '';
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(toRequestLine(input, init));
+            if (init?.method === 'POST') {
+                postedBody = String(init.body);
+                return new Response(JSON.stringify(fresh), { status: 200, headers: { 'content-type': 'application/json' } });
+            }
+            if (String(input).endsWith('/topology')) {
+                return new Response(JSON.stringify(topologyView(fresh.group)), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' }
+                });
+            }
+            return pointReadResponse(fresh);
+        });
+
+        await createRallarFacade().rooms.formation(stale.group).connect({ layout: named });
+
+        expect(requests).toEqual(['GET ', 'GET /topology', expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//)]);
+        expect(JSON.parse(postedBody)).toEqual({ expectedFormationEpoch: 2, expectedLayout: named });
+    });
+
+    it('keeps the planned layout when the server refuses a connect for another reason', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([planned]);
+        setPlannedOverlayById(
+            toScopedOverlayId(planned.group),
+            createLayoutOverlay({ roomRef: planned.group, causalRevision: { groupRevision: 2, presenceRevision: 1 }, version: 2 })
+        );
+        const requests: string[] = [];
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(toRequestLine(input, init));
+            return failureResponse('group-mutation-rejected', 400);
+        });
+        const formation = createRallarFacade().rooms.formation(planned.group);
+
+        await expect(formation.connect()).rejects.toMatchObject({ status: 400 });
+
+        expect(requests).toEqual([expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//)]);
+        expect(formation.status()?.planned?.identity).toEqual({ groupRevision: 2, presenceRevision: 1, version: 2, state: 'active' });
     });
 });

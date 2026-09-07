@@ -1,6 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig, type CompareConfig } from '../../json-compare/compare-json-values.ts';
 import { toInteractionOutputFields } from '../execution/black-box-scenario-results.ts';
+import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
 import { toWaitCountBound, type WaitCountBound } from '../expectations/wait-count-bound.ts';
 
 export interface RtcWaitInput {
@@ -47,6 +48,7 @@ interface RtcMessageObservation {
 
 interface RtcMessageMatchInput extends Omit<RtcObservationMatchInput, 'observations'> {
     readonly observations: readonly RtcMessageObservation[];
+    readonly decodeJsonPaths: readonly string[];
 }
 
 interface MatchedRtcMessage {
@@ -80,7 +82,7 @@ interface RtcWaitWindow {
     readonly details: Record<string, any>;
 }
 
-interface RtcCountWindow extends RtcWaitWindow {
+interface RtcObservationWindow extends RtcWaitWindow {
     readonly observationLoss: number;
     readonly connection: object | undefined;
     readonly closeEventCount: number;
@@ -266,7 +268,7 @@ function findRtcMessageIndex(input: FindRtcMessageInput): number {
     return messages.findIndex((message) => {
         const result = compareJson(
             expectedMessage,
-            message.data,
+            toDecodedJsonStringPaths(message.data, interaction.response?.decodeJsonPaths ?? []),
             toRtcComparisonConfig(interaction)
         );
 
@@ -300,7 +302,7 @@ function computeRtcObservationMatches(input: RtcObservationMatchInput): readonly
 function computeRtcMessageMatchEvidence(input: RtcMessageMatchInput): RtcMessageMatchEvidence {
     const matches = computeRtcObservationMatches({
         ...input,
-        observations: input.observations.map((message) => message.data)
+        observations: input.observations.map((message) => toDecodedJsonStringPaths(message.data, input.decodeJsonPaths))
     });
     const matchedMessages = matches.map((match) => ({
         expectedMessage: input.expected[match.expectedIndex],
@@ -357,16 +359,30 @@ function startRtcWaitWindow(input: RtcWaitInput): RtcWaitWindow {
     };
 }
 
-export async function waitForRtcMessageCount(input: RtcWaitInput): Promise<any> {
+function startRtcObservationWindow(input: RtcWaitInput): RtcObservationWindow {
     const { interaction, context } = input;
     const waitWindow = startRtcWaitWindow(input);
-    const window: RtcCountWindow = {
+    return {
         ...waitWindow,
         timeoutMs: Number(interaction.response.withinMs ?? interaction.request.timeoutMs ?? 5000),
         observationLoss: context.rtcObservationLoss?.[waitWindow.connectionName] ?? 0,
         connection: context.rtcConnections?.[waitWindow.connectionName],
         closeEventCount: context.rtcCloseEvents?.[waitWindow.connectionName]?.length ?? 0
     };
+}
+
+function hasCompleteRtcObservations(input: RtcWaitInput, window: RtcObservationWindow): boolean {
+    const context = input.context;
+    const currentLoss = context.rtcObservationLoss?.[window.connectionName] ?? 0;
+    return currentLoss === window.observationLoss && Number.isSafeInteger(currentLoss) &&
+        currentLoss < Number.MAX_SAFE_INTEGER &&
+        context.rtcConnections?.[window.connectionName] === window.connection &&
+        (context.rtcCloseEvents?.[window.connectionName]?.length ?? 0) === window.closeEventCount;
+}
+
+export async function waitForRtcMessageCount(input: RtcWaitInput): Promise<any> {
+    const { interaction } = input;
+    const window = startRtcObservationWindow(input);
     const bound = toWaitCountBound(interaction.response.count);
     if (interaction.response.message === undefined || interaction.response.message === null) {
         return toRtcFailureStatus({
@@ -389,13 +405,18 @@ export async function waitForRtcMessageCount(input: RtcWaitInput): Promise<any> 
     return completeRtcCount(input, window, bound);
 }
 
-function completeRtcCount(input: RtcWaitInput, window: RtcCountWindow, bound: WaitCountBound): any {
+function completeRtcCount(input: RtcWaitInput, window: RtcObservationWindow, bound: WaitCountBound): any {
     const { interaction, config, context } = input;
     const messages: readonly RtcMessageObservation[] = context.rtcMessages[window.connectionName] ?? [];
     const comparison = toRtcComparisonConfig(interaction);
-    const matchedCount =
-        messages.filter((message) => compareJson(interaction.response.message, message.data, comparison).isEqual)
-            .length;
+    const matchedCount = messages.filter((message) =>
+        compareJson(
+            interaction.response.message,
+            toDecodedJsonStringPaths(message.data, interaction.response?.decodeJsonPaths ?? []),
+            comparison
+        ).isEqual
+    )
+        .length;
     const details = {
         ...window.details,
         expectedMessage: interaction.response.message,
@@ -404,13 +425,7 @@ function completeRtcCount(input: RtcWaitInput, window: RtcCountWindow, bound: Wa
         observedMessageCount: messages.length,
         waitedMs: Date.now() - window.startedAt
     };
-    const currentLoss = context.rtcObservationLoss?.[window.connectionName] ?? 0;
-    if (
-        currentLoss !== window.observationLoss || !Number.isSafeInteger(currentLoss) ||
-        currentLoss >= Number.MAX_SAFE_INTEGER ||
-        context.rtcConnections?.[window.connectionName] !== window.connection ||
-        (context.rtcCloseEvents?.[window.connectionName]?.length ?? 0) !== window.closeEventCount
-    ) {
+    if (!hasCompleteRtcObservations(input, window)) {
         return toRtcFailureStatus({
             ...input,
             details,
@@ -666,6 +681,7 @@ export async function waitForRtcMessages(input: RtcWaitInput): Promise<any> {
             observations: messages,
             expected: expectedMessages,
             ordered,
+            decodeJsonPaths: interaction.response?.decodeJsonPaths ?? [],
             comparison: toRtcComparisonConfig(interaction)
         });
 
@@ -754,13 +770,9 @@ export async function waitForRtcClose(input: RtcWaitInput): Promise<any> {
 
 export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any> {
     const { interaction, config, context } = input;
-    const details = input.details ?? {};
-    const connectionName = toRtcExpectedConnectionName(interaction);
+    const window = startRtcObservationWindow(input);
+    const { details, connectionName, startedAt } = window;
     const absentMessage = interaction.response.absent;
-    const windowMs = Number.parseInt(
-        interaction.response.withinMs || interaction.request.timeoutMs || 5000
-    );
-    const startedAt = Date.now();
 
     if (absentMessage === undefined || absentMessage === null) {
         return toRtcFailureStatus({
@@ -774,9 +786,13 @@ export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any
         });
     }
 
+    if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
+        return toRtcFailureStatus({ ...input, details, result: 'RTC absence duration must be positive' });
+    }
+
     // The full window is always waited: an absence claim is only as strong as
     // the time the runner kept listening for the offending frame.
-    await new Promise<void>((resolve) => setTimeout(resolve, windowMs));
+    await new Promise<void>((resolve) => setTimeout(resolve, window.timeoutMs));
 
     const messages = context.rtcMessages[connectionName] || [];
     const matchIndex = findRtcMessageIndex({
@@ -802,6 +818,13 @@ export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any
         });
     }
 
+    if (!hasCompleteRtcObservations(input, window)) {
+        return toRtcFailureStatus({
+            ...input,
+            details,
+            result: 'RTC absence cannot be established because observations were discarded'
+        });
+    }
     return toRtcSuccessStatus(config, interaction, {
         ...details,
         connection: connectionName,

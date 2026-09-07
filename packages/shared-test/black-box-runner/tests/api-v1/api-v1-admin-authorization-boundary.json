@@ -1,0 +1,416 @@
+{
+  "description": "No-browser API-v1 admin authorization boundary: the whole admin surface against an authenticated NON-admin principal. One conceptual denial reaches the client in four different shapes, and two of them are wrong. The CRDT admin reads answer 400 rather than 403, because forbidden() carries 403 but toAuthErrorResponse honours only RequestAuthFailure -- and that guard is the only authorization on those routes, never executed by any existing test, which all run with requireAuth false. The admin operations mutations answer 500 api-mutation-unexpected rather than 403, because the guard throws a statusless Error that falls through to the unexpected-failure fallback. Every denial is compared exactly, so a refusal that leaked a diagnostic payload alongside it would fail.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_ADMINB_PASSWORD",
+      "default": "api-v1-adminb-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerTheNonAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/adminboundary-01-register-{runId}",
+        "body": {
+          "username": "adminboundary-outsider-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "non-admin client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginTheNonAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/adminboundary-02-login-{runId}",
+        "body": {
+          "username": "adminboundary-outsider-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "outsiderClientId": "body.clientId",
+          "outsiderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOutsiderAuthHeader",
+      "type": "set",
+      "output": "outsiderAuthHeader",
+      "secret": true,
+      "redactAs": "outsiderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.outsiderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadList",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/list",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: CRDT admin authorization required."
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadIntegrity",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/integrity",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: CRDT admin authorization required."
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadDebugExport",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/debug-export",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: CRDT admin authorization required."
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadBackupExport",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/backup-export",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: CRDT admin authorization required."
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotEraseACrdtDocument",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/erase/requests/adminboundary-07-crdt-erase-{runId}",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-403",
+          "status": 403,
+          "message": "Forbidden: CRDT admin authorization required.",
+          "issues": null,
+          "denial": null,
+          "retry": null
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadTheOperationsOverview",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/overview",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadTheSystemView",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/system",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadTheQueueBreakdown",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/queues",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotReadTheRealtimeCounters",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotExplainAClient",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/client",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotExplainAGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/group",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "aNonAdminCannotExplainAQueueItem",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/queue-item",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "comparison": "exact",
+        "body": {
+          "error": "Forbidden: platform admin authorization required"
+        }
+      }
+    },
+    {
+      "name": "anUnauthorizedAdminMutationIsReportedAsAServerFault",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/adminboundary-15-mutation-{runId}",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 500,
+        "comparison": "exact",
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-unexpected",
+          "status": 500,
+          "message": "API mutation failed unexpectedly",
+          "issues": null,
+          "denial": null,
+          "retry": null
+        }
+      }
+    },
+    {
+      "name": "theSameFaultShapeOnASecondAdminMutation",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/topology/recompute/requests/adminboundary-16-mutation-{runId}",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 500,
+        "comparison": "exact",
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-unexpected",
+          "status": 500,
+          "message": "API mutation failed unexpectedly",
+          "issues": null,
+          "denial": null,
+          "retry": null
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

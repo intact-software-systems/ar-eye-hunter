@@ -244,6 +244,7 @@ export function toGroupMutationRejectionError(
             return new GroupPolicyDeniedError(computed.policyDenial);
         case 'group-already-exists':
             return new GroupAlreadyExistsError(message);
+        case 'group-connect-stale-epoch':
         case 'group-connect-no-planned-layout':
         case 'group-connect-planned-layout-superseded':
             return new GroupConnectDeniedError(computed.rejectionCode, message);

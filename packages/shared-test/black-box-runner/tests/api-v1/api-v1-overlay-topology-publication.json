@@ -1,0 +1,688 @@
+{
+  "description": "No-browser API-v1 overlay topology publication: nothing in the corpus reads an overlay frame body. A published overlay.topology broadcast is compared field for field against the authoritative HTTP topology read at the same version -- the row is written in the transaction that publishes, so the equality is a real invariant. The frame is selected by its own degreeLimit through expect.decodeJsonPaths, which is what separates it from the unicast hydration frame every socket receives on connect, and both members are required to receive the same body rather than a body each.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_OVERLAY_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-overlay"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_OVERLAY_WORKSPACE_ID",
+      "default": "workspace-overlay-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_OVERLAY_GROUP_ID",
+      "default": "overlay-publication-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_OVERLAY_PASSWORD",
+      "default": "api-v1-overlay-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "wsAlice": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsBob": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/overlay-register-alice-{runId}",
+        "body": {
+          "username": "overlay-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/overlay-login-alice-{runId}",
+        "body": {
+          "username": "overlay-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/overlay-register-bob-{runId}",
+        "body": {
+          "username": "overlay-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/overlay-login-bob-{runId}",
+        "body": {
+          "username": "overlay-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheOverlayGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/overlay-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Overlay topology publication {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/overlay-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/overlay-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "overlay-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/overlay-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "overlay-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "planTheBaselineOverlay",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/overlay-baseline-plan-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "publish": false,
+          "options": {
+            "degreeLimit": 3
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theBaselineOverlayBecomesActive",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        },
+        "outputs": {
+          "baselineVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "degreeLimit": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/overlay-alice-ws-ticket-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceWs",
+      "type": "ws.open",
+      "connection": "wsAlice",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/overlay-bob-ws-ticket-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openBobWs",
+      "type": "ws.open",
+      "connection": "wsBob",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "publishTheOverlayToTheRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/overlay-publish-plan-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "publish": true,
+          "options": {
+            "degreeLimit": 4
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "thePublishedOverlayReachesAlice",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "request": {
+        "outputs": {
+          "aliceOverlayResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 20000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room"
+          },
+          "payload": {
+            "typeId": "overlay.topology",
+            "resource": {
+              "degreeLimit": 4,
+              "state": "active"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parseTheOverlayAlicereceived",
+      "type": "set",
+      "output": "aliceOverlay",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.aliceOverlayResource"
+        }
+      }
+    },
+    {
+      "name": "thePublishedOverlayReachesBob",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "request": {
+        "outputs": {
+          "bobOverlayResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 20000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room"
+          },
+          "payload": {
+            "typeId": "overlay.topology",
+            "resource": {
+              "degreeLimit": 4,
+              "state": "active"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parseTheOverlayBobReceived",
+      "type": "set",
+      "output": "bobOverlay",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.bobOverlayResource"
+        }
+      }
+    },
+    {
+      "name": "readTheAuthoritativeTopology",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        },
+        "outputs": {
+          "httpOverlayId": "body.snapshot.overlayId",
+          "httpState": "body.snapshot.state",
+          "httpName": "body.snapshot.name",
+          "httpVersion": "body.snapshot.version",
+          "httpDegreeLimit": "body.snapshot.degreeLimit",
+          "httpCreatedBy": "body.snapshot.createdByClientId",
+          "httpCreatedAt": "body.snapshot.createdAtEpochMs",
+          "httpUpdatedAt": "body.snapshot.updatedAtEpochMs",
+          "httpGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "httpPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "version": "{aliceOverlay.version}",
+            "degreeLimit": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "thePublishedBodyEqualsTheAuthoritativeRow",
+      "type": "assert",
+      "actual": {
+        "overlayId": "{aliceOverlay.overlayId}",
+        "state": "{aliceOverlay.state}",
+        "name": "{aliceOverlay.name}",
+        "version": "{aliceOverlay.version}",
+        "degreeLimit": "{aliceOverlay.degreeLimit}",
+        "createdBy": "{aliceOverlay.createdByClientId}",
+        "createdAt": "{aliceOverlay.createdAtEpochMs}",
+        "updatedAt": "{aliceOverlay.updatedAtEpochMs}",
+        "groupRevision": "{aliceOverlay.sourceGroupStateCausalRevision.groupRevision}",
+        "presenceRevision": "{aliceOverlay.sourceGroupStateCausalRevision.presenceRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "compatible-complete",
+        "body": {
+          "overlayId": "{httpOverlayId}",
+          "state": "{httpState}",
+          "name": "{httpName}",
+          "version": "{httpVersion}",
+          "degreeLimit": "{httpDegreeLimit}",
+          "createdBy": "{httpCreatedBy}",
+          "createdAt": "{httpCreatedAt}",
+          "updatedAt": "{httpUpdatedAt}",
+          "groupRevision": "{httpGroupRevision}",
+          "presenceRevision": "{httpPresenceRevision}"
+        }
+      }
+    },
+    {
+      "name": "bothMembersReceivedTheSameOverlay",
+      "type": "assert",
+      "actual": {
+        "overlayId": "{bobOverlay.overlayId}",
+        "version": "{bobOverlay.version}",
+        "degreeLimit": "{bobOverlay.degreeLimit}",
+        "updatedAt": "{bobOverlay.updatedAtEpochMs}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "compatible-complete",
+        "body": {
+          "overlayId": "{aliceOverlay.overlayId}",
+          "version": "{aliceOverlay.version}",
+          "degreeLimit": "{aliceOverlay.degreeLimit}",
+          "updatedAt": "{aliceOverlay.updatedAtEpochMs}"
+        }
+      }
+    },
+    {
+      "name": "closeAliceWs",
+      "type": "ws.close",
+      "connection": "wsAlice",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    },
+    {
+      "name": "closeBobWs",
+      "type": "ws.close",
+      "connection": "wsBob",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

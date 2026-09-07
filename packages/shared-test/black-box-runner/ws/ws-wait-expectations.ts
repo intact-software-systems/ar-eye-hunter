@@ -3,6 +3,7 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/compare-json-values.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
 import type { LocalWsRequest } from '../execution/local-websocket-session.ts';
+import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
 import { toWaitCountBound, type WaitCountBound } from '../expectations/wait-count-bound.ts';
 import { toWsExpectedConnectionName, toWsFailureStatus, toWsSuccessStatus } from './ws-interaction-statuses.ts';
 
@@ -31,6 +32,7 @@ export interface WsInteractionResponse {
     readonly comparison?: string;
     readonly ignoreJsonKeys?: readonly string[];
     readonly ignoreJsonPaths?: readonly string[];
+    readonly decodeJsonPaths?: readonly string[];
 }
 
 export interface WsInteraction {
@@ -72,6 +74,14 @@ function matchesWsValue(expected: unknown, actual: unknown, interaction: WsInter
             [...(interaction.response?.ignoreJsonPaths ?? [])]
         )
     ).isEqual;
+}
+
+function matchesWsMessage(expected: unknown, frame: WsMessageObservation, interaction: WsInteraction): boolean {
+    return matchesWsValue(
+        expected,
+        toDecodedJsonStringPaths(frame.data, interaction.response?.decodeJsonPaths ?? []),
+        interaction
+    );
 }
 
 interface WsWaitWindow {
@@ -135,7 +145,7 @@ function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCo
     const { interaction, config, context } = input;
     const messages = context.wsMessages[window.connectionName] ?? [];
     const matchedCount =
-        messages.filter((message) => matchesWsValue(interaction.response?.message, message.data, interaction)).length;
+        messages.filter((message) => matchesWsMessage(interaction.response?.message, message, interaction)).length;
     const details = {
         ...input.details,
         connection: window.connectionName,
@@ -174,7 +184,7 @@ export function waitForWsMessage(input: WsWaitInput): Promise<WsInteractionResul
     return new Promise((resolve) => {
         const interval = setInterval(() => {
             const messages = context.wsMessages[connectionName] ?? [];
-            const index = messages.findIndex((message) => matchesWsValue(expectedMessage, message.data, interaction));
+            const index = messages.findIndex((message) => matchesWsMessage(expectedMessage, message, interaction));
             if (index >= 0) {
                 clearInterval(interval);
                 const matchedMessage = messages[index];
@@ -226,7 +236,7 @@ function computeWsMessageMatches(input: WsMessageMatchInput): WsMessageMatches {
     for (const expectedMessage of input.expectedMessages) {
         const index = input.messages.findIndex((message, index) =>
             index >= nextIndex && !matchedIndexes.includes(index) &&
-            matchesWsValue(expectedMessage, message.data, input.interaction)
+            matchesWsMessage(expectedMessage, message, input.interaction)
         );
         if (index < 0) {
             missingMessages.push(expectedMessage);
@@ -349,7 +359,7 @@ function completeWsAbsence(input: WsWaitInput, window: WsWaitWindow): WsInteract
     const { connectionName, startedAt, observationLoss } = window;
     const messages = context.wsMessages[connectionName] ?? [];
     const absent = interaction.response?.absent;
-    const matchedIndex = messages.findIndex((message) => matchesWsValue(absent, message.data, interaction));
+    const matchedIndex = messages.findIndex((message) => matchesWsMessage(absent, message, interaction));
     const common = {
         ...details,
         connection: connectionName,

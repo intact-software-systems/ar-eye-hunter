@@ -1,0 +1,664 @@
+{
+  "description": "No-browser API-v1 group-state delta contents: the corpus proves delta frames arrive and never reads what is in them. The one reachable removal set is removedSessionIds, populated only by the self-disconnect route, and the disconnecting session never sees its own removal -- so a second peer observes it. removedMemberPrincipalIds is a hard-coded empty literal no mutation can populate, pinned so the day it gains a writer this fails. Removing a member who holds live presence drops the session from activeSessionIds while naming nothing in either removal set. Each delta is bound to its own mutation by event.requestId through expect.decodeJsonPaths; without that nothing inside the envelope can bind a wait.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_DELTA_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-delta"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_DELTA_WORKSPACE_ID",
+      "default": "workspace-delta-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_DELTA_GROUP_ID",
+      "default": "delta-contents-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_DELTA_PASSWORD",
+      "default": "api-v1-delta-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "wsBeta": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlpha",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/delta-register-alpha-{runId}",
+        "body": {
+          "username": "delta-alpha-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alpha client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlpha",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/delta-login-alpha-{runId}",
+        "body": {
+          "username": "delta-alpha-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "alphaClientId": "body.clientId",
+          "alphaSessionId": "body.sessionId",
+          "alphaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAlphaAuthHeader",
+      "type": "set",
+      "output": "alphaAuthHeader",
+      "secret": true,
+      "redactAs": "alphaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.alphaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBeta",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/delta-register-beta-{runId}",
+        "body": {
+          "username": "delta-beta-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "beta client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBeta",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/delta-login-beta-{runId}",
+        "body": {
+          "username": "delta-beta-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "betaClientId": "body.clientId",
+          "betaSessionId": "body.sessionId",
+          "betaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBetaAuthHeader",
+      "type": "set",
+      "output": "betaAuthHeader",
+      "secret": true,
+      "redactAs": "betaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.betaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerGamma",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/delta-register-gamma-{runId}",
+        "body": {
+          "username": "delta-gamma-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "gamma client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginGamma",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/delta-login-gamma-{runId}",
+        "body": {
+          "username": "delta-gamma-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "gammaClientId": "body.clientId",
+          "gammaSessionId": "body.sessionId",
+          "gammaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveGammaAuthHeader",
+      "type": "set",
+      "output": "gammaAuthHeader",
+      "secret": true,
+      "redactAs": "gammaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.gammaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheDeltaGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/delta-create-group-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Delta contents {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{alphaClientId}",
+          "lifecyclePolicy": {
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "betaJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{betaClientId}/requests/delta-beta-joins-{runId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{betaClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "gammaJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{gammaClientId}/requests/delta-gamma-joins-{runId}",
+        "headers": {
+          "Authorization": "{gammaAuthHeader}",
+          "x-client-id": "{gammaClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{gammaClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlphaPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/delta-alpha-presence-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "generationId": "delta-generation-{runId}",
+          "principalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectBetaPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{betaSessionId}/requests/delta-beta-presence-{runId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "body": {
+          "generationId": "delta-generation-{runId}",
+          "principalId": "{betaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectGammaPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{gammaSessionId}/requests/delta-gamma-presence-{runId}",
+        "headers": {
+          "Authorization": "{gammaAuthHeader}",
+          "x-client-id": "{gammaClientId}"
+        },
+        "body": {
+          "generationId": "delta-generation-{runId}",
+          "principalId": "{gammaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "createBetaWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/delta-beta-ws-ticket-{runId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "body": {},
+        "outputs": {
+          "betaWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{betaSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveBetaWsUrl",
+      "type": "set",
+      "output": "betaWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.betaSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.betaWsTicket"
+            }
+          }
+        ]
+      },
+      "secret": true,
+      "redactAs": "betaWsUrl"
+    },
+    {
+      "name": "openBetaWs",
+      "type": "ws.open",
+      "connection": "wsBeta",
+      "request": {
+        "url": "{betaWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "alphaDisconnectsItsOwnSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/disconnect/requests/delta-alpha-disconnects-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "generationId": "delta-generation-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theDisconnectDeltaReachesBeta",
+      "type": "ws.wait",
+      "connection": "wsBeta",
+      "request": {
+        "outputs": {
+          "disconnectEnvelope": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsBeta",
+        "withinMs": 20000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "group-state.event"
+          },
+          "payload": {
+            "resource": {
+              "event": {
+                "requestId": "delta-alpha-disconnects-{runId}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parseTheDisconnectDelta",
+      "type": "set",
+      "output": "disconnectDelta",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.disconnectEnvelope"
+        }
+      }
+    },
+    {
+      "name": "theDisconnectDeltaCarriesTheRemovedSession",
+      "type": "assert",
+      "actual": {
+        "removedSessions": "{disconnectDelta.removedSessionIds}",
+        "removedMembers": "{disconnectDelta.removedMemberPrincipalIds}",
+        "eventType": "{disconnectDelta.event.eventType}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "compatible-complete",
+        "body": {
+          "removedSessions": [
+            "{alphaSessionId}"
+          ],
+          "removedMembers": [],
+          "eventType": "session-disconnected"
+        }
+      }
+    },
+    {
+      "name": "alphaRemovesGamma",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{gammaClientId}/remove/requests/delta-remove-gamma-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theMemberRemovalDeltaReachesBeta",
+      "type": "ws.wait",
+      "connection": "wsBeta",
+      "request": {
+        "outputs": {
+          "removalEnvelope": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsBeta",
+        "withinMs": 20000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "group-state.event"
+          },
+          "payload": {
+            "resource": {
+              "event": {
+                "requestId": "delta-remove-gamma-{runId}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parseTheMemberRemovalDelta",
+      "type": "set",
+      "output": "removalDelta",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.removalEnvelope"
+        }
+      }
+    },
+    {
+      "name": "aMemberRemovalDropsTheSessionWithoutNamingIt",
+      "type": "assert",
+      "actual": {
+        "removedSessions": "{removalDelta.removedSessionIds}",
+        "removedMembers": "{removalDelta.removedMemberPrincipalIds}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "compatible-complete",
+        "body": {
+          "removedSessions": [],
+          "removedMembers": []
+        }
+      }
+    },
+    {
+      "name": "onlyTheObserverSurvivesInActiveSessions",
+      "type": "assert",
+      "actual": {
+        "active": "{removalDelta.activeSessionIds}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "compatible-complete",
+        "body": {
+          "active": [
+            "{betaSessionId}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "closeBetaWs",
+      "type": "ws.close",
+      "connection": "wsBeta",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

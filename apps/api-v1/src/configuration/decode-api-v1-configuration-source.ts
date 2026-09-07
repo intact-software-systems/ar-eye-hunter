@@ -207,6 +207,8 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'authentication.adminClientIds': 'AUTH_ADMIN_CLIENT_IDS',
     'authentication.rateLimits.loginIp': 'RALLAR_LOGIN_IP_RATE_LIMIT',
     'authentication.rateLimits.loginUsername': 'RALLAR_LOGIN_USER_RATE_LIMIT',
+    'authentication.rateLimits.registrationIp': 'RALLAR_REGISTRATION_IP_RATE_LIMIT',
+    'authentication.rateLimits.registrationUsername': 'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'stateApi.strictReadAuthorization': 'RALLAR_STATE_STRICT_READ_AUTH',
     'group.defaultMaxMembers': 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
     'group.admission.joinPrincipal': 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT',

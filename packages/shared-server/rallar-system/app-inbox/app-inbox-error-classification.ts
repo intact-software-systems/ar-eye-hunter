@@ -3,6 +3,7 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import { AdminPruneValidationError } from '../admin-operations/inbox/admin-prune-inbox-validation.ts';
 import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 import { CrdtHttpAdminRejectionError } from '../crdt/inbox/crdt-http-admin-rejection-error.ts';
+import { GroupConnectDeniedError } from '../group-state/mutation/group-mutation-rejection-codes.ts';
 import { GroupPolicyDeniedError, isGroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
 import { decodeJsonWireValue, type JsonWireObject } from '../protocol/json-wire-identity.ts';
 import { GroupTopologyConfigValidationError } from '../topology/config/group-topology-config.ts';
@@ -52,8 +53,6 @@ const TERMINAL_STATUS_BY_CODE = new Map<string, number>([
     ['group-mutation-authority-denied', 403],
     ['group-already-exists', 409],
     ['group-mutation-idempotency-conflict', 409],
-    ['group-connect-no-planned-layout', 409],
-    ['group-connect-planned-layout-superseded', 409],
     ['group-mutation-rejected', 400],
     ['group-state-event-collision', 409],
     ['group-state-event-repository-invariant-corruption', 500],
@@ -92,7 +91,7 @@ export function classifyAppInboxError(error: unknown): AppInboxErrorClassificati
     if (error instanceof CrdtHttpAdminRejectionError) {
         return toTerminalClassification(toCrdtAdminRejectionFailure(error));
     }
-    if (error instanceof AuthMutationRejectedError) {
+    if (error instanceof AuthMutationRejectedError || error instanceof GroupConnectDeniedError) {
         return toTerminalClassification(toExplicitStatusFailure(error, error.code, error.status));
     }
     if (error instanceof SyntaxError || error instanceof TypeError) {

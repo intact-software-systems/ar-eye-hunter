@@ -53,6 +53,8 @@ const MANAGED_API_PASSTHROUGH_NAMES = [
     'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET',
     'RALLAR_LOGIN_IP_RATE_LIMIT',
     'RALLAR_LOGIN_USER_RATE_LIMIT',
+    'RALLAR_REGISTRATION_IP_RATE_LIMIT',
+    'RALLAR_REGISTRATION_USER_RATE_LIMIT',
     'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
     'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR',
     'TZ'
@@ -98,6 +100,10 @@ export function toApiV1BlackBoxEnvironment(
         'local-api-v1-black-box-auth-credential-secret-v1';
     env.RALLAR_LOGIN_IP_RATE_LIMIT = env.RALLAR_LOGIN_IP_RATE_LIMIT ?? '100';
     env.RALLAR_LOGIN_USER_RATE_LIMIT = env.RALLAR_LOGIN_USER_RATE_LIMIT ?? '100';
+    // The corpus registers a fresh principal set per recipe, so the product
+    // defaults (20 per IP, 5 per username) are reached well before the suite is.
+    env.RALLAR_REGISTRATION_IP_RATE_LIMIT = env.RALLAR_REGISTRATION_IP_RATE_LIMIT ?? '500';
+    env.RALLAR_REGISTRATION_USER_RATE_LIMIT = env.RALLAR_REGISTRATION_USER_RATE_LIMIT ?? '100';
     env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON = env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON ??
         '[{"documentType":"black-box-map","rollout":"production"}]';
 

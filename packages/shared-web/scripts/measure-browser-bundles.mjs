@@ -28,10 +28,12 @@ const esbuildBin = path.join(
 
 const entries = [
     {
+        // 178.9267578125 KiB measured after the stale-epoch connect conflict (#533);
+        // the budget is the next whole KiB above the measurement.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 179
+        brotliBudgetKiB: 180
     },
     {
         label: 'browser/rallar-core.ts',

@@ -1,0 +1,588 @@
+{
+  "description": "No-browser API-v1 business status: group-archived and group-deleted are returned by no recipe in the corpus. An archived group refuses new joins while its own members can still read, and is terminal at the route -- the owner and a plain member meet the same denial, so it is raised ahead of the role check and the group can be neither revived nor deleted. Deletion is reachable only from active, each transition stamps its own audit entry and clears the other, and a deleted group refuses the read path and the mutation path with the message and the envelope that separate them.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_BIZSTAT_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-bizstat"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_BIZSTAT_WORKSPACE_ID",
+      "default": "workspace-bizstat-{runId}"
+    },
+    "archivedGroupId": {
+      "env": "RALLAR_BB_BIZSTAT_ARCHIVED_GROUP_ID",
+      "default": "bizstat-archived-group-{runId}"
+    },
+    "deletedGroupId": {
+      "env": "RALLAR_BB_BIZSTAT_DELETED_GROUP_ID",
+      "default": "bizstat-deleted-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_BIZSTAT_PASSWORD",
+      "default": "api-v1-bizstat-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bizstat-register-owner-{runId}",
+        "body": {
+          "username": "bizstat-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bizstat-login-owner-{runId}",
+        "body": {
+          "username": "bizstat-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bizstat-register-member-{runId}",
+        "body": {
+          "username": "bizstat-member-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "member client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bizstat-login-member-{runId}",
+        "body": {
+          "username": "bizstat-member-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "memberClientId": "body.clientId",
+          "memberAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveMemberAuthHeader",
+      "type": "set",
+      "output": "memberAuthHeader",
+      "secret": true,
+      "redactAs": "memberAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.memberAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerOutsider",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bizstat-register-outsider-{runId}",
+        "body": {
+          "username": "bizstat-outsider-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "outsider client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOutsider",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bizstat-login-outsider-{runId}",
+        "body": {
+          "username": "bizstat-outsider-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "outsiderClientId": "body.clientId",
+          "outsiderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOutsiderAuthHeader",
+      "type": "set",
+      "output": "outsiderAuthHeader",
+      "secret": true,
+      "redactAs": "outsiderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.outsiderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheGroupThatWillBeArchived",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bizstat-create-archived-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{archivedGroupId}",
+          "displayName": "Business status group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{archivedGroupId}",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "theMemberJoinsTheArchivedGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}/members/{memberClientId}/requests/bizstat-member-joins-arch-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{memberClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerArchivesTheGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}/requests/bizstat-archive-the-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "status": "archived"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "status": "archived",
+            "archived": {
+              "requestId": "bizstat-archive-the-group-{runId}",
+              "actor": {
+                "principalId": "{ownerClientId}"
+              }
+            },
+            "deleted": null
+          }
+        }
+      }
+    },
+    {
+      "name": "AnArchivedGroupIsStillReadableByAMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{archivedGroupId}",
+            "status": "archived"
+          }
+        }
+      }
+    },
+    {
+      "name": "AnArchivedGroupRefusesAJoin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}/join/requests/bizstat-archived-join-{runId}",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-archived",
+          "status": 403,
+          "message": "Group is archived."
+        }
+      }
+    },
+    {
+      "name": "AnArchivedGroupCannotBeReactivated",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}/requests/bizstat-reactivate-attempt-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-archived",
+          "status": 403,
+          "message": "Group is archived."
+        }
+      }
+    },
+    {
+      "name": "AMemberMeetsTheSameArchivedDenialAheadOfTheRoleCheck",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}/requests/bizstat-member-reactivate-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-archived",
+          "status": 403,
+          "message": "Group is archived."
+        }
+      }
+    },
+    {
+      "name": "AnArchivedGroupCannotEvenBeDeleted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{archivedGroupId}/requests/bizstat-archived-delete-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "status": "deleted"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-archived",
+          "status": 403,
+          "message": "Group is archived."
+        }
+      }
+    },
+    {
+      "name": "createTheGroupThatWillBeDeleted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bizstat-create-deleted-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{deletedGroupId}",
+          "displayName": "Business status group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{deletedGroupId}",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "theMemberJoinsTheDeletedGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deletedGroupId}/members/{memberClientId}/requests/bizstat-member-joins-del-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{memberClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerDeletesAnActiveGroupDirectly",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deletedGroupId}/requests/bizstat-delete-the-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "status": "deleted"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "status": "deleted",
+            "archived": null,
+            "deleted": {
+              "requestId": "bizstat-delete-the-group-{runId}",
+              "actor": {
+                "principalId": "{ownerClientId}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ADeletedGroupIsNotReadableEvenByAMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deletedGroupId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "Forbidden: Deleted groups are not readable.",
+          "code": "group-deleted",
+          "message": "Deleted groups are not readable."
+        }
+      }
+    },
+    {
+      "name": "ADeletedGroupRefusesAJoin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deletedGroupId}/join/requests/bizstat-deleted-join-{runId}",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-deleted",
+          "status": 403,
+          "message": "Group is deleted."
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

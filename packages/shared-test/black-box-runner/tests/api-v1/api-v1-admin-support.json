@@ -3,6 +3,27 @@
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
       "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_ADMINSUPPORT_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-adminsupport"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_ADMINSUPPORT_WORKSPACE_ID",
+      "default": "workspace-adminsupport-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_ADMINSUPPORT_GROUP_ID",
+      "default": "adminsupport-group-{runId}"
+    },
+    "subjectPassword": {
+      "env": "RALLAR_BB_ADMINSUPPORT_PASSWORD",
+      "default": "api-v1-adminsupport-password",
+      "secret": true
     }
   },
   "execution": {
@@ -195,6 +216,248 @@
             }
           }
         }
+      }
+    },
+    {
+      "name": "registerTheSupportSubject",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/adminsupport-register-subject-{runId}",
+        "body": {
+          "username": "adminsupport-subject-{runId}",
+          "password": "{subjectPassword}",
+          "displayName": "Admin support subject"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginTheSupportSubject",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/adminsupport-login-subject-{runId}",
+        "body": {
+          "username": "adminsupport-subject-{runId}",
+          "password": "{subjectPassword}"
+        },
+        "outputs": {
+          "subjectClientId": "body.clientId",
+          "subjectSessionId": "body.sessionId",
+          "subjectAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveSubjectAuthHeader",
+      "type": "set",
+      "output": "subjectAuthHeader",
+      "secret": true,
+      "redactAs": "subjectAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.subjectAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheSupportGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/adminsupport-create-group-{runId}",
+        "headers": {
+          "Authorization": "{subjectAuthHeader}",
+          "x-client-id": "{subjectClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Admin support subject {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{subjectClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectTheSubjectPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{subjectSessionId}/requests/adminsupport-presence-{runId}",
+        "headers": {
+          "Authorization": "{subjectAuthHeader}",
+          "x-client-id": "{subjectClientId}"
+        },
+        "body": {
+          "generationId": "adminsupport-generation-{runId}",
+          "principalId": "{subjectClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "explainARealClient",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/client",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "scope": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}"
+          },
+          "principalId": "{subjectClientId}",
+          "sessionId": "{subjectSessionId}"
+        },
+        "outputs": {
+          "clientNarrativeFacts": "body.facts"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "target": {
+            "kind": "client",
+            "principalId": "{subjectClientId}"
+          },
+          "generatedAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "explainARealGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/group",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "principalId": "{subjectClientId}"
+        },
+        "outputs": {
+          "groupNarrativeFacts": "body.facts"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "target": {
+            "kind": "group"
+          },
+          "generatedAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "explainACrdtDocument",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/crdt-document",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "scope": "principal",
+            "documentType": "checklist",
+            "documentId": "adminsupport-doc-{runId}",
+            "principalId": "{subjectClientId}"
+          },
+          "includeIntegrity": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "target": {
+            "kind": "crdt-document"
+          },
+          "generatedAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "aResolvedNarrativeCarriesFactsAndAMissingOneDoesNot",
+      "type": "assert",
+      "actual": {
+        "client": "{clientNarrativeFacts}",
+        "group": "{groupNarrativeFacts}",
+        "missing": "{resultsByName.explainMissingQueueItem.0.actual.body.facts}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "client",
+            "notEquals": []
+          },
+          {
+            "path": "group",
+            "notEquals": []
+          },
+          {
+            "path": "client",
+            "notEquals": "{resultsByName.explainMissingQueueItem.0.actual.body.facts}"
+          },
+          {
+            "path": "group",
+            "notEquals": "{resultsByName.explainMissingQueueItem.0.actual.body.facts}"
+          }
+        ]
       }
     }
   ]

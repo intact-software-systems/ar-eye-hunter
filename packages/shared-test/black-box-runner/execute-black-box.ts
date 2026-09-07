@@ -17,6 +17,7 @@ import {
     toResultKey
 } from './execution/black-box-scenario-results.ts';
 import {
+    resolveComparators,
     resolvePlaceholders
 } from './execution/black-box-value-resolution.ts';
 import { computeInteractionCorrelation } from './execution/compute-interaction-correlation.ts';
@@ -338,7 +339,7 @@ async function executeSetInteraction(interaction: any, config: any, context: any
 function toResolvedInteraction(interaction: any, context: any, transport: string): any {
     const { groups, ...parentRequest } = interaction.request;
     const rawResponse = interaction.response || {};
-    const { actual, ...responseWithoutActual } = rawResponse;
+    const { actual, comparators, ...responseWithoutActual } = rawResponse;
     return {
         ...interaction,
         request: transport === 'PARALLEL'
@@ -346,6 +347,7 @@ function toResolvedInteraction(interaction: any, context: any, transport: string
             : resolvePlaceholders(interaction.request, context),
         response: {
             ...resolvePlaceholders(responseWithoutActual, context),
+            comparators: resolveComparators(comparators, context),
             ...(transport === 'ASSERT' && actual !== undefined ? { actual } : {})
         }
     };

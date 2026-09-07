@@ -1,0 +1,508 @@
+{
+  "description": "No-browser API-v1 group limits: group-not-active and member-session-limit-reached are returned by no recipe in the corpus. A group whose clock has passed still stores status active and stays readable, yet refuses a join with the message that separates an expired clock from a non-active status; a second group carrying a future clock admits through the same guard, so the comparison is pinned rather than the mere presence of the field. A second session for one principal trips maxSessionsPerMember, which is a strict greater-than so a cap of one refuses only the second.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_LIMITS_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-limits"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_LIMITS_WORKSPACE_ID",
+      "default": "workspace-limits-{runId}"
+    },
+    "expiredGroupId": {
+      "env": "RALLAR_BB_LIMITS_EXPIRED_GROUP_ID",
+      "default": "limits-expired-group-{runId}"
+    },
+    "cappedGroupId": {
+      "env": "RALLAR_BB_LIMITS_CAPPED_GROUP_ID",
+      "default": "limits-capped-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_LIMITS_PASSWORD",
+      "default": "api-v1-limits-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/limits-register-owner-{runId}",
+        "body": {
+          "username": "limits-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/limits-login-owner-{runId}",
+        "body": {
+          "username": "limits-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerSessionId": "body.sessionId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerJoiner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/limits-register-joiner-{runId}",
+        "body": {
+          "username": "limits-joiner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "joiner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginJoiner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/limits-login-joiner-{runId}",
+        "body": {
+          "username": "limits-joiner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "joinerClientId": "body.clientId",
+          "joinerSessionId": "body.sessionId",
+          "joinerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveJoinerAuthHeader",
+      "type": "set",
+      "output": "joinerAuthHeader",
+      "secret": true,
+      "redactAs": "joinerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.joinerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerCapper",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/limits-register-capper-{runId}",
+        "body": {
+          "username": "limits-capper-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "capper client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginCapper",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/limits-login-capper-one-{runId}",
+        "body": {
+          "username": "limits-capper-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "capperClientId": "body.clientId",
+          "capperSessionIdA": "body.sessionId",
+          "capperAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCapperAuthHeader",
+      "type": "set",
+      "output": "capperAuthHeader",
+      "secret": true,
+      "redactAs": "capperAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.capperAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginCapperASecondTime",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/limits-login-capper-two-{runId}",
+        "body": {
+          "username": "limits-capper-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "capperSessionIdB": "body.sessionId",
+          "capperAccessTokenB": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "{capperClientId}",
+          "sessionId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCapperAuthHeaderB",
+      "type": "set",
+      "output": "capperAuthHeaderB",
+      "secret": true,
+      "redactAs": "capperAuthHeaderB",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.capperAccessTokenB"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheGroupThatWillExpire",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/limits-create-expired-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{expiredGroupId}",
+          "displayName": "Group limits expiry {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{expiredGroupId}",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "theOwnerSetsAnExpiryAlreadyInThePast",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{expiredGroupId}/requests/limits-set-past-expiry-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "expiresAtEpochMs": 1700000000000
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "status": "active",
+            "expiresAtEpochMs": 1700000000000
+          }
+        }
+      }
+    },
+    {
+      "name": "AnExpiredGroupRefusesAJoin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{expiredGroupId}/join/requests/limits-expired-group-join-{runId}",
+        "headers": {
+          "Authorization": "{joinerAuthHeader}",
+          "x-client-id": "{joinerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-not-active",
+          "status": 403,
+          "message": "Group has expired."
+        }
+      }
+    },
+    {
+      "name": "AnExpiredGroupStillReadsAsActiveAndStaysReadable",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{expiredGroupId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "group": {
+            "groupId": "{expiredGroupId}",
+            "status": "active",
+            "expiresAtEpochMs": 1700000000000
+          },
+          "activeSessions": []
+        }
+      }
+    },
+    {
+      "name": "createTheGroupWithASessionCap",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/limits-create-capped-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{cappedGroupId}",
+          "displayName": "Group limits session cap {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}",
+          "maxSessionsPerMember": 1,
+          "expiresAtEpochMs": 4102444800000
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{cappedGroupId}",
+            "maxSessionsPerMember": 1,
+            "expiresAtEpochMs": 4102444800000
+          }
+        }
+      }
+    },
+    {
+      "name": "theCapperJoinsTheCappedGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{cappedGroupId}/members/{capperClientId}/requests/limits-capper-joins-{runId}",
+        "headers": {
+          "Authorization": "{capperAuthHeader}",
+          "x-client-id": "{capperClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{capperClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theFirstSessionConnectsWithinTheCap",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{cappedGroupId}/sessions/{capperSessionIdA}/requests/limits-capper-connects-one-{runId}",
+        "headers": {
+          "Authorization": "{capperAuthHeader}",
+          "x-client-id": "{capperClientId}"
+        },
+        "body": {
+          "generationId": "limits-generation-{runId}",
+          "principalId": "{capperClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{cappedGroupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theSecondSessionExceedsTheCap",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{cappedGroupId}/sessions/{capperSessionIdB}/requests/limits-capper-connects-two-{runId}",
+        "headers": {
+          "Authorization": "{capperAuthHeaderB}",
+          "x-client-id": "{capperClientId}"
+        },
+        "body": {
+          "generationId": "limits-generation-{runId}",
+          "principalId": "{capperClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "member-session-limit-reached",
+          "status": 403,
+          "message": "Group member session capacity has been reached."
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
