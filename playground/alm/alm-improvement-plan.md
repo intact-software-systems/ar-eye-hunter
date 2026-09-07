@@ -676,6 +676,13 @@ three-browser conformance as the common baseline; expand scale cohorts only with
 workloads and equivalent environment. Separate transport submission from end-to-end receipt
 latency. Record p50/p95/p99 plus environment, configuration, sample count, and failures.
 
+Measure payload copies and total retained rows/bytes separately. Canonical storage can remove
+payload duplication while retaining more identity and completion facts for superseded messages.
+Small messages with rapid replacement can therefore consume more total storage until their
+original deadlines. Include active, waiting, superseded, completed, and expired states; do not
+infer universal storage savings from large-payload results. Serialized readback bytes are useful
+layout evidence but do not measure physical IndexedDB allocation or runtime latency.
+
 Include one slow/missing recipient, duplicate receipt traffic, many ordering tracks, and audiences
 beyond a single protocol page. Compare work for all recipients with selective retry of only missing
 ones, receipt aggregation, and replacement of obsolete state. A room-size increase must not turn a
