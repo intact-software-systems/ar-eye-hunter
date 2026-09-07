@@ -88,6 +88,25 @@ diagnostics while the runtime is active:
 This bridge is intentionally scoped to known WS/RTC warning patterns so the
 runtime does not turn arbitrary console output into test evidence.
 
+## Formation Diagnostics
+
+A connection that resolves a room ref installs the room formation stream beside
+the RTC lifecycle stream, and tears it down with it. A connection that names a
+bare room id resolves no ref and installs nothing.
+
+- `rallar.browser.formation.changed` carries the room formation summary on
+  every change the shipped handle publishes
+- `rallar.browser.formation.layout` carries `kind`, `role` and `identity` for
+  each planned, accepted or removed layout event
+- `rallar.browser.formation.room-status` carries the room transport block and
+  the group revision it was read at, on every RTC status change
+- `rallar.browser.formation.ready` carries the readiness diagnostic captured in
+  the tick `formation.readiness` resolved
+
+The summary is a projection, not a pass-through. It drops the peers array, the
+lane id, the reason and the read-time clock the room status carries, so a pin
+never asserts on a value that changes with every read.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

@@ -18,6 +18,66 @@ function envelope(commandId: string, command: RallarBlackBoxTestCommand): Contro
 }
 
 describe('rallar-bb-test control protocol', () => {
+    it.each([
+        {
+            kind: 'formation.command',
+            commandId: 'formation-plan',
+            command: 'plan',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            timeoutMs: 5_000
+        },
+        {
+            kind: 'formation.command',
+            commandId: 'formation-connect',
+            command: 'connect',
+            layout: { groupRevision: 4, presenceRevision: 5, version: 2, state: 'active' },
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            timeoutMs: 5_000
+        },
+        {
+            kind: 'formation.readiness',
+            commandId: 'formation-ready',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            timeoutMs: 5_000
+        }
+    ])('accepts $commandId', (command) => {
+        expect(validateRallarBlackBoxTestCommand(command as never)).toEqual({ ok: true });
+    });
+
+    it.each([
+        {
+            kind: 'formation.command',
+            commandId: 'formation-bad-1',
+            command: 'explode',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            timeoutMs: 5_000
+        },
+        {
+            kind: 'formation.command',
+            commandId: 'formation-bad-2',
+            command: 'plan',
+            landing: 'hold',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            timeoutMs: 5_000
+        },
+        // A formation command that names no room has nothing to address; `rtc.connect` tolerates
+        // that today, so this rule is written for the family rather than borrowed from it.
+        { kind: 'formation.readiness', commandId: 'formation-bad-3', timeoutMs: 5_000 },
+        {
+            kind: 'formation.command',
+            commandId: 'formation-bad-4',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            timeoutMs: 5_000
+        }
+    ])('rejects $commandId', (command) => {
+        expect(validateRallarBlackBoxTestCommand(command as never).ok).toBe(false);
+    });
+
     it('accepts the RTC diagnostics option on health commands', () => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'health',

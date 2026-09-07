@@ -67,9 +67,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // subscriptions and validated formation view read measure
         // 222.6103515625 KiB; settling those waits on the room's own reads,
         // deriving layout events from status differences and decoding the view
-        // from unknown JSON measure 223.23828125 KiB. The maintainer approved the
+        // from unknown JSON measure 223.23828125 KiB; the browser agents' two
+        // formation commands, whose bridge decodes the command input and the room
+        // it addresses, measure 225.107421875 KiB. The maintainer approved the
         // smallest whole-KiB strict limit containing the current behavior.
-        expect(result.brotliKiB).toBeLessThan(224);
+        expect(result.brotliKiB).toBeLessThan(226);
     });
 });
 

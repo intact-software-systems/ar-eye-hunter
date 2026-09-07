@@ -8,6 +8,7 @@ import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarCrdtRuntime,
     BlackBoxRallarDirectorRuntime,
+    BlackBoxRallarFormationRuntime,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
     BlackBoxRallarSendDiagnostics,
@@ -55,6 +56,7 @@ export interface BlackBoxRallarRuntime {
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly crdt: BlackBoxRallarCrdtRuntime;
     readonly director: BlackBoxRallarDirectorRuntime;
+    readonly formation: BlackBoxRallarFormationRuntime;
     close(): Promise<BlackBoxRallarCloseDiagnostics>;
     health(input?: BlackBoxRallarHealthInput): Promise<BlackBoxRallarHealthDiagnostics>;
 }

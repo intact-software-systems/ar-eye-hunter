@@ -31,6 +31,8 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'director.intent',
     'director.sync.request',
     'director.relay.stop',
+    'formation.command',
+    'formation.readiness',
     'health',
     'stats',
     'close',
@@ -38,6 +40,9 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
 ] as const;
 
 export type RallarBlackBoxTestCommandKind = typeof RALLAR_BLACK_BOX_TEST_COMMAND_KINDS[number];
+
+/** An object a command carries verbatim to the runtime; the boundary decoders narrow it. */
+export type RallarBlackBoxTestRecord = Readonly<Record<string, unknown>>;
 
 export type RallarBlackBoxTestTransport =
     | 'realtime'
@@ -80,11 +85,11 @@ export type RallarBlackBoxTestConfig = Readonly<{
     sessionId?: string;
     roomId?: string;
     transport?: RallarBlackBoxTestTransport;
-    rallar?: Readonly<Record<string, unknown>>;
-    browser?: Readonly<Record<string, unknown>>;
-    control?: Readonly<Record<string, unknown>>;
-    defaults?: Readonly<Record<string, unknown>>;
-    fleet?: Readonly<Record<string, unknown>>;
+    rallar?: RallarBlackBoxTestRecord;
+    browser?: RallarBlackBoxTestRecord;
+    control?: RallarBlackBoxTestRecord;
+    defaults?: RallarBlackBoxTestRecord;
+    fleet?: RallarBlackBoxTestRecord;
     redaction?: RallarBlackBoxTestRedactionOptions;
 }>;
 
@@ -101,7 +106,7 @@ export type RallarBlackBoxTestCommandBase<K extends RallarBlackBoxTestCommandKin
     label?: string;
     deadlineEpochMs?: number;
     timeoutMs?: number;
-    metadata?: Readonly<Record<string, unknown>>;
+    metadata?: RallarBlackBoxTestRecord;
 }>;
 
 export type RallarBlackBoxTestConfigureCommand =
@@ -117,7 +122,7 @@ export type RallarBlackBoxTestRecipe = Readonly<{
     description?: string;
     continueOnFailure?: boolean;
     commands: readonly RallarBlackBoxTestCommand[];
-    metadata?: Readonly<Record<string, unknown>>;
+    metadata?: RallarBlackBoxTestRecord;
 }>;
 
 export type RallarBlackBoxTestRecipeLoadCommand =
@@ -166,7 +171,7 @@ export type RallarBlackBoxTestParallelGroup = Readonly<{
     groupId?: string;
     label?: string;
     commands: readonly RallarBlackBoxTestCommand[];
-    metadata?: Readonly<Record<string, unknown>>;
+    metadata?: RallarBlackBoxTestRecord;
 }>;
 
 export type RallarBlackBoxTestParallelCommand =
@@ -189,6 +194,12 @@ export type RallarBlackBoxTestWaitMatch = Readonly<{
     equals?: unknown;
     contains?: string;
     exists?: boolean;
+    /**
+     * Ignore events recorded before this wall-clock stamp. A wait scans the whole buffer and
+     * answers with the newest match, so a scenario that legitimately produced the same event
+     * earlier needs the cursor to say which occurrence it means.
+     */
+    sinceEpochMs?: number;
 }>;
 
 export type RallarBlackBoxTestWaitCommand =
@@ -235,11 +246,11 @@ export type RallarBlackBoxTestRtcConnectCommand =
         roomId?: string;
         applicationId?: string;
         workspaceId?: string;
-        scope?: Readonly<Record<string, unknown>>;
-        roomRef?: Readonly<Record<string, unknown>>;
+        scope?: RallarBlackBoxTestRecord;
+        roomRef?: RallarBlackBoxTestRecord;
         minSnapshotVersion?: number;
         transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
-        rallar?: Readonly<Record<string, unknown>>;
+        rallar?: RallarBlackBoxTestRecord;
         readiness?: RallarBlackBoxTestRtcConnectReadiness;
     }>;
 
@@ -251,8 +262,8 @@ export type RallarBlackBoxTestRtcSendCommand =
         expect?: unknown; // black-box-runner-adapter in-process only; control validators reject it
         applicationId?: string;
         workspaceId?: string;
-        scope?: Readonly<Record<string, unknown>>;
-        roomRef?: Readonly<Record<string, unknown>>;
+        scope?: RallarBlackBoxTestRecord;
+        roomRef?: RallarBlackBoxTestRecord;
         minSnapshotVersion?: number;
         transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
     }>;
@@ -276,8 +287,8 @@ export type RallarBlackBoxTestRtcStreamCommand =
         roomId?: string;
         applicationId?: string;
         workspaceId?: string;
-        scope?: Readonly<Record<string, unknown>>;
-        roomRef?: Readonly<Record<string, unknown>>;
+        scope?: RallarBlackBoxTestRecord;
+        roomRef?: RallarBlackBoxTestRecord;
         minSnapshotVersion?: number;
         transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
         send: unknown;
@@ -345,17 +356,17 @@ export type RallarBlackBoxTestCrdtOpenCommand =
         workspaceId?: string;
         documentId?: string;
         documentType?: string;
-        scope?: Readonly<Record<string, unknown>>;
-        roomRef?: Readonly<Record<string, unknown>>;
+        scope?: RallarBlackBoxTestRecord;
+        roomRef?: RallarBlackBoxTestRecord;
         principalId?: string;
         customScope?: string;
         transport?: RallarBlackBoxTestCrdtTransport;
         persist?: boolean;
         tabSync?: boolean;
         initialValue?: unknown;
-        policies?: readonly Readonly<Record<string, unknown>>[];
-        validation?: Readonly<Record<string, unknown>>;
-        encryption?: Readonly<Record<string, unknown>>;
+        policies?: readonly RallarBlackBoxTestRecord[];
+        validation?: RallarBlackBoxTestRecord;
+        encryption?: RallarBlackBoxTestRecord;
         durableCatchUp?: false | 'http';
     }>;
 
@@ -363,7 +374,7 @@ export type RallarBlackBoxTestCrdtApplyCommand =
     & RallarBlackBoxTestCommandBase<'crdt.apply'>
     & Readonly<{
         handle: string;
-        batch: Readonly<Record<string, unknown>>;
+        batch: RallarBlackBoxTestRecord;
     }>;
 
 export type RallarBlackBoxTestCrdtReadCommand =
@@ -423,7 +434,7 @@ export type RallarBlackBoxTestCrdtUndoRedoCommand =
     & Readonly<{
         handle: string;
         targetOperationGroupId: string;
-        operations: readonly Readonly<Record<string, unknown>>[];
+        operations: readonly RallarBlackBoxTestRecord[];
         operationGroupId?: string;
     }>;
 
@@ -443,28 +454,28 @@ export type RallarBlackBoxTestCrdtCommand =
     | RallarBlackBoxTestCrdtUndoRedoCommand
     | RallarBlackBoxTestCrdtCloseDestroyCommand;
 
-export type RallarBlackBoxTestDirectorRoomFields = Readonly<{
+export type RallarBlackBoxTestRoomFields = Readonly<{
     roomId?: string;
     applicationId?: string;
     workspaceId?: string;
-    scope?: Readonly<Record<string, unknown>>;
-    roomRef?: Readonly<Record<string, unknown>>;
+    scope?: RallarBlackBoxTestRecord;
+    roomRef?: RallarBlackBoxTestRecord;
 }>;
 
 export type RallarBlackBoxTestDirectorAppointCommand =
     & RallarBlackBoxTestCommandBase<'director.appoint'>
-    & RallarBlackBoxTestDirectorRoomFields
+    & RallarBlackBoxTestRoomFields
     & Readonly<{
         heartbeatTtlMs?: number;
     }>;
 
 export type RallarBlackBoxTestDirectorResignCommand =
     & RallarBlackBoxTestCommandBase<'director.resign'>
-    & RallarBlackBoxTestDirectorRoomFields;
+    & RallarBlackBoxTestRoomFields;
 
 export type RallarBlackBoxTestDirectorStatusCommand =
     & RallarBlackBoxTestCommandBase<'director.status'>
-    & RallarBlackBoxTestDirectorRoomFields
+    & RallarBlackBoxTestRoomFields
     & Readonly<{
         refresh?: boolean;
         now?: number;
@@ -472,7 +483,7 @@ export type RallarBlackBoxTestDirectorStatusCommand =
 
 export type RallarBlackBoxTestDirectorRelayStartCommand =
     & RallarBlackBoxTestCommandBase<'director.relay.start'>
-    & RallarBlackBoxTestDirectorRoomFields
+    & RallarBlackBoxTestRoomFields
     & Readonly<{
         handle: string;
         laneId?: string;
@@ -516,6 +527,24 @@ export type RallarBlackBoxTestDirectorCommand =
     | RallarBlackBoxTestDirectorSyncRequestCommand
     | RallarBlackBoxTestDirectorRelayStopCommand;
 
+export type RallarBlackBoxTestFormationCommandCommand =
+    & RallarBlackBoxTestCommandBase<'formation.command'>
+    & RallarBlackBoxTestRoomFields
+    & Readonly<{
+        command: string;
+        layout?: RallarBlackBoxTestRecord;
+        landing?: string;
+        reason?: string;
+    }>;
+
+export type RallarBlackBoxTestFormationReadinessCommand =
+    & RallarBlackBoxTestCommandBase<'formation.readiness'>
+    & RallarBlackBoxTestRoomFields;
+
+export type RallarBlackBoxTestFormationCommand =
+    | RallarBlackBoxTestFormationCommandCommand
+    | RallarBlackBoxTestFormationReadinessCommand;
+
 export type RallarBlackBoxTestHealthCommand =
     & RallarBlackBoxTestCommandBase<'health'>
     & Readonly<{
@@ -546,6 +575,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestHttpRequestCommand
     | RallarBlackBoxTestCrdtCommand
     | RallarBlackBoxTestDirectorCommand
+    | RallarBlackBoxTestFormationCommand
     | RallarBlackBoxTestSimpleCommand;
 
 export type RallarBlackBoxTestResultStatus = 'ok' | 'failed' | 'cancelled' | 'skipped';

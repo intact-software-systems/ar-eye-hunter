@@ -74,13 +74,34 @@ export interface LiveRtcControlPort extends
         | 'readyPeerIds'
     > {}
 
-interface SetupGroupMembershipInput {
+/**
+ * The policy every live three-browser group is created with. The driver commands each boundary
+ * itself, so the stage triggers would dial the layout before it does; the admission and activation
+ * modes are part of the same literal and moving either changes what the matrix exercises.
+ */
+export const MANUAL_TRIGGER_POLICY = {
+    preset: 'managed',
+    admission: {
+        mode: 'open'
+    },
+    activation: {
+        mode: 'manual'
+    },
+    establishment: {
+        planTrigger: { kind: 'manual' },
+        connectTrigger: { kind: 'manual' }
+    }
+};
+
+export interface SetupGroupMembershipInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
     readonly owner: LiveRtcControlClient.FormationAgent;
     readonly members: readonly LiveRtcControlClient.FormationAgent[];
     readonly groupId: string;
     readonly suffix: string;
+    /** The policy the group is created with; the matrix's own literal when omitted. */
+    readonly lifecyclePolicy?: typeof MANUAL_TRIGGER_POLICY;
 }
 
 interface ConnectFormationAgentInput {
@@ -882,21 +903,7 @@ function toGroupCreationCommand(
                     matrix: 'live-three-browser',
                     suffix: input.suffix
                 },
-                lifecyclePolicy: {
-                    preset: 'managed',
-                    admission: {
-                        mode: 'open'
-                    },
-                    activation: {
-                        mode: 'manual'
-                    },
-                    // The driver commands every boundary itself; the stage
-                    // triggers would dial the layout before it does.
-                    establishment: {
-                        planTrigger: { kind: 'manual' },
-                        connectTrigger: { kind: 'manual' }
-                    }
-                }
+                lifecyclePolicy: input.lifecyclePolicy ?? MANUAL_TRIGGER_POLICY
             }
         },
         response: {

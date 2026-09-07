@@ -375,7 +375,7 @@ const crdtWaitConditionSchema: JsonSchema = {
     additionalProperties: false
 };
 
-const directorRoomProperties: Readonly<Record<string, JsonSchema>> = {
+const commandRoomProperties: Readonly<Record<string, JsonSchema>> = {
     roomId: stringSchema,
     applicationId: stringSchema,
     workspaceId: stringSchema,
@@ -450,7 +450,8 @@ const waitMatchSchema: JsonSchema = {
         payloadPath: stringSchema,
         equals: anySchema,
         contains: stringSchema,
-        exists: booleanSchema
+        exists: booleanSchema,
+        sinceEpochMs: { type: 'integer', minimum: 0 }
     },
     additionalProperties: false
 };
@@ -717,19 +718,19 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         handle: stringSchema
     }),
     'director.appoint': strictCommandSchema('director.appoint', [], {
-        ...directorRoomProperties,
+        ...commandRoomProperties,
         heartbeatTtlMs: { type: 'integer', minimum: 1 }
     }),
     'director.resign': strictCommandSchema('director.resign', [], {
-        ...directorRoomProperties
+        ...commandRoomProperties
     }),
     'director.status': strictCommandSchema('director.status', [], {
-        ...directorRoomProperties,
+        ...commandRoomProperties,
         refresh: booleanSchema,
         now: numberSchema
     }),
     'director.relay.start': strictCommandSchema('director.relay.start', ['handle', 'intentTypeId', 'outputTypeId'], {
-        ...directorRoomProperties,
+        ...commandRoomProperties,
         ...directorRelayConfigProperties
     }),
     'director.intent': strictCommandSchema('director.intent', ['handle', 'intent'], {
@@ -742,6 +743,28 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
     }),
     'director.relay.stop': strictCommandSchema('director.relay.stop', ['handle'], {
         handle: stringSchema
+    }),
+    'formation.command': strictCommandSchema('formation.command', ['command'], {
+        ...commandRoomProperties,
+        command: {
+            type: 'string',
+            enum: [
+                'plan',
+                'connect',
+                'activate',
+                'reconfigure',
+                'pause',
+                'resume',
+                'reset',
+                'start'
+            ]
+        },
+        layout: recordSchema,
+        landing: { type: 'string', enum: ['apply', 'hold'] },
+        reason: stringSchema
+    }),
+    'formation.readiness': strictCommandSchema('formation.readiness', [], {
+        ...commandRoomProperties
     }),
     health: strictCommandSchema('health', [], {
         includeRtcDiagnostics: booleanSchema
@@ -1777,6 +1800,70 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             kind: 'director.relay.stop',
             commandId: 'stop-director-relay',
             handle: 'game-director'
+        }
+    },
+    {
+        kind: 'formation.command',
+        title: 'Command Room Formation',
+        description:
+            'Issues one of the eight room formation lifecycle commands through the browser facade and reports the receipt beside the room formation summary.',
+        requiredFields: ['command'],
+        optionalFields: [
+            'roomId',
+            'applicationId',
+            'workspaceId',
+            'scope',
+            'roomRef',
+            'layout',
+            'landing',
+            'reason',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
+        supportedProviderModes: ['browser-rallar'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['connected browser Rallar session holding the named room'],
+        artifactExpectations: ['group snapshot receipt', 'room formation summary'],
+        example: {
+            kind: 'formation.command',
+            commandId: 'formation-plan',
+            command: 'plan',
+            roomId: 'bb-group',
+            applicationId: 'rallar-server',
+            workspaceId: 'default'
+        }
+    },
+    {
+        kind: 'formation.readiness',
+        title: 'Await Room Readiness',
+        description:
+            'Awaits the browser\'s own room readiness without refreshing the room or opening lanes, and reports the room formation summary captured when it resolved.',
+        requiredFields: [],
+        optionalFields: [
+            'roomId',
+            'applicationId',
+            'workspaceId',
+            'scope',
+            'roomRef',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
+        supportedProviderModes: ['browser-rallar'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['connected browser Rallar session holding the named room'],
+        artifactExpectations: ['room formation summary at the tick readiness resolved'],
+        example: {
+            kind: 'formation.readiness',
+            commandId: 'formation-readiness',
+            roomId: 'bb-group',
+            applicationId: 'rallar-server',
+            workspaceId: 'default'
         }
     },
     {

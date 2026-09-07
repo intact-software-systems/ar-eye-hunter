@@ -23,6 +23,7 @@ export namespace BlackBoxRallarHealthReader {
         readonly config: BlackBoxRallarConnectionConfig | undefined;
         readonly crdt: BlackBoxRallarHealthDiagnostics['crdt'];
         readonly director: BlackBoxRallarHealthDiagnostics['director'];
+        readonly formation: BlackBoxRallarHealthDiagnostics['formation'];
         readonly input: BlackBoxRallarHealthInput;
     }
     export interface Status {
@@ -106,7 +107,8 @@ export class BlackBoxRallarHealthReader {
             ...(rtcDiagnostics !== undefined ? { rtcDiagnostics } : {}),
             ...(rtcDiagnosticsError !== undefined ? { rtcDiagnosticsError } : {}),
             crdt: read.crdt,
-            director: read.director
+            director: read.director,
+            ...(read.formation !== undefined ? { formation: read.formation } : {})
         };
     };
 }
