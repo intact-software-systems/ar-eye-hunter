@@ -4,7 +4,9 @@ import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-trans
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { describe, expect, it } from 'vitest';
 
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
@@ -112,6 +114,41 @@ describe('Postgres transaction write boundary', () => {
         );
     });
 
+    it.each(['completion-failed', 'reservation-lost'])(
+        'keeps rejected-message result and queue failure atomic when %s',
+        async (failure) => {
+            const database = createTransactionalDatabase({ failCompletion: failure === 'completion-failed' });
+            const writer = new AppInboxTransactionWriter({ database: database.sql }, { serviceId: 'server-1' });
+            const entry = {
+                ...incomingEntry,
+                resource: '{"corrupt":',
+                dequeueAudit: { attempts: failure === 'reservation-lost' ? 2 : 1 }
+            };
+            const attempt = computeResourceInboxAttempt({
+                entry,
+                selectedLane: Reservator.NEW,
+                selectedAtEpochMs: Date.parse('2026-01-01T00:00:00Z'),
+                selectedDueAtEpochMs: undefined
+            });
+            const completion = computeAppInboxCompletion({
+                entry,
+                completedAtEpochMs: Date.parse('2026-01-01T00:01:00Z'),
+                status: EntityStatus.NON_RETRYABLE,
+                durableResult: { code: 'malformed-message' }
+            });
+            Object.freeze(entry);
+            Object.freeze(completion);
+
+            await expect(writer.writeComputedQueueFailure(attempt, completion)).rejects.toThrow();
+
+            expect(database.beginCalls).toBe(1);
+            expect(database.committed.results.get(toKey(entry.key))).toBeUndefined();
+            expect(database.committed.inbox.get(toKey(entry.key))?.ri_status).toBe(EntityStatus.RESERVED);
+            expect(entry.status).toBe(EntityStatus.RESERVED);
+            expect(completion.finalizedEntry.status).toBe(EntityStatus.NON_RETRYABLE);
+        }
+    );
+
     it('binds AppInbox repositories to the supplied transaction', async () => {
         const database = createTransactionalDatabase();
         Object.defineProperty(database.sql, 'appInboxTransactionRepositories', {
@@ -142,6 +179,12 @@ describe('Postgres transaction write boundary', () => {
                 enqueue
             ),
             entry: incomingEntry,
+            attemptTelemetry: computeResourceInboxAttempt({
+                entry: incomingEntry,
+                selectedLane: Reservator.NEW,
+                selectedAtEpochMs: Number(incomingEntry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+                selectedDueAtEpochMs: undefined
+            }).telemetry,
             encodeResult: (result) => encodeAppInboxResult(result, 'Postgres transaction test result')
         };
 

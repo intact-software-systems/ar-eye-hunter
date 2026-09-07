@@ -21,6 +21,41 @@ afterEach(() => {
 });
 
 describe('QRtcDataChannel', () => {
+    it('bounds decoded subscriptions before parsing while preserving the raw lane', async () => {
+        const fixture = createNativeDataChannelFixture();
+        const channel = new QRtcDataChannel(fixture.peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        const rejected: string[] = [];
+        const raw: unknown[] = [];
+        const decoded: unknown[] = [];
+        channel.onRtcMessageDo('alm', {
+            maxMessageBytes: 4,
+            onRejected: async (reason) => {
+                rejected.push(reason.code);
+            },
+            onMessage: async (value) => {
+                decoded.push(value);
+            }
+        });
+        channel.onRawMessageDo('raw', {
+            onMessage: async (value) => {
+                raw.push(value);
+            }
+        });
+        channel.connect(true);
+        const native = fixture.native.channels[0];
+        await native.open();
+        const parse = vi.spyOn(JSON, 'parse');
+        const binary = new ArrayBuffer(5);
+        await native.receive('"éé"');
+        await native.receive(binary);
+        expect(parse.mock.calls.some(([value]) => value === '"éé"')).toBe(false);
+        expect(rejected).toEqual(['oversized', 'oversized']);
+        expect(raw).toEqual(['"éé"', binary]);
+        expect(decoded).toEqual([]);
+        await native.receive('"é"');
+        expect(decoded).toEqual(['é']);
+    });
+
     it('creates an initiator channel, dispatches messages, and enforces send guards', async () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
@@ -60,9 +95,10 @@ describe('QRtcDataChannel', () => {
             }
         });
 
-        expect(() => dataChannel.send({ nope: true })).toThrow(
-            'Data channel not open'
-        );
+        expect(dataChannel.sendJson({ nope: true })).toMatchObject({
+            status: 'closed',
+            reason: 'Data channel not open'
+        });
 
         dataChannel.connect(true);
 
@@ -75,10 +111,11 @@ describe('QRtcDataChannel', () => {
 
         expect(dataChannel.isOpen()).toBe(true);
 
-        await dataChannel.send({ hello: true });
-        await dataChannel.sendAsJsonString('{"raw":true}');
+        expect(dataChannel.sendJson({ hello: true }).status).toBe('sent');
+        expect(dataChannel.sendRaw('{"raw":true}').status).toBe('sent');
 
         await createdChannel.receive('{"type":"chat","body":"typed"}');
+        await createdChannel.receive('{"type":"state","body":"update"}');
         await createdChannel.receive('{"body":"plain"}');
         await createdChannel.fail();
         await createdChannel.close();
@@ -88,7 +125,11 @@ describe('QRtcDataChannel', () => {
             '{"raw":true}'
         ]);
         expect(typedMessages).toEqual(['{"type":"chat","body":"typed"}', '{"body":"plain"}']);
-        expect(plainMessages).toEqual(['{"body":"plain"}']);
+        expect(plainMessages).toEqual([
+            '{"type":"chat","body":"typed"}',
+            '{"type":"state","body":"update"}',
+            '{"body":"plain"}'
+        ]);
         expect(lifecycle).toEqual(['open', 'error', 'close']);
     });
 

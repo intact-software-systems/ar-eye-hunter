@@ -23,7 +23,7 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

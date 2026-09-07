@@ -49,7 +49,8 @@ vi.mock(
         browserStateCacheLifecycle: {
             hydrate: runtime.hydrateStateCache,
             onChange: runtime.onCacheChange,
-            initialise: vi.fn()
+            initialise: vi.fn(),
+            cancelSnapshotAssemblies: vi.fn(() => undefined)
         }
     })
 );

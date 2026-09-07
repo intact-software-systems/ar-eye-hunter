@@ -19,6 +19,10 @@ import {
     toResourceInboxWorkAdvertisementOptions
 } from '@shared/queuebox/queue-box-types.ts';
 import {
+    captureResourceEntryObservations,
+    validateResourceEntryObservation
+} from '@shared/queuebox/resource-entry-observations.ts';
+import {
     EntityStatus,
     Key,
     NEW_AND_RETRY_STATUSES,
@@ -89,19 +93,38 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput
+        reservationInput: ResourceInboxReservationInput,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Key, ResourceEntry>> {
         const options = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
+        const observations = captureResourceEntryObservations(observedEntries);
+        const observedRowIds = observations === undefined
+            ? undefined
+            : [...observations.values()].flatMap((entry) => entry.db === undefined ? [] : [entry.db.id]);
+        if (observedRowIds?.length === 0 || options.maxToReserve === 0) {
+            return new Map();
+        }
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
-                const foundEntries = await txRepo.reservations.findEntriesSkipLocked(typeIds, statusIds, options);
+                const foundEntries = await txRepo.reservations.findEntriesSkipLocked(
+                    typeIds,
+                    statusIds,
+                    options,
+                    observedRowIds
+                );
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
+                    if (reservedEntries.size >= options.maxToReserve) {
+                        break;
+                    }
+                    if (validateResourceEntryObservation(e, observations).left) {
+                        continue;
+                    }
                     const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
@@ -120,23 +143,39 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         typeIds: Set<string>,
         reservationInput: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration
+        timeSinceStartTs: Temporal.Duration,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Key, ResourceEntry>> {
         const options = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
+        const observations = captureResourceEntryObservations(observedEntries);
+        const observedRowIds = observations === undefined
+            ? undefined
+            : [...observations.values()].flatMap((entry) => entry.db === undefined ? [] : [entry.db.id]);
+        const timeoutMs = timeSinceStartTs.total({ unit: 'milliseconds' });
+        if (observedRowIds?.length === 0 || options.maxToReserve === 0) {
+            return new Map();
+        }
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
                 const foundEntries = await txRepo.reservations.findTimedOutReservedEntriesSkipLocked(
                     typeIds,
-                    timeSinceStartTs.total({ unit: 'milliseconds' }),
-                    options
+                    timeoutMs,
+                    options,
+                    observedRowIds
                 );
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
+                    if (reservedEntries.size >= options.maxToReserve) {
+                        break;
+                    }
+                    if (validateResourceEntryObservation(e, observations).left) {
+                        continue;
+                    }
                     const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
@@ -204,15 +243,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
-        const finalizationTypes = typeIds.has(EnqueuedType.APP_INBOX)
-            ? new Set([EnqueuedType.APP_INBOX])
-            : new Set<string>();
-        if (finalizationTypes.size === 0 || options.maxToReserve === 0) {
+        if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
         return await this.resourceInbox.transaction(async (txRepo) => {
             const found = await txRepo.finalization.findRetryExhaustionFinalizationsSkipLocked(
-                finalizationTypes,
+                typeIds,
                 options.staleAfterMs,
                 {
                     processingAttempts: options.processingAttempts,
@@ -252,8 +288,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 const releasedEntries = new Map<Key, ResourceEntry>();
 
                 for (const entry of resources) {
-                    const updated = await txRepo.reservations.releaseReserved(entry.key, {
-                        expectedAttempts: entry.dequeueAudit.attempts,
+                    const updated = await txRepo.reservations.releaseReserved(entry, {
                         releasedAt,
                         disposition
                     });

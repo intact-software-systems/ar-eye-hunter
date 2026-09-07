@@ -1,42 +1,22 @@
-import {
-    QRtcSignalingChannel,
-    QRtcSignalingMsgType,
-    QRtcSignalingType
-} from '@shared/webrtc/QRtcSignalingContracts.ts';
-
-import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../protocol/exact-object-decoding.ts';
-import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { decodeRtcSignalingEnvelope } from '@shared/webrtc/decode-rtc-signaling-message.ts';
 
 export interface RtcSignalingRoute {
     readonly toId: string;
 }
 
-export function decodeRtcSignalingRoute(serialized: string): RtcSignalingRoute {
-    const message = requireRecord(
-        decodeJsonWireValue(JSON.parse(serialized), 'RTC signaling message'),
-        'RTC signaling message'
+export function decodeRtcSignalingRoute(message: ALMessage): Either<ALMessageRejection, RtcSignalingRoute> {
+    return decodeRtcSignalingEnvelope(message).fold(
+        (rejection) => Either.ofLeft(rejection),
+        (signal) => Either.ofRight({ toId: signal.toId })
     );
-    requireExactKeys(message, [
-        'channel',
-        'type',
-        'fromId',
-        'toId',
-        'sessionId',
-        'token',
-        'signalType',
-        'payload'
-    ], 'RTC signaling message');
-    if (message.channel !== QRtcSignalingChannel.RtcSignal) {
-        throw new TypeError('RTC signaling channel is invalid');
-    }
-    if (message.type !== QRtcSignalingMsgType.Signal) {
-        throw new TypeError('RTC signaling message type is invalid');
-    }
-    requireString(message.fromId, 'RTC signaling sender');
-    requireString(message.toId, 'RTC signaling recipient');
-    requireString(message.sessionId, 'RTC signaling session');
-    requireString(message.token, 'RTC signaling ticket');
-    requireOneOf(message.signalType, Object.values(QRtcSignalingType), 'RTC signaling signal type');
+}
 
-    return { toId: message.toId };
+export function validateRtcSignalingMessage(message: ALMessage): Either<ALMessageRejection, ALMessage> {
+    return decodeRtcSignalingRoute(message).fold(
+        (rejection) => Either.ofLeft(rejection),
+        () => Either.ofRight(message)
+    );
 }

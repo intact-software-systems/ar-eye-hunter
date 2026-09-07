@@ -44,3 +44,15 @@ export function storeInteractionData(interactionData: any, context: any): any {
 
     return storedResult;
 }
+
+export function toInteractionOutputFields(interaction: any): any {
+    return {
+        output: interaction.request.output,
+        outputPath: interaction.request.outputPath,
+        outputs: interaction.request.outputs,
+        transform: interaction.request.transform,
+        secret: interaction.request.secret,
+        redact: interaction.request.redact,
+        redactAs: interaction.request.redactAs
+    };
+}

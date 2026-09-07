@@ -1,6 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { executeLocalWsInteraction } from './execute-local-ws-interaction.ts';
-import { rememberWsCloseEvent } from './local-websocket-state.ts';
+import { rememberWsCloseEvent } from './local-websocket-session.ts';
 import {
     executeRemoteWsInteraction,
     shouldExecuteRemoteWsInteraction

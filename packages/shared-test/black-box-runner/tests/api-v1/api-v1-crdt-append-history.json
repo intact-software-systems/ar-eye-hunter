@@ -232,6 +232,14 @@
             "urlEncode": {
               "path": "outputs.primaryCrdtHistoryTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -241,7 +249,11 @@
       "type": "ws.open",
       "connection": "wsPrimary",
       "request": {
-        "url": "{primaryCrdtHistoryWsUrl}"
+        "url": "{primaryCrdtHistoryWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -254,10 +266,10 @@
         "consume": true,
         "messages": [
           {
-            "route": {
-              "topicId": "client-state.snapshot"
-            },
-            "payload": {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
               "typeId": "client-state.snapshot"
             }
           }
@@ -476,6 +488,14 @@
             "urlEncode": {
               "path": "outputs.tertiaryCrdtHistoryTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -485,7 +505,11 @@
       "type": "ws.open",
       "connection": "wsTertiary",
       "request": {
-        "url": "{tertiaryCrdtHistoryWsUrl}"
+        "url": "{tertiaryCrdtHistoryWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -498,10 +522,10 @@
         "consume": true,
         "messages": [
           {
-            "route": {
-              "topicId": "client-state.snapshot"
-            },
-            "payload": {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
               "typeId": "client-state.snapshot"
             }
           }

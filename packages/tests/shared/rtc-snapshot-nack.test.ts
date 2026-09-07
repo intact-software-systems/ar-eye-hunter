@@ -1,6 +1,6 @@
-import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -8,29 +8,37 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
-import { createTestGroup } from '../create-test-group.ts';
+import { describe, expect, it } from 'vitest';
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+
+interface SnapshotObservation {
+    snapshot: GroupSnapshot | undefined;
+}
 
 interface SnapshotAdmissionFixture {
     readonly runtime: ALInboundMessageRuntime;
-    readonly observed: { snapshot: GroupSnapshot | undefined; };
+    readonly observed: SnapshotObservation;
     readonly delivered: string[];
     readonly controls: ALMessage[];
     readonly message: ALMessage;
+    readonly inbox: InMemoryQueueBox;
 }
 
+const source: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
+const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
 describe('RTC snapshot rejection controls', () => {
-    it('does not deliver a protocol NACK to the application or reply with another NACK', async () => {
-        const fixture = createSnapshotAdmissionFixture();
+    it('rejects an uncorrelated protocol NACK without application delivery or a NACK response', async () => {
+        const fixture = createSnapshotAdmissionFixture(1, false);
         try {
-            await fixture.runtime.handleIncomingMessage(
-                newALNackControlMessage('sender', 'receiver', fixture.message.id.msgId, 'not-yet-in-sync'),
-                'sender'
+            const result = await fixture.runtime.handleIncomingMessage(
+                newALNackControlMessage(
+                    { v: 2, msgId: 'nack-control', senderId: 'sender', ts: Date.now() },
+                    { fromPeerId: 'sender', toPeerId: 'receiver', msgId: fixture.message.id.msgId, reason: 'not-yet-in-sync', observedAtEpochMs: Date.now() }
+                ),
+                source
             );
+            expect(result.right).toEqual({ kind: 'control', handled: false });
             expect(fixture.controls).toEqual([]);
             expect(fixture.delivered).toEqual([]);
         }
@@ -39,33 +47,39 @@ describe('RTC snapshot rejection controls', () => {
         }
     });
 
-    it('does not consume admission state while rejected and delivers a retry only once after catch-up', async () => {
-        const fixture = createSnapshotAdmissionFixture();
+    it.each([1, 2])('emits only a sync NACK without consuming admission state for sequence %s', async (seq) => {
+        const fixture = createSnapshotAdmissionFixture(seq, false);
         try {
-            await fixture.runtime.handleIncomingMessage(fixture.message, 'sender');
+            await fixture.runtime.handleIncomingMessage(fixture.message, source);
             expect(fixture.delivered).toEqual([]);
             expect(fixture.controls.map(parseALControlMessage)).toEqual([
-                { type: 'nack', payload: expect.objectContaining({ reason: 'not-yet-in-sync' }) }
+                { type: 'nack', payload: expect.objectContaining({ msgId: fixture.message.id.msgId, toPeerId: 'sender', reason: 'not-yet-in-sync' }) }
             ]);
-
-            fixture.observed.snapshot = createCurrentSnapshot();
-            await fixture.runtime.handleIncomingMessage(fixture.message, 'sender');
-            await fixture.runtime.handleIncomingMessage(fixture.message, 'sender');
-            expect(fixture.delivered).toEqual([fixture.message.id.msgId]);
+            if (seq === 1) {
+                fixture.observed.snapshot = createCurrentSnapshot();
+                await fixture.runtime.handleIncomingMessage(fixture.message, source);
+                await fixture.runtime.handleIncomingMessage(fixture.message, source);
+                expect(fixture.delivered).toEqual([fixture.message.id.msgId]);
+            }
         }
         finally {
             fixture.runtime.dispose();
         }
     });
 
-    it('keeps an already admitted inbox entry retryable while its room cache is unavailable', async () => {
-        const fixture = createSnapshotAdmissionFixture();
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(fixture.message, 'test-inbox');
+    it('rechecks current authority and retained ingress for an admitted inbox entry', async () => {
+        const fixture = createSnapshotAdmissionFixture(1, true);
         try {
+            fixture.observed.snapshot = createCurrentSnapshot();
+            await fixture.runtime.handleIncomingMessage(fixture.message, source);
+            const entry = await fixture.inbox.getItem(fixture.message.route);
+            expect(entry).toBeDefined();
+            if (!entry) {
+                throw new Error('Expected the admitted inbox entry');
+            }
+            fixture.observed.snapshot = undefined;
             expect(await fixture.runtime.dispatchStoredEntry(entry)).toBe('retry');
             expect(fixture.delivered).toEqual([]);
-            expect(fixture.controls).toEqual([]);
-
             fixture.observed.snapshot = createCurrentSnapshot();
             expect(await fixture.runtime.dispatchStoredEntry(entry)).toBe('completed');
             expect(fixture.delivered).toEqual([fixture.message.id.msgId]);
@@ -74,140 +88,55 @@ describe('RTC snapshot rejection controls', () => {
             fixture.runtime.dispose();
         }
     });
-
-    it('emits only a correlated sync NACK even when the rejected message also has an ordering gap', async () => {
-        const controls: ALMessage[] = [];
-        const delivered: string[] = [];
-        const forwarded: string[] = [];
-        const message = newALMulticastMessage(
-            'sender',
-            {
-                topicId: 'room.messages',
-                contextId: 'room',
-                resourceId: 'probe'
-            },
-            {
-                applicationId: 'app',
-                workspaceId: 'workspace',
-                groupId: 'room'
-            },
-            'snapshot.probe.v1',
-            { probe: true },
-            {
-                minSnapshotVersion: 5,
-                seq: 2,
-                reliability: 'at-least-once',
-                ack: 'none'
-            }
-        );
-        const runtime = createDefaultALInboundMessageRuntime({
-            selfPeerId: 'receiver',
-            inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (incoming, fromPeerId, stores) => {
-                const plan = planALMessageHandling(incoming, {
-                    selfPeerId: 'receiver',
-                    fromPeerId,
-                    ...stores
-                });
-                return {
-                    ...plan,
-                    dropReason: 'not-yet-in-sync',
-                    localDelivery: { enabled: false, persist: false, deferred: false },
-                    forwarding: { enabled: false, persist: false, nextHopPeerIds: [] },
-                    ack: { enabled: false, algo: 'none', deferred: false },
-                    nack: { enabled: true, toPeerId: fromPeerId, reason: 'not-yet-in-sync', missingSeqs: [] },
-                    repair: { enabled: false, algo: 'none' }
-                };
-            },
-            readStoredEntry: () => message,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox'),
-            dispatchInboxEntry: async (entry) => {
-                delivered.push(entry.resource);
-            },
-            sendControlMessage: async (control) => {
-                controls.push(control);
-            },
-            forwardMessage: async (incoming) => {
-                forwarded.push(incoming.id.msgId);
-            }
-        });
-        try {
-            await runtime.handleIncomingMessage(message, 'sender');
-            expect(delivered).toEqual([]);
-            expect(forwarded).toEqual([]);
-            expect(controls.map(parseALControlMessage)).toEqual([
-                {
-                    type: 'nack',
-                    payload: expect.objectContaining({
-                        msgId: message.id.msgId,
-                        fromPeerId: 'receiver',
-                        toPeerId: 'sender',
-                        reason: 'not-yet-in-sync'
-                    })
-                }
-            ]);
-        }
-        finally {
-            runtime.dispose();
-        }
-    });
 });
 
-function createSnapshotAdmissionFixture(): SnapshotAdmissionFixture {
-    const observed: SnapshotAdmissionFixture['observed'] = { snapshot: undefined };
+function createSnapshotAdmissionFixture(seq: number, persist: boolean): SnapshotAdmissionFixture {
+    const observed: SnapshotObservation = { snapshot: undefined };
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
-    const message = newALMulticastMessage(
-        'sender',
-        {
-            topicId: 'room.messages',
-            contextId: 'room',
-            resourceId: 'probe'
-        },
-        {
-            applicationId: 'app',
-            workspaceId: 'workspace',
-            groupId: 'room'
-        },
-        'snapshot.probe.v1',
-        { probe: true },
-        {
-            minSnapshotVersion: 5,
-            seq: 1,
-            ack: 'none',
-            qos: { supersedence: { algo: 'latest-wins' } }
-        }
-    );
+    const inbox = new InMemoryQueueBox(new Map());
+    const message = newALMulticastMessage('sender', { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' }, roomRef, 'snapshot.probe.v1', {
+        probe: true
+    }, {
+        minSnapshotVersion: 5,
+        seq,
+        ack: 'none',
+        reliability: 'at-least-once',
+        qos: { supersedence: { algo: 'latest-wins' }, durability: { algo: persist ? 'local-inbox' : 'volatile' } }
+    });
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'receiver',
-        inbox: new InMemoryQueueBox(new Map()),
-        planIncomingMessage: (incoming, fromPeerId, stores) =>
-            planRtcRoomSnapshotAdmission({
+        inbox,
+        planIncomingMessage: (incoming, ingress, observations) => {
+            const fromPeerId = ingress.kind === 'trusted-server' ? undefined : ingress.peerId;
+            return planRtcRoomSnapshotAdmission({
                 message: incoming,
-                plan: planALMessageHandling(incoming, { selfPeerId: 'receiver', fromPeerId, ...stores }),
+                plan: planALMessageHandling(incoming, { selfPeerId: 'receiver', fromPeerId, ...observations }),
                 snapshot: observed.snapshot,
                 fromPeerId,
-                nowMs: 100
-            }),
-        readStoredEntry: () => message,
+                selfPeerId: 'receiver',
+                overlay: undefined,
+                recipientPeerId: undefined,
+                nowMs: observations.nowMs
+            });
+        },
+        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox'),
-        dispatchInboxEntry: async () => {
-            delivered.push(message.id.msgId);
+        dispatchInboxEntry: async (entry) => {
+            delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
         sendControlMessage: async (control) => {
             controls.push(control);
         }
     });
-    return { runtime, observed, delivered, controls, message };
+    return { runtime, observed, delivered, controls, message, inbox };
 }
 
 function createCurrentSnapshot(): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['sender', 'receiver'] });
     return {
-        group: createTestGroup({ applicationId: 'app', workspaceId: 'workspace', groupId: 'room', snapshotVersion: 5 }),
-        causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        members: [],
-        activeSessions: [],
-        memberCount: 0,
-        onlineMemberCount: 0
+        ...snapshot,
+        group: { ...snapshot.group, snapshotVersion: 5 },
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
     };
 }

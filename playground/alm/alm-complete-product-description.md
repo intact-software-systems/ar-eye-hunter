@@ -1,6 +1,11 @@
 # ALM complete product description
 
-Date: 2026-08-29
+Review date: 2026-09-05
+
+Reviewed source: `02d65ac4a458b98b92ebda22cf3ff84041027eb9`
+
+Related documents: [current implementation audit](./alm-static-audit.md) and
+[delivery roadmap](./alm-improvement-plan.md).
 
 Status markers in this document describe the current implementation:
 
@@ -11,8 +16,13 @@ Status markers in this document describe the current implementation:
   product requires it, but the current implementation has no dependable
   end-to-end behavior.
 
-This is a product description and completion contract, not an implementation
-plan.
+Unmarked normative prose describes the intended complete product. The markers
+describe the implementation at the reviewed source revision. This is a product
+description and completion contract; the roadmap owns sequencing.
+Missing capability is not by itself proof of product demand: broader audience,
+leader, and distributed ownership features require concrete consumers and a user
+scope decision as described in the roadmap. Source facts remain tied to the
+reviewed revision; intended behavior below incorporates the later product review.
 
 ## Product proposition
 
@@ -34,6 +44,12 @@ The product promise is:
 > audience acknowledged, what was retried or repaired, and why a message was
 > dropped—without changing semantic meaning between RTC and WS.
 
+Normal operation is optimistic and permissive: valid work can progress with
+available authorized routes while delayed observations catch up. Harmless
+duplicates and stale replaceable values are no-ops. Missing authority is a
+bounded recovery condition, not permission to deliver and not automatically a
+permanent denial. A slow participant does not hold up delivery to everyone else.
+
 ## Product boundaries
 
 ALM owns:
@@ -47,6 +63,16 @@ ALM owns:
 - volatile and durable delivery state;
 - RTC overlay forwarding and WS routing adapters;
 - cross-transport conformance and diagnostics.
+
+QueueBox owns queued execution, reservations, redelivery, and scheduling. ALM
+supplies message decisions through a visible read/compute/validate/write-or-send
+flow: one bounded read owner, pure value-only compute, pure validation returning
+the existing `Either`, and an effect boundary that does not mutate the computed
+value. Existing QueueBox and transport callbacks remain in the owned shell.
+The roadmap's [implementation and reuse guidance](alm-improvement-plan.md#implementation-shape-and-existing-foundations)
+defines the concrete library boundaries. No new foundational or third-party
+library is currently required; a demonstrated gap is discussed with the user
+before introducing one.
 
 ALM does not own:
 
@@ -69,16 +95,24 @@ construct -> validate -> authorize/normalize -> admit -> dispatch
 A caller receives a stable message ID immediately and can observe a staged
 result:
 
-1. `rejected` — malformed, unauthorized, unsupported, expired, over budget, or
-   has no valid route.
+1. `rejected` — malformed, oversized, proved unauthorized, or an unsupported required
+   guarantee. Missing authority/route and temporary capacity produce distinct
+   bounded waiting, recovery, or capacity outcomes; terminal deadlines remain explicit.
 2. `accepted` — admitted under an explicit effective policy.
-3. `queued` — durable transport work exists and survives the promised failure
-   boundary.
-4. `transport-accepted` — RTC/WS accepted the bytes; this is not yet logical
-   delivery.
-5. `acknowledged` — the requested receiver/hop/subtree/leader audience confirmed.
+3. `queued` — pending transport work has an owner and the promised volatile or
+   durable retention policy; queueing alone does not imply persistence.
+4. `transport-accepted` — RTC/WS accepted the bytes. This is terminal success
+   only for best-effort; a reliable send remains pending logical acknowledgement.
+5. `acknowledged` — the requested logical receiver, frozen complete audience,
+   or authoritative leader confirmed. Hop/subtree progress is nonterminal unless
+   it proves the full logical acknowledgement obligation.
 6. `expired`, `superseded`, `failed`, or `cancelled` — terminal without the
    requested acknowledgement.
+
+Every terminal outcome preserves submitted, confirmed, and unconfirmed evidence.
+A lost receipt does not establish non-delivery. Cancellation stops remaining
+owned attempts; it does not retract remote delivery or undo application work.
+An expired or cancelled room notification can still have confirmed recipients.
 
 **MISSING TODAY — result stages:** The current API uses statuses such as
 `sent-immediate` before a durable send effect has necessarily succeeded and does
@@ -104,9 +138,13 @@ extensions are introduced only through a versioned compatibility rule. All
 identifiers, arrays, payloads, gap windows, and total envelopes have documented
 byte/count bounds.
 
-**PARTIAL — compatibility:** The v2 envelope and strict persisted decoder exist.
-The safe decoder is not universal on live/browser boundaries, and size/count
-bounds are incomplete.
+**PARTIAL — compatibility:** The v2 envelope and structural decoders exist.
+Browser [RTC](../../packages/shared/services/web-rtc-rx-streamer-service.ts) and
+[WS](../../packages/shared/services/ws-queue-box-client-service.ts) decode live
+objects with `decodePersistedALMessageValue` and queue replay with
+`decodePersistedALMessage`. These checks do not yet provide the complete
+resource limits, control-payload validation, or authenticated RTC provenance
+required by the product.
 
 **MISSING TODAY — session and trace identity:** Builders do not populate AL
 `sessionId`/`traceId`, and no end-to-end trace propagation behavior exists.
@@ -122,23 +160,33 @@ ALM validates at every trust boundary:
 - persisted records before replay;
 - control payloads before control-state mutation.
 
-Transport identity is authoritative. An RTC envelope sender must equal the
-authenticated peer for that channel. A browser WS sender receives only server-
-validated envelopes. Server WS binds sender to the authenticated connection or
-an explicitly authorized server/system identity. ACK/NACK/repair payload
-identities must agree with the envelope, target, transport peer, and tracked
-message audience.
+Transport identity is authoritative at each immediate hop. RTC relays preserve
+the original `id.senderId`, so equality between that origin and the channel peer
+is not a valid relay check. A receiver authenticates the immediate peer and
+validates the declared origin, relay, recipient, and route against matching
+server-provided room authority. Diagnostics never grant authority. Browser WS
+receives only server-validated envelopes, and server WS binds new senders to the
+authenticated connection or an explicitly authorized server/system identity.
+ACK/NACK/repair identities must agree with the envelope, target, transport peer,
+and tracked message audience. Cryptographic signatures by the original sender
+are outside the approved roadmap.
 
 Domain topic registries add payload schema, maximum size, authority, scope,
-fanout, and allowed QoS. Unknown topics follow an explicit deny/allow policy;
-room-scoped traffic fails closed without a current authoritative room snapshot.
+fanout, and allowed QoS. Unknown topics follow an explicit deny/allow policy.
+Room delivery requires sufficient matching server-provided authority; it does
+not require a new server round trip for every message. Missing/stale evidence
+can trigger bounded refresh or authorized alternative routing. Pending intake
+cannot deliver, forward, grant authority, or reserve a claimed dedup identity.
+Authenticated server state/topology bootstrap has its own explicit authority so
+receiving a snapshot does not require already possessing that snapshot.
 
-**PARTIAL — server trust boundary:** Server WS has envelope decoding and room
-authorization.
-
-**MISSING TODAY — browser trust boundary:** Browser RTC/WS currently cast live
-objects. RTC sender mismatch is only a warning, and control payloads use unchecked
-casts.
+**PARTIAL — live trust boundaries:** Server WS has envelope decoding and room
+authorization, while browser RTC/WS now structurally decode live messages. The
+old RTC mismatch warning and full-envelope receive logs are gone. Structural
+decoding alone does not authenticate relay provenance or prove room authority.
+[Control parsing](../../packages/shared/al-contracts/al-control.ts) still uses
+unchecked JSON casts, and inbound control dispatch bypasses the ordinary
+planner.
 
 ## Logical audiences
 
@@ -152,21 +200,29 @@ but only the addressed recipient delivers locally.
 ### Multicast
 
 A scoped `GroupRef` names the logical group. Audience selection uses an
-authoritative membership snapshot. `membershipEpoch` fences obsolete membership
-views; `minSnapshotVersion` prevents a node with stale group state from silently
-routing or accepting. The outcome identifies the snapshot/epoch used.
+authoritative membership snapshot. A supplied `minSnapshotVersion` prevents a
+node with stale group state from silently routing or accepting. Membership
+fencing must use an authoritative membership epoch; its current field and
+ordering use do not establish that guarantee. Until that implementation lands,
+requests requiring membership fencing are explicitly unsupported. The outcome
+identifies the authority snapshot used. For a
+reliable send, the logical audience is frozen at admission: joins do not expand
+it, and departures do not silently reduce the success requirement.
 
 **PARTIAL:** RTC uses current group peers and overlay next hops when its
 group/overlay context resolves; WS has room snapshot authorization.
 
-**MISSING TODAY — RTC room authorization:** If RTC cannot resolve the targeted
-group/overlay, planning continues without membership and treats the absent set
-as permission for local delivery. Missing, stale, mismatched, or removed
-authority state must instead fail closed before delivery, forwarding, ACK,
-repair, or control mutation.
-
-**MISSING TODAY — RTC fencing:** RTC accepts the fields but does not compare
-`membershipEpoch` or `minSnapshotVersion` to the current group/topology state.
+**PARTIAL — RTC snapshot admission:**
+[RTC snapshot admission](../../packages/shared/multicast/rtc-room-snapshot-admission.ts)
+checks a supplied `minSnapshotVersion` against exact scope, active status,
+expiry, and version. Unversioned room messages and originating plans bypass the
+check, and [shared AL policy](../../packages/shared/al-contracts/al-policy.ts)
+still permits local multicast when the resolved member set is empty. Insufficient
+authority must prevent delivery, forwarding, success ACKs, and admitted control
+mutation; bounded evidence recovery remains possible. Mismatched or known-removed
+authority rejects rather than waiting indefinitely. The builder also copies
+`membershipEpoch` into `ordering.epoch`; that runtime use must not be mistaken
+for an authoritative membership fence.
 
 ### Broadcast
 
@@ -211,7 +267,9 @@ ALM supports RTC and WS as first-class carriers.
 fallback, but each carrier attempt constructs a new message ID and admission-like
 statuses such as `enqueued`, `sent-immediate`, `skipped`, or `superseded` stop
 fallback. Attempts therefore do not share one deduplication domain,
-acknowledgement obligation, attempt history, or terminal outcome.
+acknowledgement obligation, attempt history, or terminal outcome. Browser RTC
+and WS also use separate admission scopes, so merely sharing an outgoing message
+ID would not provide cross-carrier receiver deduplication.
 
 **MISSING TODAY — conformance contract:** There is no cross-transport suite or
 public outcome model proving that the same QoS request has the same meaning on
@@ -228,7 +286,7 @@ The effective policy is frozen for an admitted attempt or explicitly revised by
 a recorded fallback/repair transition. A transport cannot silently claim an
 unsupported guarantee.
 
-**PARTIAL:** Normalization and provider hooks exist and are well unit-tested.
+**PARTIAL:** Normalization and provider hooks exist.
 
 **MISSING TODAY — production providers:** Browser composition does not install
 transport-aware capability, authorization, or live-congestion providers; the
@@ -248,25 +306,54 @@ At-least-once requires an acknowledgement strategy, an expiry/deadline, bounded
 retry/repair, and receiver deduplication. It may produce duplicate deliveries;
 the same message ID and idempotency contract make duplicates safe.
 
-An at-least-once request with `ack: none` is invalid unless the selected
-transport/topic defines an equivalent authoritative receipt. A WebSocket frame
+Reliable typed commands address their responsible receiver and require its
+protocol ACK. Reliable room notifications track the complete frozen intended
+session audience without waiting for room-wide readiness before dispatch.
+An authority command's business completion does not depend on every room
+browser answering. Topic/channel policy owns these defaults and the independent
+ordering, durability, and transport choices. High-rate realtime stays explicitly
+best-effort. A 30-second interactive deadline, 2-second ACK timeout, and 3 receipt
+retries are starting defaults with explicit channel/caller overrides.
+
+Retry only missing recipients, combine receipts where their actual confirmation
+semantics permit it, and replace obsolete state according to topic policy.
+QueueBox processing retries and logical receipt retries have distinct budgets
+under one message deadline. Reliable volatile work does not promise crash survival;
+durability must be selected separately. Matching duplicate data can repeat its
+receipt without redelivery or unbounded history growth. Late receipts are no-ops
+once their obligation is terminal.
+
+An explicit at-least-once request with `ack: none` is invalid. A WebSocket frame
 accepted by the browser API or an RTC payload accepted by `RTCDataChannel.send`
 is not a logical delivery receipt.
 
 ### Acknowledgement modes
 
 - `none`: no logical receipt; valid for best-effort only by default.
-- `receiver`: the logical receiver confirms admission/delivery.
+- `receiver`: the logical receiver confirms protocol acceptance under the
+  promised durability policy.
 - `all-logical-recipients`: every member of the frozen audience confirms, or
   expiry produces a partial/failure outcome.
 - `group-leader`: the authoritative leader for the admitted epoch confirms;
   leader identity and succession are explicit.
 
+A receiver ACK confirms protocol acceptance into the promised volatile or
+durable path. It does not mean that the application completed its work; that
+requires a separate application reply. Relay-hop receipts are tracked
+separately from logical-recipient ACKs.
+
 **PARTIAL:** Hop/subtree tracking, durable ACK timeout, NACK, and repair exist.
+Durable replay rechecks snapshot readiness, preserves predecessor order, and
+ACKs the admitted upstream relay. Current coverage includes
+[durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts),
+[room snapshot admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
+and [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts).
 
 **MISSING TODAY — truthful at-least-once:** Default browser RTC and WS send paths
 request at-least-once with no ACK. WS submission is not a logical receipt, and
-the RTC adapter additionally ignores dropped/queued/replaced send results.
+the RTC adapter calls `peer.channel.send(msg)`, returns `sent`, and loses the
+structured flow-control result. Typed fallback treats `skipped`, `superseded`,
+and `enqueued` as successes while building a separate message per carrier.
 
 **MISSING TODAY — distinct leader/all-recipient ACK:** Both modes currently map
 to the same subtree behavior.
@@ -282,12 +369,14 @@ Repair messages carry compact ranges and are paged. Buffered messages expire,
 supersedence can remove obsolete buffered values, and a new epoch closes the old
 ordering track.
 
-**CURRENT:** Ordering tracks include key/sender/epoch; gap buffering, NACK/
-repair, release, expiry, and restart behavior exist.
+**PARTIAL:** Ordering tracks include key/sender/epoch; gap buffering, NACK/
+repair, release, expiry, and restart behavior exist. Outbound ACK history uses
+`appendUniqueALAck`, while inbound ACK history can still append duplicates.
 
-**MISSING TODAY — bounded gaps:** Missing sequences are enumerated individually
-with no maximum gap/window, allowing unbounded CPU, memory, control payload, and
-effect-ID work.
+**MISSING TODAY — bounded gaps:**
+[`compute-al-ordering-observation.ts`](../../packages/shared/alm/compute-al-ordering-observation.ts)
+enumerates missing sequences individually with no maximum gap/window, allowing
+unbounded CPU, memory, control-payload, and effect-ID work.
 
 ## Deduplication and supersedence
 
@@ -308,7 +397,11 @@ reporting the replaced message as delivered.
 **PARTIAL:** Dedup and latest-wins behavior are implemented and persisted.
 
 **MISSING TODAY — shared arbitration:** Optimistic versions are sender-scoped
-even when a dedup/supersedence key is cross-sender.
+even when a dedup/supersedence key is cross-sender. Code inspection shows that
+two stale cross-sender reads followed by sequential commits can both win. The
+IndexedDB revision read at commit start fences a global revision but does not
+validate the earlier shared-key decision. This is a code-derived risk, not
+measured race evidence.
 
 ## Congestion and RTC flow control
 
@@ -343,22 +436,42 @@ Durability has observable meaning:
 - `local-inbox`: the receiver persists accepted work until local consumption or
   terminal outcome.
 
-Browser durability uses a fixed schema, not per-session object stores. Indexed
-queries are bounded by queue/namespace and due/expiry range. One canonical
-record owns durable work; related state references it instead of copying the
-full envelope. Ended sessions are purged by indexed range. Quota, eviction,
-blocked upgrades, and transaction aborts yield explicit outcomes and safe
-downgrade rules.
+Browser durability uses a fixed schema with bounded database/store counts and
+explicitly resets incompatible ALM queues during coordinated cutover. Session
+cleanup and abandoned-session recovery are bounded. Indexed ALM queries are bounded by
+queue/namespace and due/expiry range. Existing QueueBox/ResourceInbox owns durable
+work and its canonical envelope; related admission/receipt state references it
+instead of implementing a second queue or copying the full envelope. Atomic
+admission and work recording preserve crash safety. Quota,
+eviction, blocked opens, transaction aborts, and database enumeration yield
+explicit outcomes and bounded cleanup.
 
 **PARTIAL:** Atomic admission/effect commit, leases, retries, expiry, idempotent
-effect IDs, and restart replay are implemented.
+effect IDs, restart replay, and global revision fencing are implemented.
+[Admission persistence](../../packages/shared/alm/indexed-db-admission-backend.ts)
+and [snapshot reads](../../packages/shared/alm/read-indexed-db-admission-snapshot.ts)
+use readonly transactions, lower-bound prefix cursors that stop when leaving
+the prefix, and an expiry index. Snapshot assembly still uses separate reads,
+so it is not one atomic snapshot.
+
+[Browser QueueBox persistence](../../packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
+creates one database per session queue and validates the current schema instead
+of adding stores through upgrades. The
+[session lifecycle](../../packages/shared-web/browser/session/session-auth-lifecycle.ts)
+deletes the four queue databases for an ended session, and cleanup enumerates
+remaining queue databases. `InboxOutboxEngine.wake()` exists and the browser
+sender invokes it.
 
 **MISSING TODAY — volatile semantics:** Volatile RTC/WS still persists admission
 state and durable effects.
 
-**MISSING TODAY — bounded IndexedDB:** AL prefix reads scan a shared unindexed
-store; default durable RTC traverses admission and QueueBox persistence; QueueBox
-uses permanent per-session object stores and polling scans.
+**MISSING TODAY — bounded IndexedDB and canonical durable work:** Effect
+selection still lists and sorts every matching effect instead of using a bounded
+due-time query. QueueBox still polls and performs full-queue `getAll` reads, and
+the default durable path still traverses both ALM admission/effects and
+QueueBox, copying full envelopes across the two queues. Bounds for abandoned
+session databases and remaining queue databases still need evidence. No current
+latency or operation-count measurements support a stronger performance claim.
 
 ## Correlation and actions
 
@@ -396,7 +509,9 @@ is not specified.
 `exclusive` means exactly one registered consumer in the declared ownership
 scope may claim it. The scope is explicit: local process, browser session,
 principal, group, or server consumer group. Durable exclusive claims use leases
-and redelivery; volatile exclusive selection is deterministic and observable.
+and redelivery from existing QueueBox/ResourceInbox; volatile exclusive selection
+is deterministic and observable. Distributed ownership requires a demonstrated
+consumer and an explicit product scope decision, rather than a new generic claim system.
 
 **PARTIAL:** Current services use `exclusive` to select one local callback.
 
@@ -420,10 +535,11 @@ payloads. Applications can subscribe to lifecycle events and aggregate metrics
 without polling internal stores.
 
 **PARTIAL:** Outbound queue/lock/effect-drain diagnostics and RTC counters exist.
+Full RTC envelopes are no longer logged by the receive service.
 
 **MISSING TODAY — end-to-end observability:** There is no shared lifecycle event
 stream, IndexedDB cost telemetry, trace propagation, or payload-safe logging
-contract; RTC currently logs complete received envelopes.
+contract.
 
 ## Resource and abuse limits
 
@@ -437,8 +553,24 @@ The protocol publishes limits for:
 - retries, repairs, acknowledgement deadline, and retention;
 - per-topic/per-sender rate, concurrent work, and storage bytes.
 
-Limit violations fail before expensive allocation or persistence and expose a
-stable reason code.
+Malformed/oversized protocol input fails before expensive allocation or persistence
+and exposes a stable reason code. Temporary capacity exhaustion has a policy-specific
+bounded defer, coalesce, or capacity outcome without silently evicting reliable work.
+
+Existing input checks provide a 64 KiB payload ceiling and a 128-character
+route-ID limit; they are not yet enforced by every ALM entry path. The initial
+shared boundary will reuse them and add ceilings of 128 KiB per envelope, 256
+elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
+repair window, and 256 messages and 1 MiB per ordering track. The additional
+ceilings are planned requirements, not current guarantees.
+
+These are work limits, not a 256-session room limit. Large audiences and system
+snapshots use bounded producer/consumer pages without truncation; incomplete
+snapshot assembly cannot authorize traffic. Retention also has per-peer/session
+aggregate count, byte, age, and active-track budgets. The existing ALM ordering
+owner gains bounded sequence-window behavior; no general-purpose message-buffer
+library is currently required. Rate-window counters and Motion interpolation
+buffers retain their separate responsibilities.
 
 **MISSING TODAY — complete bounds:** Payload input validation exists but is not
 called by AL builders, persisted/live envelope validation does not impose the
@@ -452,17 +584,19 @@ does not resurrect work. Multiple tabs coordinate one durable session through
 transactional claims and notifications. Volatile work remains tab-local by
 definition.
 
-**PARTIAL:** Outbound dispose fencing, Web Locks, versioned commits, and effect
-leases exist.
+**PARTIAL:** Outbound disposal, inbound runtime, effect worker, and delivery
+owner have disposal fences. Tests cover disposal during commit/read and retry
+cancellation. Web Locks, versioned commits, and effect leases also exist.
 
-**MISSING TODAY — inbound disposal:** Inbound dispose only clears its current
-timer and does not fence later admission/effect scheduling.
+**MISSING TODAY — complete lifecycle outcomes:** Disposal fences do not provide
+the staged caller-visible result model described above, and polling remains in
+browser durable delivery.
 
 ## Public product surface
 
 The public ALM surface provides:
 
-- safe builders for every target mode, action/correlation, trace/session,
+- safe builders for each supported target mode, action/correlation, trace/session,
   delivery policy, expiry, ordering, and supersedence option;
 - the bounded envelope/control decoder;
 - typed topic registration and payload decode hooks;
@@ -470,34 +604,74 @@ The public ALM surface provides:
 - receive subscription with ownership scope;
 - transport/effective-policy diagnostics;
 - explicit volatile/durable storage policy;
-- migration/version capability introspection.
+- explicit protocol/capability descriptions and typed unsupported results; no migration framework.
 
-**PARTIAL:** Basic builders, policy/runtime types, and services are exported.
+**PARTIAL:** Basic builders, policy/runtime types, services, and canonical
+browser/server factories are exported. The canonical factories now construct
+admission stores only, and unused legacy hydration is gone from those factory
+paths; legacy exports/classes remain. The current outbound owner map is
+documented in
+[`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
 **MISSING TODAY — complete safe surface:** Principal/fixed-recipient/correlation/
 trace builders are absent, builders bypass `assertValidALMessageInput`, and the
-complete persisted-envelope decoder is not exported from `packages/shared/mod.ts`.
+public surface does not yet provide the complete bounded envelope/control
+validation or staged result lifecycle.
+
+## Delivery and compatibility posture
+
+The [delivery roadmap](./alm-improvement-plan.md) is staged, with only its next
+two independently verifiable slices detailed. Later stages remain expressed as
+product outcomes until current evidence justifies their implementation shape.
+
+The approved transition is a coordinated clean cutover. Repository consumers
+move with the new surface, obsolete APIs are removed, and incompatible browser
+queues are reset explicitly. ALM does not silently fall back to the obsolete API
+or migrate incompatible queue records. Later roadmap outcomes still include
+consumer-backed audiences and leader ACKs, correlation, distributed traces,
+ownership scope, and further QoS/recovery/diagnostic integration. Basic zero-IDB
+volatile handling and practical purpose-specific policy land with slice 2;
+later milestones harden them. Prospective capabilities without a demonstrated
+consumer return to the user for a scope decision rather than becoming automatic
+requirements for a general-purpose messaging system.
+
+## Current validation baseline
+
+The existing B06 three-browser suite exercises `messages.rtc`; its coverage is
+anchored by
+[`live-rtc-three-browser-coverage.test.ts`](../../packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts).
+The current browser workload is a base for extending ALM storage and lifecycle
+instrumentation, not evidence that those completion requirements already pass.
 
 ## Product completion criteria
 
-ALM is product-complete when all of the following are true:
+ALM is product-complete for the committed consumer scope when all of the following
+are true. Unresolved roadmap capabilities still require an explicit user scope
+decision; this criterion does not authorize silently dropping them.
 
 1. The same scenario suite runs over RTC and WS and produces equivalent logical
    admission, ordering, reliability, ACK, repair, expiry, and terminal outcomes.
 2. Every live/persisted envelope and control message is bounded, decoded, and
-   identity-bound before state mutation.
+   identity-bound before admitted-state mutation. Pure compute/validate and
+   immutable write/send candidates preserve the same decisions across carriers.
 3. At-least-once cannot be selected without an effective receipt strategy, and
-   data-channel drops cannot be reported as successful sends.
-4. Volatile best-effort RTC performs zero IndexedDB work on the common path.
-5. Durable messages have one canonical work owner and bounded indexed queries;
+   data-channel drops cannot be reported as successful sends. Partial progress
+   and non-delivery uncertainty remain visible, including after cancellation.
+4. Volatile ALM send/receive/retry performs zero AL-owned IndexedDB work on the
+   common path, including reliable volatile policy when selected.
+5. Durable messages have one existing QueueBox/ResourceInbox work owner and bounded indexed queries;
    transaction/row/byte budgets do not grow with unrelated messages or old
    sessions.
-6. Room multicast fails closed without an authoritative matching group snapshot
-   and honors membership epoch and minimum snapshot version on both transports.
-7. Every target/ACK mode has one documented, tested semantic, including
-   principal/world/fixed audiences and group leader.
+6. Room multicast requires matching server-provided room authority, preserves
+   bounded evidence catch-up/bootstrap and optimistic room progress, enforces
+   authoritative membership fencing when requested and supported, respects required
+   snapshot floors, and freezes the reliable intended audience at admission.
+7. Every supported target/ACK mode has one documented, tested semantic and a
+   concrete consumer. Unimplemented required guarantees reject explicitly;
+   principal/world/fixed audiences and leader modes remain subject to that rule.
 8. Ordering, diagnostic, control, retry, repair, and storage work is bounded and
-   has clean resync/terminal behavior.
+   has clean resync/terminal behavior, aggregate memory bounds, and bounded
+   audience/snapshot paging without an accidental room-size restriction.
 9. One message identity and lifecycle spans transport fallback; correlation,
    tracing, staged outcomes, and payload-safe observability work across retry,
    repair, restart, and every carrier attempt.
@@ -510,7 +684,7 @@ The complete ALM product is one semantic protocol with two first-class carrier
 adapters. RTC remains fast because volatile traffic is not forced through
 IndexedDB and because data-channel backpressure is a protocol outcome. WS remains
 authoritative and durable where required. Durable RTC and WS share bounded,
-indexed admission/repair machinery, not duplicated queue state. Every declared
-contract field has a runtime owner, every guarantee has an observable receipt,
-and unsupported guarantees are rejected or explicitly downgraded rather than
-silently approximated.
+indexed QueueBox/ResourceInbox execution and ALM policy/validation. Every supported
+contract field has a runtime owner, every promised receipt has observable evidence,
+and preferred capabilities can negotiate without silently downgrading required
+guarantees. Normal uncertainty leads to bounded recovery and useful progress.

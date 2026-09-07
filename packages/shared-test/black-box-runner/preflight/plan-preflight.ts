@@ -1,4 +1,5 @@
 import type { JsonSchemaValidationIssue } from '../../rallar-bb-test/schema.ts';
+import { toRecipeStepAction } from '../recipes/to-recipe-step-action.ts';
 import { directSafeOutputTransformSpec } from '../scenario-transform/safe-output-transform.ts';
 import { validateBlackBoxRunnerScenarioRecipe } from '../schema.ts';
 import {
@@ -697,7 +698,7 @@ function transformConsumedRoots(value: unknown): readonly string[] {
     const record = asRecord(value);
     const roots: string[] = [];
     if (isTransformOnlySpec(record)) {
-        roots.push(...transformPathRoots(record.path, record.from, record.outputPath));
+        roots.push(...transformPathRoots([record.path, record.from, record.outputPath]));
     }
 
     Object.values(record).forEach((nested) => {
@@ -707,7 +708,7 @@ function transformConsumedRoots(value: unknown): readonly string[] {
     return roots;
 }
 
-function transformPathRoots(...values: readonly unknown[]): readonly string[] {
+function transformPathRoots(values: readonly unknown[]): readonly string[] {
     return values
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
         .flatMap((value) => {
@@ -963,10 +964,6 @@ function validateStrictStep(step: JsonRecord, path: string): readonly BlackBoxRu
  * the runner will not perform. Wait plumbing (`connection`, `withinMs`,
  * `consume`) is deliberately absent from this list: those are honoured
  * elsewhere on the step and flagging them would be noise, not a finding.
- *
- * A `parallel` step is no longer listed here at all. Its `expect` is compared
- * against the aggregate, so flagging it would block the capability rather than
- * report a dropped one.
  */
 const WS_SEND_IGNORED_ASSERTION_KEYS = ['absent', 'close'];
 
@@ -981,7 +978,7 @@ function validateStrictExpectIsHonoured(
         return [];
     }
 
-    const action = String(asRecord(step.request).action || '').toLowerCase();
+    const action = String(toRecipeStepAction(step) || '').toLowerCase();
     const isWsSend = type.startsWith('ws') && (action === 'send' || action.length <= 0);
     if (!isWsSend) {
         return [];
@@ -992,7 +989,8 @@ function validateStrictExpectIsHonoured(
         .map((key): BlackBoxRunnerPreflightIssue => ({
             severity: 'error',
             code: 'STRICT_EXPECT_IGNORED',
-            message: `WebSocket send steps read only expect.message and expect.messages; expect.${key} is ignored. ` +
+            message:
+                `WebSocket send steps read expect.message, expect.messages, and expect.count; expect.${key} is ignored. ` +
                 'Use a ws.wait step for it.',
             path: `${path}.expect.${key}`
         }));

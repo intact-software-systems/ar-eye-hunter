@@ -145,7 +145,7 @@ export const facadeBehavior = {
 
 const defaultRtcMessageSendResult: RallarMessageSendResult = {
     transport: 'rtc',
-    status: 'sent-immediate',
+    status: 'accepted',
     message: {
         id: { v: 2, msgId: 'test-message', ts: 0, senderId: 'client-1' },
         route: { topicId: 'test', contextId: 'test', resourceId: 'test' },

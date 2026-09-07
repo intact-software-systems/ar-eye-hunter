@@ -1,4 +1,6 @@
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
+import { ResourceInboxHandlerEntryError } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -14,6 +16,48 @@ import {
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
 
 describe('AppInboxHandlerExecutor registered handler finalization', () => {
+    it('redelivers a message with captured authority after a later conditional write conflicts', async () => {
+        const timing: RallarTimingEvent[] = [];
+        const harness = createRegisteredHandlerHarness({ timing: (event) => timing.push(event) });
+        const reservations = new AppInboxReservationClient({ repository: harness.queue }, { serviceId: 'server-1' });
+        const facts = { eventId: 'stable-event', observedAtEpochMs: 1234 };
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
+            if (context.entry.dequeueAudit.attempts === 1) {
+                const original = context.entry.resource;
+                Object.freeze(context.entry);
+                Object.freeze(context);
+                const entry = await reservations.persistAuthority(context, facts);
+                expect(context.entry.resource).toBe(original);
+                throw new ResourceInboxHandlerEntryError(entry, new AppInboxReservationConflictError(entry.key));
+            }
+            return await harness.service.commit(context, context.enqueue.authority!, async () => {});
+        });
+
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        await expect(pending).resolves.toMatchObject({ right: facts });
+        expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 2 } });
+        expect(timing).toEqual(expect.arrayContaining([
+            expect.objectContaining({ operation: 'queue-retry', details: expect.objectContaining({ errorCode: 'app-inbox-reservation-conflict' }) })
+        ]));
+    });
+
+    it('preserves terminal rejection classification after authority is persisted', async () => {
+        const harness = createRegisteredHandlerHarness();
+        const reservations = new AppInboxReservationClient({ repository: harness.queue }, { serviceId: 'server-1' });
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
+            const entry = await reservations.persistAuthority(context, { eventId: 'stable-event' });
+            throw new ResourceInboxHandlerEntryError(entry, new TypeError('Malformed domain value'));
+        });
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        await expect(pending).resolves.toMatchObject({ left: { code: 'app-inbox-malformed-command', status: 400 } });
+        expect(await harness.readEntry()).toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1 } });
+    });
+
     it('rejects startup when a configured handler has not been registered', () => {
         const harness = createRegisteredHandlerHarness();
 
@@ -149,10 +193,31 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         expect(domainMutationStarted).toBe(false);
-        expect((await harness.readEntry())?.status).toBe(EntityStatus.FAILED);
+        expect((await harness.readEntry())?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect([...harness.results.entries.values()]).toEqual([
-            expect.objectContaining({ status: EntityStatus.FAILED })
+            expect.objectContaining({ status: EntityStatus.NON_RETRYABLE })
         ]);
+    });
+
+    it('returns a durable terminal failure to the waiting caller for corrupt outer JSON', async () => {
+        const harness = createRegisteredHandlerHarness();
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
+        const entry = await waitForRegisteredHandlerEntry(harness.queue);
+        await harness.queue.enqueue({ ...entry, resource: '{"private-payload":' });
+
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        await expect(pending).resolves.toMatchObject({
+            left: { code: 'app-inbox-malformed-command', status: 400, retry: null }
+        });
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        expect(await harness.readEntry()).toMatchObject({
+            status: EntityStatus.NON_RETRYABLE,
+            dequeueAudit: { attempts: 1, nextTs: undefined }
+        });
+        const result = harness.results.entries.get(toKeyAsString(entry.key));
+        expect(result?.status).toBe(EntityStatus.NON_RETRYABLE);
+        expect(result?.resource).not.toContain('private-payload');
     });
 
     it.each(
@@ -277,8 +342,8 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             }
             else {
                 expect(acceptedMutationExecutions).toBe(0);
-                expect(finalized.status).toBe(EntityStatus.FAILED);
-                expect(result?.status).toBe(EntityStatus.FAILED);
+                expect(finalized.status).toBe(EntityStatus.NON_RETRYABLE);
+                expect(result?.status).toBe(EntityStatus.NON_RETRYABLE);
                 expect(JSON.parse(result!.resource)).toMatchObject({
                     code: 'app-inbox-malformed-command',
                     status: 400
@@ -319,7 +384,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         expect(mutationCommitted).toBe(false);
-        expect((await harness.readEntry())?.status).toBe(EntityStatus.FAILED);
+        expect((await harness.readEntry())?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect((await harness.readEntry())?.dequeueAudit.attempts).toBe(1);
     });
 });

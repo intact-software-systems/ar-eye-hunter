@@ -6,7 +6,7 @@ import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
 import {
     DecodedRtcSignalingMessage,
-    decodeRtcSignalingMessage,
+    decodeRtcSignalingEnvelope,
     decodeRtcSignalingPayload
 } from '../webrtc/decode-rtc-signaling-message.ts';
 import {
@@ -537,7 +537,13 @@ export class WebRtcConnectionService {
                 if (this.input.sessionId !== sessionId) {
                     throw new Error('Message received for wrong session id');
                 }
-                await this.receiveSignal(decodeRtcSignalingMessage(message.payload.resource));
+                const signal = decodeRtcSignalingEnvelope(message);
+                if (signal.left) {
+                    throw new TypeError(signal.left.message);
+                }
+                if (signal.right) {
+                    await this.receiveSignal(signal.right);
+                }
             }
         };
     }

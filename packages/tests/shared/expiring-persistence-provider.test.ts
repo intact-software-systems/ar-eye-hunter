@@ -3,7 +3,7 @@
 import '../setup-browser-indexeddb.ts';
 
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
+import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -73,7 +73,7 @@ describe('Expiring persistence providers', () => {
     it('rejects a persisted row without the required write token', async () => {
         const dbName = `missing-write-token-${crypto.randomUUID()}`;
         const storeName = 'entries';
-        const database = await openIndexedDbWithStore(dbName, { name: storeName, keyPath: 'key' });
+        const database = await openIndexedDbWithStores(dbName, [{ name: storeName, keyPath: 'key' }]);
         const transaction = database.transaction(storeName, 'readwrite');
         transaction.objectStore(storeName).put({
             key: 'inbound:expired',

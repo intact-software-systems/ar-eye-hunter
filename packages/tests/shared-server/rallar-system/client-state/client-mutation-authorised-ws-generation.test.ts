@@ -1,114 +1,124 @@
+import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
-import { createClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
+import type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
+import { createClientStateTestDriver, getClientStateTestOutbox } from './client-state-test-runtime.ts';
 
-describe('client mutation authorised WebSocket generation', () => {
-    it('advances authorised websocket generations and makes an old close stale', async () => {
-        const scenario = await runGenerationAdvanceScenario();
+it('advances authorised websocket generations with complete receipt delivery and makes an old close stale', async () => {
+    const scenario = await runGenerationAdvanceScenario();
 
-        expect(scenario.second).toMatchObject({
-            status: 'ok',
-            result: {
-                snapshot: {
-                    principal: {
-                        principalId: 'alice',
-                        snapshotVersion: 3
-                    }
+    expect(scenario.second).toMatchObject({
+        status: 'ok',
+        result: {
+            snapshot: {
+                principal: {
+                    principalId: 'alice',
+                    snapshotVersion: 3
                 }
             }
-        });
-        expect(scenario.first.result?.event?.eventType).toBe('session-connected');
-        expect(scenario.second.result?.event?.eventType).toBe('session-connected');
-        expect(scenario.third.result?.event?.eventType).toBe('session-connected');
-        expect(scenario.staleClose.result?.snapshot.activeSessions).toEqual([
-            expect.objectContaining({
-                sessionId: scenario.authSession.sessionId,
-                generationId: 'ws-generation-3',
-                generationVersion: 3,
-                status: 'active'
-            })
-        ]);
-
-        const repository = createTestClientStateRepository(scenario.runtimeRepository);
-        expect(
-            await repository.findSession({
-                ...toClientPrincipalRef('alice'),
-                clientInstanceId: 'alice',
-                sessionId: scenario.authSession.sessionId
-            })
-        ).toMatchObject({
+        }
+    });
+    expect(scenario.first.result?.event?.eventType).toBe('session-connected');
+    expect(scenario.second.result?.event?.eventType).toBe('session-connected');
+    expect(scenario.third.result?.event?.eventType).toBe('session-connected');
+    expect(scenario.staleClose.result?.snapshot.activeSessions).toEqual([
+        expect.objectContaining({
+            sessionId: scenario.authSession.sessionId,
             generationId: 'ws-generation-3',
             generationVersion: 3,
             status: 'active'
-        });
-        expect(
-            (await repository.listEvents(toClientPrincipalRef('alice'))).map((event) => event.eventType)
-        ).toEqual([
-            'session-connected',
-            'session-disconnected',
-            'session-connected',
-            'session-connected'
-        ]);
-        await expectGenerationReceiptOutbox(scenario.runtimeRepository, repository);
+        })
+    ]);
+
+    const repository = createTestClientStateRepository(scenario.runtimeRepository);
+    expect(
+        await repository.findSession({
+            ...toClientPrincipalRef('alice'),
+            clientInstanceId: 'alice',
+            sessionId: scenario.authSession.sessionId
+        })
+    ).toMatchObject({
+        generationId: 'ws-generation-3',
+        generationVersion: 3,
+        status: 'active'
     });
-
-    it('orders websocket generations by their server-owned start tuple and bootstraps the authorised principal', async () => {
-        const scenario = await runOrderedGenerationScenario();
-
-        expect(scenario.newer.result?.snapshot).toMatchObject({
-            principal: {
-                username: 'alice-login',
-                displayName: 'Alice Display',
-                roles: ['member']
-            },
-            activeSessions: [
-                {
-                    generationId: 'generation-b',
-                    connectedAtEpochMs: 200
-                }
-            ]
-        });
-        expect(scenario.delayedOlder.result?.event).toBeNull();
-        expect(scenario.delayedOlder.result?.snapshot.activeSessions).toEqual([
-            expect.objectContaining({
-                generationId: 'generation-b',
-                connectedAtEpochMs: 200
-            })
-        ]);
-        expect(scenario.runtimeRepository.data.size).toBe(scenario.entriesAfterNewer);
-        await expect(
-            scenario.register(scenario.authSession, 'generation-b', {
-                applicationId: SCOPE.applicationId,
-                workspaceId: SCOPE.workspaceId,
-                displayName: 'Different Canonical Display',
-                connectedAtEpochMs: 200,
-                expiresAtEpochMs: scenario.expiresAtEpochMs
-            })
-        ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
-        const authorisedCommandId = 'authorised-ws:connect:ws-session-ordered:generation-b';
-        const authorisedOutbox = getClientStateTestOutbox(scenario.runtimeRepository).filter((entry) => entry.resource.includes(authorisedCommandId));
-        const authorisedReceipt = await createTestClientStateRepository(
-            scenario.runtimeRepository
-        ).findIdempotentClientMutationReceipt(toClientPrincipalRef('alice'), authorisedCommandId);
-        expect(authorisedReceipt?.receipt.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
-        expect(authorisedOutbox.map((entry) => entry.key.resourceId)).toEqual(
-            authorisedReceipt?.receipt.outboxIds
-        );
-
-        await expectRestGenerationOrdering(scenario);
-    });
+    expect(
+        (await repository.listEvents(toClientPrincipalRef('alice'))).map((event) => event.eventType)
+    ).toEqual([
+        'session-connected',
+        'session-disconnected',
+        'session-connected',
+        'session-connected'
+    ]);
+    await expectGenerationReceiptOutbox(scenario.runtimeRepository, repository);
 });
 
-async function runGenerationAdvanceScenario() {
+it('orders websocket generations by their server-owned start tuple and bootstraps the authorised principal', async () => {
+    const scenario = await runOrderedGenerationScenario();
+
+    expect(scenario.newer.result?.snapshot).toMatchObject({
+        principal: {
+            username: 'alice-login',
+            displayName: 'Alice Display',
+            roles: ['member']
+        },
+        activeSessions: [
+            {
+                generationId: 'generation-b',
+                connectedAtEpochMs: 200
+            }
+        ]
+    });
+    expect(scenario.delayedOlder.result?.event).toBeNull();
+    expect(scenario.delayedOlder.result?.snapshot.activeSessions).toEqual([
+        expect.objectContaining({
+            generationId: 'generation-b',
+            connectedAtEpochMs: 200
+        })
+    ]);
+    expect(scenario.runtimeRepository.data.size).toBe(scenario.entriesAfterNewer);
+    await expect(
+        scenario.service.registerAuthorisedWsClientSession(scenario.authSession, 'generation-b', {
+            applicationId: CLIENT_MUTATION_SERVICE_SCOPE.applicationId,
+            workspaceId: CLIENT_MUTATION_SERVICE_SCOPE.workspaceId,
+            displayName: 'Different Canonical Display',
+            connectedAtEpochMs: 200,
+            expiresAtEpochMs: scenario.expiresAtEpochMs
+        })
+    ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
+    const authorisedCommandId = 'authorised-ws:connect:ws-session-ordered:generation-b';
+    const authorisedOutbox = getClientStateTestOutbox(scenario.runtimeRepository).filter((entry) => entry.resource.includes(authorisedCommandId));
+    const authorisedReceipt = await createTestClientStateRepository(
+        scenario.runtimeRepository
+    ).findIdempotentClientMutationReceipt(toClientPrincipalRef('alice'), authorisedCommandId);
+    expect(authorisedReceipt?.receipt.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(authorisedOutbox.map((entry) => entry.key.resourceId)).toEqual(
+        authorisedReceipt?.receipt.outboxIds
+    );
+
+    await expectRestGenerationOrdering(scenario);
+});
+
+interface GenerationAdvanceScenario {
+    readonly authSession: AuthSession;
+    readonly first: ClientStateWritten;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly second: ClientStateWritten;
+    readonly staleClose: ClientStateWritten;
+    readonly third: ClientStateWritten;
+}
+
+async function runGenerationAdvanceScenario(): Promise<GenerationAdvanceScenario> {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const service = createClientStateService({
+    const service = createClientStateTestDriver({
         runtimeRepository,
         now: () => 5_000,
         serviceId: 'client-service'
@@ -120,26 +130,24 @@ async function runGenerationAdvanceScenario() {
         sessionId: 'ws-session-1',
         expiresAtEpochMs: 60_000
     };
-    const register = service.registerAuthorisedWsClientSession.bind(service);
-    const disconnect = service.disconnectAuthorisedWsClientSession.bind(service);
     const expiresAtEpochMs = Date.now() + 60_000;
-    const first = await register(authSession, 'ws-generation-1', {
-        ...SCOPE,
+    const first = await service.registerAuthorisedWsClientSession(authSession, 'ws-generation-1', {
+        ...CLIENT_MUTATION_SERVICE_SCOPE,
         connectedAtEpochMs: 100,
         expiresAtEpochMs
     });
-    await disconnect(authSession.sessionId, 'ws-generation-1', 'first-close');
-    const second = await register(authSession, 'ws-generation-2', {
-        ...SCOPE,
+    await service.disconnectAuthorisedWsClientSession(authSession.sessionId, 'ws-generation-1', 'first-close');
+    const second = await service.registerAuthorisedWsClientSession(authSession, 'ws-generation-2', {
+        ...CLIENT_MUTATION_SERVICE_SCOPE,
         connectedAtEpochMs: 200,
         expiresAtEpochMs
     });
-    const third = await register(authSession, 'ws-generation-3', {
-        ...SCOPE,
+    const third = await service.registerAuthorisedWsClientSession(authSession, 'ws-generation-3', {
+        ...CLIENT_MUTATION_SERVICE_SCOPE,
         connectedAtEpochMs: 300,
         expiresAtEpochMs
     });
-    const staleClose = await disconnect(
+    const staleClose = await service.disconnectAuthorisedWsClientSession(
         authSession.sessionId,
         'ws-generation-2',
         'delayed-second-close'
@@ -158,21 +166,36 @@ async function expectGenerationReceiptOutbox(
         'authorised-ws:disconnect:ws-session-1:ws-generation-1'
     ];
     const outbox = getClientStateTestOutbox(runtimeRepository);
-    expect(outbox).toHaveLength(8);
+    expect(outbox).toHaveLength(11);
     for (const commandId of commandIds) {
         const receipt = await repository.findIdempotentClientMutationReceipt(
             toClientPrincipalRef('alice'),
             commandId
         );
         const commandEntries = outbox.filter((entry) => receipt?.receipt.outboxIds.includes(entry.key.resourceId));
-        expect(commandEntries).toHaveLength(2);
+        const messages = commandEntries.map((entry) => decodePersistedALMessage(entry.resource));
+        expect(messages.filter((message) => message.route.topicId === 'client-state.event')).toHaveLength(1);
+        expect(messages.filter((message) => message.route.topicId === 'client-state.snapshot'))
+            .toHaveLength(commandId.includes(':connect:') ? 2 : 1);
+        expect(messages.filter((message) => message.targets?.mode === 'unicast').map((message) => message.targets))
+            .toEqual(commandId.includes(':connect:') ? [{ mode: 'unicast', toPeerId: 'ws-session-1' }] : []);
         expect(receipt?.receipt.outboxIds).toEqual(commandEntries.map((entry) => entry.key.resourceId));
     }
 }
 
-async function runOrderedGenerationScenario() {
+interface OrderedGenerationScenario {
+    readonly authSession: AuthSession;
+    readonly delayedOlder: ClientStateWritten;
+    readonly entriesAfterNewer: number;
+    readonly expiresAtEpochMs: number;
+    readonly newer: ClientStateWritten;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly service: ClientStatePhaseTestDriver;
+}
+
+async function runOrderedGenerationScenario(): Promise<OrderedGenerationScenario> {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const service = createClientStateService({
+    const service = createClientStateTestDriver({
         runtimeRepository,
         now: () => 10_000,
         serviceId: 'client-service'
@@ -184,17 +207,16 @@ async function runOrderedGenerationScenario() {
         sessionId: 'ws-session-ordered',
         expiresAtEpochMs: 60_000
     };
-    const register = service.registerAuthorisedWsClientSession.bind(service);
     const expiresAtEpochMs = Date.now() + 60_000;
-    const newer = await register(authSession, 'generation-b', {
-        ...SCOPE,
+    const newer = await service.registerAuthorisedWsClientSession(authSession, 'generation-b', {
+        ...CLIENT_MUTATION_SERVICE_SCOPE,
         displayName: 'Alice Display',
         connectedAtEpochMs: 200,
         expiresAtEpochMs
     });
     const entriesAfterNewer = runtimeRepository.data.size;
-    const delayedOlder = await register(authSession, 'generation-a', {
-        ...SCOPE,
+    const delayedOlder = await service.registerAuthorisedWsClientSession(authSession, 'generation-a', {
+        ...CLIENT_MUTATION_SERVICE_SCOPE,
         displayName: 'Ignored Old Display',
         connectedAtEpochMs: 100,
         expiresAtEpochMs
@@ -205,16 +227,13 @@ async function runOrderedGenerationScenario() {
         entriesAfterNewer,
         expiresAtEpochMs,
         newer,
-        register,
         runtimeRepository,
         service
     };
 }
 
-type OrderedGenerationScenario = Awaited<ReturnType<typeof runOrderedGenerationScenario>>;
-
 async function expectRestGenerationOrdering(scenario: OrderedGenerationScenario): Promise<void> {
-    await scenario.service.connectSession(SCOPE, 'alice', 'alice-rest', 'rest-session', {
+    await scenario.service.connectSession(CLIENT_MUTATION_SERVICE_SCOPE, 'alice', 'alice-rest', 'rest-session', {
         generationId: 'rest-current',
         connectedAtEpochMs: 300,
         expiresAtEpochMs: scenario.expiresAtEpochMs,
@@ -222,7 +241,7 @@ async function expectRestGenerationOrdering(scenario: OrderedGenerationScenario)
     });
     const entriesAfterRestCurrent = scenario.runtimeRepository.data.size;
     const missingOrderedFact = await scenario.service.connectSession(
-        SCOPE,
+        CLIENT_MUTATION_SERVICE_SCOPE,
         'alice',
         'alice-rest',
         'rest-session',

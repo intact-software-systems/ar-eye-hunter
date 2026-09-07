@@ -1,14 +1,23 @@
 import { hasSameResourceEntryValue } from '@shared/queuebox/has-same-resource-entry-value.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
+
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader } from './p-sql-resource-inbox-entry-reader.ts';
-import { replaceObservedResourceInboxEntry } from './replace-observed-resource-inbox-entry.ts';
+import {
+    replaceObservedResourceInboxEntry,
+    type ResourceInboxObservedReplacement
+} from './replace-observed-resource-inbox-entry.ts';
+import {
+    computeResourceInboxEntryInsertValues,
+    type ResourceInboxEntryInsertValues
+} from './resource-inbox-entry-insert-values.ts';
 import {
     ResourceInboxRow,
     toDomain,
-    toPgTimestamp,
-    toSystemDate
+    toPgTimestamp
 } from './resource-inbox-row-codec.ts';
+import { writeResourceInboxEntryIfAbsentOrExpired } from './write-resource-inbox-entry-if-absent-or-expired.ts';
 import { writeResourceInboxEntryIfAbsentOrMatch } from './write-resource-inbox-entry-if-absent-or-match.ts';
 
 export class ResourceInboxInvariantCorruptionError extends Error {
@@ -33,13 +42,8 @@ export class PSqlResourceInboxEntryRepository {
         this.reader = new PSqlResourceInboxEntryReader(sql);
     }
 
-    // ---------------------------------
-    // Inserts / Reads
-    // ---------------------------------
-
     async write(entry: ResourceEntry): Promise<ResourceEntry> {
-        // ri_row_id uses DEFAULT nextval(...) so we don't supply it.
-        const systemDate = toSystemDate(entry);
+        const values = computeResourceInboxEntryInsertValues(entry);
 
         const rows = await this.sql<ResourceInboxRow[]>`
             insert into resource_inbox (ri_resource_id,
@@ -62,14 +66,14 @@ export class PSqlResourceInboxEntryRepository {
                     ${entry.typeId},
                     ${entry.status},
                     ${entry.key.contextId},
-                    ${systemDate},
+                    ${values.systemDate},
                     ${entry.audit.createdBy},
-                    ${toPgTimestamp(entry.audit.createdTs)},
-                    ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
-                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
-                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
-                    ${entry.dequeueAudit.attempts ?? 0})
+                    ${values.createdTimestamp},
+                    ${values.expiryTimestamp},
+                    ${values.startTimestamp},
+                    ${values.endTimestamp},
+                    ${values.nextTimestamp},
+                    ${values.attempts})
             returning *
         `;
 
@@ -82,22 +86,10 @@ export class PSqlResourceInboxEntryRepository {
     async writeIfAbsentOrMatch(
         entry: ResourceEntry
     ): Promise<'inserted' | 'matched'> {
-        const result = await writeResourceInboxEntryIfAbsentOrMatch(this.sql, {
-            entry,
-            systemDate: toSystemDate(entry),
-            createdTimestamp: toPgTimestamp(entry.audit.createdTs),
-            expiryTimestamp: toPgTimestamp(entry.audit.expiryTs),
-            startTimestamp: entry.dequeueAudit.startTs
-                ? toPgTimestamp(entry.dequeueAudit.startTs)
-                : null,
-            endTimestamp: entry.dequeueAudit.endTs
-                ? toPgTimestamp(entry.dequeueAudit.endTs)
-                : null,
-            nextTimestamp: entry.dequeueAudit.nextTs
-                ? toPgTimestamp(entry.dequeueAudit.nextTs)
-                : null,
-            attempts: entry.dequeueAudit.attempts ?? 0
-        });
+        const result = await writeResourceInboxEntryIfAbsentOrMatch(
+            this.sql,
+            computeResourceInboxEntryInsertValues(entry)
+        );
         if (result.outcome === 'corruption') {
             throw new ResourceInboxInvariantCorruptionError(
                 entry.key,
@@ -112,23 +104,9 @@ export class PSqlResourceInboxEntryRepository {
         next: ResourceEntry,
         expectedGeneration: number
     ): Promise<ResourceEntry | null> {
-        if (
-            expected.key.topicId !== next.key.topicId ||
-            expected.key.resourceId !== next.key.resourceId ||
-            expected.key.contextId !== next.key.contextId ||
-            expected.typeId !== next.typeId ||
-            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
-                .includes(expected.status) ||
-            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
-                .includes(next.status) ||
-            next.dequeueAudit.attempts !== expected.dequeueAudit.attempts ||
-            !Number.isSafeInteger(expectedGeneration) ||
-            expectedGeneration < 1
-        ) {
-            throw new ResourceInboxInvariantCorruptionError(
-                next.key,
-                'Resource inbox pending replacement identity or lifecycle differs'
-            );
+        const validation = validateResourceInboxPendingReplacement(expected, next, expectedGeneration);
+        if (validation.left !== undefined) {
+            throw new ResourceInboxInvariantCorruptionError(next.key, validation.left);
         }
 
         const rows = await this.sql<ResourceInboxRow[]>`
@@ -177,24 +155,12 @@ export class PSqlResourceInboxEntryRepository {
         expected: ResourceEntry,
         replacement: ResourceEntry
     ): Promise<ResourceEntry | null> {
-        const expectedRowId = toExpectedRowId(expected);
-        if (
-            expected.key.topicId !== replacement.key.topicId ||
-            expected.key.resourceId !== replacement.key.resourceId ||
-            expected.key.contextId !== replacement.key.contextId
-        ) {
-            throw new ResourceInboxInvariantCorruptionError(
-                replacement.key,
-                'Resource inbox replacement key differs from its observation'
-            );
-        }
+        return await this.writeObservedReplacement(computeResourceInboxObservedReplacement(expected, replacement));
+    }
 
-        const rows = await replaceObservedResourceInboxEntry({
-            sql: this.sql,
-            expected,
-            replacement,
-            expectedRowId
-        });
+    async writeObservedReplacement(computed: ResourceInboxObservedReplacement): Promise<ResourceEntry | null> {
+        const replacement = computed.replacement.entry;
+        const rows = await replaceObservedResourceInboxEntry(this.sql, computed);
 
         if (rows.length === 0) {
             return null;
@@ -217,7 +183,7 @@ export class PSqlResourceInboxEntryRepository {
     }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-        const systemDate = toSystemDate(entry);
+        const values = computeResourceInboxEntryInsertValues(entry);
 
         const rows = await this.sql<ResourceInboxRow[]>`
             insert into resource_inbox (ri_resource_id,
@@ -240,14 +206,14 @@ export class PSqlResourceInboxEntryRepository {
                     ${entry.typeId},
                     ${entry.status},
                     ${entry.key.contextId},
-                    ${systemDate},
+                    ${values.systemDate},
                     ${entry.audit.createdBy},
-                    ${toPgTimestamp(entry.audit.createdTs)},
-                    ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
-                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
-                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
-                    ${entry.dequeueAudit.attempts ?? 0})
+                    ${values.createdTimestamp},
+                    ${values.expiryTimestamp},
+                    ${values.startTimestamp},
+                    ${values.endTimestamp},
+                    ${values.nextTimestamp},
+                    ${values.attempts})
             on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
                 do update set ri_resource = excluded.ri_resource,
                               ri_type_id  = excluded.ri_type_id,
@@ -317,53 +283,13 @@ export class PSqlResourceInboxEntryRepository {
     async tryWriteIfAbsentOrReplaceExpired(
         entry: ResourceEntry
     ): Promise<ResourceEntry | null> {
-        const systemDate = toSystemDate(entry);
+        return await this.tryWriteComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry));
+    }
 
-        const rows = await this.sql<ResourceInboxRow[]>`
-            insert into resource_inbox (ri_resource_id,
-                                        ri_topic_id,
-                                        ri_resource,
-                                        ri_type_id,
-                                        ri_status,
-                                        fk_ext_bank_id,
-                                        system_date,
-                                        created_by,
-                                        created_ts,
-                                        expire_ts,
-                                        start_ts,
-                                        end_ts,
-                                        next_ts,
-                                        ri_attempts)
-            values (${entry.key.resourceId},
-                    ${entry.key.topicId},
-                    ${entry.resource},
-                    ${entry.typeId},
-                    ${entry.status},
-                    ${entry.key.contextId},
-                    ${systemDate},
-                    ${entry.audit.createdBy},
-                    ${toPgTimestamp(entry.audit.createdTs)},
-                    ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
-                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
-                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
-                    ${entry.dequeueAudit.attempts ?? 0})
-            on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
-                do update set ri_resource = excluded.ri_resource,
-                              ri_type_id  = excluded.ri_type_id,
-                              ri_status   = excluded.ri_status,
-                              system_date = excluded.system_date,
-                              created_by  = excluded.created_by,
-                              created_ts  = excluded.created_ts,
-                              expire_ts   = excluded.expire_ts,
-                              start_ts    = excluded.start_ts,
-                              end_ts      = excluded.end_ts,
-                              next_ts     = excluded.next_ts,
-                              ri_attempts = excluded.ri_attempts
-            where resource_inbox.expire_ts <= (now() at time zone 'UTC')
-            returning *
-        `;
-
+    async tryWriteComputedIfAbsentOrReplaceExpired(
+        values: ResourceInboxEntryInsertValues
+    ): Promise<ResourceEntry | null> {
+        const rows = await writeResourceInboxEntryIfAbsentOrExpired(this.sql, values);
         return rows.length === 1 ? toDomain(rows[0]) : null;
     }
 
@@ -394,10 +320,6 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.findByTypeId(typeId);
     }
 
-    // ---------------------------------
-    // SKIP LOCKED selectors (must be in tx)
-    // ---------------------------------
-
     async isAnyWithStatuses(statuses: ReadonlySet<EntityStatus>): Promise<boolean> {
         return await this.reader.isAnyWithStatuses(statuses);
     }
@@ -406,12 +328,8 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.isEntryWithStatus(key, statuses);
     }
 
-    // ---------------------------------
-    // State transitions
-    // ---------------------------------
-
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
-        const systemDate = toSystemDate(entry);
+        const values = computeResourceInboxEntryInsertValues(entry);
 
         const rows = await this.sql<ResourceInboxRow[]>`
             insert into resource_inbox (ri_resource_id,
@@ -434,14 +352,14 @@ export class PSqlResourceInboxEntryRepository {
                     ${entry.typeId},
                     ${entry.status},
                     ${entry.key.contextId},
-                    ${systemDate},
+                    ${values.systemDate},
                     ${entry.audit.createdBy},
-                    ${toPgTimestamp(entry.audit.createdTs)},
-                    ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
-                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
-                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
-                    ${entry.dequeueAudit.attempts ?? 0})
+                    ${values.createdTimestamp},
+                    ${values.expiryTimestamp},
+                    ${values.startTimestamp},
+                    ${values.endTimestamp},
+                    ${values.nextTimestamp},
+                    ${values.attempts})
             on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
                 do update set ri_resource = excluded.ri_resource,
                               ri_type_id  = excluded.ri_type_id,
@@ -458,10 +376,6 @@ export class PSqlResourceInboxEntryRepository {
         }
         return toDomain(rows[0]);
     }
-
-    // ---------------------------------
-    // Deletes
-    // ---------------------------------
 
     async deleteByKey(key: Key): Promise<boolean> {
         const rows = await this.sql<{ ri_row_id: bigint; }[]>`
@@ -487,6 +401,28 @@ function hasReservedIdentity(
         materialized.typeId === reserved.typeId;
 }
 
+export function computeResourceInboxObservedReplacement(
+    expected: ResourceEntry,
+    replacement: ResourceEntry
+): ResourceInboxObservedReplacement {
+    const expectedRowId = toExpectedRowId(expected);
+    if (
+        expected.key.topicId !== replacement.key.topicId ||
+        expected.key.resourceId !== replacement.key.resourceId ||
+        expected.key.contextId !== replacement.key.contextId
+    ) {
+        throw new ResourceInboxInvariantCorruptionError(
+            replacement.key,
+            'Resource inbox replacement key differs from its observation'
+        );
+    }
+    return {
+        expected: computeResourceInboxEntryInsertValues(expected),
+        replacement: computeResourceInboxEntryInsertValues(replacement),
+        expectedRowId
+    };
+}
+
 function toExpectedRowId(expected: ResourceEntry): bigint {
     const rowId = expected.db?.id;
     if (rowId === undefined || !/^[1-9]\d*$/u.test(rowId)) {
@@ -496,4 +432,26 @@ function toExpectedRowId(expected: ResourceEntry): bigint {
         );
     }
     return BigInt(rowId);
+}
+
+function validateResourceInboxPendingReplacement(
+    expected: ResourceEntry,
+    next: ResourceEntry,
+    expectedGeneration: number
+): Either<string, ResourceEntry> {
+    return (
+            expected.key.topicId !== next.key.topicId ||
+            expected.key.resourceId !== next.key.resourceId ||
+            expected.key.contextId !== next.key.contextId ||
+            expected.typeId !== next.typeId ||
+            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
+                .includes(expected.status) ||
+            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
+                .includes(next.status) ||
+            next.dequeueAudit.attempts !== expected.dequeueAudit.attempts ||
+            !Number.isSafeInteger(expectedGeneration) ||
+            expectedGeneration < 1
+        )
+        ? Either.ofLeft('Resource inbox pending replacement identity or lifecycle differs')
+        : Either.ofRight(next);
 }

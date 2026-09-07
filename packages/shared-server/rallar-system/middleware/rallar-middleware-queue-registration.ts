@@ -22,17 +22,17 @@ export interface RegisterApplicationQueueReaderTasksInput {
     readonly appOutboxResilience: ResilienceDto;
 }
 
-class RegisteredRallarMiddlewareQueue {
-    readonly #owner: RallarMiddlewareQueueRegistrationOwner;
+export class RegisteredRallarMiddlewareQueueHandle {
+    readonly #owner: RallarMiddlewareQueueRegistration;
     #consumed = false;
 
-    constructor(owner: RallarMiddlewareQueueRegistrationOwner) {
+    constructor(owner: RallarMiddlewareQueueRegistration) {
         this.#owner = owner;
     }
 
     static consume(
-        registeredQueue: RegisteredRallarMiddlewareQueue,
-        owner: RallarMiddlewareQueueRegistrationOwner
+        registeredQueue: RegisteredRallarMiddlewareQueueHandle,
+        owner: RallarMiddlewareQueueRegistration
     ): void {
         if (!(#owner in registeredQueue) || registeredQueue.#owner !== owner) {
             throw new Error(
@@ -48,17 +48,17 @@ class RegisteredRallarMiddlewareQueue {
     }
 }
 
-class RallarMiddlewareQueueRegistrationOwner {
-    readonly #engine = new InboxOutboxEngine();
+export class RallarMiddlewareQueueRegistration {
+    readonly #engine: InboxOutboxEngine;
     #state: 'unregistered' | 'registered' | 'finalised' = 'unregistered';
 
-    wake(): void {
-        this.#engine.wake();
+    constructor(engine: InboxOutboxEngine) {
+        this.#engine = engine;
     }
 
     registerExactTasks(
         input: RegisterRallarMiddlewareQueueTasksInput
-    ): RegisteredRallarMiddlewareQueue {
+    ): RegisteredRallarMiddlewareQueueHandle {
         if (this.#state !== 'unregistered') {
             throw new Error('Rallar middleware queue tasks have already been registered');
         }
@@ -71,11 +71,11 @@ class RallarMiddlewareQueueRegistrationOwner {
             appOutboxResilience: input.appOutboxResilience
         });
         this.#state = 'registered';
-        return new RegisteredRallarMiddlewareQueue(this);
+        return new RegisteredRallarMiddlewareQueueHandle(this);
     }
 
-    finalise(registration: RegisteredRallarMiddlewareQueue): InboxOutboxEngine {
-        RegisteredRallarMiddlewareQueue.consume(registration, this);
+    finalise(registration: RegisteredRallarMiddlewareQueueHandle): InboxOutboxEngine {
+        RegisteredRallarMiddlewareQueueHandle.consume(registration, this);
         if (this.#state !== 'registered') {
             throw new Error('Rallar middleware queue task registration is incomplete');
         }
@@ -84,8 +84,10 @@ class RallarMiddlewareQueueRegistrationOwner {
     }
 }
 
-export function createRallarMiddlewareQueueRegistration(): RallarMiddlewareQueueRegistrationOwner {
-    return new RallarMiddlewareQueueRegistrationOwner();
+export function createRallarMiddlewareQueueRegistration(
+    engine: InboxOutboxEngine = new InboxOutboxEngine()
+): RallarMiddlewareQueueRegistration {
+    return new RallarMiddlewareQueueRegistration(engine);
 }
 
 export function registerApplicationQueueReaderTasks(
@@ -158,6 +160,3 @@ function registerWsQueueBoxTasks(
         ongoingTasks: []
     });
 }
-
-export type RallarMiddlewareQueueRegistration = ReturnType<typeof createRallarMiddlewareQueueRegistration>;
-export type RegisteredRallarMiddlewareQueueHandle = ReturnType<RallarMiddlewareQueueRegistration['registerExactTasks']>;

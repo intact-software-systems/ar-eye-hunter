@@ -74,6 +74,15 @@ function budgetInput(): WebRtcConnectionService.InputDto {
 }
 
 describe('WebRtcConnectionService signaling and creation', () => {
+    it('rejects a forged nested peer identity before peer allocation', async () => {
+        const fixture = createFixture(budgetInput());
+        await fixture.service.connectSignaler();
+        await expect(fixture.receiveResource(JSON.stringify(offer('victim')), 'attacker')).rejects.toThrow(
+            'RTC signaling identity does not match its AL envelope'
+        );
+        expect(runtime.createdConnections).toHaveLength(0);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+    });
     it('decodes a real offer and ICE into the native peer without logging credentials or payloads', async () => {
         const log = vi.spyOn(console, 'log').mockImplementation(() => {});
         const fixture = createFixture();
@@ -125,10 +134,10 @@ describe('WebRtcConnectionService signaling and creation', () => {
         expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
     });
 
-    it('ignores another recipient, self signals and missing-peer answers', async () => {
+    it('rejects another recipient and ignores self signals and missing-peer answers', async () => {
         const fixture = createFixture();
         await fixture.service.connectSignaler();
-        await fixture.receive({ ...offer(), toId: 'other' });
+        await expect(fixture.receive({ ...offer(), toId: 'other' })).rejects.toThrow('RTC signaling identity does not match its AL envelope');
         await fixture.receive(offer('a-self'));
         await fixture.receive({ ...offer(), signalType: 'Answer', payload: { description: { type: 'answer', sdp: 'answer' }, candidate: null } });
         expect(runtime.createdConnections).toHaveLength(0);

@@ -1,4 +1,3 @@
-import postgres from 'postgres';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiV1RtcTopologyProofApi } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
@@ -27,7 +26,43 @@ import {
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-websocket.mts';
 import { withManagedApiServerSuspended } from '@shared-test/black-box-runner/topology-replay/with-managed-api-server-suspended.mts';
 
-vi.mock('postgres', () => ({ default: vi.fn() }));
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
+import { type CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts';
+import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
+import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
+
+interface ProofRequest {
+    readonly url: string;
+    readonly init: RequestInit | undefined;
+}
+
+const proofGroup = { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' };
+const proofSession = {
+    label: 'N5',
+    principal: 'alice' as const,
+    clientId: 'alice-client',
+    sessionId: 'session-1',
+    accessToken: 'token',
+    apiBaseUrl: 'http://localhost',
+    wsBaseUrl: 'ws://localhost'
+};
+
+interface ProofDatabaseTestRow {
+    readonly [key: string]: string | number | undefined;
+}
+interface ProofDatabaseTestQuery {
+    (strings: TemplateStringsArray): Promise<readonly ProofDatabaseTestRow[]>;
+}
+interface ProofDatabaseTestPort {
+    begin(options: string, read: (query: ProofDatabaseTestQuery) => Promise<ProofDurableState>): Promise<ProofDurableState>;
+    end(): Promise<void>;
+}
+const databaseFactory = vi.hoisted(() => vi.fn<() => ProofDatabaseTestPort>());
+vi.mock('postgres', () => ({ default: databaseFactory }));
 
 describe('API-v1 RTC topology replay proof semantics', () => {
     afterEach(async () => {
@@ -39,7 +74,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
     });
 
     it('replays topology after restart through one strict path identity', async () => {
-        const requests: Array<{ url: string; init: RequestInit | undefined; }> = [];
+        const requests: ProofRequest[] = [];
         vi.stubGlobal('fetch', (url: string | URL | Request, init?: RequestInit) => {
             requests.push({ url: String(url), init });
             return Promise.resolve(new Response('{}'));
@@ -250,7 +285,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
         });
         const begin = vi.fn(async (
             _options: string,
-            readSnapshot: (sql: typeof transaction) => Promise<ProofDurableState>
+            readSnapshot: (sql: ProofDatabaseTestQuery) => Promise<ProofDurableState>
         ) => await readSnapshot(transaction));
         const end = vi.fn(async () => undefined);
         const sql = Object.assign(
@@ -259,7 +294,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             }),
             { begin, end }
         );
-        vi.mocked(postgres).mockReturnValue(sql as never);
+        databaseFactory.mockReturnValue(sql);
 
         await expect(readRtcTopologyProofDurableState('postgres://proof')).resolves.toMatchObject({
             unresolvedAppOutboxCount: 0,
@@ -302,20 +337,112 @@ describe('API-v1 RTC topology replay proof semantics', () => {
         ).toThrow('changed during topology mutation replay');
     });
 
+    it('observes a large trusted topology only after every page arrives and retains original publication identity', async () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const opening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', proofGroup);
+        const native = TestWebSocket.instances.at(-1)!;
+        native.open();
+        const socket = await opening;
+        try {
+            const pages = topologyPages({
+                messageId: JSON.stringify(['rtc-topology-publication', 'large']),
+                revision: { groupRevision: 7, presenceRevision: 9 },
+                version: 12,
+                sessionCount: 1500
+            });
+            expect(pages.length).toBeGreaterThan(1);
+            for (const page of pages.slice(1).reverse()) {
+                native.receive(JSON.stringify(page));
+            }
+            expect(socket.readDiagnostics().topologyTuples).toEqual([]);
+            native.receive(JSON.stringify(pages[0]));
+            const observed = await socket.waitForTopology({ causalRevision: { groupRevision: 7, presenceRevision: 9 }, causalMatch: 'exact' });
+            expect(observed.messageId).toBe(JSON.stringify(['rtc-topology-publication', 'large']));
+            expect(observed.activeSessionIds).toHaveLength(1500);
+            native.receive(JSON.stringify(pages[0]));
+            expect(socket.readDiagnostics().topologyTuples).toHaveLength(1);
+        }
+        finally {
+            socket.close();
+        }
+    });
+
+    it('rejects a trusted page from another proof room before recording authority', async () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const opening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', { ...proofGroup, workspaceId: 'another' });
+        const native = TestWebSocket.instances.at(-1)!;
+        native.open();
+        const socket = await opening;
+        try {
+            for (
+                const page of topologyPages({
+                    messageId: JSON.stringify(['rtc-topology-publication', 'wrong-scope']),
+                    revision: { groupRevision: 7, presenceRevision: 9 },
+                    version: 12,
+                    sessionCount: 1
+                })
+            ) {
+                native.receive(JSON.stringify(page));
+            }
+            await expect(socket.waitForTopology({ causalRevision: { groupRevision: 7, presenceRevision: 9 }, causalMatch: 'exact' })).rejects.toThrow(
+                'another scope'
+            );
+            expect(socket.readDiagnostics().topologyTuples).toEqual([]);
+        }
+        finally {
+            socket.close();
+        }
+    });
+
+    it('keeps incomplete transfer fragments isolated across proof socket lifetimes', async () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const pages = topologyPages({
+            messageId: JSON.stringify(['rtc-topology-hydration', 'session-1', 'generation']),
+            revision: { groupRevision: 7, presenceRevision: 9 },
+            version: 12,
+            sessionCount: 1500
+        });
+        const firstOpening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', proofGroup);
+        const firstNative = TestWebSocket.instances.at(-1)!;
+        firstNative.open();
+        const first = await firstOpening;
+        firstNative.receive(JSON.stringify(pages[0]));
+        first.close();
+        const nextOpening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', proofGroup);
+        const nextNative = TestWebSocket.instances.at(-1)!;
+        nextNative.open();
+        const next = await nextOpening;
+        try {
+            for (const page of pages.slice(1)) {
+                nextNative.receive(JSON.stringify(page));
+            }
+            expect(next.readDiagnostics().topologyTuples).toEqual([]);
+            nextNative.receive(JSON.stringify(pages[0]));
+            expect((await next.waitForTopology({ causalRevision: { groupRevision: 7, presenceRevision: 9 }, causalMatch: 'exact' })).deliveryKind).toBe(
+                'hydration'
+            );
+        }
+        finally {
+            next.close();
+        }
+    });
+
     it('retains delivery identity and matches exact publication or hydration observations', () => {
         const publication = decodeTopologyObservation(
             topologyMessage(
                 JSON.stringify(['rtc-topology-publication', 'work-live-a']),
                 { groupRevision: 7, presenceRevision: 9 },
                 12
-            )
+            ),
+            proofGroup
         )!;
         const hydration = decodeTopologyObservation(
             topologyMessage(
                 JSON.stringify(['rtc-topology-hydration', 'session-1', 'generation-1', 7, 9, 12]),
                 { groupRevision: 7, presenceRevision: 9 },
                 12
-            )
+            ),
+            proofGroup
         )!;
 
         expect(publication).toMatchObject({
@@ -427,7 +554,8 @@ describe('API-v1 RTC topology replay proof semantics', () => {
                 apiBaseUrl: 'http://127.0.0.1:18082',
                 wsBaseUrl: 'ws://127.0.0.1:18082'
             },
-            'ticket'
+            'ticket',
+            proofGroup
         ).catch((error) => {
             failure = error instanceof Error ? error : new Error(String(error));
         });
@@ -503,28 +631,23 @@ function replayMetrics(input: ReplayMetricsInput) {
     };
 }
 
-function topologyMessage(
-    messageId: string,
-    causalRevision: Readonly<{ groupRevision: number; presenceRevision: number; }>,
-    version: number
-): string {
-    return JSON.stringify({
-        id: { msgId: messageId },
-        route: { topicId: 'overlay.topology' },
-        payload: {
-            typeId: 'overlay.topology',
-            resource: JSON.stringify({
-                sourceGroupStateCausalRevision: causalRevision,
-                version,
-                activeSessionIds: ['session-1'],
-                nextHopsBySessionId: { 'session-1': [] }
-            })
+function topologyMessage(messageId: string, causalRevision: GroupStateCausalRevision, version: number): CompletedStateSnapshot {
+    const assembly = new StateSnapshotAssembly();
+    try {
+        const pages = topologyPages({ messageId, revision: causalRevision, version, sessionCount: 1 });
+        const result = assembly.accept({ message: pages[0], scope: proofGroup, nowMs: Date.now() });
+        if (result.right?.kind !== 'complete') {
+            throw new Error(result.left?.message ?? 'Expected complete topology');
         }
-    });
+        return result.right.snapshot;
+    }
+    finally {
+        assembly.dispose();
+    }
 }
 
 function topologyObservation(
-    causalRevision: Readonly<{ groupRevision: number; presenceRevision: number; }>,
+    causalRevision: GroupStateCausalRevision,
     version: number
 ): ProofTopologyObservation {
     return {
@@ -556,4 +679,50 @@ function cursor(
     lastProcessedSequence: number
 ): ProofDurableState['cursors'][number] {
     return { consumerStreamId, publisherStreamId, lastProcessedSequence };
+}
+
+interface TopologyPagesInput {
+    readonly messageId: string;
+    readonly revision: GroupStateCausalRevision;
+    readonly version: number;
+    readonly sessionCount: number;
+}
+function topologyPages(input: TopologyPagesInput): readonly ALMessage[] {
+    const nowMs = Date.now();
+    const activeSessionIds = Array.from({ length: input.sessionCount }, (_, index) => `session-${index + 1}`).sort();
+    const snapshot: RallarOverlayTopologySnapshot = {
+        groupRef: proofGroup,
+        overlayId: toScopedOverlayId(proofGroup),
+        sourceGroupStateCausalRevision: input.revision,
+        version: input.version,
+        state: 'active',
+        name: 'Proof',
+        topology: 'tree',
+        degreeLimit: 2,
+        createdByClientId: 'alice-client',
+        createdAtEpochMs: nowMs,
+        updatedAtEpochMs: nowMs,
+        activeSessionIds,
+        nextHopsBySessionId: Object.fromEntries(
+            activeSessionIds.map((
+                id,
+                index
+            ) => [id, activeSessionIds.slice(Math.max(0, index - 1), index).concat(activeSessionIds.slice(index + 1, index + 2))])
+        )
+    };
+    return computeStateSnapshotPages({
+        scope: { applicationId: proofGroup.applicationId, workspaceId: proofGroup.workspaceId, kind: 'group', resourceId: proofGroup.groupId },
+        revision: JSON.stringify([input.revision.groupRevision, input.revision.presenceRevision, input.version]),
+        resource: JSON.stringify(snapshot),
+        envelope: {
+            id: { v: 2, msgId: input.messageId, ts: nowMs, senderId: 'api-node-17' },
+            route: { topicId: 'overlay.topology', resourceId: 'topology', contextId: proofGroup.groupId },
+            targets: { mode: 'unicast', toPeerId: 'session-1' },
+            constraints: { expiresAtMs: nowMs + 60000 },
+            delivery: { reliability: 'best-effort', ack: 'none' },
+            audit: { createdBy: 'api-node-17', createdTs: nowMs }
+        }
+    }).fold((issue) => {
+        throw new Error(issue.message);
+    }, (pages) => pages);
 }

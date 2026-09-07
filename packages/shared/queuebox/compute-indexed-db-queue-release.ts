@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import type { StoredResourceEntry } from './indexed-db-queue-box-entry-codec.ts';
 import {
     computeIndexedDbQueuePut,
@@ -40,7 +41,7 @@ export function computeIndexedDbQueueRelease(
                 (
                     isStoredQueueEntryExpired(stored, input.releasedAt) ||
                     stored.status !== EntityStatus.RESERVED ||
-                    stored.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                    !hasSameResourceEntryValue(current, resource)
                 ) &&
                 !isIdempotentHandlerFinalizedRelease(current, resource, input.disposition)
             )

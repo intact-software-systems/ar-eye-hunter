@@ -19,7 +19,11 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
-import * as wsRoutes from '../routes/ws-routes.ts';
+import { toAuthorisedWsClientDisconnectInput, toGroupPresenceSessionCleanupInput } from '../routes/ws-routes.ts';
+import {
+    hasAuthorisedWsCloseFacts,
+    releaseAuthorisedWsCloseFacts
+} from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 
@@ -155,16 +159,16 @@ function installApiV1WebSocketLifecycle(
         now: input.nowEpochMs,
         enqueueClientSessionDisconnect: async (close) => {
             await runtime.appClientInboxService.enqueueAuthorisedWsClientDisconnect(
-                wsRoutes.toAuthorisedWsClientDisconnectInput(close)
+                toAuthorisedWsClientDisconnectInput(close)
             );
         },
         enqueueGroupSessionCleanup: async (close) => {
             await runtime.groupStateInboxService.enqueueGroupSessionCleanup(
-                wsRoutes.toGroupPresenceSessionCleanupInput(close)
+                toGroupPresenceSessionCleanupInput(close)
             );
         },
-        hasCloseFacts: wsRoutes.hasAuthorisedWsCloseFacts,
-        releaseCloseFacts: wsRoutes.releaseAuthorisedWsCloseFacts,
+        hasCloseFacts: hasAuthorisedWsCloseFacts,
+        releaseCloseFacts: releaseAuthorisedWsCloseFacts,
         retry: {
             delaysMs: [
                 ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY.delaysAfterAttemptMs,

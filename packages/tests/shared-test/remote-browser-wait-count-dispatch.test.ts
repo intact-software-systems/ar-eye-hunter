@@ -3,8 +3,14 @@ import { describe, expect, it } from 'vitest';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
-import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import { createRallarRemoteBrowserRtcProvider, type RallarRemoteBrowserConfig } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import type { RtcProvider } from '../../shared-test/black-box-runner/rtc-provider.ts';
 import { FakeRemoteBrowserControlServer } from './fake-remote-browser-control-server.ts';
+
+interface RemoteRtcRunOptions {
+    readonly rallarRemoteBrowser: RallarRemoteBrowserConfig;
+    readonly rtcProviders: Readonly<Record<string, RtcProvider>>;
+}
 
 const payload = {
     topic: 'presence.ping',
@@ -80,7 +86,7 @@ const rtcConnect = {
 };
 
 // The options carry a fetch and a provider instance, so they are wiring, not JSON.
-function toWsOptions(server: FakeRemoteBrowserControlServer, runId: string) {
+function createWsOptions(server: FakeRemoteBrowserControlServer, runId: string) {
     return {
         rallarRemoteBrowser: {
             controlBaseUrl: 'http://control.example.test',
@@ -93,7 +99,7 @@ function toWsOptions(server: FakeRemoteBrowserControlServer, runId: string) {
     };
 }
 
-function toRtcOptions(server: FakeRemoteBrowserControlServer, runId: string) {
+function createRtcOptions(server: FakeRemoteBrowserControlServer, runId: string): RemoteRtcRunOptions {
     return {
         rallarRemoteBrowser: {
             controlBaseUrl: 'http://control.example.test',
@@ -140,7 +146,7 @@ describe('remote browser count dispatch', () => {
                 }
             ],
             0,
-            toWsOptions(server, 'run-remote-ws-count-wait')
+            createWsOptions(server, 'run-remote-ws-count-wait')
         );
 
         expect(report.resultsByName.countRemoteWs[0].status).toBe('FAILURE');
@@ -161,7 +167,7 @@ describe('remote browser count dispatch', () => {
                 })
             ],
             0,
-            toWsOptions(server, 'run-remote-ws-count-send')
+            createWsOptions(server, 'run-remote-ws-count-send')
         );
 
         expect(report.resultsByName.sendRemoteWs3[0].status).toBe('SUCCESS');
@@ -199,7 +205,7 @@ describe('remote browser count dispatch', () => {
                 }
             ],
             0,
-            toRtcOptions(server, 'run-remote-rtc-count-wait')
+            createRtcOptions(server, 'run-remote-rtc-count-wait')
         );
 
         expect(report.resultsByName.countRemoteRtc[0].status).toBe('FAILURE');
@@ -222,7 +228,7 @@ describe('remote browser count dispatch', () => {
                 })
             ],
             0,
-            toRtcOptions(server, 'run-remote-rtc-count-send')
+            createRtcOptions(server, 'run-remote-rtc-count-send')
         );
 
         expect(report.resultsByName.sendRemoteRtc3[0].status).toBe('SUCCESS');

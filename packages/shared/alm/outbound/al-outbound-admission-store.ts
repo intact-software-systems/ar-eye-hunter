@@ -6,14 +6,13 @@ import type {
 } from '../../al-contracts/al-control.ts';
 import type {
     ALReadyable,
-    ALSupersedenceInput,
-    ALSupersedenceObservation,
-    ALSupersedencePersistenceValue
+    ALSupersedenceInput
 } from '../../al-contracts/al-runtime.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionClientRecord, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
@@ -23,7 +22,12 @@ import type {
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
-import { acceptALSupersedenceObservation } from '../compute-al-supersedence-observation.ts';
+import {
+    acceptALSupersedenceObservation,
+    type ALLatestSupersedenceValue,
+    type ALReplacementSupersedenceValue,
+    type ALSupersedenceAcceptance
+} from '../compute-al-supersedence-observation.ts';
 import { ALOutboundAdmissionControlStore } from './al-outbound-admission-control-store.ts';
 import {
     ALOutboundAdmissionEffectStore,
@@ -41,11 +45,12 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundRepairTrigger
 } from './al-outbound-message-runtime.ts';
+import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 import { toALOutboundPendingAckExpireAtTimestamp } from './transition-al-outbound-pending-ack.ts';
 
 export interface CreateALOutboundAdmissionStoreInput {
     readonly namespace: string;
-    readonly backend: ALAdmissionBackend;
+    readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 }
@@ -53,9 +58,6 @@ export type {
     ClaimALOutboundEffectsInput,
     RescheduleALOutboundEffectInput
 } from './al-outbound-admission-effect-store.ts';
-
-type LatestSupersedenceValue = Extract<ALSupersedencePersistenceValue, Readonly<{ kind: 'latest'; }>>;
-type ReplacementSupersedenceValue = Extract<ALSupersedencePersistenceValue, Readonly<{ kind: 'replacement'; }>>;
 
 export interface ALOutboundVersionedClientRecord {
     readonly senderId: string;
@@ -70,19 +72,8 @@ export type ALOutboundPlanner<TPrepared> = (
 
 export interface ALOutboundSupersedenceReadState {
     readonly key?: string;
-    readonly latest?: LatestSupersedenceValue;
-    readonly replacement?: ReplacementSupersedenceValue;
-}
-
-export interface ALOutboundSupersedenceReplacementWrite {
-    readonly msgId: string;
-    readonly value: ReplacementSupersedenceValue;
-}
-
-export interface ALOutboundSupersedenceAcceptance {
-    readonly observation: ALSupersedenceObservation;
-    readonly latestWrite?: LatestSupersedenceValue;
-    readonly replacementWrites: readonly ALOutboundSupersedenceReplacementWrite[];
+    readonly latest?: ALLatestSupersedenceValue;
+    readonly replacement?: ALReplacementSupersedenceValue;
 }
 
 export interface ALOutboundMessageReadDto<TPrepared> {
@@ -98,7 +89,7 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly nacks: readonly ALNackPayload[];
     readonly repairs: readonly ALRepairPayload[];
     readonly supersedence: ALOutboundSupersedenceReadState;
-    readonly supersedenceAcceptance?: ALOutboundSupersedenceAcceptance;
+    readonly supersedenceAcceptance?: ALSupersedenceAcceptance;
     readonly priorOutboxKey?: Key;
 }
 
@@ -152,12 +143,13 @@ export type ALOutboundAdmissionMutation =
     | Readonly<{
         kind: 'set-supersedence-latest';
         supersedenceKey: string;
-        value: LatestSupersedenceValue;
+        expected: ALLatestSupersedenceValue | undefined;
+        value: ALLatestSupersedenceValue;
     }>
     | Readonly<{
         kind: 'set-supersedence-replacement';
         msgId: string;
-        value: ReplacementSupersedenceValue;
+        value: ALReplacementSupersedenceValue;
     }>;
 
 export interface ALOutboundRepairHint {
@@ -209,17 +201,18 @@ export interface ALOutboundDurableEffectWrite<TPrepared> {
     readonly expireAtTimestamp?: number;
 }
 
-export interface ALPersistedOutboundEffect<TPrepared> {
+export interface ALOutboundEffectSnapshot<TPrepared> {
     readonly effectId: string;
     readonly payload: ALOutboundDurableEffect<TPrepared>;
-    readonly status: 'pending' | 'running';
+    readonly entry: ResourceEntry;
     readonly attempts: number;
     readonly retryAtMs: number;
-    readonly leaseOwner?: string;
-    readonly leaseUntilMs?: number;
-    readonly lastError?: string;
-    readonly updatedAtMs: number;
+    readonly leaseUntilMs: number | undefined;
     readonly expireAtTimestamp: number;
+}
+
+export interface ALClaimedOutboundEffect<TPrepared> extends ALOutboundEffectSnapshot<TPrepared> {
+    readonly leaseUntilMs: number;
 }
 
 export interface ALOutboundCommitBundle<TPrepared> {
@@ -240,6 +233,12 @@ export interface ALOutboundNotYetInSyncRetrySchedule<TPrepared> {
     readonly maxAttempts: number;
     readonly expireAtTimestamp: number | undefined;
     readonly createEffect: (attempt: number) => ALOutboundDurableEffectWrite<TPrepared>;
+}
+
+interface ALOutboundNotYetInSyncRetryRead<TPrepared> {
+    readonly current: ALOutboundVersionedClientRecord | undefined;
+    readonly retry: ALOutboundNotYetInSyncRetrySnapshot | undefined;
+    readonly pending: ALOutboundEffectSnapshot<TPrepared> | undefined;
 }
 
 export type ALOutboundNotYetInSyncRetryScheduleResult =
@@ -263,6 +262,8 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
 
     getAllSentMessages(): Promise<readonly ALOutboundSentMessageSnapshot[]>;
 
+    readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
+
     getPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     commitBundle<TPrepared>(
@@ -283,22 +284,13 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]>;
+    ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]>;
 
-    completeEffect<TPrepared>(
-        effectId: string,
-        workerId: string,
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<void>;
+    completeEffect(reservation: ResourceEntry): Promise<void>;
 
-    rescheduleEffect<TPrepared>(
-        input: RescheduleALOutboundEffectInput,
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<void>;
+    rescheduleEffect(input: RescheduleALOutboundEffectInput): Promise<void>;
 
-    peekNextEffectReadyAt<TPrepared>(
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<number | undefined>;
+    peekNextEffectReadyAt(): Promise<number | undefined>;
 }
 
 export function createALOutboundAdmissionStore(
@@ -307,23 +299,16 @@ export function createALOutboundAdmissionStore(
     return new ProviderBackedALOutboundAdmissionStore(input);
 }
 
-interface CreateProviderBackedALOutboundAdmissionStoreInput {
-    readonly namespace: string;
-    readonly supersedenceTrackTtlMs: number;
-    readonly retention: NormalizedALRuntimeStoreRetentionConfig;
-    readonly backend: ALAdmissionBackend;
-}
-
 class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore {
     private readonly namespace: string;
     private readonly supersedenceTrackTtlMs: number;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
-    private readonly backend: ALAdmissionBackend;
+    private readonly backend: ALAdmissionWorkBackend;
     private readonly effectStore: ALOutboundAdmissionEffectStore;
     private readonly controlStore: ALOutboundAdmissionControlStore;
 
     constructor(
-        input: CreateProviderBackedALOutboundAdmissionStoreInput
+        input: CreateALOutboundAdmissionStoreInput
     ) {
         this.namespace = input.namespace;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -445,6 +430,11 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     async getPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
+        const receipts = await this.readReceiptState(msgId);
+        return receipts && !isALOutboundReceiptComplete(receipts) ? receipts : undefined;
+    }
+
+    async readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
         return await this.backend.read(
             this.toPendingAckKey(msgId),
             (value) => decodeALOutboundPendingAck(value, msgId)
@@ -503,38 +493,24 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     ): Promise<ALOutboundNotYetInSyncRetryScheduleResult> {
         try {
             return await this.backend.write(async (tx) => {
-                const current = await tx.read(
-                    this.toVersionKey(schedule.senderId),
-                    (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
-                );
+                const { current, retry, pending } = await this.readNotYetInSyncRetry(tx, schedule, decodePrepared);
                 if (current?.version !== schedule.expectedVersion) {
                     return { status: 'conflict' };
                 }
 
-                const retry = await tx.read(
-                    this.toNotYetInSyncRetryKey(schedule.msgId),
-                    (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
-                );
-                if (retry) {
-                    const pending = await this.effectStore.readEffect(
-                        tx,
-                        retry.pendingEffectId,
-                        decodePrepared
-                    );
-                    if (pending) {
-                        if (
-                            pending.payload.kind !== 'nack-retry' ||
-                            pending.payload.msgId !== schedule.msgId
-                        ) {
-                            throw new ALAdmissionCorruptionError(
-                                this.toNotYetInSyncRetryKey(schedule.msgId),
-                                new TypeError(
-                                    'Persisted AL not-yet-in-sync retry snapshot points to another effect'
-                                )
-                            );
-                        }
-                        return { status: 'pending', retryAtMs: pending.retryAtMs };
+                if (pending) {
+                    if (
+                        pending.payload.kind !== 'nack-retry' ||
+                        pending.payload.msgId !== schedule.msgId
+                    ) {
+                        throw new ALAdmissionCorruptionError(
+                            this.toNotYetInSyncRetryKey(schedule.msgId),
+                            new TypeError(
+                                'Persisted AL not-yet-in-sync retry snapshot points to another effect'
+                            )
+                        );
                     }
+                    return { status: 'pending', retryAtMs: pending.retryAtMs };
                 }
 
                 const attempts = retry?.attempts ?? 0;
@@ -569,32 +545,42 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         }
     }
 
+    private async readNotYetInSyncRetry<TPrepared>(
+        tx: ALAdmissionWorkWriteContext,
+        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundNotYetInSyncRetryRead<TPrepared>> {
+        const current = await tx.read(
+            this.toVersionKey(schedule.senderId),
+            (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
+        );
+        const retry = await tx.read(
+            this.toNotYetInSyncRetryKey(schedule.msgId),
+            (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
+        );
+        const pending = retry
+            ? await this.effectStore.readEffect(tx, retry.pendingEffectId, decodePrepared)
+            : undefined;
+        return { current, retry, pending };
+    }
+
     async claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]> {
+    ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]> {
         return await this.effectStore.claimReadyEffects(input, decodePrepared);
     }
 
-    async completeEffect<TPrepared>(
-        effectId: string,
-        workerId: string,
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<void> {
-        await this.effectStore.completeEffect(effectId, workerId, decodePrepared);
+    async completeEffect(reservation: ResourceEntry): Promise<void> {
+        await this.effectStore.completeEffect(reservation);
     }
 
-    async rescheduleEffect<TPrepared>(
-        input: RescheduleALOutboundEffectInput,
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<void> {
-        await this.effectStore.rescheduleEffect(input, decodePrepared);
+    async rescheduleEffect(input: RescheduleALOutboundEffectInput): Promise<void> {
+        await this.effectStore.rescheduleEffect(input);
     }
 
-    async peekNextEffectReadyAt<TPrepared>(
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<number | undefined> {
-        return await this.effectStore.peekNextReadyAt(decodePrepared);
+    async peekNextEffectReadyAt(): Promise<number | undefined> {
+        return await this.effectStore.peekNextReadyAt();
     }
 
     private async readSupersedenceState(
@@ -619,7 +605,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     private async applyMutation(
-        tx: ALAdmissionWriteContext,
+        tx: ALAdmissionWorkWriteContext,
         mutation: ALOutboundAdmissionMutation
     ): Promise<void> {
         switch (mutation.kind) {
@@ -662,12 +648,20 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 );
             case 'delete-repair-attempt':
                 return await tx.remove(this.toRepairAttemptKey(mutation.msgId));
-            case 'set-supersedence-latest':
+            case 'set-supersedence-latest': {
+                const current = await tx.read(
+                    this.toSupersedenceLatestKey(mutation.supersedenceKey),
+                    (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
+                );
+                if (!jsonEquals(current, mutation.expected)) {
+                    throw new ALAdmissionBackendConflictError('Outbound shared supersedence observation changed');
+                }
                 return await tx.set(
                     this.toSupersedenceLatestKey(mutation.supersedenceKey),
                     mutation.value,
                     mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
                 );
+            }
             case 'set-supersedence-replacement':
                 return await tx.set(
                     this.toSupersedenceReplacementKey(mutation.msgId),
@@ -678,7 +672,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     private async bumpVersion(
-        tx: ALAdmissionWriteContext,
+        tx: ALAdmissionWorkWriteContext,
         senderId: string,
         currentVersion: number | undefined
     ): Promise<void> {

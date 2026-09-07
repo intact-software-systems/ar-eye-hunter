@@ -21,13 +21,15 @@ import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@s
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type { OnQueuedMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
@@ -193,19 +195,14 @@ describe('AppInbox command lifecycle', () => {
         expect(decodedValues).toEqual([{ status: 'stored' }]);
     });
 
-    it('uses one dedicated telemetry-clock sample for retry fallback ages', async () => {
+    it('preserves supplied attempt ages without sampling another clock', async () => {
         const queue = new TestResourceInbox();
         const reader = new CapturingInboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         let businessClockReads = 0;
-        let timingClockReads = 0;
         const businessNowEpochMs = () => {
             businessClockReads += 1;
             return 9_000;
-        };
-        const timingNowEpochMs = () => {
-            timingClockReads += 1;
-            return 2_000;
         };
         const timing: RallarTimingEvent[] = [];
         const service = new TestAppInboxRuntime(
@@ -219,7 +216,7 @@ describe('AppInbox command lifecycle', () => {
                 serviceId: 'server-12345678',
                 defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 timing: (event) => timing.push(event),
-                options: { nowEpochMs: businessNowEpochMs, timingNowEpochMs }
+                options: { nowEpochMs: businessNowEpochMs }
             }
         );
         service.onStateMessage(
@@ -254,10 +251,14 @@ describe('AppInbox command lifecycle', () => {
             }
         };
 
-        await expect(reader.invoke(message, entry)).rejects.toThrow('retryable test failure');
+        await expect(
+            reader.invoke(message, {
+                entry: { ...entry },
+                telemetry: { selectedLane: Reservator.RETRY, queueAgeMs: 1_000, dueAgeMs: 500, attempt: 1, selectedDueAtEpochMs: 1_500 }
+            })
+        ).rejects.toThrow('retryable test failure');
 
         expect(businessClockReads).toBe(0);
-        expect(timingClockReads).toBe(1);
         expect(timing).toContainEqual(
             expect.objectContaining({
                 operation: 'queue-retry',
@@ -859,21 +860,21 @@ class TestResourceInbox extends InMemoryQueueBox {
 }
 
 class CapturingInboxQueueReader extends InboxQueueReader {
-    private callback: OnMessageCallback | undefined;
+    private callback: OnQueuedMessageCallback | undefined;
 
-    override onInboxMessageDo(_type: string, callback: OnMessageCallback): this {
+    override onInboxMessageDo(_type: string, callback: OnQueuedMessageCallback): this {
         this.callback = callback;
         return this;
     }
 
     async invoke(
-        message: Parameters<OnMessageCallback['onMessage']>[0],
-        entry: ResourceEntry
+        message: Parameters<OnQueuedMessageCallback['onMessage']>[0],
+        attempt: ResourceInboxAttempt
     ): Promise<void> {
         if (this.callback === undefined) {
             throw new Error('Expected AppInbox handler registration');
         }
-        await this.callback.onMessage(message, entry);
+        await this.callback.onMessage(message, attempt.entry, attempt.telemetry);
     }
 }
 

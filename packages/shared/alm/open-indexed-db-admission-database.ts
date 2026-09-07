@@ -1,8 +1,11 @@
-import { openIndexedDbWithStore } from '../persistence/open-indexed-db.ts';
+import { openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
+import { toIndexedDbQueueStoreDefinition } from '../queuebox/indexed-db-queue-box-store.ts';
 import { decodeALAdmissionStoredValue } from './al-admission-backend.ts';
 import { decodeALAdmissionValue } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
+
+export const AL_ADMISSION_WORK_STORE_NAME = 'alm-work';
 
 export const AL_ADMISSION_REVISION_KEY = '__rallar_al_admission_revision__';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
@@ -17,7 +20,7 @@ export async function openIndexedDbAdmissionDatabase(
     dbName: string,
     storeName: string
 ): Promise<IDBDatabase> {
-    return await openIndexedDbWithStore(dbName, {
+    return await openIndexedDbWithStores(dbName, [{
         name: storeName,
         keyPath: 'key',
         indexes: [{
@@ -25,7 +28,7 @@ export async function openIndexedDbAdmissionDatabase(
             keyPath: 'expireAtTimestamp'
         }],
         initialRecords: [INITIAL_INDEXED_DB_ADMISSION_REVISION]
-    });
+    }, toIndexedDbQueueStoreDefinition(AL_ADMISSION_WORK_STORE_NAME)]);
 }
 
 export function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {

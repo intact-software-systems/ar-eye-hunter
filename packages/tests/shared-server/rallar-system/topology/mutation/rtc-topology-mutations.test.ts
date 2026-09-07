@@ -339,16 +339,7 @@ describe('RTC topology publication mutation phases', () => {
         };
         const candidate = topologySnapshot(groupRef, 1);
         const publication = topologyPublication(candidate, 'work-malformed-envelope');
-        const malformed = {
-            ...publication,
-            message: {
-                ...publication.message,
-                id: {
-                    ...publication.message.id,
-                    msgId: 'nondeterministic-message-id'
-                }
-            }
-        };
+        const malformed = { ...publication, publicationId: 'nondeterministic-publication-id' };
         const input = deepFreeze({
             read: { snapshot: null, publicationClaim: null },
             candidate,
@@ -488,36 +479,8 @@ function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: st
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: {
-            id: {
-                v: 2,
-                msgId: toRtcTopologyPublicationMessageId(workId),
-                ts: createdAtEpochMs,
-                senderId: 'rallar-server'
-            },
-            route: {
-                topicId: AppTopics.overlayTopology,
-                contextId: snapshot.groupRef.groupId,
-                resourceId:
-                    `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`
-            },
-            targets: {
-                mode: 'broadcast',
-                scope: 'room',
-                groupRef: snapshot.groupRef,
-                minSnapshotVersion: 1
-            },
-            delivery: { reliability: 'best-effort', ack: 'none' },
-            payload: {
-                typeId: AppTopics.overlayTopology,
-                contentType: 'application/json',
-                resource: JSON.stringify(snapshot)
-            },
-            audit: {
-                createdBy: 'rallar-server',
-                createdTs: createdAtEpochMs
-            }
-        },
+        snapshot: snapshot,
+        expiresAtEpochMs: 10000,
         createdAtEpochMs
     } as const;
 }

@@ -1,5 +1,7 @@
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { ResourceInboxHandlerEntryError } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { GroupFormationMutationOutcome } from '@shared/rtc/group-formation-metrics.ts';
 import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import {
@@ -59,7 +61,7 @@ export interface GroupStateInboxHandlerDependencies {
     readonly persistMutationIngress: (
         context: AppInboxMessageContext<GroupStateInboxDurableResult>,
         ingress: GroupMutationIngress
-    ) => Promise<void>;
+    ) => Promise<ResourceEntry>;
 }
 
 interface CommitGroupStateMutationInput {
@@ -69,6 +71,11 @@ interface CommitGroupStateMutationInput {
     readonly durableResult: GroupStateInboxDurableResult;
     readonly completion: AppInboxCompletionComputed<GroupStateInboxDurableResult>;
     readonly lifecycleGuard?: WsSessionGenerationLifecycleComputed;
+}
+
+interface CapturedGroupMutationIngress {
+    readonly ingress: GroupMutationIngress;
+    readonly entry: ResourceEntry;
 }
 
 interface GroupStateInboxResultRead {
@@ -87,7 +94,22 @@ export class GroupStateInboxHandler {
     async processGroupStateMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-        const ingress = await this.loadOrCaptureGroupMutationIngress(context);
+        const { ingress, entry } = await this.loadOrCaptureGroupMutationIngress(context);
+        try {
+            return await this.processCapturedMutation(context, ingress);
+        }
+        catch (error) {
+            if (entry === context.entry) {
+                throw error;
+            }
+            throw new ResourceInboxHandlerEntryError(entry, toError(error));
+        }
+    }
+
+    private async processCapturedMutation(
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        ingress: GroupMutationIngress
+    ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
         const command: GroupStateMutationCommand = {
             authorityProof: ingress.authorityProof,
             descriptor: ingress.descriptor,
@@ -191,17 +213,17 @@ export class GroupStateInboxHandler {
 
     private async loadOrCaptureGroupMutationIngress(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
-    ): Promise<GroupMutationIngress> {
+    ): Promise<CapturedGroupMutationIngress> {
         const authority = decodeGroupStateInboxAuthority(context.enqueue.authority);
         if (authority.kind === 'ingress') {
-            return authority.mutation;
+            return { ingress: authority.mutation, entry: context.entry };
         }
         const ingress = await this.dependencies.captureAuthenticatedMutationIngress(
             authority.mutation.descriptor,
             authority.mutation.authorityProof
         );
-        await this.dependencies.persistMutationIngress(context, ingress);
-        return ingress;
+        const entry = await this.dependencies.persistMutationIngress(context, ingress);
+        return { ingress, entry };
     }
 
     private async commitMutation(

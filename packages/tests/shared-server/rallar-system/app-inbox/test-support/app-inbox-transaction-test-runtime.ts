@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 
 import type {
     PSqlParameter,
@@ -511,7 +512,7 @@ class AtomicDatabase {
     private finalizeReservation(values: readonly PSqlParameter[]): PSqlRows {
         const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
         if (
-            (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED) ||
+            (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED && status !== EntityStatus.NON_RETRYABLE) ||
             !(completedAt instanceof Date) || typeof topicId !== 'string' ||
             typeof resourceId !== 'string' || typeof contextId !== 'string' || typeof attempts !== 'number'
         ) {
@@ -633,6 +634,12 @@ export function createAtomicHarness(
             enqueue
         ),
         entry,
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => result
     };
     return { context, database, entry, service };
@@ -655,7 +662,7 @@ function toAtomicResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
         typeof resourceId !== 'string' || typeof topicId !== 'string' || typeof contextId !== 'string' ||
         typeof resource !== 'string' || typeof typeId !== 'string' || typeof createdBy !== 'string' ||
         typeof createdTs !== 'string' || typeof expiryTs !== 'string' ||
-        (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED)
+        (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED && status !== EntityStatus.NON_RETRYABLE)
     ) {
         throw new TypeError('Invalid atomic result SQL parameters');
     }

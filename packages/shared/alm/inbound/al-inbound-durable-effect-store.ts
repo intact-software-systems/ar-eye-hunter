@@ -240,6 +240,26 @@ export class ALInboundDurableEffectStore {
         await this.trackEffectDelivery(tx, effect, expireAtTimestamp);
     }
 
+    async writePreparedEffect(
+        tx: ALAdmissionWriteContext,
+        effect: ALInboundDurableEffectWrite,
+        observedAtMs: number
+    ): Promise<void> {
+        await tx.set(
+            this.toEffectKey(effect.effectId),
+            toStoredPersistedInboundEffect({
+                effectId: effect.effectId,
+                payload: effect.payload,
+                status: 'pending',
+                attempts: 0,
+                retryAtMs: observedAtMs,
+                updatedAtMs: observedAtMs,
+                expireAtTimestamp: effect.expireAtTimestamp
+            }),
+            effect.expireAtTimestamp
+        );
+    }
+
     private async trackEffectDelivery(
         tx: ALAdmissionWriteContext,
         effect: ALInboundDurableEffectWrite,

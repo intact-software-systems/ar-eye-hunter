@@ -58,7 +58,7 @@ export function encodeStoredResourceEntry(
         fairnessDueEpochMs: entry.dequeueAudit.nextTs
             ? Number(entry.dequeueAudit.nextTs.epochMilliseconds)
             : undefined,
-        key: entry.key,
+        key: { ...entry.key },
         resource: entry.resource,
         typeId: entry.typeId,
         audit: {

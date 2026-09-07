@@ -1,4 +1,4 @@
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 export interface NativeWebSocketClose {
     readonly code: number | undefined;

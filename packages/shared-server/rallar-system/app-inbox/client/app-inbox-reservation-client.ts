@@ -53,7 +53,7 @@ export class AppInboxReservationClient {
     async persistAuthority<Result>(
         context: AppInboxMessageContext<Result>,
         authority: JsonWireValue
-    ): Promise<void> {
+    ): Promise<ResourceEntry> {
         const enqueue = { ...context.enqueue, authority };
         const message: ALMessage = {
             ...context.message,
@@ -70,6 +70,7 @@ export class AppInboxReservationClient {
         if (result === null) {
             throw new AppInboxReservationConflictError(context.entry.key);
         }
+        return result;
     }
 
     async reserveMaterializedEntry(

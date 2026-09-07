@@ -1,3 +1,13 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import '../../setup-browser-indexeddb.ts';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
@@ -17,28 +27,17 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import {
     createDefaultWsQueueBoxClientService,
-    default as WsQueueBoxClientService
+    WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import {
@@ -54,7 +53,7 @@ describe('browser RTC runtime composition', () => {
         configureBrowserALRuntimeStores('self');
     });
 
-    it('rejects a queued offer while signaling starts, then admits the selected accepted peer', async () => {
+    it('rejects an incoming offer while signaling starts, then admits the selected accepted peer', async () => {
         const nativeRuntime = installNativeRtcRuntime();
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
@@ -80,7 +79,7 @@ describe('browser RTC runtime composition', () => {
 
         try {
             await networkConnectStarted.promise;
-            await dequeueOffer(queueBox, 'startup-peer');
+            await receiveOffer(queueBox, 'startup-peer');
             networkConnect.resolve();
             const service = await initializing;
 
@@ -108,7 +107,7 @@ describe('browser RTC runtime composition', () => {
             await manager.getOrCreate(group.group).acceptGroupUpdate(group);
             configureBrowserRtcPeerCreationPolicies(service, manager);
 
-            await dequeueOffer(queueBox, 'startup-peer');
+            await receiveOffer(queueBox, 'startup-peer');
 
             expect(service.knownPeerIds()).toEqual(['startup-peer']);
             expect(nativeRuntime.createdConnections).toHaveLength(1);
@@ -188,7 +187,7 @@ describe('browser RTC runtime composition', () => {
             )
         );
 
-        expect(result).toMatchObject({ status: 'sent-immediate', entries: [] });
+        expect(result).toMatchObject({ status: 'accepted', entries: [] });
         const acceptedMessages = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
         const plannedMessages = fixture.nativePeer('planned-peer').channels.flatMap((channel) => channel.sent);
         expect(acceptedMessages).toHaveLength(1);
@@ -203,7 +202,7 @@ describe('browser RTC runtime composition', () => {
     });
 });
 
-async function dequeueOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<void> {
+async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<void> {
     const signal: QRtcSignalingMessage = {
         channel: 'RtcSignal',
         type: 'Signal',
@@ -221,10 +220,8 @@ async function dequeueOffer(queueBox: WsQueueBoxClientService, peerId: string): 
         'rtc',
         signal
     );
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.INBOX_ENQUEUE_TYPE);
-    await queueBox.inbox.enqueue(entry);
-    await queueBox.dequeueInbox(WsQueueBoxClientService.INBOX_DEQUEUE_TYPES, toResilienceDto());
-    expect((await queueBox.inbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+    const accepted = await queueBox.acceptIncomingMessage(message);
+    expect(accepted.right).toEqual({ kind: 'admitted' });
 }
 
 function acceptedGroup(sessionIds: readonly string[]): GroupSnapshot {
@@ -234,8 +231,14 @@ function acceptedGroup(sessionIds: readonly string[]): GroupSnapshot {
         groupId: 'group-1',
         sessionIds
     });
+    const nowMs = Date.now();
     return {
         ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            lastHeartbeatAtEpochMs: nowMs,
+            expiresAtEpochMs: nowMs + 60_000
+        })),
         group: {
             ...snapshot.group,
             formationElectorate: snapshot.members.map((member) => member.principalId),

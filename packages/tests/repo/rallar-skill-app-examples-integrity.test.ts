@@ -79,7 +79,7 @@ describe('Rallar skill app and example integrity', () => {
             .soft({
                 readyResult: scaffolding.includes('const readyResult = await ready.send'),
                 poseResult: scaffolding.includes('const poseResult = await poses.send'),
-                acceptedMessageStatuses: scaffolding.includes('\'sent-immediate\''),
+                acceptedMessageStatuses: scaffolding.includes('\'accepted\''),
                 degradedRealtimeResult: scaffolding.includes('poseResult.status !== \'sent\''),
                 messageExampleResult: messageExample.includes('sendResult.status'),
                 realtimeExampleResult: realtimeExample.includes('sendResult.status !== \'sent\'')

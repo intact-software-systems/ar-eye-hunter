@@ -35,6 +35,7 @@ export * from './queuebox/DequeueResourceEntryController.ts';
 export * from './queuebox/in-memory-queue-box.ts';
 export * from './queuebox/indexed-db-queue-box.ts';
 export * from './queuebox/queue-box-types.ts';
+export { toResourceEntrySnapshot } from './queuebox/resource-entry-observations.ts';
 export * from './queuebox/ResourceEntry.ts';
 
 export * from './persistence/indexed-db-string-persistence-provider.ts';
@@ -47,8 +48,8 @@ export * from './resilience/PartitionRange.ts';
 export * from './resilience/Resilience.ts';
 export * from './resilience/TryWith.ts';
 
-export * from './websocket/JsonWebSocketClient.ts';
-export * from './websocket/JsonWebSocketServer.ts';
+export * from './websocket/json-web-socket-client.ts';
+export * from './websocket/json-web-socket-server.ts';
 
 export {
     type ALAdmissionBackend,
@@ -84,15 +85,14 @@ export * from './services/ws-queue-box-client-service.ts';
 export * from './services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 export * from './services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
+export * from './webrtc/qrtc-client-callbacks.ts';
 export * from './webrtc/qrtc-data-channel.ts';
 export * from './webrtc/qrtc-media-channel.ts';
 export * from './webrtc/qrtc-peer-connection.ts';
-export * from './webrtc/QRtcClientCallbacks.ts';
 export * from './webrtc/QRtcSignalingContracts.ts';
 export * from './webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
-export * from './webrtc/WsRtcSignalingTransport.ts';
 
-export * from './multicast/OverlayMulticastContracts.ts';
+export * from './multicast/overlay-multicast-contracts.ts';
 export * from './multicast/web-rtc-overlay-multicast-manager.ts';
 export * from './multicast/web-rtc-overlay-multicast-service.ts';
 

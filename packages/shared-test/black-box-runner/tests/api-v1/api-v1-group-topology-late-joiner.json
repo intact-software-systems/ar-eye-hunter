@@ -365,6 +365,14 @@
             "urlEncode": {
               "path": "outputs.founderWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -375,7 +383,11 @@
       "connection": "wsFounder",
       "request": {
         "url": "{founderWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -436,10 +448,10 @@
         "connection": "wsFounder",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         }

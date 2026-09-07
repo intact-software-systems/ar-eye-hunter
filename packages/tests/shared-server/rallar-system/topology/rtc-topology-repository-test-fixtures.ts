@@ -5,10 +5,8 @@ import {
     type RtcTopologyPublicationWorkClaim
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { ALMessage } from '@shared/mod.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -60,145 +58,65 @@ export function createTopologySnapshot(
     };
 }
 
-export function topologyInvariantCases(): readonly Readonly<{
-    defect: string;
-    snapshot: RallarOverlayTopologySnapshot;
-}>[] {
+interface TopologyInvariantCase {
+    readonly defect: string;
+    readonly snapshot: RallarOverlayTopologySnapshot;
+}
+
+export function topologyInvariantCases(): readonly TopologyInvariantCase[] {
     const base = createTopologySnapshot(createGroupRef(), 1);
-    const threeSessionBase: RallarOverlayTopologySnapshot = {
+    return [
+        { defect: 'overlay-mismatch', snapshot: { ...base, overlayId: 'wrong-overlay' } },
+        { defect: 'duplicate-active-session', snapshot: { ...base, activeSessionIds: ['session-a', 'session-a', 'session-b'] } },
+        { defect: 'noncanonical-active-session-order', snapshot: { ...base, activeSessionIds: ['session-b', 'session-a'] } },
+        { defect: 'inverted-timestamps', snapshot: { ...base, createdAtEpochMs: 3, updatedAtEpochMs: 2 } },
+        ...invalidRoutingCases(base),
+        ...invalidGraphCases(base),
+        ...invalidRemovedTopologyCases(base)
+    ];
+}
+
+function invalidRoutingCases(base: RallarOverlayTopologySnapshot): readonly TopologyInvariantCase[] {
+    return [
+        { defect: 'unknown-hop', snapshot: { ...base, nextHopsBySessionId: { 'session-a': ['session-b', 'session-z'], 'session-b': ['session-a'] } } },
+        { defect: 'self-hop', snapshot: { ...base, nextHopsBySessionId: { 'session-a': ['session-a', 'session-b'], 'session-b': ['session-a'] } } },
+        { defect: 'duplicate-hop', snapshot: { ...base, nextHopsBySessionId: { 'session-a': ['session-b', 'session-b'], 'session-b': ['session-a'] } } },
+        { defect: 'nonreciprocal-hop', snapshot: { ...base, nextHopsBySessionId: { 'session-a': ['session-b'], 'session-b': [] } } },
+        { defect: 'missing-routing-key', snapshot: { ...base, nextHopsBySessionId: { 'session-a': ['session-b'] } } },
+        { defect: 'unknown-routing-key', snapshot: { ...base, nextHopsBySessionId: { ...base.nextHopsBySessionId, 'session-z': [] } } }
+    ];
+}
+
+function invalidGraphCases(base: RallarOverlayTopologySnapshot): readonly TopologyInvariantCase[] {
+    const threeSessions: RallarOverlayTopologySnapshot = {
         ...base,
         activeSessionIds: ['session-a', 'session-b', 'session-c'],
-        nextHopsBySessionId: {
-            'session-a': ['session-b'],
-            'session-b': ['session-a', 'session-c'],
-            'session-c': ['session-b']
-        }
-    };
-    const fourSessionBase: RallarOverlayTopologySnapshot = {
-        ...base,
-        activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d'],
-        nextHopsBySessionId: {
-            'session-a': ['session-b'],
-            'session-b': ['session-a'],
-            'session-c': ['session-d'],
-            'session-d': ['session-c']
-        }
+        nextHopsBySessionId: { 'session-a': ['session-b'], 'session-b': ['session-a', 'session-c'], 'session-c': ['session-b'] }
     };
     return [
         {
-            defect: 'overlay-mismatch',
-            snapshot: { ...base, overlayId: 'wrong-overlay' }
-        },
-        {
-            defect: 'duplicate-active-session',
-            snapshot: {
-                ...base,
-                activeSessionIds: ['session-a', 'session-a', 'session-b']
-            }
-        },
-        {
-            defect: 'noncanonical-active-session-order',
-            snapshot: { ...base, activeSessionIds: ['session-b', 'session-a'] }
-        },
-        {
-            defect: 'unknown-hop',
-            snapshot: {
-                ...base,
-                nextHopsBySessionId: {
-                    'session-a': ['session-b', 'session-z'],
-                    'session-b': ['session-a']
-                }
-            }
-        },
-        {
-            defect: 'self-hop',
-            snapshot: {
-                ...base,
-                nextHopsBySessionId: {
-                    'session-a': ['session-a', 'session-b'],
-                    'session-b': ['session-a']
-                }
-            }
-        },
-        {
-            defect: 'duplicate-hop',
-            snapshot: {
-                ...base,
-                nextHopsBySessionId: {
-                    'session-a': ['session-b', 'session-b'],
-                    'session-b': ['session-a']
-                }
-            }
-        },
-        {
             defect: 'noncanonical-hop-order',
-            snapshot: {
-                ...threeSessionBase,
-                nextHopsBySessionId: {
-                    ...threeSessionBase.nextHopsBySessionId,
-                    'session-b': ['session-c', 'session-a']
-                }
-            }
+            snapshot: { ...threeSessions, nextHopsBySessionId: { ...threeSessions.nextHopsBySessionId, 'session-b': ['session-c', 'session-a'] } }
         },
         {
-            defect: 'nonreciprocal-hop',
+            defect: 'disconnected-graph',
             snapshot: {
                 ...base,
-                nextHopsBySessionId: {
-                    'session-a': ['session-b'],
-                    'session-b': []
-                }
+                activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d'],
+                nextHopsBySessionId: { 'session-a': ['session-b'], 'session-b': ['session-a'], 'session-c': ['session-d'], 'session-d': ['session-c'] }
             }
         },
-        {
-            defect: 'missing-routing-key',
-            snapshot: {
-                ...base,
-                nextHopsBySessionId: { 'session-a': ['session-b'] }
-            }
-        },
-        {
-            defect: 'unknown-routing-key',
-            snapshot: {
-                ...base,
-                nextHopsBySessionId: {
-                    ...base.nextHopsBySessionId,
-                    'session-z': []
-                }
-            }
-        },
-        { defect: 'disconnected-graph', snapshot: fourSessionBase },
-        {
-            defect: 'over-degree-graph',
-            snapshot: { ...threeSessionBase, degreeLimit: 1 }
-        },
-        {
-            defect: 'inverted-timestamps',
-            snapshot: { ...base, createdAtEpochMs: 3, updatedAtEpochMs: 2 }
-        },
-        {
-            defect: 'removed-nonempty-edge',
-            snapshot: { ...base, state: 'removed' }
-        },
-        {
-            defect: 'removed-missing-routing-key',
-            snapshot: {
-                ...base,
-                state: 'removed',
-                nextHopsBySessionId: { 'session-a': [] }
-            }
-        },
+        { defect: 'over-degree-graph', snapshot: { ...threeSessions, degreeLimit: 1 } }
+    ];
+}
+
+function invalidRemovedTopologyCases(base: RallarOverlayTopologySnapshot): readonly TopologyInvariantCase[] {
+    return [
+        { defect: 'removed-nonempty-edge', snapshot: { ...base, state: 'removed' } },
+        { defect: 'removed-missing-routing-key', snapshot: { ...base, state: 'removed', nextHopsBySessionId: { 'session-a': [] } } },
         {
             defect: 'removed-zero-degree-limit',
-            snapshot: {
-                ...base,
-                state: 'removed',
-                nextHopsBySessionId: {
-                    'session-a': [],
-                    'session-b': []
-                },
-                degreeLimit: 0
-            }
+            snapshot: { ...base, state: 'removed', nextHopsBySessionId: { 'session-a': [], 'session-b': [] }, degreeLimit: 0 }
         }
     ];
 }
@@ -216,32 +134,8 @@ export function createPublication(
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: {
-            id: {
-                v: 2,
-                msgId: JSON.stringify(['rtc-topology-publication', workId]),
-                ts: 10,
-                senderId: 'rallar-server'
-            },
-            route: {
-                topicId: AppTopics.overlayTopology,
-                contextId: snapshot.groupRef.groupId,
-                resourceId: `${snapshot.overlayId}:${sourceRevision.groupRevision}:${sourceRevision.presenceRevision}:${snapshot.version}`
-            },
-            payload: {
-                typeId: AppTopics.overlayTopology,
-                contentType: 'application/json',
-                resource: JSON.stringify(snapshot)
-            },
-            targets: {
-                mode: 'broadcast',
-                scope: 'room',
-                groupRef: snapshot.groupRef,
-                minSnapshotVersion: 1
-            },
-            delivery: { reliability: 'best-effort', ack: 'none' },
-            audit: { createdBy: 'rallar-server', createdTs: 10 }
-        } satisfies ALMessage,
+        snapshot,
+        expiresAtEpochMs: 10000,
         createdAtEpochMs: 10
     };
 }

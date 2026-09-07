@@ -1,15 +1,14 @@
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type {
     ConnectGroupPresenceSessionRequest,
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
     StateScope
 } from '@shared/api/state-types.ts';
-import type { Either } from '@shared/resilience/Either.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { dirname, normalize } from 'node:path';
 import process from 'node:process';
-import postgres, { type Sql } from 'postgres';
+import type { Sql } from 'postgres';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -31,7 +30,11 @@ import {
     type StateWriteBenchmarkCommand,
     type StateWriteDurableEvidence
 } from './api-v1-state-write-durable-evidence.ts';
-import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
+import {
+    PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
+    requiredStateWriteOutboxCount
+} from './api-v1-state-write-outbox-contract.mjs';
+import { createStateWriteBenchmarkSql } from './create-state-write-benchmark-sql.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 import {
     toStateWriteBenchmarkGroupContextId,
@@ -39,18 +42,20 @@ import {
 } from './state-write/api-v1-state-write-app-inbox-evidence.ts';
 import {
     createStateWriteBenchmarkArtifact,
-    readBenchmarkGitIdentity
+    readBenchmarkGitIdentity,
+    type BenchmarkGitIdentity,
+    type StateWriteBenchmarkRegressionReason
 } from './state-write/api-v1-state-write-benchmark-artifact.ts';
 import {
     parseBenchmarkOptions,
-    STATE_WRITE_REQUIRED_CONCURRENCY
+    STATE_WRITE_REQUIRED_CONCURRENCY,
+    type StateWriteBenchmarkOptions
 } from './state-write/api-v1-state-write-benchmark-options.ts';
 
 import { parseGroupTopologyRegressionReasons } from './pool-group-topology-state-write-position-balanced-results.mjs';
 
 import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
 import {
-    createInstrumentedStateWriteSql,
     stateWriteProductionPhaseDuration,
     type StateWriteSqlMetrics
 } from './create-instrumented-state-write-sql.ts';
@@ -63,7 +68,8 @@ import {
     assertStateWriteSchemaReady,
     readStateWritePostgresCounters,
     readStateWriteWalDifference,
-    startStateWriteLockWaitSampler
+    startStateWriteLockWaitSampler,
+    type StateWritePostgresCounters
 } from './read-state-write-postgres-counters.ts';
 import { selectStateWriteRegressionReasons } from './state-write/api-v1-state-write-regression-reasons.ts';
 
@@ -126,7 +132,9 @@ interface TimingArtifactMetrics {
     transaction: number;
     outbox: number;
 }
-type OutcomeArtifactMetrics = OutcomeMetrics & { attemptsPerAcceptedMutation: number; };
+interface OutcomeArtifactMetrics extends OutcomeMetrics {
+    readonly attemptsPerAcceptedMutation: number;
+}
 interface RunSample {
     runIndex: number;
     durationMs: number;
@@ -160,12 +168,14 @@ interface MutationCommand {
     groupIndex: number;
 }
 
-export function createBenchmarkAuthSession(
+function createBenchmarkAuthSession(
     scope: StateScope,
     principalId: string,
     sessionLabel: string
 ): IssuedAuthSession {
-    const scopeIdentity = [scope.applicationId, scope.workspaceId].map(encodeURIComponent).join(':');
+    const scopeIdentity = [scope.applicationId, scope.workspaceId].map(
+        encodeURIComponent
+    ).join(':');
     const principalIdentity = encodeURIComponent(principalId);
     const sessionIdentity = encodeURIComponent(sessionLabel);
     return {
@@ -182,95 +192,98 @@ if (import.meta.main) {
     await main();
 }
 
-async function main(): Promise<void> {
-    const options = parseBenchmarkOptions(Deno.args);
+function validateBenchmarkRunOptions(
+    options: StateWriteBenchmarkOptions
+): Either<Error, StateWriteBenchmarkOptions> {
     if (options.backend !== 'postgres') {
-        throw new Error(`Task 0B requires --backend=postgres; received ${options.backend}`);
+        return Either.ofLeft(
+            new Error(
+                `State-write benchmark requires --backend=postgres; received ${options.backend}`
+            )
+        );
     }
     if (options.warmup !== 1) {
-        throw new Error(`Task 0B requires --warmup=1; received ${options.warmup}`);
+        return Either.ofLeft(
+            new Error(
+                `State-write benchmark requires --warmup=1; received ${options.warmup}`
+            )
+        );
     }
     if (options.runs < 3) {
-        throw new Error(`Task 0B requires --runs>=3; received ${options.runs}`);
+        return Either.ofLeft(
+            new Error(
+                `State-write benchmark requires --runs>=3; received ${options.runs}`
+            )
+        );
     }
     if (options.concurrency !== STATE_WRITE_REQUIRED_CONCURRENCY) {
-        throw new Error(
-            `Task 0B requires --concurrency=${STATE_WRITE_REQUIRED_CONCURRENCY}; ` +
-                `received ${options.concurrency}`
+        return Either.ofLeft(
+            new Error(
+                `State-write benchmark requires --concurrency=${STATE_WRITE_REQUIRED_CONCURRENCY}; ` +
+                    `received ${options.concurrency}`
+            )
         );
+    }
+    return Either.ofRight(options);
+}
+
+interface BenchmarkConfiguration {
+    readonly options: StateWriteBenchmarkOptions;
+    readonly gitIdentity: BenchmarkGitIdentity;
+    readonly regressionReasons: readonly StateWriteBenchmarkRegressionReason[];
+    readonly databaseUrl: string;
+    readonly runId: string;
+}
+
+async function readBenchmarkConfiguration(): Promise<BenchmarkConfiguration> {
+    const options = parseBenchmarkOptions(Deno.args);
+    const validation = validateBenchmarkRunOptions(options);
+    if (validation.left) {
+        throw validation.left;
     }
     assertPerfOutputPath(options.out);
     const gitIdentity = await readBenchmarkGitIdentity();
     const reasonsText = options.regressionReasonsFile === undefined
         ? undefined
         : await Deno.readTextFile(options.regressionReasonsFile);
-    const precommittedReasons = parseGroupTopologyRegressionReasons(reasonsText, gitIdentity);
+    const precommittedReasons = parseGroupTopologyRegressionReasons(
+        reasonsText,
+        gitIdentity
+    );
     const regressionReasons = selectStateWriteRegressionReasons(
         options.regressionReasonProfile,
         precommittedReasons
     );
 
-    const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() || DEFAULT_DATABASE_URL;
+    const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() ||
+        DEFAULT_DATABASE_URL;
     const runId = `state-write-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-    const adminSql = postgres(databaseUrl, {
-        max: 10,
-        connection: { application_name: `${runId}-admin` }
+    return { options, gitIdentity, regressionReasons, databaseUrl, runId };
+}
+
+async function main(): Promise<void> {
+    const { options, gitIdentity, regressionReasons, databaseUrl, runId } = await readBenchmarkConfiguration();
+    const adminSql = createStateWriteBenchmarkSql({
+        databaseUrl,
+        maxConnections: 10,
+        applicationName: `${runId}-admin`
     });
     const serviceSql = [0, 1].map((index) =>
-        postgres(databaseUrl, {
-            max: options.concurrency,
-            connection: { application_name: `${runId}-service-${index}` }
+        createStateWriteBenchmarkSql({
+            databaseUrl,
+            maxConnections: options.concurrency,
+            applicationName: `${runId}-service-${index}`
         })
     );
 
     try {
         await assertStateWriteSchemaReady(adminSql);
-        const workloads = [];
-        for (const workload of WORKLOADS) {
-            console.log(`Running ${workload.name}: warmup=${options.warmup}, measured=${options.runs}`);
-            for (let warmup = 0; warmup < options.warmup; warmup += 1) {
-                await runWorkloadPhase({
-                    adminSql,
-                    serviceSql,
-                    runId,
-                    workload,
-                    phaseLabel: `warmup-${warmup}`,
-                    runIndex: warmup,
-                    measured: false,
-                    concurrency: options.concurrency
-                });
-            }
-            const samples: RunSample[] = [];
-            for (let runIndex = 0; runIndex < options.runs; runIndex += 1) {
-                samples.push(
-                    await runWorkloadPhase({
-                        adminSql,
-                        serviceSql,
-                        runId,
-                        workload,
-                        phaseLabel: `measured-${runIndex}`,
-                        runIndex,
-                        measured: true,
-                        concurrency: options.concurrency
-                    })
-                );
-            }
-            const summary = summarizeSamples(samples);
-            workloads.push({
-                name: workload.name,
-                scale: {
-                    clients: workload.clients,
-                    groups: workload.groups,
-                    concurrency: options.concurrency
-                },
-                mutationMix: [...MUTATION_MIX],
-                warmupRuns: options.warmup,
-                measuredRuns: options.runs,
-                samples,
-                summary
-            });
-            console.log(JSON.stringify({ workload: workload.name, ...summary }));
-        }
+        const workloads = await runBenchmarkWorkloads({
+            adminSql,
+            serviceSql,
+            runId,
+            options
+        });
 
         const artifact = createStateWriteBenchmarkArtifact({
             generatedAt: new Date().toISOString(),
@@ -281,7 +294,10 @@ async function main(): Promise<void> {
         });
 
         await Deno.mkdir(dirname(options.out), { recursive: true });
-        await Deno.writeTextFile(options.out, `${JSON.stringify(artifact, null, 2)}\n`);
+        await Deno.writeTextFile(
+            options.out,
+            `${JSON.stringify(artifact, null, 2)}\n`
+        );
         console.log(`Wrote ${options.out}`);
     }
     finally {
@@ -292,16 +308,128 @@ async function main(): Promise<void> {
     }
 }
 
-async function runWorkloadPhase(input: {
-    adminSql: Sql;
-    serviceSql: readonly Sql[];
-    runId: string;
-    workload: (typeof WORKLOADS)[number];
-    phaseLabel: string;
-    runIndex: number;
-    measured: boolean;
-    concurrency: number;
-}): Promise<RunSample> {
+interface BenchmarkWorkloadsInput {
+    readonly adminSql: Sql;
+    readonly serviceSql: readonly Sql[];
+    readonly runId: string;
+    readonly options: StateWriteBenchmarkOptions;
+}
+
+async function runBenchmarkWorkloads(
+    { adminSql, serviceSql, runId, options }: BenchmarkWorkloadsInput
+) {
+    const workloads = [];
+    for (const workload of WORKLOADS) {
+        console.log(
+            `Running ${workload.name}: warmup=${options.warmup}, measured=${options.runs}`
+        );
+        for (let warmup = 0; warmup < options.warmup; warmup += 1) {
+            await runWorkloadPhase({
+                adminSql,
+                serviceSql,
+                runId,
+                workload,
+                phaseLabel: `warmup-${warmup}`,
+                runIndex: warmup,
+                concurrency: options.concurrency
+            });
+        }
+        const samples: RunSample[] = [];
+        for (let runIndex = 0; runIndex < options.runs; runIndex += 1) {
+            samples.push(
+                await runWorkloadPhase({
+                    adminSql,
+                    serviceSql,
+                    runId,
+                    workload,
+                    phaseLabel: `measured-${runIndex}`,
+                    runIndex,
+                    concurrency: options.concurrency
+                })
+            );
+        }
+        const summary = summarizeSamples(samples);
+        workloads.push({
+            name: workload.name,
+            scale: {
+                clients: workload.clients,
+                groups: workload.groups,
+                concurrency: options.concurrency
+            },
+            mutationMix: [...MUTATION_MIX],
+            warmupRuns: options.warmup,
+            measuredRuns: options.runs,
+            samples,
+            summary
+        });
+        console.log(JSON.stringify({ workload: workload.name, ...summary }));
+    }
+    return workloads;
+}
+
+interface BenchmarkPhaseInput {
+    readonly adminSql: Sql;
+    readonly serviceSql: readonly Sql[];
+    readonly runId: string;
+    readonly workload: (typeof WORKLOADS)[number];
+    readonly phaseLabel: string;
+    readonly runIndex: number;
+    readonly concurrency: number;
+}
+
+async function runWorkloadPhase(
+    input: BenchmarkPhaseInput
+): Promise<RunSample> {
+    const { scope, context, runtimes, commands, postgresBefore, cpuBefore, lockSampler } =
+        await prepareWorkloadMeasurement(input);
+    let rawCommands: StateWriteBenchmarkCommand[];
+    const startedAt = performance.now();
+
+    try {
+        rawCommands = await executeMeasuredWorkload({
+            commands,
+            runtimes,
+            scope,
+            concurrency: input.concurrency
+        });
+    }
+    catch (error) {
+        try {
+            await lockSampler.stop();
+        }
+        catch (cleanupError) {
+            console.error(
+                'State-write benchmark cleanup failed after command failure',
+                cleanupError
+            );
+        }
+        throw error;
+    }
+
+    const durationMs = performance.now() - startedAt;
+    const lockWaitMs = await lockSampler.stop();
+    const cpu = process.cpuUsage(cpuBefore);
+    const evidence = await readWorkloadEvidence({
+        sql: input.adminSql,
+        scope,
+        rawCommands,
+        groupCount: input.workload.groups,
+        timingEvents: context.timingEvents,
+        postgresBefore
+    });
+    return computeRunSample({
+        runIndex: input.runIndex,
+        rawCommands,
+        context,
+        durationMs,
+        lockWaitMs,
+        cpuTimeMs: (cpu.user + cpu.system) / 1_000,
+        postgresBefore,
+        evidence
+    });
+}
+
+async function prepareWorkloadMeasurement(input: BenchmarkPhaseInput) {
     const scope: StateScope = {
         applicationId: `${input.runId}-${input.workload.name}-${input.phaseLabel}`,
         workspaceId: 'state-write-bench'
@@ -321,66 +449,61 @@ async function runWorkloadPhase(input: {
     const commands = createCommands(input.workload);
     const postgresBefore = await readStateWritePostgresCounters(input.adminSql);
     const cpuBefore = process.cpuUsage();
-    const lockSampler = startStateWriteLockWaitSampler(input.adminSql, `${input.runId}-service-`);
-    const rawCommands: StateWriteBenchmarkCommand[] = [];
-    const startedAt = performance.now();
+    const lockSampler = startStateWriteLockWaitSampler(
+        input.adminSql,
+        `${input.runId}-service-`
+    );
+    return { scope, context, runtimes, commands, postgresBefore, cpuBefore, lockSampler };
+}
 
-    try {
-        for (const kind of MUTATION_MIX) {
-            const phaseCommands = commands.filter((command) => command.kind === kind);
-            const phaseResults = await mapWithConcurrency(
-                phaseCommands,
-                input.concurrency,
-                async (command, commandIndex) => {
-                    const stackIndex = selectServiceStack(commandIndex, runtimes.length);
-                    const runtime = runtimes[stackIndex];
-                    if (!runtime) {
-                        throw new Error(`Missing service runtime at stack ${stackIndex}`);
-                    }
-                    const commandId = commandIdentifier(scope, command);
-                    const commandStartedAt = performance.now();
-                    await executeMeasuredCommand({
-                        runtime,
-                        scope,
-                        command,
-                        requestId: commandId
-                    });
-                    return {
-                        commandId,
-                        kind,
-                        latencyMs: performance.now() - commandStartedAt,
-                        stackIndex,
-                        status: 'accepted' as const
-                    };
-                }
-            );
-            rawCommands.push(...phaseResults);
-        }
-    }
-    catch (error) {
-        await rethrowAfterCleanup(error, lockSampler.stop);
-    }
+interface WorkloadEvidenceInput {
+    readonly sql: Sql;
+    readonly scope: StateScope;
+    readonly rawCommands: readonly StateWriteBenchmarkCommand[];
+    readonly groupCount: number;
+    readonly timingEvents: StateWriteServiceRuntimeContext['timingEvents'];
+    readonly postgresBefore: StateWritePostgresCounters;
+}
 
-    const durationMs = performance.now() - startedAt;
-    const lockWaitMs = await lockSampler.stop();
-    const cpu = process.cpuUsage(cpuBefore);
-    const postgresAfter = await readStateWritePostgresCounters(input.adminSql);
+interface WorkloadEvidence {
+    readonly postgresAfter: StateWritePostgresCounters;
+    readonly walBytes: number;
+    readonly durable: StateWriteDurableEvidence;
+}
+
+async function readWorkloadEvidence(
+    { sql, scope, rawCommands, groupCount, timingEvents, postgresBefore }: WorkloadEvidenceInput
+): Promise<WorkloadEvidence> {
+    const postgresAfter = await readStateWritePostgresCounters(sql);
     const walBytes = await readStateWriteWalDifference({
-        sql: input.adminSql,
+        sql: sql,
         before: postgresBefore.walLsn,
         after: postgresAfter.walLsn
     });
-    const queriedDurable = await queryStateWriteDurableEvidence({
-        sql: input.adminSql,
+    const durable = await queryStateWriteDurableEvidence({
+        sql: sql,
         scope,
         commands: rawCommands,
-        groupCount: input.workload.groups,
-        timingEvents: context.timingEvents
+        groupCount: groupCount,
+        timingEvents: timingEvents
     });
-    const durable: StateWriteDurableEvidence = {
-        ...queriedDurable,
-        atomicCompletionFailures: countAtomicCompletionFailures(rawCommands, queriedDurable)
-    };
+    return { postgresAfter, walBytes, durable };
+}
+
+interface BenchmarkSampleFacts {
+    readonly runIndex: number;
+    readonly rawCommands: StateWriteBenchmarkCommand[];
+    readonly context: StateWriteServiceRuntimeContext;
+    readonly durationMs: number;
+    readonly lockWaitMs: number;
+    readonly cpuTimeMs: number;
+    readonly postgresBefore: StateWritePostgresCounters;
+    readonly evidence: WorkloadEvidence;
+}
+
+function computeRunSample(facts: BenchmarkSampleFacts): RunSample {
+    const { runIndex, rawCommands, context, durationMs, evidence } = facts;
+    const { durable } = evidence;
     const attemptObservations = deriveAppInboxAttemptObservations(
         context.attemptReleases,
         durable.appInbox,
@@ -390,7 +513,8 @@ async function runWorkloadPhase(input: {
     const attempts = attemptObservations.length;
     const outcomes: OutcomeMetrics = {
         accepted,
-        conflicted: attemptObservations.filter((entry) => entry.outcome === 'conflicted').length,
+        conflicted: attemptObservations.filter((entry) => entry.outcome === 'conflicted')
+            .length,
         transientRetries: attemptObservations.filter((entry) => entry.outcome === 'transient-retry')
             .length,
         exhausted: rawCommands.filter((command) => command.status === 'exhausted').length,
@@ -403,42 +527,24 @@ async function runWorkloadPhase(input: {
         rawCommands.filter((command) => command.stackIndex === 1).length
     ];
     const sample = {
-        runIndex: input.runIndex,
+        runIndex,
         durationMs,
         throughputPerSecond: accepted / (durationMs / 1_000),
         latencySamplesMs,
         latencyMs: summarizeLatency(latencySamplesMs),
         outcomes: {
             ...outcomes,
-            attemptsPerAcceptedMutation: accepted === 0 ? attempts : attempts / accepted
+            attemptsPerAcceptedMutation: accepted === 0
+                ? attempts
+                : attempts / accepted
         },
         sql: {
             statements: context.sql.statements,
             rowsRead: context.sql.rowsRead,
             serializedResultBytes: context.sql.serializedResultBytes
         },
-        postgres: {
-            transactionDurationMs: context.sql.transactionDurationMs,
-            lockWaitMs,
-            cpuTimeMs: (cpu.user + cpu.system) / 1_000,
-            sharedBufferHits: nonNegativeDelta(
-                postgresAfter.sharedBufferHits,
-                postgresBefore.sharedBufferHits
-            ),
-            sharedBufferReads: nonNegativeDelta(
-                postgresAfter.sharedBufferReads,
-                postgresBefore.sharedBufferReads
-            ),
-            walBytes
-        },
-        timingsMs: {
-            read: stateWriteProductionPhaseDuration(context.timingEvents, 'read'),
-            compute: stateWriteProductionPhaseDuration(context.timingEvents, 'compute'),
-            validate: stateWriteProductionPhaseDuration(context.timingEvents, 'validate'),
-            write: stateWriteProductionPhaseDuration(context.timingEvents, 'write'),
-            transaction: stateWriteProductionPhaseDuration(context.timingEvents, 'transaction'),
-            outbox: context.sql.outboxSqlMs
-        },
+        postgres: computeSamplePostgresMetrics(facts),
+        timingsMs: computeSampleTimingMetrics(context),
         correctness,
         commands: rawCommands,
         attemptObservations,
@@ -448,24 +554,88 @@ async function runWorkloadPhase(input: {
     return sample;
 }
 
-export async function rethrowAfterCleanup<Failure, CleanupResult>(
-    error: Failure,
-    cleanup: () => Promise<CleanupResult>
-): Promise<never> {
-    try {
-        await cleanup();
-    }
-    catch (cleanupError) {
-        console.error('State-write benchmark cleanup failed after command failure', cleanupError);
-    }
-    throw error;
+function computeSamplePostgresMetrics(
+    facts: BenchmarkSampleFacts
+): PostgresArtifactMetrics {
+    const { context, lockWaitMs, cpuTimeMs, postgresBefore } = facts;
+    const { postgresAfter, walBytes } = facts.evidence;
+    return {
+        transactionDurationMs: context.sql.transactionDurationMs,
+        lockWaitMs,
+        cpuTimeMs: cpuTimeMs,
+        sharedBufferHits: nonNegativeDelta(
+            postgresAfter.sharedBufferHits,
+            postgresBefore.sharedBufferHits
+        ),
+        sharedBufferReads: nonNegativeDelta(
+            postgresAfter.sharedBufferReads,
+            postgresBefore.sharedBufferReads
+        ),
+        walBytes
+    };
 }
-export function createInstrumentedSql(
-    sql: PSqlSql,
-    context: StateWriteServiceRuntimeContext,
-    timing: RallarTimingSink
-): PSqlSql {
-    return createInstrumentedStateWriteSql({ sql, metrics: context.sql, timing });
+
+function computeSampleTimingMetrics(
+    context: StateWriteServiceRuntimeContext
+): TimingArtifactMetrics {
+    return {
+        read: stateWriteProductionPhaseDuration(context.timingEvents, 'read'),
+        compute: stateWriteProductionPhaseDuration(context.timingEvents, 'compute'),
+        validate: stateWriteProductionPhaseDuration(
+            context.timingEvents,
+            'validate'
+        ),
+        write: stateWriteProductionPhaseDuration(context.timingEvents, 'write'),
+        transaction: stateWriteProductionPhaseDuration(
+            context.timingEvents,
+            'transaction'
+        ),
+        outbox: context.sql.outboxSqlMs
+    };
+}
+
+interface MeasuredWorkloadInput {
+    readonly commands: readonly MutationCommand[];
+    readonly runtimes: readonly StateWriteServiceRuntime[];
+    readonly scope: StateScope;
+    readonly concurrency: number;
+}
+
+async function executeMeasuredWorkload(
+    { commands, runtimes, scope, concurrency }: MeasuredWorkloadInput
+): Promise<StateWriteBenchmarkCommand[]> {
+    const rawCommands: StateWriteBenchmarkCommand[] = [];
+    for (const kind of MUTATION_MIX) {
+        const phaseCommands = commands.filter((command) => command.kind === kind);
+        const phaseResults = await mapWithConcurrency(
+            phaseCommands,
+            concurrency,
+            async (command, commandIndex) => {
+                const stackIndex = selectServiceStack(commandIndex, runtimes.length);
+                const runtime = runtimes[stackIndex];
+                if (!runtime) {
+                    throw new Error(`Missing service runtime at stack ${stackIndex}`);
+                }
+                const commandId = commandIdentifier(scope, command);
+                const commandStartedAt = performance.now();
+                await executeMeasuredCommand({
+                    runtime,
+                    scope,
+                    command,
+                    requestId: commandId
+                });
+                return {
+                    commandId,
+                    kind,
+                    latencyMs: performance.now() - commandStartedAt,
+                    stackIndex,
+                    status: 'accepted' as const
+                };
+            }
+        );
+        rawCommands.push(...phaseResults);
+    }
+    return rawCommands;
 }
 
 interface ExecuteMeasuredCommandInput {
@@ -530,207 +700,273 @@ interface ExecuteMutationInput {
     }>;
 }
 
-async function executeMutation({
-    runtime,
-    scope,
-    kind,
-    command
-}: ExecuteMutationInput): Promise<void> {
-    const clientContextId = toAuthenticatedClientMutationContextId({
-        scope,
-        principalId: command.principalId,
-        callerClientId: command.clientAuthority.clientId,
-        callerSessionId: command.clientAuthority.sessionId
-    });
-    const groupContextId = toStateWriteBenchmarkGroupContextId(scope, command.groupId);
-    switch (kind) {
-        case 'profile-instance': {
-            await runAppInboxMutation(runtime, () =>
-                runtime.client.processAuthenticatedEntryUntilCompletion(
-                    {
-                        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                        resourceId: `${command.requestId}-profile`,
-                        contextId: clientContextId,
-                        senderId: command.principalId,
-                        data: {
-                            scope,
-                            principalId: command.principalId,
-                            request: {
-                                username: command.principalId,
-                                displayName: `${command.principalId}-measured`,
-                                metadata: { source: 'state-write-benchmark' },
-                                actorPrincipalId: command.principalId,
-                                requestId: `${command.requestId}-profile`
-                            }
-                        }
-                    },
-                    command.clientAuthority
-                ));
-            await runAppInboxMutation(runtime, () =>
-                runtime.client.processAuthenticatedEntryUntilCompletion(
-                    {
-                        type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                        resourceId: `${command.requestId}-instance`,
-                        contextId: clientContextId,
-                        senderId: command.principalId,
-                        data: {
-                            scope,
-                            principalId: command.principalId,
-                            clientInstanceId: command.instanceId,
-                            request: {
-                                status: 'active',
-                                platform: 'web',
-                                appVersion: 'task-12',
-                                capabilities: ['state-write-benchmark'],
-                                actorPrincipalId: command.principalId,
-                                requestId: `${command.requestId}-instance`
-                            }
-                        }
-                    },
-                    command.clientAuthority
-                ));
+interface RoutedBenchmarkMutation extends ExecuteMutationInput {
+    readonly clientContextId: string;
+    readonly groupContextId: string;
+}
+
+async function executeMutation(input: ExecuteMutationInput): Promise<void> {
+    const { scope, command } = input;
+    const routed: RoutedBenchmarkMutation = {
+        ...input,
+        clientContextId: toAuthenticatedClientMutationContextId({
+            scope,
+            principalId: command.principalId,
+            callerClientId: command.clientAuthority.clientId,
+            callerSessionId: command.clientAuthority.sessionId
+        }),
+        groupContextId: toStateWriteBenchmarkGroupContextId(scope, command.groupId)
+    };
+    switch (input.kind) {
+        case 'profile-instance':
+            await runMeasuredProfileMutation(routed);
+            await runMeasuredInstanceMutation(routed);
             return;
-        }
-        case 'membership': {
-            await runAppInboxMutation(runtime, () =>
-                runtime.group.processAuthenticatedGroupEntryUntilCompletion(
-                    {
-                        type: AppInboxType.GROUP_MEMBER_UPSERT,
-                        topicId: AppInboxType.GROUP_MEMBER_UPSERT,
-                        resourceId: command.requestId,
-                        contextId: groupContextId,
-                        senderId: command.principalId,
-                        data: {
-                            scope,
-                            groupId: command.groupId,
-                            principalId: command.principalId,
-                            request: {
-                                status: 'active',
-                                actorPrincipalId: command.principalId,
-                                requestId: command.requestId
-                            }
-                        }
-                    },
-                    command.clientAuthority
-                ));
+        case 'membership':
+            await runMeasuredMembershipMutation(routed);
             return;
-        }
-        case 'presence-connect': {
-            await runGroupPresenceMutation({
-                runtime,
-                command,
-                scope,
-                contextId: groupContextId,
-                type: AppInboxType.GROUP_PRESENCE_CONNECT,
-                request: {
+        case 'presence-connect':
+            await runMeasuredPresenceConnect(routed);
+            return;
+        case 'presence-heartbeat':
+            await runMeasuredPresenceHeartbeat(routed);
+            return;
+        case 'presence-disconnect':
+            await runMeasuredPresenceDisconnect(routed);
+            return;
+        case 'config':
+            await runMeasuredConfigMutation(routed);
+            return;
+        case 'topology-source':
+            await runMeasuredTopologyMutation(routed);
+            return;
+    }
+}
+
+async function runMeasuredProfileMutation(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, clientContextId } = input;
+    await runAppInboxMutation(
+        runtime,
+        runtime.client.processAuthenticatedEntryUntilCompletion(
+            {
+                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                resourceId: `${command.requestId}-profile`,
+                contextId: clientContextId,
+                senderId: command.principalId,
+                data: {
+                    scope,
                     principalId: command.principalId,
-                    generationId: command.generationId,
-                    connectedAtEpochMs: command.timestamp,
-                    lastHeartbeatAtEpochMs: command.timestamp,
-                    expiresAtEpochMs: command.timestamp + 60_000,
-                    actorPrincipalId: command.principalId,
-                    actorSessionId: command.sessionId,
-                    requestId: command.requestId
-                }
-            });
-            return;
-        }
-        case 'presence-heartbeat': {
-            await runGroupPresenceMutation({
-                runtime,
-                command,
-                scope,
-                contextId: groupContextId,
-                type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-                request: {
-                    principalId: command.principalId,
-                    generationId: command.generationId,
-                    lastHeartbeatAtEpochMs: command.timestamp + 1_000,
-                    expiresAtEpochMs: command.timestamp + 61_000,
-                    actorPrincipalId: command.principalId,
-                    actorSessionId: command.sessionId,
-                    requestId: command.requestId
-                }
-            });
-            return;
-        }
-        case 'presence-disconnect': {
-            await runGroupPresenceMutation({
-                runtime,
-                command,
-                scope,
-                contextId: groupContextId,
-                type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
-                request: {
-                    principalId: command.principalId,
-                    generationId: command.generationId,
-                    disconnectedAtEpochMs: command.timestamp + 2_000,
-                    lastHeartbeatAtEpochMs: command.timestamp + 1_000,
-                    expiresAtEpochMs: command.timestamp + 61_000,
-                    actorPrincipalId: command.principalId,
-                    actorSessionId: command.sessionId,
-                    requestId: command.requestId
-                }
-            });
-            return;
-        }
-        case 'config': {
-            await runAppInboxMutation(runtime, () =>
-                runtime.group.processAuthenticatedGroupEntryUntilCompletion(
-                    {
-                        type: AppInboxType.GROUP_UPDATE,
-                        topicId: AppInboxType.GROUP_UPDATE,
-                        resourceId: command.requestId,
-                        contextId: groupContextId,
-                        senderId: command.ownerId,
-                        data: {
-                            scope,
-                            groupId: command.groupId,
-                            request: {
-                                metadata: { benchmarkConfigSource: command.requestId },
-                                actorPrincipalId: command.ownerId,
-                                requestId: command.requestId
-                            }
-                        }
-                    },
-                    command.ownerAuthority
-                ));
-            return;
-        }
-        case 'topology-source': {
-            const data = await toTopologyAppInboxCommand({
-                actor: { principalId: command.ownerId, sessionId: command.ownerAuthority.sessionId },
-                groupRef: { ...scope, groupId: command.groupId },
-                requestId: command.requestId,
-                capturedAtEpochMs: command.timestamp,
-                payload: {
-                    operation: 'putConfig',
-                    config: {
-                        topologyKind: command.timestamp % 2 === 0 ? 'tree' : 'mesh',
-                        degreeLimit: 5,
-                        treeMinSize: 5,
-                        meshMinSize: 16,
-                        meshParamK: 2
+                    request: {
+                        username: command.principalId,
+                        displayName: `${command.principalId}-measured`,
+                        metadata: { source: 'state-write-benchmark' },
+                        actorPrincipalId: command.principalId,
+                        requestId: `${command.requestId}-profile`
                     }
                 }
-            });
-            await runAppInboxMutation(runtime, () =>
-                runtime.topology.processAuthenticatedEntryUntilCompletion(
-                    {
-                        type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-                        topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
-                        resourceId: command.requestId,
-                        contextId: groupContextId,
-                        senderId: command.ownerId,
-                        data
-                    },
-                    command.ownerAuthority
-                ));
-            return;
+            },
+            command.clientAuthority
+        )
+    );
+}
+
+async function runMeasuredInstanceMutation(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, clientContextId } = input;
+    await runAppInboxMutation(
+        runtime,
+        runtime.client.processAuthenticatedEntryUntilCompletion(
+            {
+                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                resourceId: `${command.requestId}-instance`,
+                contextId: clientContextId,
+                senderId: command.principalId,
+                data: {
+                    scope,
+                    principalId: command.principalId,
+                    clientInstanceId: command.instanceId,
+                    request: {
+                        status: 'active',
+                        platform: 'web',
+                        appVersion: 'task-12',
+                        capabilities: ['state-write-benchmark'],
+                        actorPrincipalId: command.principalId,
+                        requestId: `${command.requestId}-instance`
+                    }
+                }
+            },
+            command.clientAuthority
+        )
+    );
+}
+
+async function runMeasuredMembershipMutation(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, groupContextId } = input;
+    await runAppInboxMutation(
+        runtime,
+        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+            {
+                type: AppInboxType.GROUP_MEMBER_UPSERT,
+                topicId: AppInboxType.GROUP_MEMBER_UPSERT,
+                resourceId: command.requestId,
+                contextId: groupContextId,
+                senderId: command.principalId,
+                data: {
+                    scope,
+                    groupId: command.groupId,
+                    principalId: command.principalId,
+                    request: {
+                        status: 'active',
+                        actorPrincipalId: command.principalId,
+                        requestId: command.requestId
+                    }
+                }
+            },
+            command.clientAuthority
+        )
+    );
+}
+
+async function runMeasuredPresenceConnect(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, groupContextId } = input;
+    await runGroupPresenceMutation({
+        runtime,
+        command,
+        scope,
+        contextId: groupContextId,
+        type: AppInboxType.GROUP_PRESENCE_CONNECT,
+        request: {
+            principalId: command.principalId,
+            generationId: command.generationId,
+            connectedAtEpochMs: command.timestamp,
+            lastHeartbeatAtEpochMs: command.timestamp,
+            expiresAtEpochMs: command.timestamp + 60_000,
+            actorPrincipalId: command.principalId,
+            actorSessionId: command.sessionId,
+            requestId: command.requestId
         }
-    }
+    });
+}
+
+async function runMeasuredPresenceHeartbeat(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, groupContextId } = input;
+    await runGroupPresenceMutation({
+        runtime,
+        command,
+        scope,
+        contextId: groupContextId,
+        type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+        request: {
+            principalId: command.principalId,
+            generationId: command.generationId,
+            lastHeartbeatAtEpochMs: command.timestamp + 1_000,
+            expiresAtEpochMs: command.timestamp + 61_000,
+            actorPrincipalId: command.principalId,
+            actorSessionId: command.sessionId,
+            requestId: command.requestId
+        }
+    });
+}
+
+async function runMeasuredPresenceDisconnect(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, groupContextId } = input;
+    await runGroupPresenceMutation({
+        runtime,
+        command,
+        scope,
+        contextId: groupContextId,
+        type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+        request: {
+            principalId: command.principalId,
+            generationId: command.generationId,
+            disconnectedAtEpochMs: command.timestamp + 2_000,
+            lastHeartbeatAtEpochMs: command.timestamp + 1_000,
+            expiresAtEpochMs: command.timestamp + 61_000,
+            actorPrincipalId: command.principalId,
+            actorSessionId: command.sessionId,
+            requestId: command.requestId
+        }
+    });
+}
+
+async function runMeasuredConfigMutation(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, groupContextId } = input;
+    await runAppInboxMutation(
+        runtime,
+        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+            {
+                type: AppInboxType.GROUP_UPDATE,
+                topicId: AppInboxType.GROUP_UPDATE,
+                resourceId: command.requestId,
+                contextId: groupContextId,
+                senderId: command.ownerId,
+                data: {
+                    scope,
+                    groupId: command.groupId,
+                    request: {
+                        metadata: { benchmarkConfigSource: command.requestId },
+                        actorPrincipalId: command.ownerId,
+                        requestId: command.requestId
+                    }
+                }
+            },
+            command.ownerAuthority
+        )
+    );
+}
+
+async function runMeasuredTopologyMutation(
+    input: RoutedBenchmarkMutation
+): Promise<void> {
+    const { runtime, scope, command, groupContextId } = input;
+    const data = await toTopologyAppInboxCommand({
+        actor: {
+            principalId: command.ownerId,
+            sessionId: command.ownerAuthority.sessionId
+        },
+        groupRef: { ...scope, groupId: command.groupId },
+        requestId: command.requestId,
+        capturedAtEpochMs: command.timestamp,
+        payload: {
+            operation: 'putConfig',
+            config: {
+                topologyKind: command.timestamp % 2 === 0 ? 'tree' : 'mesh',
+                degreeLimit: 5,
+                treeMinSize: 5,
+                meshMinSize: 16,
+                meshParamK: 2
+            }
+        }
+    });
+    await runAppInboxMutation(
+        runtime,
+        runtime.topology.processAuthenticatedEntryUntilCompletion(
+            {
+                type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                resourceId: command.requestId,
+                contextId: groupContextId,
+                senderId: command.ownerId,
+                data
+            },
+            command.ownerAuthority
+        )
+    );
 }
 
 interface RunGroupPresenceMutationInputBase {
@@ -757,12 +993,16 @@ type RunGroupPresenceMutationInput =
         }>
     );
 
-async function runGroupPresenceMutation(input: RunGroupPresenceMutationInput): Promise<void> {
-    await runAppInboxMutation(input.runtime, () =>
+async function runGroupPresenceMutation(
+    input: RunGroupPresenceMutationInput
+): Promise<void> {
+    await runAppInboxMutation(
+        input.runtime,
         input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(
             toGroupPresenceEnqueue(input),
             input.command.clientAuthority
-        ));
+        )
+    );
 }
 
 function toGroupPresenceEnqueue(
@@ -805,16 +1045,31 @@ function toGroupPresenceEnqueue(
 
 async function runAppInboxMutation<Failure extends string | Readonly<{ message: string; }>, Result>(
     runtime: StateWriteServiceRuntime,
-    start: () => Promise<Either<Failure, Result>>
+    operation: Promise<Either<Failure, Result>>
 ): Promise<void> {
     let settled = false;
-    const pending = start().finally(() => (settled = true));
+    const pending = operation.then(
+        (value) => {
+            settled = true;
+            return { status: 'fulfilled' as const, value };
+        },
+        (reason: unknown) => {
+            settled = true;
+            return { status: 'rejected' as const, reason };
+        }
+    );
     while (!settled) {
-        await runtime.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, runtime.resilience);
+        await runtime.inbox.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            runtime.resilience
+        );
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    const result = await pending;
-    result.fold(
+    const completion = await pending;
+    if (completion.status === 'rejected') {
+        throw completion.reason;
+    }
+    completion.value.fold(
         (error) => {
             throw new Error(typeof error === 'string' ? error : error.message);
         },
@@ -840,108 +1095,151 @@ async function seedCompleteState(
     await mapWithConcurrency(
         Array.from({ length: workload.groups }, (_, groupIndex) => groupIndex),
         STATE_WRITE_REQUIRED_CONCURRENCY,
-        async (groupIndex) => {
-            const ownerId = `owner-${groupIndex}`;
-            const authority = createBenchmarkAuthSession(scope, ownerId, `owner-session-${groupIndex}`);
-            await authSessionRepository.putSession(authority);
-            const groupId = `group-${groupIndex}`;
-            await runAppInboxMutation(runtime, () =>
-                runtime.group.processAuthenticatedGroupEntryUntilCompletion(
-                    {
-                        type: AppInboxType.GROUP_CREATE,
-                        topicId: AppInboxType.GROUP_CREATE,
-                        resourceId: `seed-group-${groupIndex}`,
-                        contextId: toStateWriteBenchmarkGroupContextId(scope, groupId),
-                        senderId: ownerId,
-                        data: {
-                            scope,
-                            request: {
-                                groupId,
-                                displayName: `State Write Benchmark Group ${groupIndex}`,
-                                kind: 'room',
-                                joinMode: 'open',
-                                maxMembers: CLIENT_COUNT + 1,
-                                maxSessionsPerMember: 4,
-                                metadata: { benchmark: true },
-                                createdByPrincipalId: ownerId,
-                                actorPrincipalId: ownerId,
-                                actorSessionId: authority.sessionId,
-                                requestId: `seed-group-${groupIndex}`
-                            }
-                        }
-                    },
-                    authority
-                ));
-        }
+        async (groupIndex) => await seedBenchmarkGroup({ runtime, scope, authSessionRepository }, groupIndex)
     );
 
     await mapWithConcurrency(
         Array.from({ length: workload.clients }, (_, clientIndex) => clientIndex),
         STATE_WRITE_REQUIRED_CONCURRENCY,
-        async (clientIndex) => {
-            const principalId = `client-${clientIndex}`;
-            const authority = createBenchmarkAuthSession(
-                scope,
-                principalId,
-                `client-session-${clientIndex}`
-            );
-            await authSessionRepository.putSession(authority);
-            const contextId = toAuthenticatedClientMutationContextId({
-                scope,
-                principalId,
-                callerClientId: authority.clientId,
-                callerSessionId: authority.sessionId
-            });
-            await runAppInboxMutation(runtime, () =>
-                runtime.client.processAuthenticatedEntryUntilCompletion(
-                    {
-                        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                        resourceId: `seed-principal-${clientIndex}`,
-                        contextId,
-                        senderId: principalId,
-                        data: {
-                            scope,
-                            principalId,
-                            request: {
-                                username: principalId,
-                                displayName: `Seed Client ${clientIndex}`,
-                                status: 'active',
-                                actorPrincipalId: principalId,
-                                requestId: `seed-principal-${clientIndex}`
-                            }
-                        }
-                    },
-                    authority
-                ));
-            await runAppInboxMutation(runtime, () =>
-                runtime.client.processAuthenticatedEntryUntilCompletion(
-                    {
-                        type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                        resourceId: `seed-instance-${clientIndex}`,
-                        contextId,
-                        senderId: principalId,
-                        data: {
-                            scope,
-                            principalId,
-                            clientInstanceId: `instance-${clientIndex}`,
-                            request: {
-                                status: 'active',
-                                platform: 'web',
-                                appVersion: 'seed',
-                                actorPrincipalId: principalId,
-                                requestId: `seed-instance-${clientIndex}`
-                            }
-                        }
-                    },
-                    authority
-                ));
-        }
+        async (clientIndex) => await seedBenchmarkClient({ runtime, scope, authSessionRepository }, clientIndex)
     );
 }
 
-function createCommands(workload: (typeof WORKLOADS)[number]): MutationCommand[] {
+interface BenchmarkSeedContext {
+    readonly runtime: StateWriteServiceRuntime;
+    readonly scope: StateScope;
+    readonly authSessionRepository: AuthSessionRepository;
+}
+
+async function seedBenchmarkGroup(context: BenchmarkSeedContext, groupIndex: number): Promise<void> {
+    const { runtime, scope, authSessionRepository } = context;
+    const ownerId = `owner-${groupIndex}`;
+    const authority = createBenchmarkAuthSession(
+        scope,
+        ownerId,
+        `owner-session-${groupIndex}`
+    );
+    await authSessionRepository.putSession(authority);
+    const groupId = `group-${groupIndex}`;
+    await runAppInboxMutation(
+        runtime,
+        runtime.group.processAuthenticatedGroupEntryUntilCompletion(
+            {
+                type: AppInboxType.GROUP_CREATE,
+                topicId: AppInboxType.GROUP_CREATE,
+                resourceId: `seed-group-${groupIndex}`,
+                contextId: toStateWriteBenchmarkGroupContextId(scope, groupId),
+                senderId: ownerId,
+                data: {
+                    scope,
+                    request: {
+                        groupId,
+                        displayName: `State Write Benchmark Group ${groupIndex}`,
+                        kind: 'room',
+                        joinMode: 'open',
+                        maxMembers: CLIENT_COUNT + 1,
+                        maxSessionsPerMember: 4,
+                        metadata: { benchmark: true },
+                        createdByPrincipalId: ownerId,
+                        actorPrincipalId: ownerId,
+                        actorSessionId: authority.sessionId,
+                        requestId: `seed-group-${groupIndex}`
+                    }
+                }
+            },
+            authority
+        )
+    );
+}
+
+async function seedBenchmarkClient(context: BenchmarkSeedContext, clientIndex: number): Promise<void> {
+    const { runtime, scope, authSessionRepository } = context;
+    const principalId = `client-${clientIndex}`;
+    const authority = createBenchmarkAuthSession(
+        scope,
+        principalId,
+        `client-session-${clientIndex}`
+    );
+    await authSessionRepository.putSession(authority);
+    const contextId = toAuthenticatedClientMutationContextId({
+        scope,
+        principalId,
+        callerClientId: authority.clientId,
+        callerSessionId: authority.sessionId
+    });
+    await seedClientPrincipal({ runtime, scope, authority, principalId, clientIndex, contextId });
+    await seedClientInstance({ runtime, scope, authority, principalId, clientIndex, contextId });
+}
+
+interface BenchmarkSeedClient {
+    readonly runtime: StateWriteServiceRuntime;
+    readonly scope: StateScope;
+    readonly authority: IssuedAuthSession;
+    readonly principalId: string;
+    readonly clientIndex: number;
+    readonly contextId: string;
+}
+
+async function seedClientPrincipal(input: BenchmarkSeedClient): Promise<void> {
+    const { runtime, scope, authority, principalId, clientIndex, contextId } = input;
+    await runAppInboxMutation(
+        runtime,
+        runtime.client.processAuthenticatedEntryUntilCompletion(
+            {
+                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                resourceId: `seed-principal-${clientIndex}`,
+                contextId,
+                senderId: principalId,
+                data: {
+                    scope,
+                    principalId,
+                    request: {
+                        username: principalId,
+                        displayName: `Seed Client ${clientIndex}`,
+                        status: 'active',
+                        actorPrincipalId: principalId,
+                        requestId: `seed-principal-${clientIndex}`
+                    }
+                }
+            },
+            authority
+        )
+    );
+}
+
+async function seedClientInstance(input: BenchmarkSeedClient): Promise<void> {
+    const { runtime, scope, authority, principalId, clientIndex, contextId } = input;
+    await runAppInboxMutation(
+        runtime,
+        runtime.client.processAuthenticatedEntryUntilCompletion(
+            {
+                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                resourceId: `seed-instance-${clientIndex}`,
+                contextId,
+                senderId: principalId,
+                data: {
+                    scope,
+                    principalId,
+                    clientInstanceId: `instance-${clientIndex}`,
+                    request: {
+                        status: 'active',
+                        platform: 'web',
+                        appVersion: 'seed',
+                        actorPrincipalId: principalId,
+                        requestId: `seed-instance-${clientIndex}`
+                    }
+                }
+            },
+            authority
+        )
+    );
+}
+
+function createCommands(
+    workload: (typeof WORKLOADS)[number]
+): MutationCommand[] {
     return MUTATION_MIX.flatMap((kind) =>
         Array.from({ length: workload.clients }, (_, clientIndex) => ({
             kind,
@@ -951,11 +1249,14 @@ function createCommands(workload: (typeof WORKLOADS)[number]): MutationCommand[]
     );
 }
 
-function commandIdentifier(scope: StateScope, command: MutationCommand): string {
+function commandIdentifier(
+    scope: StateScope,
+    command: MutationCommand
+): string {
     return `${scope.applicationId}:${command.kind}:${command.clientIndex}`;
 }
 
-export function selectServiceStack(commandIndex: number, stackCount: number): number {
+function selectServiceStack(commandIndex: number, stackCount: number): number {
     if (!Number.isInteger(commandIndex) || commandIndex < 0) {
         throw new Error('commandIndex must be a non-negative integer');
     }
@@ -969,12 +1270,9 @@ function deriveCorrectness(
     commands: readonly StateWriteBenchmarkCommand[],
     durable: StateWriteDurableEvidence
 ): CorrectnessMetrics {
-    const requiredOutboxIntentCount = sum(
-        commands.map((command) =>
-            command.status === 'accepted'
-                ? PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length
-                : 0
-        )
+    const requiredOutboxIntentCount = requiredStateWriteOutboxCount(
+        commands,
+        durable.receipts
     );
     const effectfulCommandCount = commands.filter(
         (command) =>
@@ -994,69 +1292,51 @@ function deriveCorrectness(
     };
 }
 
-function countAtomicCompletionFailures(
-    commands: readonly StateWriteBenchmarkCommand[],
-    durable: Pick<StateWriteDurableEvidence, 'appInbox' | 'receipts' | 'resourceOutbox'>
-): number {
-    return commands
-        .filter((command) => command.status === 'accepted')
-        .filter((command) => {
-            const expectedOperations = command.kind === 'profile-instance' ? ['instance', 'profile'] : ['command'];
-            const completed = durable.appInbox
-                .filter(
-                    (entry) =>
-                        entry.commandId === command.commandId &&
-                        entry.status === 'COMPLETED' &&
-                        entry.resultStatus === 'COMPLETED'
-                )
-                .map((entry) => entry.operationId)
-                .toSorted();
-            const receipt = durable.receipts.find((entry) => entry.commandId === command.commandId);
-            const expectedEffects = [
-                ...PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind]
-            ].toSorted();
-            const actualEffects = durable.resourceOutbox
-                .filter((entry) => entry.commandId === command.commandId)
-                .map((entry) => entry.effectKind)
-                .toSorted();
-            return (
-                JSON.stringify(completed) !== JSON.stringify(expectedOperations) ||
-                !receipt ||
-                JSON.stringify(actualEffects) !== JSON.stringify(expectedEffects)
-            );
-        }).length;
-}
-
 function summarizeSamples(samples: readonly RunSample[]): WorkloadSummary {
     const latencySamples = samples.flatMap((sample) => sample.latencySamplesMs);
     const accepted = sum(samples.map((sample) => sample.outcomes.accepted));
     const attempts = sum(samples.map((sample) => sample.outcomes.attempts));
     return {
         latencyMs: summarizeLatency(latencySamples),
-        throughputPerSecond: accepted / (sum(samples.map((sample) => sample.durationMs)) / 1_000),
+        throughputPerSecond: accepted /
+            (sum(samples.map((sample) => sample.durationMs)) / 1_000),
         outcomes: {
             accepted,
             conflicted: sum(samples.map((sample) => sample.outcomes.conflicted)),
-            transientRetries: sum(samples.map((sample) => sample.outcomes.transientRetries)),
+            transientRetries: sum(
+                samples.map((sample) => sample.outcomes.transientRetries)
+            ),
             exhausted: sum(samples.map((sample) => sample.outcomes.exhausted)),
             attempts,
-            attemptsPerAcceptedMutation: accepted === 0 ? attempts : attempts / accepted
+            attemptsPerAcceptedMutation: accepted === 0
+                ? attempts
+                : attempts / accepted
         },
         sql: medianSqlMetrics(samples),
         postgres: medianPostgresMetrics(samples),
         timingsMs: medianTimingMetrics(samples),
         correctness: {
-            acceptedCommandCount: sum(samples.map((sample) => sample.correctness.acceptedCommandCount)),
-            receiptCount: sum(samples.map((sample) => sample.correctness.receiptCount)),
-            effectfulCommandCount: sum(samples.map((sample) => sample.correctness.effectfulCommandCount)),
+            acceptedCommandCount: sum(
+                samples.map((sample) => sample.correctness.acceptedCommandCount)
+            ),
+            receiptCount: sum(
+                samples.map((sample) => sample.correctness.receiptCount)
+            ),
+            effectfulCommandCount: sum(
+                samples.map((sample) => sample.correctness.effectfulCommandCount)
+            ),
             requiredOutboxIntentCount: sum(
                 samples.map((sample) => sample.correctness.requiredOutboxIntentCount)
             ),
-            outboxIntentCount: sum(samples.map((sample) => sample.correctness.outboxIntentCount)),
+            outboxIntentCount: sum(
+                samples.map((sample) => sample.correctness.outboxIntentCount)
+            ),
             atomicCompletionFailures: sum(
                 samples.map((sample) => sample.correctness.atomicCompletionFailures)
             ),
-            dbwFindings: [...new Set(samples.flatMap((sample) => sample.correctness.dbwFindings))]
+            dbwFindings: [
+                ...new Set(samples.flatMap((sample) => sample.correctness.dbwFindings))
+            ]
         }
     };
 }
@@ -1069,7 +1349,10 @@ function summarizeLatency(samples: readonly number[]): LatencySummary {
     };
 }
 
-function percentile(samples: readonly number[], percentileValue: number): number {
+function percentile(
+    samples: readonly number[],
+    percentileValue: number
+): number {
     if (samples.length === 0) {
         return 0;
     }
@@ -1085,22 +1368,34 @@ function medianSqlMetrics(samples: readonly RunSample[]): SqlArtifactMetrics {
     return {
         statements: median(samples.map((sample) => sample.sql.statements)),
         rowsRead: median(samples.map((sample) => sample.sql.rowsRead)),
-        serializedResultBytes: median(samples.map((sample) => sample.sql.serializedResultBytes))
+        serializedResultBytes: median(
+            samples.map((sample) => sample.sql.serializedResultBytes)
+        )
     };
 }
 
-function medianPostgresMetrics(samples: readonly RunSample[]): PostgresArtifactMetrics {
+function medianPostgresMetrics(
+    samples: readonly RunSample[]
+): PostgresArtifactMetrics {
     return {
-        transactionDurationMs: median(samples.map((sample) => sample.postgres.transactionDurationMs)),
+        transactionDurationMs: median(
+            samples.map((sample) => sample.postgres.transactionDurationMs)
+        ),
         lockWaitMs: median(samples.map((sample) => sample.postgres.lockWaitMs)),
         cpuTimeMs: median(samples.map((sample) => sample.postgres.cpuTimeMs)),
-        sharedBufferHits: median(samples.map((sample) => sample.postgres.sharedBufferHits)),
-        sharedBufferReads: median(samples.map((sample) => sample.postgres.sharedBufferReads)),
+        sharedBufferHits: median(
+            samples.map((sample) => sample.postgres.sharedBufferHits)
+        ),
+        sharedBufferReads: median(
+            samples.map((sample) => sample.postgres.sharedBufferReads)
+        ),
         walBytes: median(samples.map((sample) => sample.postgres.walBytes))
     };
 }
 
-function medianTimingMetrics(samples: readonly RunSample[]): TimingArtifactMetrics {
+function medianTimingMetrics(
+    samples: readonly RunSample[]
+): TimingArtifactMetrics {
     return {
         read: median(samples.map((sample) => sample.timingsMs.read)),
         compute: median(samples.map((sample) => sample.timingsMs.compute)),

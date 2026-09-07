@@ -1,3 +1,10 @@
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     ConnectionContext,
@@ -6,19 +13,14 @@ import {
     newALRoute,
     newALUntargetedMessage
 } from '@shared/mod.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
 describe('WS server inbound identity', () => {
     it('rejects a forged sender and preserves an exact matching non-CRDT message', async () => {
         const server = new JsonWebSocketServer();
         const socket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-attacker', socket));
+        server.addConnection(new ConnectionContext({ id: 'session-attacker', socket }));
         const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
@@ -51,16 +53,16 @@ describe('WS server inbound identity', () => {
     it('rejects malformed current envelopes before admission policy runs', async () => {
         const server = new JsonWebSocketServer();
         const socket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-1', socket));
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
         createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: server,
             name: 'server-1',
-            admitInboundMessage: (message) => {
+            validateInboundMessage: (message) => {
                 admittedMessages.push(message);
-                return true;
+                return Either.ofRight(message);
             }
         });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);

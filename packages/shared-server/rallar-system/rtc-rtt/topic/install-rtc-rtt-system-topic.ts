@@ -2,18 +2,19 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { validateRtcRttMeasurement } from '../persistence/rtc-rtt-persistence-validation.ts';
 
+export interface RtcRttTopicMutationInput {
+    readonly rtt: RttMeasurementInfo;
+    readonly alSenderId: string;
+    readonly capturedAtEpochMs: number;
+}
+
 export interface InstallRtcRttSystemTopicOptions {
     enqueueMutation(
-        input: Readonly<{
-            rtt: RttMeasurementInfo;
-            alSenderId: string;
-            capturedAtEpochMs: number;
-        }>
+        input: RtcRttTopicMutationInput
     ): Promise<ResourceEntry>;
 }
 
@@ -23,9 +24,7 @@ export function installRtcRttSystemTopic(
 ): void {
     wsService.onInboxMessageDo(AppTopics.rtt, {
         onMessage: async (
-            message: ALMessage,
-            _entry: ResourceEntry,
-            _server: JsonWebSocketServer
+            message: ALMessage
         ) => {
             if (message.route.topicId !== AppTopics.rtt) {
                 return;

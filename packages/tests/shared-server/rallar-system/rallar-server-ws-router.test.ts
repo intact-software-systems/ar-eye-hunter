@@ -1,11 +1,20 @@
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type {
     AuditStamp,
     GroupMember,
     GroupPresenceSession,
+    GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import {
@@ -20,15 +29,9 @@ import {
     newALRoute,
     parseALControlMessage,
     type ALInboundRuntimeStores,
-    type ALNackPayload,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
@@ -196,6 +199,49 @@ describe('RallarServerWsRouter', () => {
         expect(outboxWakeRequested).toBe(true);
     });
 
+    it('publishes a proxy room message with its full scoped identity', async () => {
+        const { router, outbox } = createRouter();
+        const roomRef: GroupRef = {
+            applicationId: 'proxy-application',
+            workspaceId: 'proxy-workspace',
+            groupId: 'proxy-room'
+        };
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute('app.proxy', 'original-context', 'proxy-message'),
+            'all',
+            'proxy.message.v1',
+            { text: 'scoped delivery' },
+            { reliability: 'at-least-once', ack: 'receiver' }
+        );
+        router.defineTopic({ topicId: 'app.proxy', fanout: 'none' });
+        router.on({ topicId: 'app.proxy' }, async (_message, context) => {
+            await context.proxy.toRoom(roomRef, message, {
+                fanout: 'outbox',
+                exceptPeerIds: ['peer-2']
+            });
+        });
+
+        await router.route(message);
+
+        const keys = await outbox.getAllKeys();
+        expect(keys).toHaveLength(1);
+        const entry = await outbox.getItem({ ...message.route, contextId: roomRef.groupId });
+        if (!entry) {
+            throw new Error('Expected a persisted scoped proxy message');
+        }
+        const published = decodePersistedALMessage(entry.resource);
+        expect(published.targets).toEqual({
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: roomRef,
+            exceptPeerIds: ['peer-2']
+        });
+        expect(published.route).toEqual({ ...message.route, contextId: roomRef.groupId });
+        expect(published.id).toEqual(message.id);
+        expect(message.targets).toEqual({ mode: 'broadcast', scope: 'all' });
+    });
+
     it('can require explicit topic definitions while still rejecting custom prefixes', async () => {
         const { router } = createRouter({ allowImplicitUserTopics: false });
 
@@ -273,9 +319,11 @@ describe('RallarServerWsRouter', () => {
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
             expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
-            const nack = JSON.parse(
-                socket.sent[0].data.payload.resource
-            ) as ALNackPayload;
+            const control = parseALControlMessage(socket.sent[0].data);
+            if (control?.type !== 'nack') {
+                throw new Error('Expected a decoded NACK control');
+            }
+            const nack = control.payload;
             expect(nack).toMatchObject({
                 msgId: message.id.msgId,
                 reason: 'not-yet-in-sync',
@@ -360,17 +408,13 @@ describe('RallarServerWsRouter', () => {
         const allAuthorizationsCompleted = Promise.withResolvers<void>();
         const readIncomingMessage = stores.admissionStore.readIncomingMessage.bind(stores.admissionStore);
         let firstAdmissionBlocked = false;
-        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockImplementation(async (
-            message,
-            fromPeerId,
-            planIncomingMessage
-        ) => {
+        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockImplementation(async (input) => {
             if (!firstAdmissionBlocked) {
                 firstAdmissionBlocked = true;
                 firstAdmissionRead.resolve();
                 await releaseFirstAdmission.promise;
             }
-            return await readIncomingMessage(message, fromPeerId, planIncomingMessage);
+            return await readIncomingMessage(input);
         });
         const publishedSessionIds: string[][] = [];
         let authorizationCount = 0;
@@ -389,13 +433,7 @@ describe('RallarServerWsRouter', () => {
                     authorized: true,
                     audience: {
                         targets: message.targets,
-                        sessions: [
-                            createGroupPresenceRecord(
-                                'room-1',
-                                `session-${authorizationCount}`,
-                                1
-                            )
-                        ]
+                        sessions: Array.from({ length: authorizationCount }, (_, index) => createGroupPresenceRecord('room-1', `session-${index + 1}`, 1))
                     }
                 };
             }
@@ -441,6 +479,22 @@ describe('RallarServerWsRouter', () => {
         finally {
             warn.mockRestore();
         }
+    });
+
+    it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {
+        const { router, socket } = createRouter({ authorizeRoomMessage: () => true });
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute('room.chat', 'room-1', 'retained-audience'),
+            'room',
+            'chat.message.v1',
+            { text: 'original audience only' },
+            { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
+        );
+
+        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', roomRecipientPeerIds: ['peer-2', 'departed-peer'] });
+
+        expect(socket.sent.map((entry) => entry.connectionId)).toEqual(['conn-2']);
     });
 });
 
@@ -631,14 +685,12 @@ describe('RallarServer.ws.publish current behavior', () => {
 
     it('reports minimal server websocket status from current connections', () => {
         const { server, socket } = createPublicRouterFixture();
-        socket.connections.set('conn-1', {
-            id: 'conn-1',
-            isOpen: true
-        });
-        socket.connections.set('conn-2', {
-            id: 'conn-2',
-            isOpen: false
-        });
+        socket.connections.delete('conn-3');
+        const closed = socket.connections.get('conn-2');
+        if (!closed || !(closed.socket instanceof RouterIngressWebSocket)) {
+            throw new Error('Expected the fixture native WebSocket');
+        }
+        closed.socket.readyState = WebSocket.CLOSED;
 
         expect(server.ws.status()).toEqual({
             transport: 'ws-server',
@@ -663,13 +715,13 @@ describe('RallarServer.ws.publish current behavior', () => {
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ) {
-    const socket = createFakeWsServer();
+    const socket = createRecordingWsServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
-        socket: socket as never,
+        socket,
         name: 'server-1',
         targetResolver: createTargetResolver()
     });
@@ -690,7 +742,7 @@ function createIngressRouter(
 ) {
     const server = new JsonWebSocketServer();
     const socket = new RouterIngressWebSocket();
-    server.addConnection(new ConnectionContext('conn-1', socket));
+    server.addConnection(new ConnectionContext({ id: 'conn-1', socket }));
     const service = createDefaultWsQueueBoxServerService({
         inbox: new InMemoryQueueBox(new Map()),
         outbox: new InMemoryQueueBox(new Map()),
@@ -718,7 +770,7 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
     readonly bufferedAmount = 0;
     readonly extensions = '';
     readonly protocol = '';
-    readonly readyState = WebSocket.OPEN;
+    readyState: WebSocket['readyState'] = WebSocket.OPEN;
     readonly url = 'ws://router-ingress-test';
     onclose = null;
     onerror = null;
@@ -744,7 +796,7 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
         if (typeof data !== 'string') {
             throw new TypeError('Router ingress test expects JSON text');
         }
-        this.sent.push(JSON.parse(data) as ALMessage);
+        this.sent.push(decodePersistedALMessage(data));
     }
 
     async receive(message: ALMessage): Promise<void> {
@@ -760,13 +812,13 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
     }
 }
 
-function createPublicRouterFixture(
-    options: Readonly<{
-        targetResolver?: WsServerTargetResolver;
-        failingConnectionIds?: readonly string[];
-    }> = {}
-) {
-    const socket = createFakeWsServer({
+interface PublicRouterFixtureInput {
+    readonly targetResolver?: WsServerTargetResolver;
+    readonly failingConnectionIds?: readonly string[];
+}
+
+function createPublicRouterFixture(options: PublicRouterFixtureInput = {}) {
+    const socket = createRecordingWsServer({
         failingConnectionIds: options.failingConnectionIds
     });
     const inbox = new InMemoryQueueBox(new Map());
@@ -774,7 +826,7 @@ function createPublicRouterFixture(
     const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
-        socket: socket as never,
+        socket,
         name: 'server-1',
         targetResolver: options.targetResolver ?? createTargetResolver()
     });
@@ -801,43 +853,33 @@ function createPublicRouterFixture(
     };
 }
 
-function createFakeWsServer(
-    options: Readonly<{
-        failingConnectionIds?: readonly string[];
-    }> = {}
-) {
-    const sent: Array<{ connectionId: string; data: ALMessage; }> = [];
-    const connections = new Map<string, { id: string; isOpen: boolean; }>();
-    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
+interface RecordingWsServerInput {
+    readonly failingConnectionIds?: readonly string[];
+}
 
-    return {
-        sent,
-        connections,
-        onMessageDo() {
-            return this;
-        },
-        send(connectionId: string, data: ALMessage) {
-            this.sendEncoded(connectionId, this.encode(data));
-        },
-        encode(data: ALMessage) {
-            return {
-                text: JSON.stringify(data),
-                data
-            };
-        },
-        sendEncoded(
-            connectionId: string,
-            encoded: Readonly<{ text: string; data?: ALMessage; }>
-        ) {
+interface RecordedWsSend {
+    readonly connectionId: string;
+    readonly data: ALMessage;
+}
+
+function createRecordingWsServer(options: RecordingWsServerInput = {}) {
+    const sent: RecordedWsSend[] = [];
+    const server = new JsonWebSocketServer();
+    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
+    for (const connectionId of ['conn-1', 'conn-2', 'conn-3']) {
+        const socket = new RouterIngressWebSocket();
+        socket.send = (data) => {
             if (failingConnectionIds.has(connectionId)) {
                 throw new Error('send failed');
             }
-            sent.push({
-                connectionId,
-                data: encoded.data ?? JSON.parse(encoded.text) as ALMessage
-            });
-        }
-    };
+            if (typeof data !== 'string') {
+                throw new TypeError('Router fixture expects a serialized AL frame');
+            }
+            sent.push({ connectionId, data: decodePersistedALMessage(data) });
+        };
+        server.addConnection(new ConnectionContext({ id: connectionId, socket }));
+    }
+    return Object.assign(server, { sent });
 }
 
 function createTargetResolver(): WsServerTargetResolver {

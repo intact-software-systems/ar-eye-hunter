@@ -6,13 +6,11 @@ import {
     createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
-    newALBroadcastMessage,
     newALEventRoute,
+    newALUntargetedMessage,
     type ALMessage
 } from '@shared/mod.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { createDeterministicRtcTopologyGroupSnapshot } from '../workloads/topology/create-deterministic-rtc-topology-group-snapshot.ts';
 
 interface RtcRttTrafficArgs {
     readonly sessions: number;
@@ -21,14 +19,18 @@ interface RtcRttTrafficArgs {
 
 interface RtcRttTrafficMetricsArtifact {
     readonly createdAt: string;
-    readonly input: {
-        readonly sessionCount: number;
-        readonly submittedRttCount: number;
-    };
-    readonly measurements: {
-        readonly durableEnqueueCount: number;
-        readonly enqueuedVersions: readonly number[];
-    };
+    readonly input: RtcRttTrafficInput;
+    readonly measurements: RtcRttTrafficMeasurements;
+}
+
+interface RtcRttTrafficInput {
+    readonly sessionCount: number;
+    readonly submittedRttCount: number;
+}
+
+interface RtcRttTrafficMeasurements {
+    readonly durableEnqueueCount: number;
+    readonly enqueuedVersions: readonly number[];
 }
 
 class RtcRttTrafficWebSocket extends EventTarget implements WebSocket {
@@ -143,9 +145,12 @@ const sessionIds = Array.from(
     (_, index) => `session-${String(index + 1).padStart(3, '0')}`
 );
 const senderSessionId = sessionIds[0];
-const senderSocket = new RtcRttTrafficWebSocket();
 const server = new JsonWebSocketServer();
-server.addConnection(new ConnectionContext(senderSessionId, senderSocket));
+const sockets = new Map(sessionIds.map((id) => {
+    const socket = new RtcRttTrafficWebSocket();
+    server.addConnection(new ConnectionContext({ id, socket }));
+    return [id, socket] as const;
+}));
 
 const service = createDefaultWsQueueBoxServerService({
     inbox: new InMemoryQueueBox(new Map()),
@@ -153,7 +158,6 @@ const service = createDefaultWsQueueBoxServerService({
     socket: server,
     name: 'rtc-rtt-traffic-diagnostic'
 });
-const group = createDeterministicRtcTopologyGroupSnapshot('room-1', sessionIds, Date.now());
 const enqueuedMeasurements: RttMeasurementInfo[] = [];
 installRtcRttSystemTopic(service, {
     enqueueMutation: (input) => {
@@ -164,14 +168,12 @@ installRtcRttSystemTopic(service, {
 
 const measurements = createCentralRttMeasurements(sessionIds, senderSessionId);
 for (const measurement of measurements) {
-    await senderSocket.receive(
-        newALBroadcastMessage(
-            senderSessionId,
-            newALEventRoute(AppTopics.rtt, group.group.groupId, `rtt-${measurement.version}`),
-            'room',
+    await sockets.get(measurement.sessionIdFrom)!.receive(
+        newALUntargetedMessage(
+            measurement.sessionIdFrom,
+            newALEventRoute(AppTopics.rtt, measurement.sessionIdFrom, `rtt-${measurement.version}`),
             AppTopics.rtt,
-            measurement,
-            { groupRef: group.group }
+            measurement
         )
     );
 }
@@ -187,3 +189,5 @@ await Deno.writeTextFile(
     }\n`
 );
 console.log(`Wrote ${args.out}`);
+
+service.dispose();

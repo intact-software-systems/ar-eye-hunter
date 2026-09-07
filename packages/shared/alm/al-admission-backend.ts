@@ -1,8 +1,12 @@
-import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
+import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
+import { toResourceEntrySnapshot } from '../queuebox/resource-entry-observations.ts';
+import { toKeyAsString, toResourceEntryKey, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber, decodeALAdmissionRecord } from './al-admission-value-validation.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from './al-admission-work-backend.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 
 export interface ALAdmissionStoredValue {
     readonly key: string;
@@ -12,6 +16,7 @@ export interface ALAdmissionStoredValue {
 
 export interface ALAdmissionMemoryState {
     readonly data: Map<string, ALAdmissionStoredValue>;
+    readonly workQueue: InMemoryQueueBox;
     writeTail: Promise<void>;
 }
 
@@ -34,16 +39,16 @@ export interface ALAdmissionWriteContext {
     remove(key: string): Promise<void>;
 }
 
-const providerWriteTailByCoordinationKey = new Map<string, Promise<void>>();
-
 export function createInMemoryALAdmissionState(): ALAdmissionMemoryState {
     return {
         data: new Map<string, ALAdmissionStoredValue>(),
+        workQueue: new InMemoryQueueBox(),
         writeTail: Promise.resolve()
     };
 }
 
-export class InMemoryAdmissionBackend implements ALAdmissionBackend {
+export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
+    readonly workQueue: InMemoryQueueBox;
     private readonly state: ALAdmissionMemoryState;
     private readonly nowMs: () => number;
 
@@ -52,6 +57,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionBackend {
         nowMs: () => number
     ) {
         this.state = state;
+        this.workQueue = state.workQueue;
         this.nowMs = nowMs;
     }
 
@@ -98,7 +104,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionBackend {
         return entries;
     }
 
-    async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
+    async write<T>(fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>): Promise<T> {
         const previous = this.state.writeTail;
         let release: (() => void) | undefined;
         this.state.writeTail = new Promise<void>((resolve) => {
@@ -108,125 +114,30 @@ export class InMemoryAdmissionBackend implements ALAdmissionBackend {
         await previous;
 
         try {
-            const pending = new ALAdmissionWriteBuffer({
-                read: async (key, decode) => await this.read(key, decode),
-                list: async (prefix, decode) => await this.list(prefix, decode),
-                set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
-                    this.state.data.set(
-                        key,
-                        {
-                            key,
-                            value,
-                            expireAtTimestamp
-                        }
-                    );
-                },
-                remove: async (key) => {
-                    this.state.data.delete(key);
-                }
-            }, this.nowMs);
+            const pending = new InMemoryAdmissionWorkWriteBuffer(this, this.nowMs, this.workQueue);
             const result = await fn(pending);
-            await pending.flush();
+            const mutations = pending.mutations();
+            const queueWrites = pending.queueWrites();
+            if (!this.workQueue.writeIfAllObserved(queueWrites)) {
+                throw new ALAdmissionBackendConflictError('In-memory AL admission work write conflicted');
+            }
+            for (const [key, stored] of mutations) {
+                stored === undefined ? this.state.data.delete(key) : this.state.data.set(key, stored);
+            }
             return result;
         }
         finally {
             release?.();
-        }
-    }
-}
-
-export class PersistenceProviderAdmissionBackend implements ALAdmissionBackend {
-    private readonly provider: PersistenceProvider<string, unknown>;
-    private readonly coordinationKey: string;
-    private readonly nowMs: () => number;
-
-    constructor(
-        provider: PersistenceProvider<string, unknown>,
-        coordinationKey: string,
-        nowMs: () => number
-    ) {
-        this.provider = provider;
-        this.coordinationKey = coordinationKey;
-        this.nowMs = nowMs;
-    }
-
-    async ready(): Promise<void> {
-    }
-
-    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        const value = await this.provider.getItem(key);
-        return value === undefined ? undefined : decodeALAdmissionValue(value, key, decode);
-    }
-
-    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        const entries: ALAdmissionBackendEntry<V>[] = [];
-
-        for (const key of await this.provider.getAllKeys()) {
-            if (!key.startsWith(prefix)) {
-                continue;
-            }
-
-            const value = await this.provider.getItem(key);
-            if (value === undefined) {
-                continue;
-            }
-
-            entries.push({
-                key,
-                value: decodeALAdmissionValue(value, key, decode)
-            });
-        }
-
-        return entries;
-    }
-
-    async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
-        const previous = providerWriteTailByCoordinationKey.get(this.coordinationKey) ?? Promise.resolve();
-        let release: (() => void) | undefined;
-        const gate = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        const tail = previous.then(() => gate);
-        providerWriteTailByCoordinationKey.set(this.coordinationKey, tail);
-
-        await previous;
-
-        try {
-            const pending = new ALAdmissionWriteBuffer({
-                read: async (key, decode) => await this.read(key, decode),
-                list: async (prefix, decode) => await this.list(prefix, decode),
-                set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
-                    await this.provider.setItem(
-                        key,
-                        value,
-                        {
-                            expireAtTimestamp
-                        }
-                    );
-                },
-                remove: async (key) => {
-                    await this.provider.removeItem(key);
-                }
-            }, this.nowMs);
-            const result = await fn(pending);
-            await pending.flush();
-            return result;
-        }
-        finally {
-            release?.();
-            if (providerWriteTailByCoordinationKey.get(this.coordinationKey) === tail) {
-                providerWriteTailByCoordinationKey.delete(this.coordinationKey);
-            }
         }
     }
 }
 
 class ALAdmissionWriteBuffer implements ALAdmissionWriteContext {
     private readonly pending = new Map<string, ALAdmissionStoredValue | undefined>();
-    private readonly storage: ALAdmissionWriteContext;
+    private readonly storage: Pick<ALAdmissionBackend, 'read' | 'list'>;
     private readonly nowMs: () => number;
 
-    constructor(storage: ALAdmissionWriteContext, nowMs: () => number) {
+    constructor(storage: Pick<ALAdmissionBackend, 'read' | 'list'>, nowMs: () => number) {
         this.storage = storage;
         this.nowMs = nowMs;
     }
@@ -280,15 +191,47 @@ class ALAdmissionWriteBuffer implements ALAdmissionWriteContext {
         this.pending.set(key, undefined);
     }
 
-    async flush(): Promise<void> {
-        for (const [key, stored] of this.pending) {
-            if (stored) {
-                await this.storage.set(key, stored.value, stored.expireAtTimestamp);
-            }
-            else {
-                await this.storage.remove(key);
-            }
+    mutations(): readonly (readonly [key: string, stored: ALAdmissionStoredValue | undefined])[] {
+        return [...this.pending];
+    }
+}
+
+class InMemoryAdmissionWorkWriteBuffer extends ALAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
+    private readonly workQueue: InMemoryQueueBox;
+    private readonly observations = new Map<string, ResourceEntry | undefined>();
+    private readonly pendingWork = new Map<string, ResourceEntry>();
+
+    constructor(storage: ALAdmissionBackend, nowMs: () => number, workQueue: InMemoryQueueBox) {
+        super(storage, nowMs);
+        this.workQueue = workQueue;
+    }
+
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        const keyString = toKeyAsString(key);
+        const pending = this.pendingWork.get(keyString);
+        if (pending !== undefined) {
+            return toResourceEntrySnapshot(pending);
         }
+        if (!this.observations.has(keyString)) {
+            this.observations.set(keyString, await this.workQueue.getItem(key));
+        }
+        const observed = this.observations.get(keyString);
+        return observed === undefined ? undefined : toResourceEntrySnapshot(observed);
+    }
+
+    writeWork(entry: ResourceEntry): void {
+        const key = toKeyAsString(entry.key);
+        if (!this.observations.has(key) || this.pendingWork.has(key)) {
+            throw new TypeError('Admission work requires one write after its slot has been read');
+        }
+        this.pendingWork.set(key, toResourceEntrySnapshot(entry));
+    }
+
+    queueWrites(): readonly InMemoryQueueBox.ComputedOperation[] {
+        return [...this.observations].map(([key, expected]) => {
+            const entry = this.pendingWork.get(key);
+            return entry === undefined ? { key: toResourceEntryKey(key), expected } : { entry, expected };
+        });
     }
 }
 

@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import type { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -177,7 +178,7 @@ describe('PSqlQueueBox', () => {
         const queue = new PSqlQueueBox(repo as never);
 
         const selected = await queue.reserveRetryExhaustionFinalizations(
-            new Set([EnqueuedType.APP_INBOX, EnqueuedType.APP_OUTBOX]),
+            new Set([EnqueuedType.APP_INBOX]),
             {
                 processingAttempts: 20,
                 maxToReserve: 1,
@@ -320,17 +321,9 @@ describe('PSqlQueueBox', () => {
         };
         const persistedEndTs = Temporal.Instant.from('2026-01-01T00:00:00.123Z');
         const persistedNextTs = persistedEndTs.add({ milliseconds: 37 });
-        const releaseReserved = vi.fn(async (
-            _key: Key,
-            options: Readonly<{
-                status: EntityStatus;
-                expectedAttempts: number;
-                releasedAt: Temporal.Instant;
-                delayMs: number | null;
-            }>
-        ) => ({
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (_expected, options) => ({
             ...entry,
-            status: options.status,
+            status: options.disposition.status,
             dequeueAudit: {
                 ...entry.dequeueAudit,
                 endTs: persistedEndTs,
@@ -347,9 +340,8 @@ describe('PSqlQueueBox', () => {
         const [updated] = released.values();
 
         expect(releaseReserved).toHaveBeenCalledWith(
-            entry.key,
+            entry,
             expect.objectContaining({
-                expectedAttempts: 1,
                 disposition: { status: EntityStatus.RETRY, delayMs: 37 }
             })
         );
@@ -514,16 +506,7 @@ function createRepo(overrides: {
         replacement: ResourceEntry
     ) => Promise<ResourceEntry | null>;
     writeIfAbsentOrReplaceExpired?: (entry: ResourceEntry) => Promise<ResourceEntry>;
-    updateResourceEntry?: (key: Key, status: EntityStatus, delayMs: number | null) => Promise<number>;
-    releaseReserved?: (
-        key: Key,
-        options: Readonly<{
-            status: EntityStatus;
-            expectedAttempts: number;
-            releasedAt: Temporal.Instant;
-            delayMs: number | null;
-        }>
-    ) => Promise<ResourceEntry | null>;
+    releaseReserved?: PSqlResourceInboxReservationRepository['releaseReserved'];
     startProcessingEntity?: (entry: ResourceEntry, maxAttempts?: number) => Promise<
         Either<{
             kind: 'expired-or-missing';
@@ -550,7 +533,6 @@ function createRepo(overrides: {
             vi.fn(async () => new Map<Key, ResourceEntry>()),
         findOverdueRetryEntriesSkipLocked: overrides.findOverdueRetryEntriesSkipLocked ??
             vi.fn(async () => new Map<Key, ResourceEntry>()),
-        updateResourceEntry: overrides.updateResourceEntry ?? vi.fn(async () => 1),
         releaseReserved: overrides.releaseReserved ?? vi.fn(async () => null),
         startProcessingEntity: overrides.startProcessingEntity ??
             vi.fn(async (entry: ResourceEntry) =>

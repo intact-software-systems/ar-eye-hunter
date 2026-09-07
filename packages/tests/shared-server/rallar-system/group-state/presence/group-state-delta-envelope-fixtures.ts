@@ -1,7 +1,8 @@
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createOpenTestWebSocket } from '../../websocket/test-support/open-test-websocket.ts';
 
@@ -31,7 +32,7 @@ export function createDeltaEnvelopeFixtureWebSocketServer(
     for (const sessionId of sessionIds) {
         server.connections.set(
             sessionId,
-            new ConnectionContext(sessionId, createOpenTestWebSocket())
+            new ConnectionContext({ id: sessionId, socket: createOpenTestWebSocket() })
         );
     }
     return server;

@@ -1,12 +1,11 @@
+import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
 // deno-lint-ignore-file no-explicit-any
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/types.ts';
-import { executeHttpInteraction } from '../http/execute-http-interaction.ts';
 import { toHttpInteractionStatus, toStatus } from '../http/http-response-expectations.ts';
-import { normalizeBlackBoxResponseHeaders } from '../http/normalize-black-box-response-headers.ts';
 import {
     executeRallarRemoteBrowserCommand,
-    resolveRallarRemoteBrowserConfig,
-    toRallarRemoteBrowserCommandId,
+    readRallarRemoteBrowserConfig,
+    type RallarRemoteBrowserConfig,
     type RallarRemoteBrowserControlResultEnvelope
 } from '../rallar-remote-browser-provider.ts';
 import { toCorrelationReportFields } from './black-box-run-correlation.ts';
@@ -20,6 +19,13 @@ import {
     toRemoteHttpHeaders,
     toRemoteHttpResponseOptions
 } from './remote-browser-execution.ts';
+
+interface RemoteHttpExceptionInput {
+    readonly interaction: any;
+    readonly config: any;
+    readonly remote: RallarRemoteBrowserConfig;
+    readonly error: Error;
+}
 
 const FAILURE = 'FAILURE';
 
@@ -99,45 +105,50 @@ function withRemoteHttpDetails(status: any, details: any): any {
 }
 
 export async function executeRemoteHttpInteraction(interaction: any, config: any, context: any): Promise<any> {
-    const remote = resolveRallarRemoteBrowserConfig(
-        interaction.request,
-        config,
-        context,
-        remoteBrowserOptions(context)
-    );
+    const remote = readRallarRemoteBrowserConfig({
+        request: interaction.request,
+        config: config,
+        context: context,
+        options: remoteBrowserOptions(context)
+    });
     const fetchFn = remoteBrowserFetch(context);
     const commandId = toRallarRemoteBrowserCommandId('http', interaction);
 
     try {
         const command = toRemoteHttpCommand(commandId, interaction, context);
-        const result = await executeRallarRemoteBrowserCommand(remote, fetchFn, context, command);
+        const result = await executeRallarRemoteBrowserCommand({
+            remote: remote,
+            fetchFn: fetchFn,
+            context: context,
+            command: command
+        });
         if (!result.ok) {
-            return toStatus(
+            return toStatus({
                 config,
-                'Remote HTTP request failed',
-                remoteResultValue(result),
-                {
+                result: 'Remote HTTP request failed',
+                actualJson: remoteResultValue(result),
+                response: {
                     status: 0,
                     statusText: 'Remote command failed',
                     blackBoxAttemptNumber: 1,
                     blackBoxMaxAttempts: 1
                 },
                 interaction,
-                {
+                details: {
                     remote,
                     result
                 }
-            );
+            });
         }
 
         const response = toRemoteHttpResponse(result);
         return withRemoteHttpDetails(
-            toHttpInteractionStatus(
+            toHttpInteractionStatus({
                 config,
                 interaction,
                 response,
-                parseRemoteHttpBody(response.body)
-            ),
+                actualJson: parseRemoteHttpBody(response.body)
+            }),
             {
                 remote,
                 commandId,
@@ -147,24 +158,29 @@ export async function executeRemoteHttpInteraction(interaction: any, config: any
     }
     catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
-        return {
-            name: config.interactionName,
-            exception: error.name === 'AbortError'
-                ? 'Remote request timed out after ' + interaction.request.timeoutMs + ' ms'
-                : error.message,
-            status: FAILURE,
-            ...toCorrelationReportFields(interaction),
-            method: interaction.request.method || 'GET',
-            path: interaction.request.path,
-            timeoutMs: interaction.request.timeoutMs,
-            scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-            interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-            repeatIndex: config.interaction.request.repeatIndex,
-            expected: interaction.response,
-            actual: {
-                remote
-            },
-            ...config
-        };
+        return toRemoteHttpException({ interaction, config, remote, error });
     }
+}
+
+function toRemoteHttpException(input: RemoteHttpExceptionInput): any {
+    const { interaction, config, remote, error } = input;
+    return {
+        name: config.interactionName,
+        exception: error.name === 'AbortError'
+            ? 'Remote request timed out after ' + interaction.request.timeoutMs + ' ms'
+            : error.message,
+        status: FAILURE,
+        ...toCorrelationReportFields(interaction),
+        method: interaction.request.method || 'GET',
+        path: interaction.request.path,
+        timeoutMs: interaction.request.timeoutMs,
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            remote
+        },
+        ...config
+    };
 }

@@ -3,6 +3,7 @@ import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/brows
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores, resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
     describe,
@@ -18,8 +19,24 @@ describe('RTC message diagnostic receipts', () => {
         try {
             const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
+            await admitAttemptedMessage(admissionStore, sessionId);
+            const sentBefore = await admissionStore.getAllSentMessages();
             await admissionStore.acceptControlMessage(
-                newALNackControlMessage('receiver', sessionId, 'attempted', 'not-yet-in-sync'),
+                newALNackControlMessage(
+                    {
+                        v: 2,
+                        msgId: `${sessionId}:nack-attempted`,
+                        ts: 1,
+                        senderId: 'receiver'
+                    },
+                    {
+                        msgId: 'attempted',
+                        fromPeerId: 'receiver',
+                        toPeerId: sessionId,
+                        reason: 'not-yet-in-sync',
+                        observedAtEpochMs: 1
+                    }
+                ),
                 decodeALOutboundPreparedMessage
             );
             const receipt = await readBlackBoxRtcMessageNacks(sessionId, 'attempted');
@@ -31,10 +48,44 @@ describe('RTC message diagnostic receipts', () => {
             })]);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'another')).toEqual([]);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual(receipt);
-            expect(await admissionStore.getAllSentMessages()).toEqual([]);
+            expect(await admissionStore.getAllSentMessages()).toEqual(sentBefore);
         }
         finally {
             await deleteBrowserALRuntimeEntriesForSession(sessionId);
         }
     });
 });
+
+async function admitAttemptedMessage(store: ALOutboundAdmissionStore, sessionId: string): Promise<void> {
+    await store.commitBundle({
+        senderId: sessionId,
+        mutations: [
+            { kind: 'set-msg-owner', msgId: 'attempted', senderId: sessionId },
+            {
+                kind: 'set-sent-message',
+                snapshot: {
+                    msgId: 'attempted',
+                    msg: {
+                        id: { v: 2, msgId: 'attempted', senderId: sessionId, ts: Date.now() },
+                        route: { topicId: 'diagnostic-test', resourceId: 'attempted', contextId: 'room' },
+                        targets: { mode: 'unicast', toPeerId: 'receiver' },
+                        payload: { typeId: 'diagnostic-test', resource: '{}' }
+                    }
+                }
+            },
+            {
+                kind: 'set-pending-ack',
+                snapshot: {
+                    msgId: 'attempted',
+                    expectedPeerIds: ['receiver'],
+                    ackedPeerIds: [],
+                    timeoutMs: 2000,
+                    maxAttempts: 3,
+                    attempts: 0,
+                    deadlineAtMs: Date.now() + 2000
+                }
+            }
+        ],
+        durableEffects: []
+    }, decodeALOutboundPreparedMessage);
+}

@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/JsonWebSocketServer.ts';
+import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import type {
     WsServerLiveSendFailure,
     WsServerLiveSendResult,
@@ -42,14 +42,22 @@ export class WsQueueBoxServerLiveDelivery {
         return this.sendToTargetsWithResult(message).sentCount;
     }
 
-    sendToTargetsWithResult(message: ALMessage, recipientSessionIds?: readonly string[]): WsServerLiveSendResult {
+    sendToTargetsWithResult(
+        message: ALMessage,
+        recipientSessionIds?: readonly string[],
+        admittedPeerIds?: readonly string[]
+    ): WsServerLiveSendResult {
         // Explicit authority, including an empty audience, replaces cache-based
         // target resolution; local socket liveness remains a send-time decision.
-        const recipients = recipientSessionIds === undefined
+        const currentRecipients = recipientSessionIds === undefined
             ? this.#targetResolution.resolveOutboundRecipients(message)
             : [...new Set(recipientSessionIds)]
                 .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
                 .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+        const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
+        const recipients = admitted === undefined
+            ? currentRecipients
+            : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',

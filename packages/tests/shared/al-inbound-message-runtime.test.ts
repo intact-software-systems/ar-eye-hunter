@@ -8,7 +8,7 @@ import {
 } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -16,7 +16,6 @@ import {
     ALAdmissionCorruptionError,
     createALInboundAdmissionStore,
     createDefaultInMemoryALInboundRuntimeStores,
-    InMemoryPersistenceProvider,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
@@ -88,7 +87,7 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(seq2, 'peer-1');
+        await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedTexts).toEqual([]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toEqual([
@@ -96,7 +95,7 @@ describe('ALInboundMessageRuntime', () => {
             'al.control.repair.v1'
         ]);
 
-        await runtime.handleIncomingMessage(seq1, 'peer-1');
+        await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
@@ -113,14 +112,11 @@ describe('ALInboundMessageRuntime', () => {
         );
         const msg = createOrderedMessage(1, 'kept-local', 'all-logical-recipients');
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(forwardedIds).toEqual([]);
         expect(dispatchedTexts).toEqual(['kept-local']);
-        const ackPayloads = controlMessages.flatMap((candidate) => {
-            const parsed = parseALControlMessage(candidate);
-            return parsed?.type === 'ack' ? [parsed.payload] : [];
-        });
+        const ackPayloads = readAckPayloads(controlMessages);
         expect(ackPayloads).toHaveLength(1);
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
@@ -129,7 +125,7 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
-    it('retries a stale optimistic write and still releases ordered messages once', async () => {
+    it('returns a stale optimistic write to the caller and admits a fresh redelivery', async () => {
         vi.useFakeTimers();
 
         const stores = createDefaultInMemoryALInboundRuntimeStores();
@@ -140,9 +136,8 @@ describe('ALInboundMessageRuntime', () => {
             if (!rejectedFirstCommit && bundle.senderId === 'peer-1') {
                 rejectedFirstCommit = true;
                 await commitBundle({
-                    senderId: 'peer-1',
-                    expectedVersion: bundle.expectedVersion,
-                    mutations: [{ kind: 'set-msg-owner', msgId: 'external-version-bump', senderId: 'peer-1' }],
+                    ...bundle,
+                    mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'),
                     durableEffects: []
                 });
             }
@@ -153,10 +148,12 @@ describe('ALInboundMessageRuntime', () => {
         const seq2 = createOrderedMessage(2, 'two');
         const seq1 = createOrderedMessage(1, 'one');
 
-        const pendingGap = runtime.handleIncomingMessage(seq2, 'peer-1');
-        await vi.advanceTimersByTimeAsync(10);
-        await pendingGap;
-        await runtime.handleIncomingMessage(seq1, 'peer-1');
+        const rejected = await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        expect(rejected.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
+        expect(dispatchedTexts).toEqual([]);
+        expect(forwardedIds).toEqual([]);
+        await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(rejectedFirstCommit).toBe(true);
         expect(dispatchedTexts).toEqual(['one', 'two']);
@@ -172,7 +169,10 @@ describe('ALInboundMessageRuntime', () => {
         vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockRejectedValue(corruption);
         const { runtime } = createInboundHarness(stores);
 
-        await expect(runtime.handleIncomingMessage(createOrderedMessage(1, 'one'), 'peer-1'))
+        await expect(runtime.handleIncomingMessage(
+            createOrderedMessage(1, 'one'),
+            { kind: 'ws-client', peerId: 'peer-1' }
+        ))
             .rejects.toBe(corruption);
     });
 
@@ -210,9 +210,9 @@ describe('ALInboundMessageRuntime', () => {
             }
         };
 
-        const firstAdmission = runtime.handleIncomingMessage(first, 'peer-1');
+        const firstAdmission = runtime.handleIncomingMessage(first, { kind: 'ws-client', peerId: 'peer-1' });
         await firstDeliveryStarted.promise;
-        const secondAdmission = runtime.handleIncomingMessage(second, 'peer-2');
+        const secondAdmission = runtime.handleIncomingMessage(second, { kind: 'ws-client', peerId: 'peer-2' });
         await secondAdmissionCommitted.promise;
         releaseFirstDelivery.resolve();
         await Promise.all([firstAdmission, secondAdmission]);
@@ -220,9 +220,50 @@ describe('ALInboundMessageRuntime', () => {
         expect(deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
     });
 
-    it('retries complete control-message admission after backend conflicts', async () => {
+    it('returns control conflicts without an inner retry and accepts a later redelivery', async () => {
         vi.useFakeTimers();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const expireAtTimestamp = Date.now() + 300000;
+        const original = createOrderedMessage(1, 'pending');
+        const pendingMessage = { ...original, id: { ...original.id, msgId: 'missing-msg' } };
+        const read = await stores.admissionStore.readIncomingMessage({
+            msg: pendingMessage,
+            source: { kind: 'ws-client', peerId: 'peer-1' },
+            nowMs: Date.now(),
+            prePlan: planALMessageHandling(pendingMessage, { selfPeerId: 'self', nowMs: Date.now() })
+        });
+        await stores.admissionStore.commitMutations({
+            senderId: 'peer-1',
+            observations: read.observations,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: 'missing-msg',
+                senderId: 'peer-1',
+                source: { kind: 'ws-client', peerId: 'peer-1' },
+                supersedenceKey: null,
+                expireAtTimestamp
+            }, {
+                kind: 'set-control-pending',
+                msgId: 'missing-msg',
+                senderId: 'peer-1',
+                expireAtTimestamp,
+                value: {
+                    kind: 'pending',
+                    value: {
+                        toPeerId: 'peer-1',
+                        status: 'subtree-complete',
+                        localReady: false,
+                        expectedFromPeerIds: ['peer-2'],
+                        ackedFromPeerIds: []
+                    }
+                }
+            }, {
+                kind: 'set-control-owners',
+                msgId: 'missing-msg',
+                value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
+                expireAtTimestamp
+            }]
+        });
         const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
         let attempts = 0;
         vi.spyOn(stores.admissionStore, 'acceptControlMessage').mockImplementation(async (msg) => {
@@ -234,19 +275,30 @@ describe('ALInboundMessageRuntime', () => {
         });
         const { runtime, controlAcceptances } = createInboundHarness(stores);
 
-        const pending = runtime.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', 'missing-msg', 'delivered'),
-            'peer-2'
+        const control = newALAckControlMessage(
+            { v: 2, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2' },
+            {
+                ackedMsgId: 'missing-msg',
+                fromPeerId: 'peer-2',
+                toPeerId: 'self',
+                status: 'delivered',
+                observedAtEpochMs: 1
+            }
         );
-        void pending.catch(() => undefined);
-        await vi.runAllTimersAsync();
-
-        await expect(pending).resolves.toBeUndefined();
+        for (let delivery = 1; delivery <= 3; delivery++) {
+            const result = await runtime.handleIncomingMessage(control, { kind: 'ws-client', peerId: 'peer-2' });
+            expect(result.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
+            expect(attempts).toBe(delivery);
+            expect(controlAcceptances).toEqual([]);
+        }
+        const accepted = await runtime.handleIncomingMessage(control, { kind: 'ws-client', peerId: 'peer-2' });
+        expect(accepted.right).toEqual({ kind: 'control', handled: true });
         expect(attempts).toBe(4);
         expect(controlAcceptances).toHaveLength(1);
     });
 
-    it('retries buffered release when a downstream ack updates the sender version', async () => {
+    it('redelivers buffered work when a downstream ack changes its original pending receipt', async () => {
+        vi.useFakeTimers();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
         const commitBundle = baseAdmission.commitBundle.bind(baseAdmission);
@@ -276,24 +328,31 @@ describe('ALInboundMessageRuntime', () => {
 
         const { runtime, controlMessages, forwardedIds } = createInboundHarness(stores);
 
-        await runtime.handleIncomingMessage(seq2, 'peer-1');
+        await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(forwardedIds).toEqual([seq2.id.msgId]);
 
-        const pendingRelease = runtime.handleIncomingMessage(seq1, 'peer-1');
+        const pendingRelease = runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
         await releaseCommitReady.promise;
 
         await runtime.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', seq2.id.msgId, 'delivered'),
-            'peer-2'
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: seq2.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            ),
+            { kind: 'ws-client', peerId: 'peer-2' }
         );
 
         releaseCommitBlocked.resolve();
         await pendingRelease;
+        await vi.advanceTimersByTimeAsync(100);
 
-        const ackPayloads = controlMessages.flatMap((msg) => {
-            const parsed = parseALControlMessage(msg);
-            return parsed?.type === 'ack' ? [parsed.payload] : [];
-        });
+        const ackPayloads = readAckPayloads(controlMessages);
 
         expect(releaseConflictObserved).toBe(true);
         expect(ackPayloads).toHaveLength(1);
@@ -304,7 +363,9 @@ describe('ALInboundMessageRuntime', () => {
         });
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
+});
 
+describe('ALInboundMessageRuntime logical acknowledgements', () => {
     it('waits for downstream acknowledgements before sending the deferred subtree ack upstream', async () => {
         const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
 
@@ -331,14 +392,23 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(forwardedIds).toEqual([msg.id.msgId]);
         expect(controlMessages).toHaveLength(0);
 
         await runtime.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2'
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            ),
+            { kind: 'ws-client', peerId: 'peer-2' }
         );
 
         expect(controlAcceptances).toHaveLength(1);
@@ -362,8 +432,8 @@ describe('ALInboundMessageRuntime', () => {
         const controlStored = Promise.withResolvers<void>();
         const readNextReadyAt = stores.admissionStore.peekNextEffectReadyAt.bind(stores.admissionStore);
         const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
-        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (nowMs) => {
-            const readyAt = await readNextReadyAt(nowMs);
+        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async () => {
+            const readyAt = await readNextReadyAt();
             emptyRead.resolve();
             await releaseEmptyRead.promise;
             return readyAt;
@@ -375,21 +445,27 @@ describe('ALInboundMessageRuntime', () => {
         });
         const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
 
-        const admission = runtime.handleIncomingMessage(msg, 'peer-1');
+        const admission = runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         await emptyRead.promise;
         const acceptControl = runtime.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2'
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            ),
+            { kind: 'ws-client', peerId: 'peer-2' }
         );
         await controlStored.promise;
         await new Promise((resolve) => setTimeout(resolve, 0));
         releaseEmptyRead.resolve();
         await Promise.all([admission, acceptControl]);
 
-        const ackPayloads = controlMessages.flatMap((message) => {
-            const parsed = parseALControlMessage(message);
-            return parsed?.type === 'ack' ? [parsed.payload] : [];
-        });
+        const ackPayloads = readAckPayloads(controlMessages);
         expect(ackPayloads).toHaveLength(1);
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
@@ -427,22 +503,33 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(forwardedIds).toEqual([msg.id.msgId]);
         expect(controlMessages).toHaveLength(0);
 
         await vi.advanceTimersByTimeAsync(100);
         await runtime.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2'
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            ),
+            { kind: 'ws-client', peerId: 'peer-2' }
         );
 
         expect(controlAcceptances).toHaveLength(1);
         expect(controlAcceptances[0]?.completedPendingAcks).toEqual([]);
         expect(controlMessages).toHaveLength(0);
     });
+});
 
+describe('ALInboundMessageRuntime durable effects', () => {
     it('retries durable control effects after a transient send failure', async () => {
         vi.useFakeTimers();
 
@@ -462,7 +549,10 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(createOrderedMessage(2, 'two'), 'peer-1');
+        await runtime.handleIncomingMessage(
+            createOrderedMessage(2, 'two'),
+            { kind: 'ws-client', peerId: 'peer-1' }
+        );
 
         expect(sentControls.map((msg) => msg.payload.typeId)).toEqual([
             'al.control.repair.v1'
@@ -515,7 +605,7 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(delivered).toEqual([]);
 
@@ -564,7 +654,7 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(delivered).toEqual([]);
 
@@ -591,9 +681,9 @@ describe('ALInboundMessageRuntime', () => {
         };
         const seq1 = createOrderedMessage(1, 'one');
 
-        await runtime.handleIncomingMessage(seq2, 'peer-1');
+        await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         await vi.advanceTimersByTimeAsync(100);
-        await runtime.handleIncomingMessage(seq1, 'peer-1');
+        await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedTexts).toEqual(['one']);
     });
@@ -612,7 +702,10 @@ describe('ALInboundMessageRuntime', () => {
             }
         ).runtime;
 
-        await runtime1.handleIncomingMessage(createOrderedMessage(2, 'two'), 'peer-1');
+        await runtime1.handleIncomingMessage(
+            createOrderedMessage(2, 'two'),
+            { kind: 'ws-client', peerId: 'peer-1' }
+        );
         runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
@@ -646,12 +739,21 @@ describe('ALInboundMessageRuntime', () => {
         ).runtime;
 
         const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
-        await runtime1.handleIncomingMessage(msg, 'peer-1');
+        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(forwardedIds).toEqual([msg.id.msgId]);
 
         await runtime1.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2'
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            ),
+            { kind: 'ws-client', peerId: 'peer-2' }
         );
         runtime1.dispose();
 
@@ -661,10 +763,7 @@ describe('ALInboundMessageRuntime', () => {
         await runtime2.ready();
         await vi.advanceTimersByTimeAsync(100);
 
-        const ackPayloads = controlMessages.flatMap((controlMessage) => {
-            const parsed = parseALControlMessage(controlMessage);
-            return parsed?.type === 'ack' ? [parsed.payload] : [];
-        });
+        const ackPayloads = readAckPayloads(controlMessages);
 
         expect(ackPayloads).toHaveLength(1);
         expect(ackPayloads[0]).toMatchObject({
@@ -711,16 +810,14 @@ function createInboundHarness(
         selfPeerId: 'self',
         inbox,
         stores,
-        planIncomingMessage: (msg, fromPeerId, runtimeStores) =>
+        planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
-                fromPeerId,
+                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                dedupStore: runtimeStores.dedupStore,
-                orderingStore: runtimeStores.orderingStore,
-                supersedenceStore: runtimeStores.supersedenceStore
+                ...observations
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -760,6 +857,13 @@ function toDeliveredMessageText(entry: ResourceEntry): string {
         throw new TypeError('Test message text must be a string');
     }
     return text ?? msg.id.msgId;
+}
+
+function readAckPayloads(messages: readonly ALMessage[]) {
+    return messages.flatMap((message) => {
+        const parsed = parseALControlMessage(message);
+        return parsed?.type === 'ack' ? [parsed.payload] : [];
+    });
 }
 
 function createOrderedMessage(
@@ -814,17 +918,13 @@ function createSenderScopedDedupMessage(senderId: string, text: string): ALMessa
 }
 
 function createInboundPersistenceFixture() {
-    const provider = new InMemoryPersistenceProvider<string, unknown>();
+    const state = createInMemoryALAdmissionState();
     return {
         openStores(): ALInboundRuntimeStores {
             return {
                 admissionStore: createALInboundAdmissionStore({
-                    namespace: 'al-inbound-runtime-test:provider',
-                    backend: new PersistenceProviderAdmissionBackend(
-                        provider,
-                        'al-inbound-runtime-test:provider',
-                        Date.now
-                    ),
+                    namespace: 'al-inbound-runtime-test:retained',
+                    backend: new InMemoryAdmissionBackend(state, Date.now),
                     orderingTrackTtlMs: 5 * 60_000,
                     supersedenceTrackTtlMs: 5 * 60_000,
                     retention: normalizeALRuntimeStoreRetention()

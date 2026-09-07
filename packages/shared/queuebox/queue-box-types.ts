@@ -335,16 +335,19 @@ export interface DequeueResourceEntryRepository {
         workOptions: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean>;
 
+    /** If supplied, claim only unchanged observations; [] claims nothing. Skipped work consumes no attempts. */
     reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<Resource.EntityStatus>,
-        options: ResourceInboxReservationInput
+        options: ResourceInboxReservationInput,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     reserveTimeoutEntries(
         typeIds: Set<string>,
         options: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration
+        timeSinceStartTs: Temporal.Duration,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     reserveOverdueRetryEntries(

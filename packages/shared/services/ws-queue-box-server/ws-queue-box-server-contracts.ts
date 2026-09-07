@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALNackReason } from '../../al-contracts/al-control.ts';
+import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 
 export interface WsServerResolvedRecipient {
     readonly peerId: string;
@@ -85,10 +86,11 @@ export type WsDeliveryDiagnosticsEvent =
 export type WsDeliveryDiagnosticsSink = (event: WsDeliveryDiagnosticsEvent) => void;
 
 export type WsServerInboundAuthorization =
-    | Readonly<{ authorized: true; }>
+    | Readonly<{ authorized: true; roomRecipientPeerIds?: readonly string[]; }>
     | Readonly<{
         authorized: false;
         reason: ALNackReason;
+        rejectionCode?: ALMessageRejection['code'];
         logMessage: string;
         sendNack: boolean;
         serverSnapshotVersion?: number;
@@ -96,5 +98,4 @@ export type WsServerInboundAuthorization =
 
 export interface WsServerInboundAuthorizer {
     authorize(message: ALMessage): Promise<WsServerInboundAuthorization>;
-    complete(message: ALMessage): void;
 }

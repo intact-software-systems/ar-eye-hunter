@@ -13,7 +13,7 @@ import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
 } from '@shared/services/ws-queue-box-client-service.ts';
-import type { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import type { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
@@ -52,6 +52,7 @@ function createBrowserWebSocketQueueBoxService(
 ): WsQueueBoxClientService {
     const { clientData, socket } = input;
     return createDefaultWsQueueBoxClientService({
+        queueEngine: input.qboxEngine,
         inbox: createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
         outbox: createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
         socket,

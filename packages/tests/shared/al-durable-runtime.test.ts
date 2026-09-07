@@ -9,30 +9,21 @@ import {
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    ALControlPersistenceValue,
-    ALOrderingTrackSnapshot,
     ALOutboundMessageRuntime,
-    ALSupersedencePersistenceValue,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
-    InMemoryPersistenceProvider,
     InMemoryQueueBox,
-    newALAckControlMessage,
     newALMulticastMessage,
     newALNackControlMessage,
     newALUnicastMessage,
     normalizeALRuntimeStoreRetention,
-    PersistentALControlTracker,
-    PersistentALDedupStore,
-    PersistentALOrderingStore,
-    PersistentALSupersedenceStore,
     planALMessageHandling,
     QueueBoxUtilities,
     type ALMessage,
@@ -42,121 +33,21 @@ import {
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
-interface PersistentAdmissionStorage {
-    readonly admissionProvider: InMemoryPersistenceProvider<string, unknown>;
+interface RetainedAdmissionState {
+    readonly admissionState: ALAdmissionMemoryState;
 }
 
-interface PersistentRuntimeStoreSet<TStores> extends PersistentAdmissionStorage {
+interface RetainedRuntimeStoreSet<TStores> extends RetainedAdmissionState {
     readonly runtimeStores: TStores;
 }
 
-describe('Durable AL runtime stores', () => {
+describe('AL state retained across runtime recreation', () => {
     afterEach(() => {
         vi.useRealTimers();
     });
 
-    it('rehydrates dedup, ordering, and supersedence state from persistence', async () => {
-        const nowMs = Date.now();
-        const dedupProvider = new InMemoryPersistenceProvider<string, number>();
-        const dedup1 = new PersistentALDedupStore(dedupProvider);
-        await dedup1.ready();
-        await dedup1.mark('msg-1', 50, nowMs);
-
-        const dedup2 = new PersistentALDedupStore(dedupProvider);
-        await dedup2.ready();
-        expect(dedup2.has('msg-1', nowMs + 25)).toBe(true);
-        expect(dedup2.has('msg-1', nowMs + 51)).toBe(false);
-
-        const orderingProvider = new InMemoryPersistenceProvider<string, ALOrderingTrackSnapshot>();
-        const ordering1 = new PersistentALOrderingStore(orderingProvider);
-        await ordering1.ready();
-        await ordering1.accept(createOrderedMessage(2), nowMs);
-
-        const ordering2 = new PersistentALOrderingStore(orderingProvider);
-        await ordering2.ready();
-        expect(ordering2.peek(createOrderedMessage(1), nowMs + 1)).toMatchObject({
-            status: 'in-order',
-            releasableSeqs: [2]
-        });
-
-        const supersedenceProvider = new InMemoryPersistenceProvider<string, ALSupersedencePersistenceValue>();
-        const supersedence1 = new PersistentALSupersedenceStore(
-            supersedenceProvider
-        );
-        await supersedence1.ready();
-        await supersedence1.accept(
-            {
-                key: 'presence:room-1',
-                msgId: 'msg-new',
-                seq: 2,
-                ts: nowMs
-            },
-            nowMs
-        );
-
-        const supersedence2 = new PersistentALSupersedenceStore(
-            supersedenceProvider
-        );
-        await supersedence2.ready();
-        expect(
-            supersedence2.peek(
-                {
-                    key: 'presence:room-1',
-                    msgId: 'msg-old',
-                    seq: 1,
-                    ts: nowMs - 1
-                },
-                nowMs + 1
-            )
-        ).toMatchObject({
-            status: 'superseded',
-            latestMsgId: 'msg-new'
-        });
-    });
-
-    it('rehydrates pending acknowledgements and control event history', async () => {
-        const provider = new InMemoryPersistenceProvider<string, ALControlPersistenceValue>();
-        const tracker1 = new PersistentALControlTracker(provider);
-        await tracker1.ready();
-
-        await tracker1.accept(
-            newALNackControlMessage('peer-2', 'self', 'msg-1', 'gap')
-        );
-        await tracker1.trackPendingAck(
-            'msg-1',
-            'upstream-peer',
-            'subtree-complete',
-            ['peer-2'],
-            false
-        );
-
-        const tracker2 = new PersistentALControlTracker(provider);
-        await tracker2.ready();
-
-        expect(tracker2.read('msg-1').nacks).toHaveLength(1);
-        expect(tracker2.readPendingAck('msg-1')).toMatchObject({
-            toPeerId: 'upstream-peer',
-            localReady: false,
-            expectedFromPeerIds: ['peer-2'],
-            ackedFromPeerIds: []
-        });
-
-        expect(await tracker2.markPendingAckLocalReady('msg-1')).toBeUndefined();
-
-        const acceptance = await tracker2.accept(
-            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered')
-        );
-        expect(acceptance.completedPendingAcks).toEqual([
-            {
-                msgId: 'msg-1',
-                toPeerId: 'upstream-peer',
-                status: 'subtree-complete'
-            }
-        ]);
-    });
-
-    it('keeps inbound dedup decisions across runtime restarts when stores are persisted', async () => {
-        const stores = createDefaultPersistentInboundStoreSet();
+    it('keeps inbound dedup decisions across runtime restarts when the storage owner is retained', async () => {
+        const stores = createRetainedInboundStoreSet();
         const dispatchedMsgIds: string[] = [];
 
         const runtime1 = createDefaultInboundRuntime(stores, dispatchedMsgIds);
@@ -177,20 +68,20 @@ describe('Durable AL runtime stores', () => {
             }
         );
 
-        await runtime1.handleIncomingMessage(msg, 'peer-1');
+        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const restartedRuntime = createDefaultInboundRuntime(
-            createDefaultPersistentInboundStoreSet(stores),
+            createRetainedInboundStoreSet(stores),
             dispatchedMsgIds
         );
 
-        await restartedRuntime.handleIncomingMessage(msg, 'peer-1');
+        await restartedRuntime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
     it('releases buffered ordered messages after restart when the missing sequence arrives', async () => {
-        const stores = createDefaultPersistentInboundStoreSet();
+        const stores = createRetainedInboundStoreSet();
         const dispatchedMsgIds: string[] = [];
         const controlMessages: ALMessage[] = [];
 
@@ -198,16 +89,16 @@ describe('Durable AL runtime stores', () => {
         const seq2 = createBufferedOrderedMessage(2, 'two');
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
-        await runtime1.handleIncomingMessage(seq2, 'peer-1');
+        await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
 
         const runtime2 = createDefaultInboundRuntime(
-            createDefaultPersistentInboundStoreSet(stores),
+            createRetainedInboundStoreSet(stores),
             dispatchedMsgIds,
             controlMessages
         );
 
-        await runtime2.handleIncomingMessage(seq1, 'peer-1');
+        await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
@@ -218,7 +109,7 @@ describe('Durable AL runtime stores', () => {
     it('retransmits cached ordered messages and reuses supersedence keys across outbound restarts', async () => {
         const sent: Array<OutboundTestPayload> = [];
         const outbox = new InMemoryQueueBox(new Map());
-        const stores = createDefaultPersistentOutboundStoreSet();
+        const stores = createRetainedOutboundStoreSet();
 
         const runtime1 = createDefaultOutboundRuntime(stores, sent, outbox);
         const firstPresence = newALUnicastMessage(
@@ -238,7 +129,7 @@ describe('Durable AL runtime stores', () => {
         const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
 
         const restartedForSupersedence = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent,
             outbox
         );
@@ -280,32 +171,36 @@ describe('Durable AL runtime stores', () => {
         await enqueueOutboundOrThrow(restartedForSupersedence, seq2);
 
         const restartedForRepair = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent,
             outbox
         );
 
         await restartedForRepair.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', seq2.id.msgId, 'gap', {
-                status: 'gap',
-                trackKey: toALOrderingTrackKey(seq1),
-                seq: 2,
-                expectedSeq: 1,
-                lastContiguousSeq: 0,
-                missingSeqs: [1],
-                releasableSeqs: []
-            })
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: seq2.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1,
+                    orderingKey: toALOrderingTrackKey(seq1),
+                    expectedSeq: 1,
+                    missingSeqs: [1]
+                }
+            )
         );
 
         expect(sent.map((entry) => entry.msgId)).toContain(seq1.id.msgId);
-        expect(sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
+        await expect.poll(() => sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
     });
 
     it('continues pending outbound acknowledgement timers after restart', async () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
-        const stores = createDefaultPersistentOutboundStoreSet();
+        const stores = createRetainedOutboundStoreSet();
         const runtime1 = createDefaultOutboundRuntime(stores, sent);
         const msg = createOutboundMessage('msg-timeout');
 
@@ -313,7 +208,7 @@ describe('Durable AL runtime stores', () => {
         runtime1.dispose();
 
         const runtime2 = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent
         );
         await runtime2.ready();
@@ -330,14 +225,14 @@ describe('Durable AL runtime stores', () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
-        const stores = createDefaultPersistentOutboundStoreSet();
+        const stores = createRetainedOutboundStoreSet();
         const runtime1 = createDefaultOutboundRuntime(stores, sent);
         const msg = createOutboundMessage('msg-shared-timeout');
 
         await enqueueOutboundOrThrow(runtime1, msg);
 
         const runtime2 = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent
         );
         await runtime2.ready();
@@ -364,22 +259,18 @@ async function enqueueOutboundOrThrow(
     return enqueued.entries;
 }
 
-function createDefaultPersistentInboundStoreSet(
-    existing?: PersistentAdmissionStorage
-): PersistentRuntimeStoreSet<ALInboundRuntimeStores> {
-    const admissionProvider = existing?.admissionProvider ??
-        new InMemoryPersistenceProvider<string, unknown>();
+function createRetainedInboundStoreSet(
+    existing?: RetainedAdmissionState
+): RetainedRuntimeStoreSet<ALInboundRuntimeStores> {
+    const admissionState = existing?.admissionState ??
+        createInMemoryALAdmissionState();
 
     return {
-        admissionProvider,
+        admissionState,
         runtimeStores: {
             admissionStore: createALInboundAdmissionStore({
                 namespace: 'durable-test:inbound:admission',
-                backend: new PersistenceProviderAdmissionBackend(
-                    admissionProvider,
-                    'durable-test:inbound:admission',
-                    Date.now
-                ),
+                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
@@ -389,7 +280,7 @@ function createDefaultPersistentInboundStoreSet(
 }
 
 function createDefaultInboundRuntime(
-    stores: PersistentRuntimeStoreSet<ALInboundRuntimeStores>,
+    stores: RetainedRuntimeStoreSet<ALInboundRuntimeStores>,
     dispatchedMsgIds: string[],
     controlMessages: ALMessage[] = []
 ) {
@@ -397,16 +288,14 @@ function createDefaultInboundRuntime(
         selfPeerId: 'self',
         inbox: new InMemoryQueueBox(new Map<Key, ResourceEntry>()),
         stores: stores.runtimeStores,
-        planIncomingMessage: (msg, fromPeerId, runtime) =>
+        planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
-                fromPeerId,
+                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                dedupStore: runtime.dedupStore,
-                orderingStore: runtime.orderingStore,
-                supersedenceStore: runtime.supersedenceStore
+                ...observations
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -422,22 +311,18 @@ function createDefaultInboundRuntime(
     return runtime;
 }
 
-function createDefaultPersistentOutboundStoreSet(
-    existing?: PersistentAdmissionStorage
-): PersistentRuntimeStoreSet<ALOutboundRuntimeStores> {
-    const admissionProvider = existing?.admissionProvider ??
-        new InMemoryPersistenceProvider<string, unknown>();
+function createRetainedOutboundStoreSet(
+    existing?: RetainedAdmissionState
+): RetainedRuntimeStoreSet<ALOutboundRuntimeStores> {
+    const admissionState = existing?.admissionState ??
+        createInMemoryALAdmissionState();
 
     return {
-        admissionProvider,
+        admissionState,
         runtimeStores: {
             admissionStore: createALOutboundAdmissionStore({
                 namespace: 'durable-test:outbound:admission',
-                backend: new PersistenceProviderAdmissionBackend(
-                    admissionProvider,
-                    'durable-test:outbound:admission',
-                    Date.now
-                ),
+                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
             })
@@ -446,7 +331,7 @@ function createDefaultPersistentOutboundStoreSet(
 }
 
 function createDefaultOutboundRuntime(
-    stores: PersistentRuntimeStoreSet<ALOutboundRuntimeStores>,
+    stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores>,
     sent: Array<OutboundTestPayload>,
     outbox: InMemoryQueueBox = new InMemoryQueueBox(new Map())
 ) {
@@ -496,37 +381,12 @@ function createDefaultOutboundRuntime(
         }),
         sendPreparedMessage: async (prepared, phase) => {
             sent.push({ ...prepared, phase });
+
+            return { status: 'sent' as const };
         }
     });
     onTestFinished(() => runtime.dispose());
     return runtime;
-}
-
-function createOrderedMessage(seq: number): ALMessage {
-    return {
-        ...newALMulticastMessage(
-            'peer-1',
-            {
-                topicId: 'chat',
-                resourceId: `msg-${seq}`,
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: `message-${seq}`
-            },
-            {
-                seq,
-                reliability: 'at-least-once'
-            }
-        ),
-        ordering: {
-            orderingKey: 'group-1',
-            epoch: 0,
-            seq
-        }
-    };
 }
 
 function createBufferedOrderedMessage(seq: number, text: string) {

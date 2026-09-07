@@ -30,7 +30,12 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
     initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
 }));
 vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), (): Partial<typeof StateCacheLifecycleModule> => ({
-    browserStateCacheLifecycle: { hydrate: mocks.hydrateStateCache, onChange: mocks.onCacheChange, initialise: vi.fn() }
+    browserStateCacheLifecycle: {
+        hydrate: mocks.hydrateStateCache,
+        onChange: mocks.onCacheChange,
+        initialise: vi.fn(),
+        cancelSnapshotAssemblies: vi.fn(() => undefined)
+    }
 }));
 vi.mock(import('@shared/api/auth.ts'), (): Partial<typeof AuthModule> => ({
     clearSession: vi.fn(),

@@ -1,4 +1,12 @@
-import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import { describe, expect, it } from 'vitest';
+
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
@@ -6,7 +14,6 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
 
 const ENQUEUE: AppInboxEnqueueInput = {
     type: AppInboxType.GROUP_CREATE,
@@ -24,12 +31,22 @@ describe('AppInboxReservationClient authority persistence', () => {
         await queue.enqueue(context.entry);
         const client = createClient(queue);
 
-        await client.persistAuthority(context, { principalId: 'owner' });
+        const original = context.entry.resource;
+        Object.freeze(context.entry);
+        Object.freeze(context);
+        const replacement = await client.persistAuthority(context, { principalId: 'owner' });
 
         const persisted = await queue.getItem(context.entry.key);
         if (persisted === undefined) {
             throw new Error('Expected persisted authority');
         }
+        expect(replacement).toEqual(persisted);
+        expect(context.entry.resource).toBe(original);
+        await queue.releaseEntries([replacement], { status: EntityStatus.RETRY, delayMs: 1 });
+        expect(await queue.getItem(context.entry.key)).toMatchObject({
+            resource: persisted.resource,
+            status: EntityStatus.RETRY
+        });
         const message = decodePersistedALMessage(persisted.resource);
         expect(JSON.parse(message.payload.resource)).toMatchObject({
             authority: { principalId: 'owner' }
@@ -52,7 +69,7 @@ describe('AppInboxReservationClient authority persistence', () => {
 
         await expect(client.persistAuthority(context, { principalId: 'owner' })).rejects
             .toMatchObject({ code: 'app-inbox-reservation-conflict' });
-        expect(await queue.getItem(context.entry.key)).toBe(winner);
+        expect(await queue.getItem(context.entry.key)).toEqual(winner);
     });
 });
 
@@ -80,6 +97,12 @@ function createReservedContext(): AppInboxMessageContext<JsonWireValue> {
         enqueue: ENQUEUE,
         message: decodePersistedALMessage(entry.resource),
         entry,
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Reservation client test result')
     };
 }

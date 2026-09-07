@@ -1,18 +1,21 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { parseALControlMessage } from '../../al-contracts/al-control.ts';
+import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    decodeALControlMessage,
+    parseALControlMessage,
+    type ALParsedControlMessage
+} from '../../al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { RetryableConflictError, tryWithPolicy } from '../../resilience/TryWith.ts';
-import type { ALOutboundPendingAckSnapshot, ALOutboundRepairAttemptSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type {
-    ALOutboundAdmissionMutation,
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
-    ALOutboundMessageReadDto,
     ALOutboundPreparedMessageDecoder,
-    ALOutboundRepairHint
+    ALOutboundRepairHint,
+    ALOutboundRepairReadDto
 } from './al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import type {
@@ -48,11 +51,6 @@ export namespace ALOutboundRepairAdmission {
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
     }
-
-    export interface ControlAcceptance {
-        readonly handled: boolean;
-        readonly retryAtMs: number | undefined;
-    }
 }
 
 /** Turns persisted control/ACK/repair state into new durable admission commits; never sends directly. */
@@ -66,7 +64,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
         this.admissionStore = dependencies.admissionStore;
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundRepairAdmission.ControlAcceptance> {
+    async acceptControlMessage(msg: ALMessage): Promise<boolean> {
+        const decoded = decodeALControlMessage(msg);
+        if (decoded.left || !await this.hasCurrentRepairAuthority(decoded.right!)) {
+            return false;
+        }
         const acceptance = await tryWithPolicy(
             async () => {
                 try {
@@ -87,34 +89,64 @@ export class ALOutboundRepairAdmission<TPrepared> {
             },
             ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
         );
-        return {
-            handled: acceptance.handled,
-            retryAtMs: acceptance.handled ? await this.scheduleNotYetInSyncRetryIfRequired(msg) : undefined
-        };
+        if (acceptance.handled) {
+            await this.scheduleNotYetInSyncRetryIfRequired(msg);
+        }
+        return acceptance.handled;
+    }
+
+    private async hasCurrentRepairAuthority(control: ALParsedControlMessage): Promise<boolean> {
+        if (
+            control.type === 'ack' ||
+            (control.type === 'nack' && control.payload.reason !== 'gap' &&
+                control.payload.reason !== 'not-yet-in-sync')
+        ) {
+            return true;
+        }
+        const read = await this.admissionStore.readRepairMessage(
+            control.payload.msgId,
+            this.dependencies.planOutgoingMessage
+        );
+        const msg = read.sentSnapshot?.msg;
+        if (!msg) {
+            return false;
+        }
+        if (!isRoomScopedALMessage(msg)) {
+            return true;
+        }
+        const planned = await this.dependencies.planRepairMessage?.(msg, {
+            trigger: control.type,
+            requestedByPeerId: control.payload.fromPeerId,
+            orderingTrackKey: control.payload.orderingKey,
+            missingSeqs: control.payload.missingSeqs ?? [],
+            failedPeerIds: [],
+            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
+        });
+        return planned !== undefined && !planned.dropReason && planned.preparedMessages.length > 0;
     }
 
     private async scheduleNotYetInSyncRetryIfRequired(
         controlMessage: ALMessage
-    ): Promise<number | undefined> {
+    ): Promise<void> {
         const parsed = parseALControlMessage(controlMessage);
         if (parsed?.type !== 'nack' || parsed.payload.reason !== 'not-yet-in-sync') {
-            return undefined;
+            return;
         }
 
         const msgId = parsed.payload.msgId;
 
-        return await tryWithPolicy<number | undefined>(
+        await tryWithPolicy<void>(
             () => this.scheduleNotYetInSyncRetryOnce(msgId),
             ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
         );
     }
 
-    private async scheduleNotYetInSyncRetryOnce(msgId: string): Promise<number | undefined> {
+    private async scheduleNotYetInSyncRetryOnce(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
         if (!msg || !retry?.enabled || retry.maxAttempts <= 0) {
-            return undefined;
+            return;
         }
 
         const retryDelayMs = Math.max(
@@ -140,9 +172,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
         if (result.status === 'exhausted') {
             console.warn(`Not-yet-in-sync retry budget exceeded for message ${msgId}`);
-            return undefined;
+            return;
         }
-        return result.retryAtMs;
     }
 
     async handlePendingAckTimeout(msgId: string): Promise<void> {
@@ -298,36 +329,38 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const plan = read.plan;
-        if (!msg || !plan) {
+        if (!msg || !plan || plan.dropReason) {
             console.warn(`No cached outbound message found for repair ${msgId}`);
+            return;
+        }
+
+        if (request.trigger === 'ack-timeout') {
+            await this.retryMissingAcknowledgements(read, request);
             return;
         }
 
         const repair = plan.repairTracking;
         if (!repair?.enabled || repair.algo === 'none') {
-            await this.retransmitByMsgId(msgId);
             return;
         }
 
         const attempts = read.repairAttempt?.attempts ?? 0;
         if (attempts >= repair.maxAttempts) {
             console.warn(`Repair budget exceeded for message ${msgId}`);
-            await this.retransmitByMsgId(msgId);
             return;
         }
 
-        const handledPlan = await this.dependencies.planRepairMessage?.(
-            msg,
-            {
-                ...request,
-                repair
-            }
-        );
-        if (!handledPlan || handledPlan.dropReason) {
-            if (handledPlan?.dropReason) {
-                console.warn(`Skipping outbound repair dispatch: ${handledPlan.dropReason}`);
-            }
-            await this.retransmitByMsgId(msgId);
+        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg)) {
+            return;
+        }
+        const handledPlan = this.dependencies.planRepairMessage
+            ? await this.dependencies.planRepairMessage(msg, { ...request, repair })
+            : plan;
+        if (handledPlan?.dropReason) {
+            console.warn(`Skipping outbound repair dispatch: ${handledPlan.dropReason}`);
+            return;
+        }
+        if (!handledPlan) {
             return;
         }
 
@@ -339,38 +372,50 @@ export class ALOutboundRepairAdmission<TPrepared> {
         });
     }
 
+    private async retryMissingAcknowledgements(
+        read: ALOutboundRepairReadDto<TPrepared>,
+        request: ALOutboundRepairHint
+    ): Promise<void> {
+        const pending = read.pendingAck;
+        const msg = read.sentSnapshot?.msg;
+        const plan = read.plan;
+        if (!pending || !msg || !plan || this.isAckComplete(pending) || pending.maxAttempts <= 0) {
+            return;
+        }
+        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg)) {
+            return;
+        }
+        const retryPlan = this.dependencies.planRepairMessage
+            ? await this.dependencies.planRepairMessage(msg, {
+                ...request,
+                failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
+                repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
+            })
+            : plan;
+        if (!retryPlan || retryPlan.dropReason) {
+            return;
+        }
+        // The timeout admission already charged the receipt retry budget. Gap
+        // repair has its own policy and must not suppress or charge this retry.
+        await this.dependencies.dispatchAdmission.commit({
+            msg,
+            planner: () => retryPlan,
+            intent: 'repair',
+            phase: 'immediate',
+            options: {}
+        });
+    }
+
     private async commitRepairPlan(repair: ALOutboundCommitRepairInput<TPrepared>): Promise<void> {
-        const { computed } = await this.dependencies.dispatchAdmission.commit({
+        await this.dependencies.dispatchAdmission.commit({
             msg: repair.msg,
             planner: () => repair.plan,
             intent: 'repair',
             phase: 'immediate',
             options: {
-                extraMutations: (read) => this.toRepairAttemptMutations(read, repair.priorAttempts, repair.maxAttempts)
+                repairBudget: { priorAttempts: repair.priorAttempts, maxAttempts: repair.maxAttempts }
             }
         });
-        if (computed.bundle === undefined) {
-            await this.retransmitByMsgId(repair.msg.id.msgId);
-        }
-    }
-
-    private toRepairAttemptMutations(
-        read: ALOutboundMessageReadDto<TPrepared>,
-        priorAttempts: number,
-        maxAttempts: number
-    ): readonly ALOutboundAdmissionMutation[] | 'skip' {
-        const currentAttempts = read.repairAttempt?.attempts ?? priorAttempts;
-        if (currentAttempts >= maxAttempts) {
-            return 'skip';
-        }
-
-        return [{
-            kind: 'set-repair-attempt',
-            snapshot: {
-                msgId: read.msg.id.msgId,
-                attempts: currentAttempts + 1
-            } satisfies ALOutboundRepairAttemptSnapshot
-        }];
     }
 
     async retransmitByMsgId(

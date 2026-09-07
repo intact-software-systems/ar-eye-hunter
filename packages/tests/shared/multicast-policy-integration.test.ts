@@ -69,12 +69,12 @@ describe('multicast QoS integration', () => {
 
         const plan = service.createForwardingPlan(
             msg,
-            createOverlayContext(['self', 'peer-1', 'peer-2', 'peer-3'], [
+            createOverlayContext(['self', 'sender-1', 'peer-1', 'peer-2', 'peer-3'], [
                 'peer-1',
                 'peer-2',
                 'peer-3'
             ]),
-            'peer-1'
+            { fromPeerId: 'peer-1', qos: undefined }
         );
 
         expect(plan.handlingPlan.dropReason).toBeUndefined();
@@ -117,7 +117,7 @@ describe('multicast QoS integration', () => {
         });
 
         const msg = shared.newALMulticastMessage(
-            'sender-2',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-2',
@@ -144,7 +144,7 @@ describe('multicast QoS integration', () => {
             10
         );
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -175,7 +175,7 @@ describe('multicast QoS integration', () => {
         });
 
         const msg = shared.newALMulticastMessage(
-            'sender-3',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-3',
@@ -230,7 +230,7 @@ describe('multicast QoS integration', () => {
         });
 
         const msg = shared.newALMulticastMessage(
-            'sender-3b',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-3b',
@@ -284,7 +284,7 @@ describe('multicast QoS integration', () => {
             });
 
             const msg = shared.newALMulticastMessage(
-                'sender-3c',
+                'self',
                 {
                     topicId: 'chat',
                     resourceId: 'msg-3c',
@@ -353,15 +353,15 @@ describe('multicast QoS integration', () => {
         }
     });
 
-    it('targets repair retransmits to the requesting rtc peer', async () => {
+    it.each(['current', 'missing', 'removed'] as const)('requires %s room authority before targeted repair effects', async (authority) => {
         const connectionService = createConnectionService(['peer-1', 'peer-2']);
         const queue = new shared.InMemoryQueueBox(new Map());
+        const snapshot = createGroupSnapshot(['self', 'peer-1', 'peer-2']);
+        const groups = createReadableCache({ 'group-1': snapshot });
         const manager = new shared.WebRtcOverlayMulticastManager({
             outbox: queue,
             connectionService: connectionService,
-            groupCache: createReadableCache({
-                'group-1': createGroupSnapshot(['self', 'peer-1', 'peer-2'])
-            }),
+            groupCache: groups,
             overlayCache: createReadableCache({
                 'group-1': createOverlayInfo(['peer-1', 'peer-2'])
             }),
@@ -378,7 +378,7 @@ describe('multicast QoS integration', () => {
         });
 
         const msg = shared.newALMulticastMessage(
-            'sender-3d',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-3d',
@@ -405,20 +405,32 @@ describe('multicast QoS integration', () => {
             shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
             createResilienceDto()
         );
+        if (authority === 'missing') {
+            groups.clearAll();
+        }
+        else if (authority === 'removed') {
+            groups.set('group-1', {
+                ...snapshot,
+                members: snapshot.members.map((member) =>
+                    member.principalId === 'peer-2' && member.status === 'active'
+                        ? { ...member, status: 'removed', removed: member.updated }
+                        : member
+                )
+            });
+        }
         await manager.acceptControlMessage(
             shared.newALRepairControlMessage(
-                'peer-2',
-                'self',
-                msg.id.msgId,
-                'retransmit'
+                { v: 2, msgId: 'repair-control', senderId: 'peer-2', ts: Date.now() },
+                { fromPeerId: 'peer-2', toPeerId: 'self', msgId: msg.id.msgId, reason: 'retransmit', observedAtEpochMs: Date.now() }
             )
         );
 
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
-        expect(connectionService.sendByPeerId.get('peer-2')).toHaveLength(2);
-        expect(
-            connectionService.sendByPeerId.get('peer-2')?.[1]
-        ).toMatchObject({ id: { msgId: msg.id.msgId } });
+        expect(connectionService.sendByPeerId.get('peer-2')).toHaveLength(authority === 'current' ? 2 : 1);
+        if (authority === 'current') {
+            expect(connectionService.sendByPeerId.get('peer-2')?.[1]).toMatchObject({ id: { msgId: msg.id.msgId } });
+        }
+        manager.dispose();
     });
 
     it('sends volatile unicast immediately through the same planning path', async () => {
@@ -462,7 +474,7 @@ describe('multicast QoS integration', () => {
             10
         );
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -612,10 +624,14 @@ function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPe
     const channel = new shared.QRtcDataChannel(connection, { peerId, dataChannelName: 'test' });
     const health = channel.readHealth();
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        if (typeof message !== 'object' || message === null) {
+            throw new Error('Expected an RTC message object');
+        }
         const sent = sendByPeerId.get(peerId) ?? [];
         sent.push(message);
         sendByPeerId.set(peerId, sent);
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return { peerId, connection, channel, channels: new Map([['reliable', channel]]), media: new shared.QRtcMediaChannel(connection, { peerId }) };
 }
@@ -625,6 +641,7 @@ function createOverlayContext(
     nextHopSessionIds: readonly string[]
 ): shared.OverlayMulticasterContext {
     return {
+        nowMs: Date.now(),
         overlayId: 'group-1',
         room: createGroupSnapshot(memberSessionIds),
         overlay: createOverlayInfo(nextHopSessionIds)
@@ -632,7 +649,8 @@ function createOverlayContext(
 }
 
 function createGroupSnapshot(memberSessionIds: readonly string[]): GroupSnapshot {
-    return createGroupSnapshotFixture({ ...groupRef('group-1'), sessionIds: memberSessionIds });
+    const snapshot = createGroupSnapshotFixture({ ...groupRef('group-1'), sessionIds: memberSessionIds });
+    return { ...snapshot, activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 })) };
 }
 
 function createOverlayInfo(nextHopSessionIds: readonly string[]): OverlayInfo {

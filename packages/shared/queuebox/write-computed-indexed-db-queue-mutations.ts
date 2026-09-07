@@ -1,68 +1,85 @@
+import { waitForIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
+import { toError } from '../resilience/to-error.ts';
 import type {
     ComputedIndexedDbQueueMutation,
     IndexedDbQueueExpectedState
 } from './indexed-db-queue-box-entry.ts';
 import { validateComputedIndexedDbQueueMutations } from './indexed-db-queue-box-entry.ts';
 
+interface IndexedDbQueueWriteState {
+    conflict: boolean;
+    storedValueError: Error | undefined;
+}
+
 export async function writeComputedIndexedDbQueueMutations(
     db: IDBDatabase,
     storeName: string,
     mutations: readonly ComputedIndexedDbQueueMutation[]
 ): Promise<boolean> {
+    const validated = validateComputedIndexedDbQueueMutations(mutations);
+    if (validated.left) {
+        throw validated.left;
+    }
     if (mutations.length === 0) {
         return true;
     }
-    validateComputedIndexedDbQueueMutations(mutations);
-
-    return await new Promise<boolean>((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        let conflict = false;
-        let storedValueError: Error | undefined;
-
-        tx.oncomplete = () => resolve(true);
-        tx.onabort = () => {
-            if (storedValueError) {
-                reject(storedValueError);
-                return;
-            }
-            if (conflict) {
-                resolve(false);
-                return;
-            }
-            reject(tx.error ?? new Error('IndexedDB computed queue write aborted'));
-        };
-        for (const mutation of mutations) {
-            if (mutation.kind === 'delete-unconditionally') {
-                store.delete(mutation.keyString);
-                continue;
-            }
-
-            const getRequest = store.get(mutation.keyString);
-            getRequest.onsuccess = () => {
-                if (conflict) {
-                    return;
-                }
-                let matches: boolean;
-                try {
-                    matches = matchesIndexedDbQueueExpectedState(getRequest.result, mutation.expected);
-                }
-                catch (error) {
-                    storedValueError = error instanceof Error ? error : new Error(String(error));
-                    tx.abort();
-                    return;
-                }
-                if (!matches) {
-                    conflict = true;
-                    tx.abort();
-                    return;
-                }
-                mutation.kind === 'put'
-                    ? store.put(mutation.value)
-                    : store.delete(mutation.keyString);
-            };
+    const transaction = db.transaction(storeName, 'readwrite');
+    const completed = waitForIndexedDbTransaction(transaction);
+    const state = submitComputedIndexedDbQueueMutations(transaction.objectStore(storeName), mutations);
+    try {
+        await completed;
+        return true;
+    }
+    catch (error) {
+        if (state.storedValueError) {
+            throw state.storedValueError;
         }
-    });
+        if (state.conflict) {
+            return false;
+        }
+        throw transaction.error ?? toError(error);
+    }
+}
+
+/** The transaction owner validates the candidate before opening its transaction and observes completion. */
+export function submitComputedIndexedDbQueueMutations(
+    store: IDBObjectStore,
+    mutations: readonly ComputedIndexedDbQueueMutation[]
+): Readonly<IndexedDbQueueWriteState> {
+    const state: IndexedDbQueueWriteState = { conflict: false, storedValueError: undefined };
+    for (const mutation of mutations) {
+        if (mutation.kind === 'delete-unconditionally') {
+            store.delete(mutation.keyString);
+            continue;
+        }
+        const request = store.get(mutation.keyString);
+        request.onsuccess = () => {
+            if (state.conflict || state.storedValueError) {
+                return;
+            }
+            let matches: boolean;
+            try {
+                matches = matchesIndexedDbQueueExpectedState(request.result, mutation.expected);
+            }
+            catch (error) {
+                state.storedValueError = toError(error);
+                store.transaction.abort();
+                return;
+            }
+            if (!matches) {
+                state.conflict = true;
+                store.transaction.abort();
+                return;
+            }
+            if (mutation.kind === 'put') {
+                store.put(mutation.value);
+            }
+            else if (mutation.kind === 'delete') {
+                store.delete(mutation.keyString);
+            }
+        };
+    }
+    return state;
 }
 
 function matchesIndexedDbQueueExpectedState(

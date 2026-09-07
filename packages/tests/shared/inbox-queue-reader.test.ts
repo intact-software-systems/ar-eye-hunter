@@ -26,7 +26,7 @@ describe('InboxQueueReader', () => {
         expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 
-    it('keeps a malformed persisted envelope out of application callbacks', async () => {
+    it.each(['invalid-version', 'invalid-json'])('fails a persisted %s message without retrying or delivering it', async (corruption) => {
         const queue = new InMemoryQueueBox();
         const reader = new InboxQueueReader(queue);
         const delivered: ALMessage[] = [];
@@ -37,18 +37,25 @@ describe('InboxQueueReader', () => {
         });
         const message = createAppInboxMessage('group-state.create.v1');
         const enqueued = await reader.enqueueIfAbsent(message);
-        await queue.setItem(enqueued.key, { ...enqueued, resource: JSON.stringify({ ...message, id: { ...message.id, v: 1 } }) }, {
+        const resource = corruption === 'invalid-json'
+            ? '{"private-payload":'
+            : JSON.stringify({ ...message, id: { ...message.id, v: 1 } });
+        await queue.setItem(enqueued.key, { ...enqueued, resource }, {
             expireAtTimestamp: enqueued.audit.expiryTs.epochMilliseconds
         });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         try {
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
             await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         }
         finally {
             consoleError.mockRestore();
         }
         expect(delivered).toEqual([]);
-        expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.RETRY);
+        expect(await queue.getItem(enqueued.key)).toMatchObject({
+            status: EntityStatus.NON_RETRYABLE,
+            dequeueAudit: { attempts: 1, nextTs: undefined }
+        });
     });
 
     it('keeps the queue entry retryable when no payload type callback is registered', async () => {

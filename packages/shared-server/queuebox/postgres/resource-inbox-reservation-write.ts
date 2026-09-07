@@ -5,7 +5,7 @@ import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 export interface ResourceInboxReservationFinish {
     readonly key: Key;
     readonly expectedAttempts: number;
-    readonly status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
+    readonly status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED | typeof EntityStatus.NON_RETRYABLE;
     readonly completedAt: Date;
 }
 

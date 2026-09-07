@@ -62,7 +62,7 @@ export function isRtcTopologyDeliveryRetryableConflict(error: Error): boolean {
 export function computeRtcTopologyDeliveryAppend(
     publisherStreamId: string,
     publication: RtcTopologyPublication,
-    outbox: ResourceEntry
+    outbox: readonly ResourceEntry[]
 ): RtcTopologyDeliveryAppend {
     assertRtcTopologyDeliveryStreamId(publisherStreamId);
     validateRtcTopologyPublication(publication, publication.groupRef);
@@ -71,7 +71,7 @@ export function computeRtcTopologyDeliveryAppend(
     assertRtcTopologyPublicationOutbox(publication, outbox);
 
     const retainUntilEpochMs = readRtcTopologyDeliverySafeInteger(
-        publication.message.constraints?.expiresAtMs,
+        publication.expiresAtEpochMs,
         'RTC topology delivery retention timestamp'
     );
     return {
@@ -83,9 +83,9 @@ export function computeRtcTopologyDeliveryAppend(
         },
         publicationId: publication.publicationId,
         outboxKey: {
-            topicId: outbox.key.topicId,
-            resourceId: outbox.key.resourceId,
-            contextId: outbox.key.contextId
+            topicId: outbox[0].key.topicId,
+            resourceId: outbox[0].key.resourceId,
+            contextId: outbox[0].key.contextId
         },
         retainUntilEpochMs,
         retainUntilIsoTimestamp: new Date(retainUntilEpochMs).toISOString()

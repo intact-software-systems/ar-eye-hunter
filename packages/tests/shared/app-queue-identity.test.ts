@@ -1,6 +1,39 @@
 import { describe, expect, it } from 'vitest';
 
-import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    fnv1a64,
+    toAppQueueKey,
+    toStrictAppInboxQueueKey
+} from '@shared/queuebox/AppQueueIdentity.ts';
+
+describe('App queue checksum', () => {
+    it.each([
+        ['', '33niihzj4ux45'],
+        ['a', '2o0ongoiv4rrg'],
+        ['foobar', '214ng2xt5fmco'],
+        ['Rallar', '2pq2mo53r6mxz'],
+        ['é', '2o0q4gvawodr8'],
+        ['漢', '2o3tmg1hf6qqt'],
+        ['😀', '3huu70miqwp20'],
+        ['\ud800', '2ohayon3z7jz3'],
+        ['\udc00', '2ohm1s6dy4uzj'],
+        ['\0\n\r\t\\"', '21ecehvi7o11f']
+    ])('preserves the base-36 checksum for %j', (value, expected) => {
+        expect(fnv1a64(value)).toBe(expected);
+    });
+
+    it('hashes every UTF-16 code unit without changing surrogate semantics', () => {
+        const value = Array.from({ length: 65_536 }, (_, codeUnit) => String.fromCharCode(codeUnit)).join('');
+
+        expect(fnv1a64(value)).toBe('2wo6dmh01qm1x');
+    });
+
+    it('preserves wraparound for a long snapshot containing non-ASCII and escaped text', () => {
+        const value = 'snapshot:漢😀\\"'.repeat(8_192);
+
+        expect(fnv1a64(value)).toBe('1uitafg9k84yt');
+    });
+});
 
 describe('App queue identity bounds', () => {
     it('keeps valid maximum HTTP request IDs exact and suffix-distinct', () => {

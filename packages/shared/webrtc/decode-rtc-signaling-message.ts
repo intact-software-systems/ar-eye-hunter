@@ -1,7 +1,11 @@
+import type { ALMessage } from '../al-contracts/al-contract.ts';
+import type { ALMessageRejection } from '../al-contracts/al-message-persistence-validation.ts';
 import {
     decodePersistedALRecord,
     requirePersistedALFields
 } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { validateALMessageResourceLimits } from '../al-contracts/al-message-resource-limits.ts';
+import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
 import { QRtcDataExchanged } from './qrtc-peer-connection.ts';
 import {
@@ -17,6 +21,29 @@ export class RtcSignalingDecodeError extends TypeError {
     constructor(message: string) {
         super(message);
         this.name = 'RtcSignalingDecodeError';
+    }
+}
+
+export function decodeRtcSignalingEnvelope(message: ALMessage): Either<ALMessageRejection, DecodedRtcSignalingMessage> {
+    const issues = validateALMessageResourceLimits(message);
+    if (issues.length > 0) {
+        return Either.ofLeft({ code: issues[0].code, message: 'Invalid RTC signaling message' });
+    }
+    try {
+        const signal = decodeRtcSignalingMessage(message.payload.resource);
+        if (
+            signal.fromId !== message.id.senderId || message.targets?.mode !== 'unicast' ||
+            signal.toId !== message.targets.toPeerId
+        ) {
+            return Either.ofLeft({
+                code: 'unauthorized',
+                message: 'RTC signaling identity does not match its AL envelope'
+            });
+        }
+        return Either.ofRight(signal);
+    }
+    catch {
+        return Either.ofLeft({ code: 'malformed', message: 'Invalid RTC signaling message' });
     }
 }
 
@@ -66,6 +93,7 @@ export function decodeRtcSignalingPayload(signalType: QRtcSignalingType, value: 
     if (value === null || typeof value !== 'object' || !('description' in value) || !('candidate' in value)) {
         throw new RtcSignalingDecodeError('Invalid RTC signaling payload');
     }
+    assertRtcSignalingFields(value, ['description', 'candidate']);
     if (signalType === 'IceCandidate') {
         if (value.description !== null) {
             throw new RtcSignalingDecodeError('Unexpected ICE description');
@@ -83,6 +111,7 @@ export function decodeRtcSignalingPayload(signalType: QRtcSignalingType, value: 
     ) {
         throw new RtcSignalingDecodeError('Invalid RTC session description');
     }
+    assertRtcSignalingFields(description, ['type', 'sdp']);
     return { description: { type: expectedType, sdp: description.sdp }, candidate: null };
 }
 
@@ -90,6 +119,7 @@ function decodeIceCandidate(value: unknown): RTCIceCandidateInit {
     if (value === null || typeof value !== 'object' || !('candidate' in value) || typeof value.candidate !== 'string') {
         throw new RtcSignalingDecodeError('Invalid RTC ICE candidate');
     }
+    assertRtcSignalingFields(value, ['candidate', 'sdpMid', 'sdpMLineIndex', 'usernameFragment']);
     const sdpMid = 'sdpMid' in value ? value.sdpMid : undefined;
     const sdpMLineIndex = 'sdpMLineIndex' in value ? value.sdpMLineIndex : undefined;
     const usernameFragment = 'usernameFragment' in value ? value.usernameFragment : undefined;
@@ -112,4 +142,16 @@ function decodeIceCandidate(value: unknown): RTCIceCandidateInit {
         ...(sdpMLineIndex !== undefined ? { sdpMLineIndex } : {}),
         ...(usernameFragment !== undefined ? { usernameFragment } : {})
     };
+}
+
+function assertRtcSignalingFields(value: object, allowed: readonly string[]): void {
+    if (Object.getPrototypeOf(value) !== Object.prototype) {
+        throw new RtcSignalingDecodeError('Invalid RTC signaling payload record');
+    }
+    for (const key of Reflect.ownKeys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (typeof key !== 'string' || !allowed.includes(key) || !descriptor?.enumerable || !('value' in descriptor)) {
+            throw new RtcSignalingDecodeError('Invalid RTC signaling payload fields');
+        }
+    }
 }

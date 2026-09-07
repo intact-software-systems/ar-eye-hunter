@@ -20,11 +20,11 @@ describe('RTC topology replay wake validation', () => {
             WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
         );
 
-        expect(isRtcTopologyPublicationOutboxEntry(fixture.outbox)).toBe(true);
+        expect(isRtcTopologyPublicationOutboxEntry(fixture.outbox[0])).toBe(true);
         expect(isRtcTopologyPublicationOutboxEntry(otherOutbox)).toBe(false);
         expect(
             isRtcTopologyPublicationOutboxEntry({
-                ...fixture.outbox,
+                ...fixture.outbox[0],
                 resource: JSON.stringify({ not: 'an AL message' })
             })
         ).toBe(false);

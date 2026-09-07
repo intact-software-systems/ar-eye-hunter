@@ -1,8 +1,16 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { resolveExpireAtTimestampWithFallback } from '../ALStoreRetention.ts';
+import {
+    acceptALSupersedenceObservation,
+    type ALSupersedenceAcceptance
+} from '../compute-al-supersedence-observation.ts';
 import type {
     ALInboundAdmissionMutation,
+    ALInboundAdmissionRead,
     ALInboundBufferedReleaseReadDto,
+    ALInboundCommitBundle,
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import {
@@ -15,15 +23,80 @@ import {
     type ALInboundEffectIntent
 } from './al-inbound-effect-intent.ts';
 import {
+    computeALInboundBufferedReleaseSupersedenceAcceptance,
+    computeALInboundOrderingAcceptance
+} from './al-inbound-planner-snapshot.ts';
+import {
+    prepareALInboundCommitBundle,
+    type ALInboundEffectFacts
+} from './prepare-al-inbound-commit-bundle.ts';
+import {
     markALPendingAckLocalReadySnapshot,
     trackALPendingAckSnapshot,
     type ALPendingAckTransition
 } from './transition-al-pending-ack.ts';
 
-export interface ALInboundAdmissionComputed {
+interface ALInboundAdmissionChanges {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
     readonly mutations: readonly ALInboundAdmissionMutation[];
     readonly effects: readonly ALInboundEffectIntent[];
+}
+
+export interface ComputeALInboundAdmissionInput {
+    readonly read: ALInboundAdmissionRead;
+    readonly plan: ALMessageHandlingPlan;
+    readonly canForward: boolean;
+    readonly facts: ALInboundEffectFacts;
+}
+
+export interface ComputeALInboundBufferedReleaseInput {
+    readonly read: ALInboundBufferedReleaseReadDto;
+    readonly plan: ALMessageHandlingPlan;
+    readonly facts: ALInboundEffectFacts;
+}
+
+function computeALInboundMessageRead(
+    read: ALInboundAdmissionRead,
+    plan: ALMessageHandlingPlan
+): ALInboundMessageReadDto {
+    const supersedence = plan.supersedence.enabled && plan.supersedence.key
+        ? {
+            key: plan.supersedence.key,
+            msgId: read.msg.id.msgId,
+            replacesMsgId: plan.supersedence.replacesMsgId,
+            seq: read.msg.ordering?.seq,
+            ts: read.msg.audit?.createdTs ?? read.msg.id.ts
+        }
+        : undefined;
+    return {
+        kind: 'incoming',
+        msg: read.msg,
+        fromPeerId: read.fromPeerId,
+        source: read.source,
+        nowMs: read.nowMs,
+        observations: read.observations,
+        pendingAck: read.pendingAck,
+        acks: read.acks,
+        controlOwners: read.controlOwners,
+        plan,
+        retention: read.retention,
+        supersedence: read.supersedence,
+        orderingSnapshot: read.orderingSnapshot !== undefined &&
+                read.orderingSnapshot.updatedAtMs + read.orderingTrackTtlMs > read.nowMs
+            ? read.orderingSnapshot
+            : undefined,
+        orderingAcceptance: computeALInboundOrderingAcceptance(read, true),
+        bufferedSnapshots: read.bufferedSnapshots,
+        supersedenceAcceptance: supersedence
+            ? acceptALSupersedenceObservation({
+                supersedence,
+                latest: read.supersedence.latest,
+                replacement: read.supersedence.replacement,
+                nowMs: read.nowMs,
+                trackTtlMs: read.supersedenceTrackTtlMs
+            })
+            : undefined
+    };
 }
 
 interface InboundAcknowledgementChanges {
@@ -36,12 +109,23 @@ interface InboundPendingAckInput {
     readonly msgId: string;
     readonly hadPending: boolean;
     readonly expireAtTimestamp: number | undefined;
+    readonly nowMs: number;
+    readonly senderId: string;
+    readonly retention: ALInboundMessageReadDto['retention'];
 }
 
 export function computeALInboundAdmission(
+    input: ComputeALInboundAdmissionInput
+): ALInboundCommitBundle {
+    const finalRead = computeALInboundMessageRead(input.read, input.plan);
+    const changes = computeALInboundAdmissionChanges(finalRead, input.canForward);
+    return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
+}
+
+function computeALInboundAdmissionChanges(
     read: ALInboundMessageReadDto,
     canForward: boolean
-): ALInboundAdmissionComputed {
+): ALInboundAdmissionChanges {
     const controls: ALInboundControlEffectInput = {
         msg: read.msg,
         plan: read.plan,
@@ -80,13 +164,25 @@ export function computeALInboundAdmission(
 }
 
 export function computeALInboundBufferedRelease(
+    input: ComputeALInboundBufferedReleaseInput
+): ALInboundCommitBundle {
+    const changes = computeALInboundBufferedReleaseChanges(
+        input.read,
+        input.plan,
+        computeALInboundBufferedReleaseSupersedenceAcceptance(input.read)
+    );
+    return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
+}
+
+function computeALInboundBufferedReleaseChanges(
     read: ALInboundBufferedReleaseReadDto,
-    plan: ALMessageHandlingPlan
-): ALInboundAdmissionComputed {
-    const superseded = read.supersedenceAcceptance?.observation.status === 'superseded';
+    plan: ALMessageHandlingPlan,
+    supersedenceAcceptance: ALSupersedenceAcceptance | undefined
+): ALInboundAdmissionChanges {
+    const superseded = supersedenceAcceptance?.observation.status === 'superseded';
     const deliverable = !plan.dropReason && plan.localDelivery.enabled && !superseded;
     const acknowledgements = deliverable
-        ? computeBufferedAcknowledgements(read, read.snapshot.plan)
+        ? computeBufferedAcknowledgements(read, read.snapshot.plan, supersedenceAcceptance)
         : { mutations: [], immediateEffects: [], completedEffects: [] };
     return {
         read,
@@ -94,13 +190,19 @@ export function computeALInboundBufferedRelease(
             {
                 kind: 'set-msg-owner',
                 msgId: read.snapshot.msg.id.msgId,
-                senderId: read.snapshot.msg.id.senderId
+                senderId: read.snapshot.msg.id.senderId,
+                source: read.source,
+                supersedenceKey: read.snapshot.plan.supersedence.key ?? null,
+                expireAtTimestamp: read.nowMs + read.retention.msgOwnerTtlMs
             },
             ...(!deliverable
                 ? [{ kind: 'delete-buffered' as const, trackKey: read.snapshot.trackKey, seq: read.snapshot.seq }]
                 : []),
             ...(deliverable
-                ? toSupersedenceMutations(read.supersedenceAcceptance, read.snapshot.plan.supersedence.key)
+                ? toSupersedenceMutations(
+                    supersedenceAcceptance,
+                    read.snapshot.plan.supersedence.key
+                )
                 : []),
             ...acknowledgements.mutations
         ],
@@ -119,7 +221,14 @@ export function computeALInboundBufferedRelease(
 
 function toAdmittedMessageMutations(read: ALInboundMessageReadDto): readonly ALInboundAdmissionMutation[] {
     const mutations: ALInboundAdmissionMutation[] = [
-        { kind: 'set-msg-owner', msgId: read.msg.id.msgId, senderId: read.msg.id.senderId }
+        {
+            kind: 'set-msg-owner',
+            msgId: read.msg.id.msgId,
+            senderId: read.msg.id.senderId,
+            source: read.source,
+            supersedenceKey: read.plan.supersedence.key ?? null,
+            expireAtTimestamp: read.nowMs + read.retention.msgOwnerTtlMs
+        }
     ];
     if (read.orderingAcceptance.observation.trackKey && read.orderingAcceptance.nextSnapshot) {
         mutations.push({
@@ -162,7 +271,12 @@ function toIncomingDeliveryMutations(read: ALInboundMessageReadDto): readonly AL
     // not merely until admission advances the contiguous sequence.
     mutations.push({
         kind: 'set-buffered',
-        snapshot: { trackKey: plan.orderingRuntime.trackKey, seq: plan.orderingRuntime.seq, msg: read.msg, plan }
+        snapshot: { trackKey: plan.orderingRuntime.trackKey, seq: plan.orderingRuntime.seq, msg: read.msg, plan },
+        expireAtTimestamp: resolveExpireAtTimestampWithFallback(
+            resolveALMessageExpireAtMs(read.msg, plan.effective),
+            read.retention.bufferedMessageTtlMs,
+            read.nowMs
+        )
     });
     return mutations;
 }
@@ -215,19 +329,53 @@ function computeIncomingAcknowledgements(
         localReady: !plan.localDelivery.deferred,
         expireAtTimestamp
     });
-    return toAckTransitionChanges(transition, {
+    const changes = toAckTransitionChanges(transition, {
         msgId: read.msg.id.msgId,
+        senderId: read.msg.id.senderId,
         hadPending: read.pendingAck !== undefined,
-        expireAtTimestamp
+        expireAtTimestamp,
+        nowMs: read.nowMs,
+        retention: read.retention
     });
+    if (!transition.pending) {
+        return changes;
+    }
+    return {
+        ...changes,
+        mutations: [
+            ...changes.mutations,
+            toControlOwnerMutation(read, transition.pending.expireAtTimestamp)
+        ]
+    };
+}
+
+function toControlOwnerMutation(
+    read: ALInboundMessageReadDto,
+    pendingExpireAtTimestamp: number | undefined
+): ALInboundAdmissionMutation {
+    return {
+        kind: 'set-control-owners',
+        msgId: read.msg.id.msgId,
+        value: computeInboundControlOwnerIndex(
+            read.controlOwners,
+            read.msg.id.senderId,
+            read.plan.forwarding.nextHopPeerIds
+        ),
+        expireAtTimestamp: resolveExpireAtTimestampWithFallback(
+            pendingExpireAtTimestamp,
+            read.retention.controlPendingTtlMs,
+            read.nowMs
+        )
+    };
 }
 
 function computeBufferedAcknowledgements(
     read: ALInboundBufferedReleaseReadDto,
-    plan: ALMessageHandlingPlan
+    plan: ALMessageHandlingPlan,
+    supersedenceAcceptance: ALSupersedenceAcceptance | undefined
 ): InboundAcknowledgementChanges {
     if (
-        read.supersedenceAcceptance?.observation.status === 'superseded' || plan.ack.algo === 'none' ||
+        supersedenceAcceptance?.observation.status === 'superseded' || plan.ack.algo === 'none' ||
         !plan.ack.toPeerId
     ) {
         return { mutations: [], immediateEffects: [], completedEffects: [] };
@@ -252,8 +400,11 @@ function computeBufferedAcknowledgements(
     });
     return toAckTransitionChanges(transition, {
         msgId: read.snapshot.msg.id.msgId,
+        senderId: read.snapshot.msg.id.senderId,
         hadPending: read.pendingAck !== undefined,
-        expireAtTimestamp
+        expireAtTimestamp,
+        nowMs: read.nowMs,
+        retention: read.retention
     });
 }
 
@@ -265,10 +416,16 @@ function toAckTransitionChanges(
         ? [{
             kind: 'set-control-pending',
             msgId: input.msgId,
-            value: { kind: 'pending', value: transition.pending }
+            senderId: input.senderId,
+            value: { kind: 'pending', value: transition.pending },
+            expireAtTimestamp: resolveExpireAtTimestampWithFallback(
+                transition.pending.expireAtTimestamp,
+                input.retention.controlPendingTtlMs,
+                input.nowMs
+            )
         }]
         : input.hadPending
-        ? [{ kind: 'delete-control-pending', msgId: input.msgId }]
+        ? [{ kind: 'delete-control-pending', msgId: input.msgId, senderId: input.senderId }]
         : [];
     const completedEffects = transition.completed
         ? [toALInboundAckEffect({
@@ -279,6 +436,28 @@ function toAckTransitionChanges(
         })]
         : [];
     return { mutations, immediateEffects: [], completedEffects };
+}
+
+function computeInboundControlOwnerIndex(
+    current: ALInboundMessageReadDto['controlOwners'],
+    senderId: string,
+    peerIds: readonly string[]
+): NonNullable<ALInboundMessageReadDto['controlOwners']> {
+    if (current?.ambiguous) {
+        return current;
+    }
+    const values = new Map(current?.values.map((value) => [value.peerId, value.senderId]) ?? []);
+    for (const peerId of peerIds) {
+        const existing = values.get(peerId);
+        values.set(peerId, existing === undefined || existing === senderId ? senderId : null);
+    }
+    if (values.size > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries) {
+        return { ambiguous: true, values: [] };
+    }
+    return {
+        ambiguous: false,
+        values: [...values].map(([peerId, ownerSenderId]) => ({ peerId, senderId: ownerSenderId }))
+    };
 }
 
 function isNewerMessage(

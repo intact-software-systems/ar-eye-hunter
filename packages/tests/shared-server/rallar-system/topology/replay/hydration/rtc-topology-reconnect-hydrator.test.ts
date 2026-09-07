@@ -1,12 +1,14 @@
 import type { RtcTopologyReconnectHydration } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydration.ts';
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
+import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
 
 describe('RtcTopologyReconnectHydrator', () => {
     afterEach(() => {
@@ -14,29 +16,40 @@ describe('RtcTopologyReconnectHydrator', () => {
     });
 
     it('hydrates only an active durable member and session', async () => {
-        const harness = createHarness();
+        const harness = new ReconnectHydrationHarness();
         const connection = harness.addConnection('session-1', 'generation-1');
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
 
-        expect(harness.sentMessages(connection)).toEqual([
-            expect.objectContaining({
-                id: expect.objectContaining({
-                    msgId: JSON.stringify(['rtc-topology-hydration', 'session-1', 'generation-1', 3, 4, 5])
-                }),
-                targets: { mode: 'unicast', toPeerId: 'session-1' }
-            })
-        ]);
+        const snapshots = assembleStateSnapshotMessages(harness.sentMessages(connection), { applicationId: 'app-1', workspaceId: 'workspace-1' }, 1000);
+        expect(snapshots).toHaveLength(1);
+        expect(snapshots[0].page.originalMessageId).toBe(
+            JSON.stringify(['rtc-topology-hydration', 'app-1', 'workspace-1', 'group-1', 'session-1', 'generation-1', 3, 4, 5])
+        );
+        expect(snapshots[0].envelope.targets).toEqual({ mode: 'unicast', toPeerId: 'session-1' });
         expect(harness.outcomes).toEqual(['sent']);
+    });
+
+    it('keeps hydration identities distinct for rooms sharing the same revision and topology version', async () => {
+        const harness = new ReconnectHydrationHarness({ topologies: [createTopology({ groupId: 'room-a' }), createTopology({ groupId: 'room-b' })] });
+        const connection = harness.addConnection('session-1', 'generation-1');
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+        const messages = harness.sentMessages(connection);
+        expect(messages).toHaveLength(2);
+        expect(new Set(messages.map((message) => message.id.msgId)).size).toBe(2);
     });
 
     it.each([
         ['revoked member', { memberStatus: 'removed' as const }],
         ['wrong principal', { sessionPrincipalId: 'principal-2' }],
         ['expired session', { sessionExpiresAtEpochMs: 999 }],
+        ['expired group', { groupExpiresAtEpochMs: 1_000 }],
+        ['foreign group scope', { workspaceId: 'elsewhere' }],
+        ['foreign member scope', { memberWorkspaceId: 'elsewhere' }],
+        ['foreign session scope', { sessionWorkspaceId: 'elsewhere' }],
         ['disconnected session', { sessionStatus: 'disconnected' as const }]
     ])('skips an unauthorized durable identity: %s', async (_label, overrides) => {
-        const harness = createHarness(overrides);
+        const harness = new ReconnectHydrationHarness(overrides);
         const connection = harness.addConnection('session-1', 'generation-1');
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
@@ -48,19 +61,22 @@ describe('RtcTopologyReconnectHydrator', () => {
     it('reloads current topology after authorization instead of sending the scan row', async () => {
         const stale = createTopology({ version: 4 });
         const current = createTopology({ version: 5 });
-        const harness = createHarness({ scanTopology: stale, currentTopology: current });
+        const harness = new ReconnectHydrationHarness({ scanTopology: stale, currentTopology: current });
         const connection = harness.addConnection('session-1', 'generation-1');
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
 
-        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
-        expect(JSON.parse(message.payload.resource)).toEqual(current);
+        expect(
+            JSON.parse(
+                assembleStateSnapshotMessages(harness.sentMessages(connection), { applicationId: 'app-1', workspaceId: 'workspace-1' }, 1000)[0].resource
+            )
+        ).toEqual(current);
     });
 
     it('hydrates the accepted layout whenever the accepted slot exists (4c)', async () => {
         const planned = createTopology({ version: 6 });
         const accepted = createTopology({ version: 5 });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             scanTopology: planned,
             currentTopology: planned,
             acceptedTopologies: {
@@ -72,15 +88,18 @@ describe('RtcTopologyReconnectHydrator', () => {
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
 
-        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
-        expect(JSON.parse(message.payload.resource)).toEqual(accepted);
+        expect(
+            JSON.parse(
+                assembleStateSnapshotMessages(harness.sentMessages(connection), { applicationId: 'app-1', workspaceId: 'workspace-1' }, 1000)[0].resource
+            )
+        ).toEqual(accepted);
         expect(harness.outcomes).toEqual(['sent']);
     });
 
     it('hydrates the removal tombstone even when a stale accepted row survives (teardown wins)', async () => {
         const tombstone = { ...createTopology({ version: 8 }), state: 'removed' as const };
         const staleAccepted = createTopology({ version: 7 });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             scanTopology: tombstone,
             currentTopology: tombstone,
             acceptedTopologies: {
@@ -92,14 +111,17 @@ describe('RtcTopologyReconnectHydrator', () => {
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
 
-        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
-        expect(JSON.parse(message.payload.resource)).toEqual(tombstone);
+        expect(
+            JSON.parse(
+                assembleStateSnapshotMessages(harness.sentMessages(connection), { applicationId: 'app-1', workspaceId: 'workspace-1' }, 1000)[0].resource
+            )
+        ).toEqual(tombstone);
     });
 
     it('serves a member named only in the held planned candidate their candidate assignment (4c)', async () => {
         const planned = createTopology({ version: 9, activeSessionIds: ['session-1', 'session-2'] });
         const accepted = createTopology({ version: 8, activeSessionIds: ['session-2'] });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             scanTopology: planned,
             currentTopology: planned,
             acceptedTopologies: {
@@ -111,15 +133,18 @@ describe('RtcTopologyReconnectHydrator', () => {
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
 
-        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
-        expect(JSON.parse(message.payload.resource)).toEqual(planned);
+        expect(
+            JSON.parse(
+                assembleStateSnapshotMessages(harness.sentMessages(connection), { applicationId: 'app-1', workspaceId: 'workspace-1' }, 1000)[0].resource
+            )
+        ).toEqual(planned);
         expect(harness.outcomes).toEqual(['sent']);
     });
 
     it('finds a member only the accepted layout still names through the second scan (4c)', async () => {
         const planned = createTopology({ version: 7, activeSessionIds: ['session-9'] });
         const accepted = createTopology({ version: 6 });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             scanTopology: planned,
             currentTopology: planned,
             acceptedTopologies: {
@@ -131,8 +156,11 @@ describe('RtcTopologyReconnectHydrator', () => {
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
 
-        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
-        expect(JSON.parse(message.payload.resource)).toEqual(accepted);
+        expect(
+            JSON.parse(
+                assembleStateSnapshotMessages(harness.sentMessages(connection), { applicationId: 'app-1', workspaceId: 'workspace-1' }, 1000)[0].resource
+            )
+        ).toEqual(accepted);
         expect(harness.outcomes).toEqual(['sent']);
     });
 
@@ -141,7 +169,7 @@ describe('RtcTopologyReconnectHydrator', () => {
         const authorizationBlocked = new Promise<void>((resolve) => {
             releaseAuthorization = resolve;
         });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             beforeAuthorizationReturns: async () => await authorizationBlocked
         });
         const captured = harness.addConnection('session-1', 'generation-1');
@@ -163,7 +191,7 @@ describe('RtcTopologyReconnectHydrator', () => {
         const authorizationBlocked = new Promise<void>((resolve) => {
             releaseAuthorization = resolve;
         });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             scheduler,
             beforeAuthorizationReturns: async () => await authorizationBlocked
         });
@@ -186,7 +214,7 @@ describe('RtcTopologyReconnectHydrator', () => {
         const authorizationBlocked = new Promise<void>((resolve) => {
             releaseAuthorization = resolve;
         });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             beforeAuthorizationReturns: async () => await authorizationBlocked
         });
         const connection = harness.addConnection('session-1', 'generation-1');
@@ -204,7 +232,7 @@ describe('RtcTopologyReconnectHydrator', () => {
     });
 
     it('retries when durable group authority moves around the topology read', async () => {
-        const harness = createHarness({ groupRevisionsByRead: [3, 4] });
+        const harness = new ReconnectHydrationHarness({ groupRevisionsByRead: [3, 4] });
         const connection = harness.addConnection('session-1', 'generation-1');
 
         await expect(
@@ -216,7 +244,7 @@ describe('RtcTopologyReconnectHydrator', () => {
     });
 
     it('records retry when the bounded topology page scan fails', async () => {
-        const harness = createHarness({ topologyPageFailures: 1 });
+        const harness = new ReconnectHydrationHarness({ topologyPageFailures: 1 });
         harness.addConnection('session-1', 'generation-1');
 
         await expect(
@@ -231,7 +259,7 @@ describe('RtcTopologyReconnectHydrator', () => {
         const topologyPageBlocked = new Promise<void>((resolve) => {
             releaseTopologyPage = resolve;
         });
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             topologyPageFailures: 1,
             beforeTopologyPageReturns: async () => await topologyPageBlocked
         });
@@ -254,7 +282,7 @@ describe('RtcTopologyReconnectHydrator', () => {
                 groupId: `group-${String(index).padStart(3, '0')}`,
                 activeSessionIds: index === 100 ? ['session-1'] : ['other-session']
             }));
-        const harness = createHarness({ topologies });
+        const harness = new ReconnectHydrationHarness({ topologies });
         const connection = harness.addConnection('session-1', 'generation-1');
 
         await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
@@ -266,7 +294,7 @@ describe('RtcTopologyReconnectHydrator', () => {
 
     it('batches connections opened within 25 ms into one topology scan', async () => {
         const scheduler = new ManualScheduler();
-        const harness = createHarness({ scheduler });
+        const harness = new ReconnectHydrationHarness({ scheduler });
         harness.hydrator.start();
         const first = harness.addConnection('session-1', 'generation-1');
         const second = harness.addConnection('session-2', 'generation-2');
@@ -287,7 +315,7 @@ describe('RtcTopologyReconnectHydrator', () => {
             releaseFirstAuthorization = resolve;
         });
         let shouldBlockAuthorization = true;
-        const harness = createHarness({
+        const harness = new ReconnectHydrationHarness({
             scheduler,
             beforeAuthorizationReturns: async () => {
                 if (!shouldBlockAuthorization) {
@@ -315,7 +343,7 @@ describe('RtcTopologyReconnectHydrator', () => {
 
     it('cancels a bounded retry when the captured generation closes', async () => {
         const scheduler = new ManualScheduler();
-        const harness = createHarness({ scheduler, currentTopologyFailures: 1 });
+        const harness = new ReconnectHydrationHarness({ scheduler, currentTopologyFailures: 1 });
         harness.hydrator.start();
         const connection = harness.addConnection('session-1', 'generation-1');
         harness.open(connection);
@@ -332,6 +360,10 @@ describe('RtcTopologyReconnectHydrator', () => {
 });
 
 interface HarnessOverrides {
+    readonly groupExpiresAtEpochMs?: number;
+    readonly workspaceId?: string;
+    readonly memberWorkspaceId?: string;
+    readonly sessionWorkspaceId?: string;
     readonly memberStatus?: 'active' | 'removed';
     readonly sessionStatus?: 'active' | 'disconnected';
     readonly sessionPrincipalId?: string;
@@ -348,123 +380,107 @@ interface HarnessOverrides {
     readonly groupRevisionsByRead?: readonly number[];
 }
 
-function createHarness(overrides: HarnessOverrides = {}) {
-    vi.stubGlobal('WebSocket', FakeWebSocket);
-    const socket = new JsonWebSocketServer();
-    const scanTopology = overrides.scanTopology ?? createTopology();
-    const topologies = overrides.topologies ?? [scanTopology];
-    const currentTopology = overrides.currentTopology ?? scanTopology;
-    const outcomes: string[] = [];
-    const pageLimits: number[] = [];
-    const webSockets = new Map<ConnectionContext, FakeWebSocket>();
-    let yieldCount = 0;
-    let groupReadCount = 0;
-    let currentTopologyReadCount = 0;
-    let currentTopologyFailures = overrides.currentTopologyFailures ?? 0;
-    let topologyPageFailures = overrides.topologyPageFailures ?? 0;
-    const hydrator = new RtcTopologyReconnectHydrator({
-        socket,
-        batchWindowMs: 25,
-        acceptedTopologies: overrides.acceptedTopologies ?? {
-            listSnapshotEntriesPage: async () => [],
-            findSnapshot: async () => undefined
-        },
-        topologies: {
-            listSnapshotEntriesPage: async ({ afterKey, limit }) => {
-                pageLimits.push(limit);
-                await overrides.beforeTopologyPageReturns?.();
-                if (topologyPageFailures > 0) {
-                    topologyPageFailures -= 1;
-                    throw new Error('transient topology page failure');
+class ReconnectHydrationHarness implements RtcTopologyReconnectHydration.TopologyReader, RtcTopologyReconnectHydration.GroupReader {
+    readonly socket = new JsonWebSocketServer();
+    readonly outcomes: string[] = [];
+    readonly pageLimits: number[] = [];
+    readonly hydrator: RtcTopologyReconnectHydrator;
+    readonly #webSockets = new Map<ConnectionContext, FakeWebSocket>();
+    readonly #overrides: HarnessOverrides;
+    readonly #topologies: readonly RallarOverlayTopologySnapshot[];
+    readonly #currentTopology: RallarOverlayTopologySnapshot;
+    #currentTopologyFailures: number;
+    #topologyPageFailures: number;
+    #yieldCount = 0;
+    #groupReadCount = 0;
+    #currentTopologyReadCount = 0;
+
+    constructor(overrides: HarnessOverrides = {}) {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+        this.#overrides = overrides;
+        const scanTopology = overrides.scanTopology ?? createTopology();
+        this.#topologies = overrides.topologies ?? [scanTopology];
+        this.#currentTopology = overrides.currentTopology ?? scanTopology;
+        this.#currentTopologyFailures = overrides.currentTopologyFailures ?? 0;
+        this.#topologyPageFailures = overrides.topologyPageFailures ?? 0;
+        this.hydrator = new RtcTopologyReconnectHydrator({
+            socket: this.socket,
+            batchWindowMs: 25,
+            topologies: this,
+            groups: this,
+            acceptedTopologies: overrides.acceptedTopologies ?? { listSnapshotEntriesPage: async () => [], findSnapshot: async () => undefined },
+            readIdentity: () => ({ principalId: 'principal-1' }),
+            nowEpochMs: () => 1_000,
+            diagnostics: (event) => {
+                if (event.kind === 'hydration') {
+                    this.outcomes.push(event.outcome);
                 }
-                const remaining = topologies.filter(
-                    (snapshot) => snapshot.groupRef.groupId > (afterKey ?? '')
-                );
-                return remaining.slice(0, limit).map((snapshot) => ({
-                    entry: {
-                        key: snapshot.groupRef.groupId,
-                        value: JSON.stringify(snapshot),
-                        expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                        updatedTimestamp: '2026-08-10T00:00:00.000Z',
-                        revision: 1
-                    },
-                    value: snapshot
-                }));
             },
-            findSnapshot: async (ref) => {
-                currentTopologyReadCount += 1;
-                if (currentTopologyFailures > 0) {
-                    currentTopologyFailures -= 1;
-                    throw new Error('transient topology read failure');
+            scheduler: overrides.scheduler ?? {
+                schedule: () => () => undefined,
+                yield: async () => {
+                    this.#yieldCount += 1;
                 }
-                return {
-                    ...currentTopology,
-                    groupRef: ref,
-                    overlayId: `overlay-${ref.groupId}`
-                };
             }
-        },
-        groups: {
-            readSnapshot: async (ref) => {
-                groupReadCount += 1;
-                await overrides.beforeAuthorizationReturns?.();
-                return createGroupSnapshot(
-                    ref.groupId,
-                    overrides,
-                    overrides.groupRevisionsByRead?.[groupReadCount - 1]
-                );
-            }
-        },
-        readIdentity: () => ({ principalId: 'principal-1' }),
-        nowEpochMs: () => 1_000,
-        diagnostics: (event) => {
-            if (event.kind === 'hydration') {
-                outcomes.push(event.outcome);
-            }
-        },
-        scheduler: overrides.scheduler ?? {
-            schedule: () => () => undefined,
-            yield: async () => {
-                yieldCount += 1;
-            }
+        });
+    }
+
+    get yieldCount(): number {
+        return this.#yieldCount;
+    }
+    get groupReadCount(): number {
+        return this.#groupReadCount;
+    }
+    get currentTopologyReadCount(): number {
+        return this.#currentTopologyReadCount;
+    }
+
+    async listSnapshotEntriesPage(input: RtcTopologyReconnectHydration.SnapshotPageInput) {
+        this.pageLimits.push(input.limit);
+        await this.#overrides.beforeTopologyPageReturns?.();
+        if (this.#topologyPageFailures > 0) {
+            this.#topologyPageFailures -= 1;
+            throw new Error('transient topology page failure');
         }
-    });
-    return {
-        socket,
-        hydrator,
-        outcomes,
-        pageLimits,
-        get yieldCount() {
-            return yieldCount;
-        },
-        get groupReadCount() {
-            return groupReadCount;
-        },
-        get currentTopologyReadCount() {
-            return currentTopologyReadCount;
-        },
-        addConnection(sessionId: string, generationId: string) {
-            const webSocket = new FakeWebSocket();
-            const context = new ConnectionContext(sessionId, webSocket, generationId, 1_000);
-            webSockets.set(context, webSocket);
-            socket.addConnection(context);
-            return context;
-        },
-        open(context: ConnectionContext): void {
-            requireHarnessWebSocket(webSockets, context).dispatchEvent(new Event('open'));
-        },
-        close(context: ConnectionContext): void {
-            const webSocket = requireHarnessWebSocket(webSockets, context);
-            webSocket.readyState = 3;
-            webSocket.dispatchEvent(new Event('close'));
-        },
-        sentMessages(context: ConnectionContext): readonly ALMessage[] {
-            return requireHarnessWebSocket(webSockets, context).sent.map((text) => {
-                const message = JSON.parse(text);
-                return decodePersistedALMessageValue(message);
-            });
+        return this.#topologies.filter((snapshot) => snapshot.groupRef.groupId > (input.afterKey ?? '')).slice(0, input.limit).map(toSnapshotPageEntry);
+    }
+
+    async findSnapshot(ref: GroupRef): Promise<RallarOverlayTopologySnapshot> {
+        this.#currentTopologyReadCount += 1;
+        if (this.#currentTopologyFailures > 0) {
+            this.#currentTopologyFailures -= 1;
+            throw new Error('transient topology read failure');
         }
-    };
+        return { ...this.#currentTopology, groupRef: ref, overlayId: `overlay-${ref.groupId}` };
+    }
+
+    async readSnapshot(ref: GroupRef): Promise<GroupSnapshot> {
+        this.#groupReadCount += 1;
+        await this.#overrides.beforeAuthorizationReturns?.();
+        return createGroupSnapshot(ref.groupId, this.#overrides, this.#overrides.groupRevisionsByRead?.[this.#groupReadCount - 1]);
+    }
+
+    addConnection(sessionId: string, generationId: string): ConnectionContext {
+        const webSocket = new FakeWebSocket();
+        const context = new ConnectionContext({ id: sessionId, socket: webSocket, generationId, generationStartedAtEpochMs: 1_000 });
+        this.#webSockets.set(context, webSocket);
+        this.socket.addConnection(context);
+        return context;
+    }
+
+    open(context: ConnectionContext): void {
+        requireHarnessWebSocket(this.#webSockets, context).dispatchEvent(new Event('open'));
+    }
+
+    close(context: ConnectionContext): void {
+        const webSocket = requireHarnessWebSocket(this.#webSockets, context);
+        webSocket.readyState = 3;
+        webSocket.dispatchEvent(new Event('close'));
+    }
+
+    sentMessages(context: ConnectionContext): readonly ALMessage[] {
+        return requireHarnessWebSocket(this.#webSockets, context).sent.map(decodePersistedALMessage);
+    }
 }
 
 function requireHarnessWebSocket(
@@ -480,7 +496,7 @@ function requireHarnessWebSocket(
 
 function toSnapshotPageEntry(
     snapshot: RallarOverlayTopologySnapshot
-): { entry: { key: string; value: string; expireAtTimestamp: number; updatedTimestamp: string; revision: number; }; value: RallarOverlayTopologySnapshot; } {
+): RuntimeStateEntryValue<RallarOverlayTopologySnapshot> {
     return {
         entry: {
             key: snapshot.groupRef.groupId,
@@ -493,13 +509,13 @@ function toSnapshotPageEntry(
     };
 }
 
-function createTopology(
-    input: Readonly<{
-        groupId?: string;
-        version?: number;
-        activeSessionIds?: readonly string[];
-    }> = {}
-): RallarOverlayTopologySnapshot {
+interface TopologyFixtureOptions {
+    readonly groupId?: string;
+    readonly version?: number;
+    readonly activeSessionIds?: readonly string[];
+}
+
+function createTopology(input: TopologyFixtureOptions = {}): RallarOverlayTopologySnapshot {
     const groupId = input.groupId ?? 'group-1';
     const activeSessionIds = input.activeSessionIds ?? ['session-1'];
     return {
@@ -534,41 +550,29 @@ function createGroupSnapshot(
     };
     return {
         causalRevision: { groupRevision, presenceRevision: 4 },
-        group: createTestGroup({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId,
-            displayName: 'Group',
-            activeMemberCount: 1,
-            ownerPrincipalId: 'principal-1',
-            snapshotVersion: 3,
-            metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 4,
-            created: audit,
-            updated: audit
-        }),
+        group: createHydrationGroup(groupId, overrides, audit),
         members: [
             {
                 applicationId: 'app-1',
-                workspaceId: 'workspace-1',
+                workspaceId: overrides.memberWorkspaceId ?? 'workspace-1',
                 groupId,
                 principalId: 'principal-1',
                 role: 'owner',
-                status: overrides.memberStatus ?? 'active',
                 joined: audit,
                 updated: audit,
                 invitedByPrincipalId: null,
                 invitationExpiresAtEpochMs: null,
                 left: null,
-                removed: overrides.memberStatus === 'removed' ? audit : null,
-                banned: null
-            } as GroupSnapshot['members'][number]
+                banned: null,
+                ...(overrides.memberStatus === 'removed'
+                    ? { status: 'removed', removed: audit } as const
+                    : { status: 'active', removed: null } as const)
+            }
         ],
         activeSessions: [
             {
                 applicationId: 'app-1',
-                workspaceId: 'workspace-1',
+                workspaceId: overrides.sessionWorkspaceId ?? 'workspace-1',
                 groupId,
                 sessionId: 'session-1',
                 principalId: overrides.sessionPrincipalId ?? 'principal-1',
@@ -577,10 +581,10 @@ function createGroupSnapshot(
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: 1,
                 expiresAtEpochMs: overrides.sessionExpiresAtEpochMs ?? 2_000,
-                status: sessionStatus,
-                disconnectedAtEpochMs: sessionStatus === 'active' ? null : 900,
-                disconnectReason: sessionStatus === 'active' ? null : 'closed'
-            } as GroupSnapshot['activeSessions'][number]
+                ...(sessionStatus === 'active'
+                    ? { status: 'active', disconnectedAtEpochMs: null, disconnectReason: null } as const
+                    : { status: 'disconnected', disconnectedAtEpochMs: 900, disconnectReason: 'closed' } as const)
+            }
         ],
         memberCount: 1,
         onlineMemberCount: sessionStatus === 'active' ? 1 : 0
@@ -650,4 +654,22 @@ class ManualScheduler {
         }
         await Promise.resolve();
     }
+}
+
+function createHydrationGroup(groupId: string, overrides: HarnessOverrides, audit: AuditStamp): GroupSnapshot['group'] {
+    return createTestGroup({
+        applicationId: 'app-1',
+        workspaceId: overrides.workspaceId ?? 'workspace-1',
+        expiresAtEpochMs: overrides.groupExpiresAtEpochMs ?? null,
+        groupId,
+        displayName: 'Group',
+        activeMemberCount: 1,
+        ownerPrincipalId: 'principal-1',
+        snapshotVersion: 3,
+        metadataVersion: 1,
+        rosterVersion: 1,
+        presenceVersion: 4,
+        created: audit,
+        updated: audit
+    });
 }

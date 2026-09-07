@@ -1,7 +1,175 @@
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 describe('engine', () => {
+    it('wakes for a registered task deadline before idle backoff elapses', async () => {
+        vi.useFakeTimers();
+        const engine = new InboxOutboxEngine();
+        const dueAt = Date.now() + 20;
+        const ranAt: number[] = [];
+        engine.includeTask('receipt', {
+            name: 'receipt',
+            maxConcurrency: () => 1,
+            isWork: () => ranAt.length === 0 && Date.now() >= dueAt,
+            runnable: () => {
+                ranAt.push(Date.now());
+            },
+            ongoingTasks: []
+        });
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        engine.wakeAt('receipt', dueAt);
+        await vi.advanceTimersByTimeAsync(19);
+        expect(ranAt).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(ranAt).toEqual([dueAt]);
+        engine.stop();
+    });
+
+    it('shares an active pass between scheduled and manual execution without duplicating work', async () => {
+        vi.useFakeTimers();
+        const engine = new InboxOutboxEngine();
+        const observed = Promise.withResolvers<void>();
+        const available = Promise.withResolvers<boolean>();
+        const submitted = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let checks = 0;
+        let runs = 0;
+        engine.includeTask('send', {
+            name: 'send',
+            maxConcurrency: () => 1,
+            isWork: async () => {
+                checks += 1;
+                observed.resolve();
+                return available.promise;
+            },
+            runnable: async () => {
+                runs += 1;
+                submitted.resolve();
+                await release.promise;
+            },
+            ongoingTasks: []
+        });
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        await observed.promise;
+        const manual = engine.executeOnce();
+        available.resolve(true);
+        await manual;
+        await submitted.promise;
+        engine.stop();
+        release.resolve();
+        await vi.runAllTimersAsync();
+        expect(checks).toBe(1);
+        expect(runs).toBe(1);
+    });
+
+    it.each(['remove', 'replace', 'stop'] as const)('does not submit an old task after %s while readiness is pending', async (change) => {
+        vi.useFakeTimers();
+        const engine = new InboxOutboxEngine();
+        const observed = Promise.withResolvers<void>();
+        const available = Promise.withResolvers<boolean>();
+        let oldRuns = 0;
+        let newRuns = 0;
+        let remaining = 1;
+        engine.includeTask('send', {
+            name: 'send',
+            maxConcurrency: () => 1,
+            isWork: async () => {
+                observed.resolve();
+                return oldRuns === 0 && await available.promise;
+            },
+            runnable: async () => {
+                oldRuns += 1;
+            },
+            ongoingTasks: []
+        });
+        const pending = engine.executeOnce();
+        await observed.promise;
+        if (change === 'remove') {
+            engine.excludeTask('send');
+        }
+        else if (change === 'stop') {
+            engine.stop();
+        }
+        else {
+            engine.includeTask('send', {
+                name: 'send',
+                maxConcurrency: () => 1,
+                isWork: () => remaining > 0,
+                runnable: async () => {
+                    remaining -= 1;
+                    newRuns += 1;
+                },
+                ongoingTasks: []
+            });
+        }
+        available.resolve(true);
+        await pending;
+        if (change !== 'stop') {
+            await engine.executeOnce();
+        }
+        expect(oldRuns).toBe(0);
+        expect(newRuns).toBe(change === 'replace' ? 1 : 0);
+    });
+
+    it('fences a removed task whose executor has not invoked its runnable yet', async () => {
+        const engine = new InboxOutboxEngine();
+        const scheduled = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const completed = Promise.withResolvers<void>();
+        let runs = 0;
+        engine.includeTask('send', {
+            name: 'send',
+            maxConcurrency: () => 1,
+            isWork: () => true,
+            runnable: async () => {
+                runs += 1;
+            },
+            executor: async (runnable) => {
+                scheduled.resolve();
+                await release.promise;
+                await runnable();
+                completed.resolve();
+            },
+            ongoingTasks: []
+        });
+        await engine.executeOnce();
+        await scheduled.promise;
+        engine.excludeTask('send');
+        release.resolve();
+        await completed.promise;
+        await engine.executeOnce();
+        expect(runs).toBe(0);
+    });
+
+    it('owns task state under its registration id without changing the supplied task', async () => {
+        const engine = new InboxOutboxEngine();
+        let runs = 0;
+        const ongoingTasks = Object.freeze([]);
+        const task = Object.freeze({
+            name: 'diagnostic-label',
+            maxConcurrency: () => 1,
+            isWork: () => runs === 0,
+            runnable: async () => {
+                runs += 1;
+            },
+            ongoingTasks
+        });
+        engine.includeTask('send', task);
+        await engine.executeOnce();
+        expect(engine.excludeTask('send')).toBe(true);
+        expect(engine.excludeTask('diagnostic-label')).toBe(false);
+        await engine.executeOnce();
+        expect(runs).toBe(1);
+        expect(task.ongoingTasks).toBe(ongoingTasks);
+        expect(task.name).toBe('diagnostic-label');
+    });
+
     it('executes a task once when work is available', async () => {
         vi.useFakeTimers();
         try {
@@ -79,10 +247,7 @@ describe('engine', () => {
         vi.useFakeTimers();
         try {
             const engine = new InboxOutboxEngine();
-            let releaseTask!: () => void;
-            const taskGate = new Promise<void>((resolve) => {
-                releaseTask = resolve;
-            });
+            const taskGate = Promise.withResolvers<void>();
             let remainingWork = 2;
             let runCount = 0;
 
@@ -95,7 +260,7 @@ describe('engine', () => {
                     runnable: async () => {
                         runCount += 1;
                         remainingWork -= 1;
-                        await taskGate;
+                        await taskGate.promise;
                     },
                     ongoingTasks: []
                 }
@@ -109,7 +274,7 @@ describe('engine', () => {
             expect(runCount).toBe(1);
             expect(remainingWork).toBe(1);
 
-            releaseTask();
+            taskGate.resolve();
             await vi.runAllTimersAsync();
 
             expect(await executeOnceWithTimers(engine)).toBe(true);
@@ -125,14 +290,8 @@ describe('engine', () => {
         vi.useFakeTimers();
         try {
             const engine = new InboxOutboxEngine();
-            let resolveIsWork!: (value: boolean) => void;
-            const isWorkGate = new Promise<boolean>((resolve) => {
-                resolveIsWork = resolve;
-            });
-            let resolveIsWorkStarted!: () => void;
-            const isWorkStarted = new Promise<void>((resolve) => {
-                resolveIsWorkStarted = resolve;
-            });
+            const isWorkGate = Promise.withResolvers<boolean>();
+            const isWorkStarted = Promise.withResolvers<void>();
             let isWorkCalls = 0;
 
             engine.includeTask(
@@ -142,8 +301,8 @@ describe('engine', () => {
                     maxConcurrency: () => 1,
                     isWork: async () => {
                         isWorkCalls += 1;
-                        resolveIsWorkStarted();
-                        return await isWorkGate;
+                        isWorkStarted.resolve();
+                        return await isWorkGate.promise;
                     },
                     runnable: async () => undefined,
                     ongoingTasks: []
@@ -152,10 +311,10 @@ describe('engine', () => {
 
             engine.start();
             await vi.advanceTimersByTimeAsync(0);
-            await isWorkStarted;
+            await isWorkStarted.promise;
 
             engine.stop();
-            resolveIsWork(false);
+            isWorkGate.resolve(false);
             await vi.runAllTimersAsync();
 
             const callsAfterStoppedRun = isWorkCalls;

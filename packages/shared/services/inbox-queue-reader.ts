@@ -3,7 +3,10 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResilienceDto, type DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type {
+    OnQueuedMessageCallback,
+    OnRejectedQueuedMessageCallback
+} from '@shared/services/queue-message-callbacks.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
 export class InboxQueueReader {
@@ -27,13 +30,17 @@ export class InboxQueueReader {
         });
     }
 
-    onInboxMessageDo(type: string, callback: OnMessageCallback): this {
+    onInboxMessageDo(type: string, callback: OnQueuedMessageCallback): this {
         this.reader.onMessageDo(type, callback);
         return this;
     }
 
     removeInboxMessageCallback(type: string): boolean {
         return this.reader.removeMessageCallback(type);
+    }
+
+    onRejectedInboxMessageDo(callback: OnRejectedQueuedMessageCallback): void {
+        this.reader.onRejectedMessageDo(callback);
     }
 
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {

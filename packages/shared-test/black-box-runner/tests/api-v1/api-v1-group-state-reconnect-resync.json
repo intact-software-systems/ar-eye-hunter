@@ -314,6 +314,14 @@
             "urlEncode": {
               "path": "outputs.alphaWsTicketFirst"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -364,6 +372,14 @@
             "urlEncode": {
               "path": "outputs.betaWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -374,7 +390,11 @@
       "connection": "wsAlpha1",
       "request": {
         "url": "{alphaWsUrlFirst}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -383,7 +403,11 @@
       "connection": "wsBeta",
       "request": {
         "url": "{betaWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -444,10 +468,10 @@
         "connection": "wsAlpha1",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         },
@@ -463,10 +487,10 @@
         "withinMs": 20000,
         "consume": true,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         }
@@ -509,10 +533,10 @@
         "connection": "wsBeta",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         },
@@ -615,6 +639,14 @@
             "urlEncode": {
               "path": "outputs.alphaWsTicketSecond"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -625,7 +657,11 @@
       "connection": "wsAlpha2",
       "request": {
         "url": "{alphaWsUrlSecond}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -636,15 +672,28 @@
         "connection": "wsAlpha2",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
+            "targets": {
+              "mode": "unicast",
+              "toPeerId": "{alphaSessionId}"
+            },
+            "scope": {
+              "kind": "group",
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "resourceId": "{groupId}"
+            },
+            "snapshot": {
+              "groupRef": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{groupId}"
+              }
+            },
             "typeId": "overlay.topology"
-          },
-          "targets": {
-            "mode": "unicast",
-            "toPeerId": "{alphaSessionId}"
           }
         },
         "consume": true

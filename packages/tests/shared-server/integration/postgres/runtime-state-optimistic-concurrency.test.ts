@@ -4,9 +4,9 @@ import { RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES } from '@shared-server/ralla
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
-    createRuntimeStatePostgresSql as createSql,
-    requirePostgresClient as requireClient,
-    requirePostgresDatabaseUrl as requireDatabaseUrl,
+    createRuntimeStatePostgresSql,
+    requirePostgresClient,
+    requirePostgresDatabaseUrl,
     withPostgresClients
 } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
@@ -16,7 +16,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
     postgresIt(
         'preserves protected RTC receipt families during generic live expiry',
         async () => {
-            const sql = await createSql(requireDatabaseUrl());
+            const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
             const repository = new PSqlRuntimeStateRepository(sql);
             const ordinaryNamespace = `runtime-expiry-${crypto.randomUUID()}`;
             const key = `expiry-${crypto.randomUUID()}`;
@@ -61,18 +61,16 @@ describe('Postgres runtime-state optimistic concurrency', () => {
     postgresIt(
         'allows one independent writer to update and delete each revision',
         async () => {
-            const databaseUrl = requireDatabaseUrl();
+            const databaseUrl = requirePostgresDatabaseUrl();
             const namespace = `runtime-state-concurrency-${crypto.randomUUID()}`;
             const key = 'shared-key';
             const updateValues = ['first-writer', 'second-writer'] as const;
 
             await withPostgresClients(
-                namespace,
-                2,
-                async () => await createSql(databaseUrl),
+                { namespace: namespace, clientCount: 2, createClient: async () => await createRuntimeStatePostgresSql(databaseUrl) },
                 async (clients) => {
-                    const firstSql = requireClient(clients, 0);
-                    const secondSql = requireClient(clients, 1);
+                    const firstSql = requirePostgresClient(clients, 0);
+                    const secondSql = requirePostgresClient(clients, 1);
                     const firstRepository = new PSqlRuntimeStateRepository(firstSql);
                     const secondRepository = new PSqlRuntimeStateRepository(secondSql);
 
@@ -138,15 +136,13 @@ describe('Postgres runtime-state optimistic concurrency', () => {
     postgresIt(
         'uses savepoints for nested optimistic transactions',
         async () => {
-            const databaseUrl = requireDatabaseUrl();
+            const databaseUrl = requirePostgresDatabaseUrl();
             const namespace = `runtime-state-savepoint-${crypto.randomUUID()}`;
 
             await withPostgresClients(
-                namespace,
-                1,
-                async () => await createSql(databaseUrl),
+                { namespace: namespace, clientCount: 1, createClient: async () => await createRuntimeStatePostgresSql(databaseUrl) },
                 async (clients) => {
-                    const repository = new PSqlRuntimeStateRepository(requireClient(clients, 0));
+                    const repository = new PSqlRuntimeStateRepository(requirePostgresClient(clients, 0));
 
                     await repository.begin(async (transactionRepository) => {
                         await expect(
@@ -201,16 +197,14 @@ describe('Postgres runtime-state optimistic concurrency', () => {
     postgresIt(
         'prevents an update from overflowing MAX_SAFE_INTEGER',
         async () => {
-            const databaseUrl = requireDatabaseUrl();
+            const databaseUrl = requirePostgresDatabaseUrl();
             const namespace = `runtime-state-max-revision-${crypto.randomUUID()}`;
             const key = 'max-safe';
 
             await withPostgresClients(
-                namespace,
-                1,
-                async () => await createSql(databaseUrl),
+                { namespace: namespace, clientCount: 1, createClient: async () => await createRuntimeStatePostgresSql(databaseUrl) },
                 async (clients) => {
-                    const sql = requireClient(clients, 0);
+                    const sql = requirePostgresClient(clients, 0);
                     const repository = new PSqlRuntimeStateRepository(sql);
 
                     await sql`

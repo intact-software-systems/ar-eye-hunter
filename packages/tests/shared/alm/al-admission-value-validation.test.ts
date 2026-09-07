@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
@@ -53,7 +54,7 @@ describe('admission control decoding', () => {
                     msgId: 'msg',
                     fromPeerId: 'a',
                     toPeerId: 'b',
-                    reason: 'gap',
+                    reason: 'resync-required',
                     observedAtEpochMs: 7,
                     orderingKey: 'track',
                     expectedSeq: 1,
@@ -96,6 +97,41 @@ describe('admission control decoding', () => {
                 { kind: 'pending', value: { toPeerId: 'b', status: 'delivered', localReady: 'false', expectedFromPeerIds: ['a'], ackedFromPeerIds: [] } },
                 'msg',
                 'pending'
+            )
+        ).toThrow(TypeError);
+    });
+
+    it('applies the shared bounds to persisted control collections and peer identities', () => {
+        expect(() =>
+            decodeALAdmissionControlValue(
+                {
+                    kind: 'pending',
+                    value: {
+                        toPeerId: 'b',
+                        status: 'delivered',
+                        localReady: false,
+                        expectedFromPeerIds: Array.from(
+                            { length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries + 1 },
+                            (_, index) => `peer-${index}`
+                        ),
+                        ackedFromPeerIds: []
+                    }
+                },
+                'msg',
+                'pending'
+            )
+        ).toThrow(TypeError);
+        expect(() =>
+            decodeALAdmissionControlValue(
+                {
+                    kind: 'acks',
+                    values: [{
+                        ...ack,
+                        fromPeerId: 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters + 1)
+                    }]
+                },
+                'msg',
+                'acks'
             )
         ).toThrow(TypeError);
     });

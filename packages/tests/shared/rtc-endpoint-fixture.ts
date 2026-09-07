@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 
 import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { type ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     createDefaultInMemoryALInboundRuntimeStores,
@@ -23,10 +23,10 @@ import {
     createDefaultWebRtcRxStreamerService,
     WebRtcRxStreamerService
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
-import type { OnQRtcMessageCallback } from '@shared/webrtc/QRtcClientCallbacks.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
@@ -45,11 +45,14 @@ export class RtcEndpointFixture {
     readonly peer: QRtcPeerDto;
     readonly multicast: WebRtcOverlayMulticastManager;
     readonly streamer: WebRtcRxStreamerService;
-    private readonly messageCallbacks: RtcMessageCallbackRegistry;
+    private readonly messageCallbacks = new Map<string, RtcMessageCallbackRegistry>();
+    readonly peers = new Map<string, QRtcPeerDto>();
+    readonly received: ALMessage[] = [];
+    private readonly pendingDeliveries: Promise<void>[] = [];
 
     readonly sessionId: string;
 
-    constructor(sessionId: string, peerId: string) {
+    constructor(sessionId: string, peerIds: string | readonly string[]) {
         this.sessionId = sessionId;
         const signaler = { send: async () => undefined, connect: async () => undefined };
         const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
@@ -60,11 +63,15 @@ export class RtcEndpointFixture {
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc'
         });
-        this.peer = createPeer(sessionId, peerId);
-        vi.spyOn(service, 'readPeer').mockImplementation((id) => id === peerId ? this.peer : undefined);
-        vi.spyOn(service, 'readyPeerIdsForLane').mockReturnValue([peerId]);
-        const health = this.peer.channel.readHealth();
-        vi.spyOn(this.peer.channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
+        for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {
+            const peer = createPeer(sessionId, peerId);
+            this.peers.set(peerId, peer);
+            const health = peer.channel.readHealth();
+            vi.spyOn(peer.channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
+        }
+        this.peer = [...this.peers.values()][0];
+        vi.spyOn(service, 'readPeer').mockImplementation((id) => this.peers.get(id));
+        vi.spyOn(service, 'readyPeerIdsForLane').mockImplementation(() => [...this.peers.keys()]);
         this.multicast = new WebRtcOverlayMulticastManager({
             outbox: new InMemoryQueueBox(),
             connectionService: service,
@@ -91,21 +98,49 @@ export class RtcEndpointFixture {
                 this.delivered.push(message);
             }
         });
-        this.messageCallbacks = createRtcMessageCallbackRegistry(this.peer.channel);
-        this.streamer.addPeer(this.peer);
+        for (const peer of this.peers.values()) {
+            this.messageCallbacks.set(peer.peerId, createRtcMessageCallbackRegistry(peer.channel));
+            this.streamer.addPeer(peer);
+        }
     }
 
     connect(remote: RtcEndpointFixture): void {
-        vi.spyOn(this.peer.channel, 'send').mockImplementation(async (message) => {
-            this.sent.push(decodePersistedALMessageValue(message));
-            await remote.messageCallbacks.receive(decodePersistedALMessageValue(message));
-            await remote.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+        const peer = this.peers.get(remote.sessionId)!;
+        vi.spyOn(peer.channel, 'sendJson').mockImplementation((value) => {
+            const message = decodePersistedALMessageValue(value);
+            this.sent.push(message);
+            const delivery = remote.receiveMessage(this.sessionId, message);
+            this.pendingDeliveries.push(delivery);
+            // The explicit fixture drain reports failures after transport submission returns.
+            void delivery.catch(() => undefined);
+            return { status: 'sent', bufferedAmount: 0 };
         });
     }
 
-    observe(version: number, ref: GroupRef = room): void {
-        const snapshot = createGroupSnapshotFixture({ ...ref, sessionIds: ['sender', 'receiver'] });
-        this.groups.set(toScopedOverlayId(ref), { ...snapshot, group: { ...snapshot.group, snapshotVersion: version } });
+    async sendAndWaitForDelivery(message: ALMessage): Promise<void> {
+        this.peer.channel.sendJson(message);
+        await this.waitForDeliveries();
+    }
+
+    async waitForDeliveries(): Promise<void> {
+        while (this.pendingDeliveries.length > 0) {
+            await Promise.all(this.pendingDeliveries.splice(0));
+        }
+    }
+
+    private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
+        this.received.push(message);
+        await this.messageCallbacks.get(senderId)!.receive(message);
+        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+    }
+
+    observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {
+        const snapshot = createGroupSnapshotFixture({ ...ref, sessionIds });
+        this.groups.set(toScopedOverlayId(ref), {
+            ...snapshot,
+            group: { ...snapshot.group, snapshotVersion: version },
+            activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+        });
     }
 
     observeOverlay(version: number): void {
@@ -117,7 +152,7 @@ export class RtcEndpointFixture {
             topology: 'tree',
             name: 'Room',
             sourceGroupStateCausalRevision: { groupRevision: version, presenceRevision: version },
-            nextHopSessionIds: [this.peer.peerId],
+            nextHopSessionIds: [...this.peers.keys()],
             degreeLimit: 2,
             overlayVersion: version,
             createdByClientId: 'owner',
@@ -127,14 +162,16 @@ export class RtcEndpointFixture {
     }
 
     async nacks(message: ALMessage): Promise<readonly ALNackPayload[]> {
-        if (!this.outbound.admissionStore) {
-            throw new Error('Fixture admission store unavailable');
-        }
-        return (await this.outbound.admissionStore.readRepairMessage(message.id.msgId, () => ({ persist: false, preparedMessages: [] }))).nacks;
+        return this.received.flatMap((received) => {
+            const control = parseALControlMessage(received);
+            return control?.type === 'nack' && control.payload.msgId === message.id.msgId ? [control.payload] : [];
+        });
     }
 
     close(): void {
-        this.streamer.removePeer(this.peer);
+        for (const peer of this.peers.values()) {
+            this.streamer.removePeer(peer);
+        }
         this.streamer.dispose();
         this.multicast.dispose();
     }

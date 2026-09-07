@@ -202,6 +202,14 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -212,7 +220,11 @@
       "connection": "wsAlice",
       "request": {
         "url": "{aliceWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -261,6 +273,14 @@
             "urlEncode": {
               "path": "outputs.bobWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -271,7 +291,11 @@
       "connection": "wsBob",
       "request": {
         "url": "{bobWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -282,17 +306,23 @@
         "connection": "wsAlice",
         "withinMs": 15000,
         "message": {
-          "route": {
-            "topicId": "client-state.snapshot"
-          },
-          "payload": {
-            "typeId": "client-state.snapshot"
-          },
-          "targets": {
-            "mode": "broadcast",
-            "scope": "principal",
-            "principalRef": {
-              "principalId": "{aliceClientId}"
+          "completedSnapshot": {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "typeId": "client-state.snapshot",
+            "scope": {
+              "kind": "principal",
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "resourceId": "{aliceClientId}"
+            },
+            "snapshot": {
+              "principal": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "principalId": "{aliceClientId}"
+              }
             }
           }
         }
@@ -306,17 +336,23 @@
         "connection": "wsBob",
         "withinMs": 15000,
         "message": {
-          "route": {
-            "topicId": "client-state.snapshot"
-          },
-          "payload": {
-            "typeId": "client-state.snapshot"
-          },
-          "targets": {
-            "mode": "broadcast",
-            "scope": "principal",
-            "principalRef": {
-              "principalId": "{bobClientId}"
+          "completedSnapshot": {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "typeId": "client-state.snapshot",
+            "scope": {
+              "kind": "principal",
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "resourceId": "{bobClientId}"
+            },
+            "snapshot": {
+              "principal": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "principalId": "{bobClientId}"
+              }
             }
           }
         }
@@ -414,6 +450,74 @@
           "targets": {
             "principalRef": {
               "principalId": "{bobClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "assertNoAliceCompletedSnapshotOnBob",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 4000,
+        "absent": {
+          "completedSnapshot": {
+            "scope": {
+              "kind": "principal",
+              "resourceId": "{aliceClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "assertNoBobCompletedSnapshotOnAlice",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 2000,
+        "absent": {
+          "completedSnapshot": {
+            "scope": {
+              "kind": "principal",
+              "resourceId": "{bobClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "assertNoAliceSnapshotPageOnBob",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 4000,
+        "absent": {
+          "observedSnapshotPage": {
+            "scope": {
+              "kind": "principal",
+              "resourceId": "{aliceClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "assertNoBobSnapshotPageOnAlice",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 2000,
+        "absent": {
+          "observedSnapshotPage": {
+            "scope": {
+              "kind": "principal",
+              "resourceId": "{bobClientId}"
             }
           }
         }

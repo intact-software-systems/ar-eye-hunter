@@ -1,9 +1,10 @@
 import type { ApiJsonValue } from '../api/api-json-value.ts';
+import { validateJsonMessageSize } from '../api/json-message-validation.ts';
 import { toError } from '../resilience/to-error.ts';
 
+import { OnQRtcMessageCallback, QRtcClientCallbacks } from './qrtc-client-callbacks.ts';
 import { QRtcPeerConnection } from './qrtc-peer-connection.ts';
-import { OnQRtcMessageCallback, QRtcClientCallbacks } from './QRtcClientCallbacks.ts';
-import { RtcDataChannelSendQueue } from './rtc-data-channel-send-queue.ts';
+import { isRtcQueuedSendExpired, RtcDataChannelSendQueue } from './rtc-data-channel-send-queue.ts';
 
 export type RtcDataChannelPayload =
     | string
@@ -27,11 +28,17 @@ export interface RtcDataChannelFlowControlPolicy {
 export interface RtcDataChannelSendOptions {
     readonly key?: string;
     readonly maxAgeMs?: number;
+    /** Absolute deadline, independent of time spent preparing or queueing this send. */
+    readonly expiresAtEpochMs?: number;
     readonly now?: () => number;
+    /** Stops local queued work only; submission to the native channel cannot be undone. */
+    readonly signal?: AbortSignal;
+    /** Reports a terminal local outcome in a microtask; observer completion never gates transport work. */
+    readonly onSettled?: (settlement: QRtcDataChannel.SendSettlement) => void | Promise<void>;
 }
 
 export interface RtcDataChannelSendResult {
-    readonly status: 'sent' | 'queued' | 'dropped' | 'replaced' | 'closed';
+    readonly status: 'sent' | 'queued' | 'dropped' | 'replaced' | 'closed' | 'cancelled' | 'expired';
     readonly reason?: string;
     readonly key?: string;
     readonly bufferedAmount: number;
@@ -43,6 +50,8 @@ export interface RtcDataChannelCounters {
     readonly dropped: number;
     readonly replaced: number;
     readonly closed: number;
+    readonly cancelled: number;
+    readonly expired: number;
     readonly flushed: number;
     readonly droppedOldest: number;
     readonly droppedStale: number;
@@ -104,6 +113,16 @@ interface RtcDataChannelOpenWaiter {
     timeout: ReturnType<typeof setTimeout> | undefined;
 }
 
+interface RtcQueuedPayload {
+    readonly data: RtcDataChannelPayload;
+    readonly onSettled: RtcDataChannelSendOptions['onSettled'];
+}
+
+interface RtcSendRejection {
+    readonly status: 'cancelled' | 'expired' | 'closed';
+    readonly reason: string;
+}
+
 const DEFAULT_FLOW_CONTROL: Required<RtcDataChannelFlowControlPolicy> = {
     highWatermarkBytes: 64 * 1024,
     lowWatermarkBytes: 16 * 1024,
@@ -117,6 +136,8 @@ const createInitialCounters = (): Record<keyof RtcDataChannelCounters, number> =
     dropped: 0,
     replaced: 0,
     closed: 0,
+    cancelled: 0,
+    expired: 0,
     flushed: 0,
     droppedOldest: 0,
     droppedStale: 0,
@@ -126,6 +147,14 @@ const createInitialCounters = (): Record<keyof RtcDataChannelCounters, number> =
 });
 
 export namespace QRtcDataChannel {
+    /** Local ownership outcome. `sent` establishes native submission, not receiver acknowledgement. */
+    export interface SendSettlement {
+        readonly status: 'sent' | 'dropped' | 'superseded' | 'expired' | 'closed' | 'failed' | 'cancelled';
+        readonly key: string | undefined;
+        readonly reason: string | undefined;
+        readonly bufferedAmount: number;
+    }
+
     export interface InputDto {
         readonly peerId: string;
         readonly dataChannelName: string;
@@ -147,7 +176,12 @@ export class QRtcDataChannel {
     private readonly clientCallbacks = new Map<string, QRtcClientCallbacks>();
     private readonly onMessageCallbacks = new Map<string, RtcMessageSubscription>();
     private readonly onRawMessageCallbacks = new Map<string, RtcRawMessageCallback>();
-    private readonly sendQueue = new RtcDataChannelSendQueue<RtcDataChannelPayload>();
+    private readonly sendQueue = new RtcDataChannelSendQueue<RtcQueuedPayload>();
+    private readonly queuedSendCancellations = new Map<
+        RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload>,
+        () => void
+    >();
+    private queueExpiryTimer: ReturnType<typeof setTimeout> | undefined;
     private readonly openWaiters: RtcDataChannelOpenWaiter[] = [];
     private readonly counters = createInitialCounters();
     private readonly flowControlPolicy: Required<RtcDataChannelFlowControlPolicy>;
@@ -176,7 +210,7 @@ export class QRtcDataChannel {
         this.peerConnection.removeDataChannelCallbackById(this.dataChannelCallbackId());
         this.resolveOpenWaiters(false);
         this.closeDataChannelIfPresent();
-        this.sendQueue.clear();
+        this.clearQueuedSends('closed', 'Data channel reset');
         this.status.state = RtcSessionState.Idle;
     }
 
@@ -191,6 +225,7 @@ export class QRtcDataChannel {
         if (!dataChannel) {
             return;
         }
+        this.clearQueuedSends('closed', 'Data channel closed');
         try {
             dataChannel.close();
         }
@@ -234,16 +269,6 @@ export class QRtcDataChannel {
         return this.onMessageCallbacks.delete(id);
     }
 
-    sendAsJsonString(data: string): Promise<void> {
-        this.sendRawOrThrow(data);
-        return Promise.resolve();
-    }
-
-    send(data: object): Promise<void> {
-        this.sendRawOrThrow(JSON.stringify(data));
-        return Promise.resolve();
-    }
-
     sendJson<T>(
         data: T,
         options: RtcDataChannelSendOptions = {}
@@ -262,18 +287,49 @@ export class QRtcDataChannel {
         data: RtcDataChannelPayload,
         options: RtcDataChannelSendOptions = {}
     ): RtcDataChannelSendResult {
+        const initialRejection = computeRtcSendRejection(
+            options.signal?.aborted === true,
+            options.expiresAtEpochMs,
+            this.now()
+        );
+        if (initialRejection) {
+            return this.rejectSend(initialRejection, options);
+        }
         const dc = this.status.dc;
         if (!dc || dc.readyState !== 'open') {
+            this.settleSend(options.onSettled, 'closed', 'Data channel not open', options.key);
             return this.recordSendResult('closed', 'Data channel not open', options.key);
         }
 
         this.flushQueuedSends();
 
+        const submissionRejection = computeRtcSendRejection(
+            options.signal?.aborted === true,
+            options.expiresAtEpochMs,
+            this.now()
+        );
+        if (submissionRejection) {
+            return this.rejectSend(submissionRejection, options);
+        }
+        if (this.status.dc !== dc || dc.readyState !== 'open') {
+            return this.rejectSend(
+                { status: 'closed', reason: 'Data channel changed before native submission' },
+                options
+            );
+        }
+
         if (this.isBackPressured(dc)) {
             return this.enqueueBackPressuredSend(data, options);
         }
 
-        this.sendPayload(dc, data);
+        try {
+            this.sendPayload(dc, data);
+        }
+        catch (error) {
+            this.settleSend(options.onSettled, 'failed', 'Native data channel send failed', options.key);
+            throw error;
+        }
+        this.settleSend(options.onSettled, 'sent', undefined, options.key);
         return this.recordSendResult('sent', undefined, options.key);
     }
 
@@ -416,37 +472,48 @@ export class QRtcDataChannel {
             return;
         }
 
-        // Application payloads remain untrusted until the registered receiver validates them.
-        let message: RtcApplicationMessage = event.data;
-        if (typeof message === 'string') {
-            try {
-                // Without a reviver, JSON.parse validates the complete JSON value shape.
-                message = JSON.parse(message) as ApiJsonValue;
-            }
-            catch {
-                if (!rawProcessed) {
-                    console.error('Failed to parse WebRTC JSON message');
-                }
-                return;
-            }
-        }
-        await this.dispatchApplicationMessage(message, event, rawProcessed);
+        await this.dispatchApplicationMessage(dataChannel, event, rawProcessed);
     }
 
     private async dispatchApplicationMessage(
-        message: RtcApplicationMessage,
+        dataChannel: RTCDataChannel,
         event: MessageEvent<RtcDataChannelPayload>,
         rawProcessed: boolean
     ): Promise<void> {
-        const messageType = typeof message === 'object' && message !== null && 'type' in message
-            ? message.type
-            : undefined;
         let isProcessed = rawProcessed;
+        let message: RtcApplicationMessage = event.data;
+        let hasDecoded = false;
         for (const subscription of this.onMessageCallbacks.values()) {
-            if (messageType && subscription.type !== messageType) {
-                continue;
+            if (this.status.dc !== dataChannel) {
+                return;
             }
             try {
+                if (subscription.callback.maxMessageBytes !== undefined) {
+                    const validated = validateJsonMessageSize(event.data, subscription.callback.maxMessageBytes);
+                    if (validated.left) {
+                        await subscription.callback.onRejected?.(validated.left, event);
+                        isProcessed = true;
+                        continue;
+                    }
+                }
+                if (!hasDecoded) {
+                    try {
+                        message = this.decodeApplicationMessage(event.data);
+                        hasDecoded = true;
+                    }
+                    catch {
+                        if (!rawProcessed) {
+                            console.error('Failed to parse WebRTC JSON message');
+                        }
+                        return;
+                    }
+                }
+                const messageType = typeof message === 'object' && message !== null && 'type' in message
+                    ? message.type
+                    : undefined;
+                if (messageType && subscription.type !== '*' && subscription.type !== messageType) {
+                    continue;
+                }
                 await subscription.callback.onMessage(message, event);
                 isProcessed = true;
             }
@@ -459,13 +526,21 @@ export class QRtcDataChannel {
         }
     }
 
+    private decodeApplicationMessage(data: RtcDataChannelPayload): RtcApplicationMessage {
+        if (typeof data !== 'string') {
+            return data;
+        }
+        // Without a reviver JSON.parse produces only JSON values; domain validation remains with the receiver.
+        return JSON.parse(data) as ApiJsonValue;
+    }
+
     private async closeDataChannel(dataChannel: RTCDataChannel): Promise<void> {
         if (this.status.dc !== dataChannel) {
             return;
         }
         this.status.state = RtcSessionState.Closed;
         this.resolveOpenWaiters(false);
-        this.sendQueue.clear();
+        this.clearQueuedSends('closed', 'Data channel closed');
         this.clearDataChannelReference(dataChannel);
         await this.notifyCloseCallbacks();
     }
@@ -476,7 +551,7 @@ export class QRtcDataChannel {
         }
         this.status.state = RtcSessionState.Failed;
         this.resolveOpenWaiters(false);
-        this.sendQueue.clear();
+        this.clearQueuedSends('failed', 'Data channel failed');
         this.clearDataChannelReference(dataChannel);
         await this.notifyErrorCallbacks();
         await this.notifyCloseCallbacks();
@@ -506,6 +581,7 @@ export class QRtcDataChannel {
             return;
         }
 
+        this.clearQueuedSends('closed', 'Data channel closed');
         this.clearDataChannelReference(dc);
     }
 
@@ -573,17 +649,6 @@ export class QRtcDataChannel {
         waiter.resolve(isOpen);
     }
 
-    private sendRawOrThrow(data: RtcDataChannelPayload): void {
-        const result = this.sendRaw(data);
-        if (result.status === 'closed') {
-            console.error(
-                'Data channel not open for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer',
-                new Error().stack ?? ''
-            );
-            throw new Error('Data channel not open');
-        }
-    }
-
     private configureDataChannel(dc: RTCDataChannel): void {
         if (this.input.binaryType) {
             dc.binaryType = this.input.binaryType;
@@ -591,7 +656,11 @@ export class QRtcDataChannel {
 
         dc.bufferedAmountLowThreshold = this.flowControlPolicy
             .lowWatermarkBytes;
-        dc.onbufferedamountlow = () => this.flushQueuedSends();
+        dc.onbufferedamountlow = () => {
+            if (this.status.dc === dc) {
+                this.flushQueuedSends();
+            }
+        };
     }
 
     private async dispatchRawMessage(event: MessageEvent<RtcDataChannelPayload>): Promise<boolean> {
@@ -615,10 +684,11 @@ export class QRtcDataChannel {
     ): RtcDataChannelSendResult {
         const policy = this.flowControlPolicy;
         const createdAtEpochMs = (options.now ?? this.now)();
-        const queued: RtcDataChannelSendQueue.QueuedSend<RtcDataChannelPayload> = {
-            payload,
+        const queued: RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload> = {
+            payload: { data: payload, onSettled: options.onSettled },
             key: options.key,
             maxAgeMs: options.maxAgeMs,
+            expiresAtEpochMs: options.expiresAtEpochMs,
             createdAtEpochMs
         };
 
@@ -626,6 +696,20 @@ export class QRtcDataChannel {
         if (offerResult.droppedOldest) {
             this.counters.droppedOldest += 1;
         }
+        if (offerResult.displaced) {
+            this.settleQueuedSend(
+                offerResult.displaced,
+                offerResult.status === 'replaced' ? 'superseded' : 'dropped',
+                offerResult.status === 'replaced' ? 'Replaced queued payload' : 'Queue capacity exceeded'
+            );
+        }
+        if (offerResult.status === 'dropped') {
+            this.settleSend(options.onSettled, 'dropped', offerResult.reason, options.key);
+        }
+        else {
+            this.observeQueuedCancellation(queued, options.signal);
+        }
+        this.scheduleQueueExpiry();
 
         return this.recordSendResult(
             offerResult.status,
@@ -636,25 +720,33 @@ export class QRtcDataChannel {
 
     private flushQueuedSends(): void {
         const dc = this.status.dc;
-        if (!dc || dc.readyState !== 'open') {
+        if (!dc || dc.readyState !== 'open' || this.sendQueue.size === 0) {
             return;
         }
 
-        while (!this.isBackPressured(dc)) {
+        this.expireQueuedSends();
+        while (this.status.dc === dc && dc.readyState === 'open' && !this.isBackPressured(dc)) {
             const next = this.sendQueue.shift();
             if (!next) {
-                return;
+                break;
             }
-
-            if (this.isStale(next)) {
+            if (isRtcQueuedSendExpired(next, this.now())) {
                 this.counters.droppedStale += 1;
+                this.settleQueuedSend(next, 'expired', 'Queued payload expired');
                 continue;
             }
-
-            this.sendPayload(dc, next.payload);
-            this.counters.flushed += 1;
-            this.counters.sent += 1;
+            try {
+                this.sendPayload(dc, next.payload.data);
+                this.counters.flushed += 1;
+                this.counters.sent += 1;
+                this.settleQueuedSend(next, 'sent', undefined);
+            }
+            catch {
+                this.counters.dropped += 1;
+                this.settleQueuedSend(next, 'failed', 'Native data channel send failed');
+            }
         }
+        this.scheduleQueueExpiry();
     }
 
     private sendPayload(
@@ -679,12 +771,92 @@ export class QRtcDataChannel {
         dc.send(payload);
     }
 
-    private isStale(queued: RtcDataChannelSendQueue.QueuedSend<RtcDataChannelPayload>): boolean {
-        if (queued.maxAgeMs === undefined) {
-            return false;
+    private expireQueuedSends(): void {
+        for (const expired of this.sendQueue.removeExpired(this.now())) {
+            this.counters.droppedStale += 1;
+            this.settleQueuedSend(expired, 'expired', 'Queued payload expired');
         }
+    }
 
-        return this.now() - queued.createdAtEpochMs > queued.maxAgeMs;
+    private scheduleQueueExpiry(): void {
+        if (this.queueExpiryTimer !== undefined) {
+            clearTimeout(this.queueExpiryTimer);
+            this.queueExpiryTimer = undefined;
+        }
+        const expiryAtMs = this.sendQueue.nextExpiryAtMs();
+        if (expiryAtMs === undefined) {
+            return;
+        }
+        const delayMs = Math.min(2_147_483_647, Math.max(0, expiryAtMs - this.now()));
+        this.queueExpiryTimer = setTimeout(() => {
+            this.queueExpiryTimer = undefined;
+            this.expireQueuedSends();
+            this.scheduleQueueExpiry();
+        }, delayMs);
+    }
+
+    private clearQueuedSends(status: 'closed' | 'failed', reason: string): void {
+        const removed = this.sendQueue.clear();
+        this.scheduleQueueExpiry();
+        for (const queued of removed) {
+            this.settleQueuedSend(queued, status, reason);
+        }
+    }
+
+    private observeQueuedCancellation(
+        queued: RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload>,
+        signal: AbortSignal | undefined
+    ): void {
+        if (!signal) {
+            return;
+        }
+        const onAbort = () => {
+            if (this.sendQueue.remove(queued)) {
+                this.counters.cancelled += 1;
+                this.settleQueuedSend(queued, 'cancelled', 'Send cancelled before native submission');
+                this.scheduleQueueExpiry();
+            }
+        };
+        this.queuedSendCancellations.set(queued, () => signal.removeEventListener('abort', onAbort));
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) {
+            onAbort();
+        }
+    }
+
+    private settleQueuedSend(
+        queued: RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload>,
+        status: QRtcDataChannel.SendSettlement['status'],
+        reason: string | undefined
+    ): void {
+        this.queuedSendCancellations.get(queued)?.();
+        this.queuedSendCancellations.delete(queued);
+        this.settleSend(queued.payload.onSettled, status, reason, queued.key);
+    }
+
+    private settleSend(
+        observer: RtcDataChannelSendOptions['onSettled'],
+        status: QRtcDataChannel.SendSettlement['status'],
+        reason: string | undefined,
+        key: string | undefined
+    ): void {
+        if (!observer) {
+            return;
+        }
+        const settlement: QRtcDataChannel.SendSettlement = {
+            status,
+            reason,
+            key,
+            bufferedAmount: this.status.dc?.bufferedAmount ?? 0
+        };
+        void Promise.resolve().then(() => observer(settlement)).catch((error) => {
+            console.error('RTC send settlement observer failed', toError(error));
+        });
+    }
+
+    private rejectSend(rejection: RtcSendRejection, options: RtcDataChannelSendOptions): RtcDataChannelSendResult {
+        this.settleSend(options.onSettled, rejection.status, rejection.reason, options.key);
+        return this.recordSendResult(rejection.status, rejection.reason, options.key);
     }
 
     private isBackPressured(dc: RTCDataChannel): boolean {
@@ -714,4 +886,17 @@ export class QRtcDataChannel {
 
         this.counters.receivedBinary += 1;
     }
+}
+
+function computeRtcSendRejection(
+    aborted: boolean,
+    expiresAtEpochMs: number | undefined,
+    nowMs: number
+): RtcSendRejection | undefined {
+    if (aborted) {
+        return { status: 'cancelled', reason: 'Send cancelled before native submission' };
+    }
+    return expiresAtEpochMs !== undefined && expiresAtEpochMs <= nowMs
+        ? { status: 'expired', reason: 'Send deadline elapsed before native submission' }
+        : undefined;
 }

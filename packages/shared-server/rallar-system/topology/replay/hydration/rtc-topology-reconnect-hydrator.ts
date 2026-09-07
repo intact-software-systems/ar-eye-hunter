@@ -1,4 +1,4 @@
-import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import type { RtcTopologyReplayDiagnosticsSink } from '../consumer/rtc-topology-replay-diagnostics.ts';
 import {
@@ -130,7 +130,7 @@ export class RtcTopologyReconnectHydrator {
         if (this.#stopped || this.#inFlight) {
             return;
         }
-        const batch = takePendingHydrations(this.#pending);
+        const batch = this.#takePendingHydrations();
         this.#inFlight = this.#hydration.hydrate({
             connections: [...batch.keys()],
             requestSignal: this.#abort.signal,
@@ -150,7 +150,7 @@ export class RtcTopologyReconnectHydrator {
             .finally(() => {
                 this.#inFlight = undefined;
                 if (this.#pending.size > 0 && !this.#stopped) {
-                    const pending = takePendingHydrations(this.#pending);
+                    const pending = this.#takePendingHydrations();
                     for (const [connection, attempt] of pending) {
                         this.#enqueue(connection, attempt);
                     }
@@ -177,17 +177,15 @@ export class RtcTopologyReconnectHydrator {
         this.#retryCancellations.delete(connection);
     }
 
+    #takePendingHydrations(): ReadonlyMap<ConnectionContext, number> {
+        const batch = new Map(this.#pending);
+        this.#pending.clear();
+        return batch;
+    }
+
     #isCurrent(connection: ConnectionContext): boolean {
         return this.#socket.connections.get(connection.id) === connection && connection.isOpen;
     }
-}
-
-function takePendingHydrations(
-    pending: Map<ConnectionContext, number>
-): Map<ConnectionContext, number> {
-    const batch = new Map(pending);
-    pending.clear();
-    return batch;
 }
 
 function throwIfAborted(signal: AbortSignal): void {

@@ -9,18 +9,10 @@ import {
     type QRtcPeerDto,
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
-import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createNativeRealtimeLaneFixture } from '../realtime/native-realtime-lane-fixture.ts';
-
-interface ChannelHealthFixtureInput {
-    readonly peerId: string;
-    readonly label: string;
-    readonly state: string;
-    readonly readyState: RTCDataChannelState;
-}
 
 interface GroupSnapshotScopeFixture {
     readonly applicationId?: string;
@@ -163,7 +155,8 @@ vi.mock(
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
-            initialise: vi.fn()
+            initialise: vi.fn(),
+            cancelSnapshotAssemblies: vi.fn(() => undefined)
         }
     })
 );
@@ -301,44 +294,6 @@ function resetRtcTransportMocks(): void {
     mocks.webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);
 }
 
-export function createChannelHealth(
-    input: ChannelHealthFixtureInput
-): RtcDataChannelHealth {
-    return {
-        peerId: input.peerId,
-        label: input.label,
-        state: input.state,
-        role: 'Initiator',
-        readyState: input.readyState,
-        binaryType: 'arraybuffer',
-        bufferedAmount: 0,
-        bufferedAmountLowThreshold: 0,
-        queuedItemCount: 0,
-        rawCallbackCount: 0,
-        messageCallbackCount: 0,
-        lifecycleCallbackCount: 0,
-        flowControl: {
-            highWatermarkBytes: 64 * 1024,
-            lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new',
-            maxQueueItems: 32
-        },
-        counters: {
-            sent: 0,
-            queued: 0,
-            dropped: 0,
-            replaced: 0,
-            closed: 0,
-            flushed: 0,
-            droppedOldest: 0,
-            droppedStale: 0,
-            receivedRaw: 0,
-            receivedString: 0,
-            receivedBinary: 0
-        }
-    };
-}
-
 function mockClientRepositoryMissing(): void {
     mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
@@ -375,7 +330,7 @@ export function mockGroupSnapshots(
             (snapshot) =>
                 snapshot.group.groupId === ref.groupId &&
                 snapshot.group.applicationId === ref.applicationId &&
-                (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
+                snapshot.group.workspaceId === ref.workspaceId
         )
     );
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(

@@ -10,7 +10,7 @@ import type {
     IceConfig,
     OverlayId
 } from '@shared/api/api-config.ts';
-import type { WebRtcOverlayMulticaster } from '@shared/multicast/OverlayMulticastContracts.ts';
+import type { WebRtcOverlayMulticaster } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -52,6 +52,7 @@ export function initialiseRtcOverlayMulticastManager(
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            queueEngine: qboxEngine,
             stores: resolveBrowserRtcOverlayALOutboundRuntimeStores(webRtcConnectionService.input.sessionId)
         }),
         outboundDiagnostics: input.outboundDiagnostics,

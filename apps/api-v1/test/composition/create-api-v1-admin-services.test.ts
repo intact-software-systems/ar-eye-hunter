@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createApiV1AdminServices, readApiV1WebSocketStatus, type CreateApiV1AdminServicesInput } from '../../src/composition/create-api-v1-admin-services.ts';
 
@@ -25,7 +24,7 @@ Deno.test('admin services read current websocket status after construction', asy
     );
     socket.connections.set(
         'connection-open',
-        new ConnectionContext('connection-open', createSocket(WebSocket.OPEN))
+        new ConnectionContext({ id: 'connection-open', socket: createSocket(WebSocket.OPEN) })
     );
 
     const realtime = await services.operations.realtime.execute({
@@ -53,7 +52,7 @@ Deno.test('admin services read current websocket status after construction', asy
 
     socket.connections.set(
         'session-open',
-        new ConnectionContext('session-open', createSocket(WebSocket.OPEN))
+        new ConnectionContext({ id: 'session-open', socket: createSocket(WebSocket.OPEN) })
     );
     const current = await services.statistics.readMyRealtimeStatus({
         authSession: ADMIN_SESSION,

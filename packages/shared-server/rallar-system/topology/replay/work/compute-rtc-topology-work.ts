@@ -22,9 +22,8 @@ import {
 } from '../../planning/compute-group-topology-from-authority.ts';
 import type { ReconcileGroupTopologyResult } from '../../planning/group-topology-planning-contracts.ts';
 import {
-    materializeRtcOverlayTopologyBroadcastMessage,
     type RtcOverlayTopologyMessageFacts
-} from '../../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
+} from '../../planning/materialize-rtc-overlay-topology-messages.ts';
 import {
     computeRtcTopologyWorkWrite,
     type AcceptedRtcTopologyWork,
@@ -328,7 +327,8 @@ function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPu
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: group.group.snapshotVersion,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: materializeRtcOverlayTopologyBroadcastMessage(group, snapshot, facts),
+        snapshot,
+        expiresAtEpochMs: facts.expiresAtEpochMs,
         createdAtEpochMs: facts.createdAtEpochMs
     };
 }

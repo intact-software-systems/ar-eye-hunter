@@ -1,8 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { SuccessDto } from '@shared/queuebox/DequeueController.ts';
 import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -73,14 +72,15 @@ describe('queuedeno compatibility', () => {
             resilienceDto
         )
             .withReturnDequeuedEntries(true)
-            .dequeueForCompute(async (_key, entry) => {
+            .dequeueForCompute(async (_key, attempt) => {
+                const entry = attempt.entry;
                 const testData: TestData = JSON.parse(entry.resource);
                 expect(testData.name).toBe(helloWorld);
 
                 return helloWorld;
             });
 
-        const successes: Array<SuccessDto<Key, ResourceEntry, string>> = DequeueResourceEntryController.toSuccesses(dequeued);
+        const successes = DequeueResourceEntryController.toSuccesses(dequeued);
 
         expect(successes.length).toBeGreaterThan(0);
         expect(
@@ -88,7 +88,7 @@ describe('queuedeno compatibility', () => {
         ).toBe(true);
         expect(
             successes.some(
-                (success) => success.value.status === EntityStatus.COMPLETED
+                (success) => success.value.entry.status === EntityStatus.COMPLETED
             )
         ).toBe(true);
     });

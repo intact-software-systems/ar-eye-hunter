@@ -1,9 +1,11 @@
+import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
 import { ALOutboundMessageRuntime, type ALOutboundRuntimeStores } from './al-outbound-message-runtime.ts';
 
 export interface DefaultALOutboundRuntimeResourceInput {
     readonly stores?: ALOutboundRuntimeStores;
     readonly nowMs?: () => number;
+    readonly queueEngine?: InboxOutboxEngine;
 }
 
 export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
@@ -50,12 +52,8 @@ export function createDefaultALOutboundRuntimeResources(
         admissionStore: (input.stores ?? createDefaultInMemoryALOutboundRuntimeStores()).admissionStore,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
         clock: { nowMs: input.nowMs ?? (() => Date.now()) },
-        scheduler: {
-            schedule: (callback, delayMs) => {
-                const timer = setTimeout(callback, delayMs);
-                return () => clearTimeout(timer);
-            }
-        },
+        queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
+        ownsQueueEngine: input.queueEngine === undefined,
         browserLocks: typeof globalThis.navigator?.locks?.request === 'function'
             ? globalThis.navigator.locks
             : undefined

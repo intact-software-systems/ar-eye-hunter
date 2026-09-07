@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import {
+    AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '../../../packages/shared/alm/open-indexed-db-admission-database.ts';
 import {
@@ -8,11 +9,22 @@ import {
 } from '../../../packages/shared/alm/read-indexed-db-admission-snapshot.ts';
 import {
     computeIndexedDbAdmissionRevisionWrite,
-    writeIndexedDbAdmissionMutations
+    writeIndexedDbAdmissionMutations,
+    type WriteIndexedDbAdmissionMutationsInput
 } from '../../../packages/shared/alm/write-indexed-db-admission-mutations.ts';
+import {
+    readIndexedDbRequest,
+    readIndexedDbTransaction
+} from '../../../packages/shared/persistence/indexed-db-request.ts';
+import { IndexedDbConnection } from '../../../packages/shared/persistence/open-indexed-db.ts';
 import {
     type StoredResourceEntry
 } from '../../../packages/shared/queuebox/indexed-db-queue-box-entry-codec.ts';
+import {
+    computeIndexedDbQueuePut,
+    type ComputedIndexedDbQueueMutation
+} from '../../../packages/shared/queuebox/indexed-db-queue-box-entry.ts';
+import { INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME } from '../../../packages/shared/queuebox/indexed-db-queue-box-store.ts';
 import { IndexedDbQueueBox } from '../../../packages/shared/queuebox/indexed-db-queue-box.ts';
 import {
     EntityStatus,
@@ -22,8 +34,15 @@ import {
 } from '../../../packages/shared/queuebox/ResourceEntry.ts';
 
 const STORE_NAME = 'entries';
+const ADMISSION_STORE_NAME = 'admission';
 
-export interface IndexedDbTransactionWriteBrowserProbe {
+interface IndexedDbAtomicAdmissionProbe {
+    readonly queuedWorkReplayed: boolean;
+    readonly queueConflictRolledBackAdmission: boolean;
+    readonly admissionConflictRolledBackQueue: boolean;
+}
+
+export interface IndexedDbTransactionWriteBrowserProbe extends IndexedDbAtomicAdmissionProbe {
     readonly databaseVersion: number;
     readonly fairnessIndexPresent: boolean;
     readonly storedResource: string | undefined;
@@ -56,10 +75,12 @@ export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<Indexe
     const durableWinner = await firstQueue.getItem(firstCandidate.key);
     const databaseState = await inspectQueueDatabase(dbName, storedEntry.key);
     const admissionState = await runAdmissionStorageProbe();
+    const atomicState = await runAtomicAdmissionStorageProbe();
 
     return {
         ...databaseState,
         ...admissionState,
+        ...atomicState,
         storedResource: firstRead?.resource,
         concurrentResults: concurrent.map((entry) => entry.resource),
         durableWinner: durableWinner?.resource
@@ -69,65 +90,33 @@ export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<Indexe
 async function runAdmissionStorageProbe(): Promise<
     Pick<IndexedDbTransactionWriteBrowserProbe, 'admissionTokenPresent' | 'guardedAdmissionBatchRolledBack'>
 > {
-    const dbName = `playwright-indexeddb-admission-${crypto.randomUUID()}`;
-    const storeName = 'admission';
-    const database = await openIndexedDbAdmissionDatabase(dbName, storeName);
+    const database = await openIndexedDbAdmissionDatabase(
+        `playwright-indexeddb-admission-${crypto.randomUUID()}`,
+        ADMISSION_STORE_NAME
+    );
     try {
-        const initial = await readIndexedDbAdmissionSnapshot(
-            database,
-            storeName,
-            { kind: 'revision' }
-        );
-        const initialCommitted = await writeIndexedDbAdmissionMutations({
-            db: database,
-            storeName,
-            expectedRevision: initial.revision,
-            mutations: [{
-                kind: 'set',
-                stored: {
-                    key: 'current',
-                    value: 'current',
-                    expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                    writeToken: 'current-row-token'
-                }
-            }],
-            revisionWrite: computeIndexedDbAdmissionRevisionWrite(initial.revision)
-        });
-        if (!initialCommitted) {
+        const initial = computeBrowserAdmissionWrite(0, createQueueEntry('current', 'current'), []);
+        if (!await writeIndexedDbAdmissionMutations({ ...initial, db: database })) {
             throw new Error('Initial IndexedDB admission write conflicted');
         }
-        const stored = await readIndexedDbAdmissionSnapshot(
-            database,
-            storeName,
-            { kind: 'key', key: 'current' }
-        );
-        const committed = await writeIndexedDbAdmissionMutations({
-            db: database,
-            storeName,
-            expectedRevision: stored.revision,
-            mutations: [
-                {
-                    kind: 'set',
-                    stored: {
-                        key: 'must-roll-back',
-                        value: 'new',
-                        expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                        writeToken: 'new-row-token'
-                    }
-                },
-                {
-                    kind: 'remove-if-write-token',
-                    key: 'current',
-                    expectedWriteToken: 'not-the-current-token'
-                }
-            ],
-            revisionWrite: computeIndexedDbAdmissionRevisionWrite(stored.revision)
+        const stored = await readIndexedDbAdmissionSnapshot(database, ADMISSION_STORE_NAME, {
+            kind: 'key',
+            key: 'current'
         });
-        const afterConflict = await readIndexedDbAdmissionSnapshot(
-            database,
-            storeName,
-            { kind: 'prefixes', prefixes: ['current', 'must-roll-back'] }
-        );
+        const conflict = computeBrowserAdmissionWrite(stored.revision, createQueueEntry('must-roll-back', 'new'), []);
+        const committed = await writeIndexedDbAdmissionMutations({
+            ...conflict,
+            db: database,
+            mutations: [...conflict.mutations, {
+                kind: 'remove-if-write-token',
+                key: 'current',
+                expectedWriteToken: 'not-the-current-token'
+            }]
+        });
+        const afterConflict = await readIndexedDbAdmissionSnapshot(database, ADMISSION_STORE_NAME, {
+            kind: 'prefixes',
+            prefixes: ['current', 'must-roll-back']
+        });
         return {
             admissionTokenPresent: stored.stored[0]?.writeToken === 'current-row-token',
             guardedAdmissionBatchRolledBack: !committed &&
@@ -138,6 +127,79 @@ async function runAdmissionStorageProbe(): Promise<
     finally {
         database.close();
     }
+}
+
+async function runAtomicAdmissionStorageProbe(): Promise<IndexedDbAtomicAdmissionProbe> {
+    const dbName = `playwright-atomic-admission-${crypto.randomUUID()}`;
+    const entry = createQueueEntry('atomic-work', 'retained-message');
+    const original = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
+    try {
+        const computed = computeBrowserAdmissionWrite(0, entry, [computeIndexedDbQueuePut(undefined, entry)]);
+        if (!await writeIndexedDbAdmissionMutations({ ...computed, db: original })) {
+            throw new Error('Initial atomic admission conflicted');
+        }
+    }
+    finally {
+        original.close();
+    }
+    const reopened = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
+    const queue = new IndexedDbQueueBox({
+        connection: new IndexedDbConnection(async () => reopened),
+        storeName: AL_ADMISSION_WORK_STORE_NAME
+    });
+    try {
+        const reserved = await queue.reserveEntries(new Set([entry.typeId]), new Set([EntityStatus.NEW]), 1);
+        const queuedWorkReplayed = reserved.size === 1 && [...reserved.values()][0].resource === entry.resource;
+        return {
+            queuedWorkReplayed,
+            queueConflictRolledBackAdmission: await probeAtomicQueueConflict(reopened, entry),
+            admissionConflictRolledBackQueue: await probeAtomicAdmissionConflict(reopened, queue)
+        };
+    }
+    finally {
+        reopened.close();
+    }
+}
+
+async function probeAtomicQueueConflict(database: IDBDatabase, existing: ResourceEntry): Promise<boolean> {
+    const computed = computeBrowserAdmissionWrite(1, createQueueEntry('must-roll-back', 'new'), [
+        computeIndexedDbQueuePut(undefined, existing)
+    ]);
+    const committed = await writeIndexedDbAdmissionMutations({ ...computed, db: database });
+    const after = await readIndexedDbAdmissionSnapshot(database, ADMISSION_STORE_NAME, {
+        kind: 'key',
+        key: 'must-roll-back'
+    });
+    return !committed && after.revision === 1 && after.stored.length === 0;
+}
+
+async function probeAtomicAdmissionConflict(database: IDBDatabase, queue: IndexedDbQueueBox): Promise<boolean> {
+    const entry = createQueueEntry('stale-admission', 'stale');
+    const computed = computeBrowserAdmissionWrite(0, entry, [computeIndexedDbQueuePut(undefined, entry)]);
+    const committed = await writeIndexedDbAdmissionMutations({ ...computed, db: database });
+    return !committed && await queue.getItem(entry.key) === undefined;
+}
+
+function computeBrowserAdmissionWrite(
+    expectedRevision: number,
+    entry: ResourceEntry,
+    queueMutations: readonly ComputedIndexedDbQueueMutation[]
+): Omit<WriteIndexedDbAdmissionMutationsInput, 'db'> {
+    return {
+        storeName: ADMISSION_STORE_NAME,
+        expectedRevision,
+        mutations: [{
+            kind: 'set',
+            stored: {
+                key: entry.key.resourceId,
+                value: entry.resource,
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                writeToken: `${entry.key.resourceId}-row-token`
+            }
+        }],
+        queueMutations,
+        revisionWrite: computeIndexedDbAdmissionRevisionWrite(expectedRevision)
+    };
 }
 
 function createQueueEntry(resourceId: string, resource: string): ResourceEntry {
@@ -168,14 +230,14 @@ async function inspectQueueDatabase(
     try {
         const transaction = database.transaction(STORE_NAME, 'readonly');
         const store = transaction.objectStore(STORE_NAME);
-        const row = await readIndexedDbRequest<StoredResourceEntry>(
-            store.get(toKeyAsString(storedKey))
+        const row = await readIndexedDbTransaction(
+            transaction,
+            () => readIndexedDbRequest<StoredResourceEntry>(store.get(toKeyAsString(storedKey)))
         );
-        await waitForTransaction(transaction);
         return {
             databaseVersion: database.version,
             fairnessIndexPresent: store.indexNames.contains(
-                IndexedDbQueueBox.FAIRNESS_INDEX_NAME
+                INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME
             ),
             storedRevision: row.revision
         };
@@ -183,19 +245,4 @@ async function inspectQueueDatabase(
     finally {
         database.close();
     }
-}
-
-async function readIndexedDbRequest<Value>(request: IDBRequest<Value>): Promise<Value> {
-    return await new Promise<Value>((resolve, reject) => {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
-    });
-}
-
-async function waitForTransaction(transaction: IDBTransaction): Promise<void> {
-    return await new Promise<void>((resolve, reject) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
-        transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
-    });
 }

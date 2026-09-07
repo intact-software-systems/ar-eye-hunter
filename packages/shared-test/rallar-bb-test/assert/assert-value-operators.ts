@@ -1,5 +1,4 @@
 // deno-lint-ignore-file no-explicit-any
-import type { JsonValue } from '../../json-compare/CompareJson.ts';
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
@@ -68,11 +67,11 @@ export function assertValueMatches(
             return source.exists && regexMatches(source.value, expected);
         case 'matchesShape':
             return source.exists &&
-                CompareJson.compatible(expected as JsonValue, source.value as JsonValue).isEqual;
+                CompareJson.compatible(expected, source.value).isEqual;
         case 'matchesShapeComplete':
             return source.exists &&
                 CompareJson
-                    .compatibleComplete(expected as JsonValue, source.value as JsonValue)
+                    .compatibleComplete(expected, source.value)
                     .isEqual;
     }
 }
@@ -133,7 +132,7 @@ function containsAssertValue(value: unknown, expected: unknown): boolean {
         if (typeof expected === 'string') {
             return containsValue(value, expected);
         }
-        return Object.values(value as Record<string, unknown>)
+        return Object.values(value)
             .some((entry) => sameJsonValue(entry, expected));
     }
 

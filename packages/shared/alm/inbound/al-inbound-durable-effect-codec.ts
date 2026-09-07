@@ -1,12 +1,4 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import {
-    AL_CONTROL_ACK_TYPE_ID,
-    AL_CONTROL_NACK_TYPE_ID,
-    AL_CONTROL_REPAIR_TYPE_ID,
-    type ALAckPayload,
-    type ALNackPayload,
-    type ALRepairPayload
-} from '../../al-contracts/al-control.ts';
+import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import {
     decodePersistedALMessage,
     decodePersistedALMessageValue
@@ -18,7 +10,6 @@ import {
     type StoredALAdmissionResourceEntry
 } from '../al-admission-resource-entry-validation.ts';
 import {
-    decodeALAdmissionControlValue,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
@@ -130,7 +121,10 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         case 'send-control': {
             decodeALAdmissionRecord(effect, ['kind', 'msg']);
             const msg = decodePersistedALMessageValue(effect.msg);
-            assertControlMessage(msg);
+            const validated = decodeALControlMessage(msg);
+            if (validated.left) {
+                throw new TypeError(validated.left.message);
+            }
             return { kind: effect.kind, msg };
         }
         case 'forward-message': {
@@ -151,35 +145,5 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             };
         default:
             throw new TypeError('Persisted inbound effect payload kind is invalid');
-    }
-}
-
-function assertControlMessage(msg: ALMessage): void {
-    const raw: unknown = JSON.parse(msg.payload.resource);
-    const routeSuffix = `:${msg.payload.typeId}`;
-    if (!msg.route.resourceId.endsWith(routeSuffix)) {
-        throw new TypeError('Persisted inbound control route has the wrong type');
-    }
-    const expectedMsgId = msg.route.resourceId.slice(0, -routeSuffix.length);
-    let payload: ALAckPayload | ALNackPayload | ALRepairPayload | undefined;
-    switch (msg.payload.typeId) {
-        case AL_CONTROL_ACK_TYPE_ID:
-            payload = decodeALAdmissionControlValue({ kind: 'acks', values: [raw] }, expectedMsgId, 'acks').values[0];
-            break;
-        case AL_CONTROL_NACK_TYPE_ID:
-            payload = decodeALAdmissionControlValue({ kind: 'nacks', values: [raw] }, expectedMsgId, 'nacks').values[0];
-            break;
-        case AL_CONTROL_REPAIR_TYPE_ID:
-            payload =
-                decodeALAdmissionControlValue({ kind: 'repairs', values: [raw] }, expectedMsgId, 'repairs').values[0];
-            break;
-        default:
-            throw new TypeError('Persisted inbound control effect contains no control message');
-    }
-    if (
-        !payload || payload.fromPeerId !== msg.id.senderId || msg.targets?.mode !== 'unicast' ||
-        payload.toPeerId !== msg.targets.toPeerId
-    ) {
-        throw new TypeError('Persisted inbound control routing does not match its envelope');
     }
 }

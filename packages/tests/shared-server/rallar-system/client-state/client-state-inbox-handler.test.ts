@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -776,6 +778,12 @@ function createContext<Result>(
             }
         },
         entry,
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Client handler test result')
     };
 }

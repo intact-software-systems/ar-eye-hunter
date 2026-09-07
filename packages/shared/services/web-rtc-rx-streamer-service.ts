@@ -1,8 +1,8 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
 import {
-    decodePersistedALMessage,
-    decodePersistedALMessageValue
+    decodePersistedALMessage
 } from '../al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
@@ -18,8 +18,8 @@ import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { toError } from '../resilience/to-error.ts';
+import { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';
 import { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
-import { QRtcClientCallbacks } from '../webrtc/QRtcClientCallbacks.ts';
 import { OnMessageCallback } from './queue-message-callbacks.ts';
 import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 import { QRtcPeerDto } from './web-rtc-connection-service.ts';
@@ -105,8 +105,8 @@ export class WebRtcRxStreamerService {
             {
                 ...dependencies.inboundRuntime,
                 inbox: this.inbox,
-                planIncomingMessage: (msg, fromPeerId, runtime) => {
-                    return this.multicast.planIncomingMessage(msg, fromPeerId, runtime);
+                planIncomingMessage: (msg, source, observations) => {
+                    return this.multicast.planIncomingMessage(msg, source, observations);
                 },
                 readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry, plan) => {
@@ -145,9 +145,15 @@ export class WebRtcRxStreamerService {
             .onRtcMessageDo(
                 this.toRtcChannelSubscriptionId(peerDto.peerId),
                 {
+                    maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
                     onMessage: async (value) => {
-                        const message = decodePersistedALMessageValue(value);
-                        await this.receivePeerMessage(peerDto.peerId, message);
+                        const acceptance = await this.inboundRuntime.handleIncomingMessage(value, {
+                            kind: 'rtc-peer',
+                            peerId: peerDto.peerId
+                        });
+                        if (acceptance.left) {
+                            console.warn('Rejected RTC message', acceptance.left.code);
+                        }
                     }
                 }
             );
@@ -172,10 +178,6 @@ export class WebRtcRxStreamerService {
             )
                 .catch((error) => console.error('Error setting local media parameters', toError(error)));
         }
-    }
-
-    private async receivePeerMessage(peerId: PeerId, message: ALMessage): Promise<void> {
-        await this.inboundRuntime.handleIncomingMessage(message, peerId);
     }
 
     private async publishRemoteStream(peerId: PeerId, stream: MediaStream, event: RTCTrackEvent): Promise<void> {

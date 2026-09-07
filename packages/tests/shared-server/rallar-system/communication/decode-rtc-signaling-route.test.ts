@@ -1,54 +1,44 @@
+import { decodeRtcSignalingRoute, validateRtcSignalingMessage } from '@shared-server/rallar-system/communication/decode-rtc-signaling-route.ts';
+import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { describe, expect, it } from 'vitest';
 
-import { decodeRtcSignalingRoute } from '@shared-server/rallar-system/communication/decode-rtc-signaling-route.ts';
-
-describe('decodeRtcSignalingRoute', () => {
-    it('returns the recipient from the current signaling envelope', () => {
-        expect(decodeRtcSignalingRoute(JSON.stringify({
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'session-1',
-            toId: 'session-2',
-            sessionId: 'session-1',
-            token: 'ticket-1',
-            signalType: 'Offer',
-            payload: {
-                description: { type: 'offer', sdp: 'offer-sdp' },
-                candidate: null
-            }
-        }))).toEqual({ toId: 'session-2' });
+describe('RTC signaling route authority', () => {
+    it('routes an offer from its authenticated origin to its bound recipient', () => {
+        const message = createSignal({});
+        expect(decodeRtcSignalingRoute(message).right).toEqual({ toId: 'receiver' });
+        expect(validateRtcSignalingMessage(message).right).toBe(message);
     });
 
     it.each([
-        ['unknown field', { unexpected: true }],
-        ['wrong channel', { channel: 'OldRtcSignal' }],
-        ['missing recipient', { toId: undefined }],
-        ['unsupported signal type', { signalType: 'Renegotiate' }]
-    ])('rejects a signaling envelope with an %s', (_label, replacement) => {
-        const message = {
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'session-1',
-            toId: 'session-2',
-            sessionId: 'session-1',
-            token: 'ticket-1',
-            signalType: 'Offer',
-            payload: {
-                description: { type: 'offer', sdp: 'offer-sdp' },
-                candidate: null
-            },
-            ...replacement
-        };
-        let serialized = JSON.stringify(message);
-        if ('toId' in replacement && replacement.toId === undefined) {
-            const { toId: _missingRecipient, ...withoutRecipient } = message;
-            serialized = JSON.stringify(withoutRecipient);
-        }
+        { fromId: 'victim' },
+        { toId: 'another-recipient' }
+    ])('rejects a signaling identity that differs from its AL envelope: %j', (replacement) => {
+        expect(validateRtcSignalingMessage(createSignal(replacement)).left?.code).toBe('unauthorized');
+    });
 
-        expectInvalidRtcSignalingRoute(serialized);
+    it.each([
+        { unexpected: true },
+        { channel: 'OldRtcSignal' },
+        { toId: undefined },
+        { signalType: 'Renegotiate' },
+        { payload: { description: { type: 'offer', sdp: 'sdp', extra: true }, candidate: null } },
+        { payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null, extra: true } },
+        { payload: { description: { type: 'answer', sdp: 'sdp' }, candidate: null } }
+    ])('rejects a malformed signaling value: %j', (replacement) => {
+        expect(validateRtcSignalingMessage(createSignal(replacement)).left?.code).toBe('malformed');
     });
 });
 
-function expectInvalidRtcSignalingRoute(serialized: string): void {
-    expect(() => decodeRtcSignalingRoute(serialized)).toThrow(TypeError);
+function createSignal(replacement: Readonly<Record<string, unknown>>): ALMessage {
+    return newALUnicastMessage('sender', newALEventRoute('rtc', 'receiver'), 'receiver', 'rtc', {
+        channel: 'RtcSignal',
+        type: 'Signal',
+        fromId: 'sender',
+        toId: 'receiver',
+        sessionId: 'sender',
+        token: 'ticket',
+        signalType: 'Offer',
+        payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null },
+        ...replacement
+    });
 }

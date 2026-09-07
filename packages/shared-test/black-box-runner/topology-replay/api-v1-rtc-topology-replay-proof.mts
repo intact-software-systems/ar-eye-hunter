@@ -38,16 +38,16 @@ import {
 import { ApiV1RtcTopologyProofSocket } from './api-v1-rtc-topology-proof-websocket.mts';
 import { withManagedApiServerSuspended } from './with-managed-api-server-suspended.mts';
 
-export type ApiV1RtcTopologyReplayProofInput = Readonly<{
-    env: Record<string, string>;
-    databaseUrl: string;
-    executionToken: string;
-    artifactDir: string;
-    primaryPlan: ManagedApiServerPlan;
-    secondaryPlan: ManagedApiServerPlan;
-    tertiaryPlan: ManagedApiServerPlan;
-    controls: ManagedApiServerLifecycleControls;
-}>;
+export interface ApiV1RtcTopologyReplayProofInput {
+    readonly env: Record<string, string>;
+    readonly databaseUrl: string;
+    readonly executionToken: string;
+    readonly artifactDir: string;
+    readonly primaryPlan: ManagedApiServerPlan;
+    readonly secondaryPlan: ManagedApiServerPlan;
+    readonly tertiaryPlan: ManagedApiServerPlan;
+    readonly controls: ManagedApiServerLifecycleControls;
+}
 
 export async function runApiV1RtcTopologyReplayProof(
     input: ApiV1RtcTopologyReplayProofInput
@@ -136,7 +136,7 @@ export async function runApiV1RtcTopologyReplayProof(
         await api.establishBaseline({ ...group, actor: sessions[0]! });
         const baselineTopology = await api.readCurrentTopology({ ...group, actor: sessions[0]! });
         phase = 'attach-baseline-sessions';
-        const attached = await attachAllSessions(api, sessions);
+        const attached = await attachAllSessions(api, sessions, group);
         sockets.push(...attached);
         const baselineObservations = await waitForPassivePair(
             attached,
@@ -322,7 +322,7 @@ export async function runApiV1RtcTopologyReplayProof(
             apiBaseUrl: replacementPlan.baseUrl,
             wsBaseUrl: replacementPlan.baseUrl.replace(/^http/, 'ws')
         }));
-        const replacementSockets = await attachAllSessions(api, replacementSessions);
+        const replacementSockets = await attachAllSessions(api, replacementSessions, group);
         sockets.push(...replacementSockets);
         const replacementObservations = await Promise.all(
             replacementSockets.map((socket) =>

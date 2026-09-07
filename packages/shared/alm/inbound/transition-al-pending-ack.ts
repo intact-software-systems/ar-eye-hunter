@@ -34,6 +34,7 @@ export interface ALPendingAckTransition {
 export function trackALPendingAckSnapshot(
     input: TrackALPendingAckSnapshotInput
 ): ALPendingAckTransition {
+    const expireAtTimestamp = input.expireAtTimestamp ?? input.current?.expireAtTimestamp;
     const expectedFromPeerIds = new Set(input.current?.expectedFromPeerIds ?? []);
     for (const peerId of input.expectedFromPeerIds) {
         expectedFromPeerIds.add(peerId);
@@ -52,7 +53,7 @@ export function trackALPendingAckSnapshot(
         localReady: (input.current?.localReady ?? false) || input.localReady,
         expectedFromPeerIds: [...expectedFromPeerIds],
         ackedFromPeerIds: [...ackedFromPeerIds],
-        expireAtTimestamp: input.expireAtTimestamp ?? input.current?.expireAtTimestamp
+        ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp })
     });
 }
 
@@ -117,7 +118,7 @@ function finalizeALPendingAckTransition(
                 msgId,
                 toPeerId: pending.toPeerId,
                 status: pending.status,
-                expireAtTimestamp: pending.expireAtTimestamp
+                ...(pending.expireAtTimestamp === undefined ? {} : { expireAtTimestamp: pending.expireAtTimestamp })
             }
         }
         : { pending };

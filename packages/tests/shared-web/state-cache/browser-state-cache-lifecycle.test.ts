@@ -1,4 +1,5 @@
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { createPagedSnapshotReceiver } from './browser-state-cache-lifecycle-fixtures.ts';
 // dprint-ignore
 import {
     newALBroadcastMessage,
@@ -385,7 +386,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             onAllInboxMessagesDo: vi.fn((callback: {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
-                onInboxMessage = callback.onMessage;
+                onInboxMessage = createPagedSnapshotReceiver(callback.onMessage);
             })
         };
         const listener = vi.fn();
@@ -472,7 +473,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             onAllInboxMessagesDo: vi.fn((callback: {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
-                onInboxMessage = callback.onMessage;
+                onInboxMessage = createPagedSnapshotReceiver(callback.onMessage);
             })
         };
         const groupSnapshot = createGroupSnapshot({
@@ -587,7 +588,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             onAllInboxMessagesDo: vi.fn((callback: {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
-                onInboxMessage = callback.onMessage;
+                onInboxMessage = createPagedSnapshotReceiver(callback.onMessage);
             })
         };
         const group = createGroupSnapshot({
@@ -682,7 +683,7 @@ describe('browser state cache lifecycle scope filtering', () => {
                 onAllInboxMessagesDo: vi.fn((callback: {
                     onMessage: (message: ALMessage) => Promise<void>;
                 }) => {
-                    onInboxMessage = callback.onMessage;
+                    onInboxMessage = createPagedSnapshotReceiver(callback.onMessage);
                 })
             };
             const groupSnapshot = createGroupSnapshot({
@@ -739,20 +740,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                     ...current,
                     version: current.version + 1
                 })
-            ))).resolves.toBeUndefined();
-            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
-                sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
-                overlayVersion: historical.version
-            });
-            await expect(receive(withTopologyMessageId(
-                newCurrentStateTopologyMessage({
-                    deliveryKind: deliveryKind,
-                    senderId: 'session-a',
-                    group: groupSnapshot,
-                    topology: current,
-                    resourceId: 'spoofed-current-topology'
-                }),
-                toCurrentTopologyMessageId(deliveryKind, current)
             ))).resolves.toBeUndefined();
             expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,

@@ -4,7 +4,6 @@ import { RetryableConflictError, RetryPolicies, tryWithPolicy } from '../../resi
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type {
     ALOutboundAdmissionStore,
-    ALOutboundCommitBundle,
     ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
 import type {
@@ -18,9 +17,10 @@ import {
     computeALOutboundDispatch,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
-    type ALOutboundComputeDependencies,
-    type ALOutboundComputeIntent
+    type ALOutboundComputeIntent,
+    type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
+import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 export namespace ALOutboundDispatchAdmission {
     export interface Result<TPrepared> {
@@ -33,7 +33,7 @@ export namespace ALOutboundDispatchAdmission {
         readonly planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
-        readonly options: ALOutboundCommitDispatchOptions<TPrepared>;
+        readonly options: ALOutboundCommitDispatchOptions;
     }
 
     export interface Dependencies<TPrepared> {
@@ -112,19 +112,20 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const read = await this.admissionStore.readOutgoingMessage(dispatch.msg, dispatch.planner);
+        const input = await this.readDispatch(dispatch);
         if (this.disposed) {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const computed = computeALOutboundDispatch({
-            read,
-            dependencies: this.toComputeDependencies(),
-            intent: dispatch.intent,
-            phase: dispatch.phase,
-            options: dispatch.options
-        });
-        this.logDispatchDecision(computed, read.plan);
+        const computed = computeALOutboundDispatch(input);
+        const validated = validateALOutboundDispatch(input.read, computed);
+        if (validated.left) {
+            return {
+                computed: { status: 'failed', reason: validated.left.message, entries: [] },
+                committed: false
+            };
+        }
+        this.logDispatchDecision(computed, input.read.plan);
         if (!computed.bundle) {
             return { computed, committed: false };
         }
@@ -133,7 +134,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
 
         const status = await this.admissionStore.commitBundle(
-            this.toRuntimeClockedBundle(computed.bundle),
+            computed.bundle,
             this.dependencies.decodePreparedMessage
         );
         if (status === 'conflict') {
@@ -166,21 +167,22 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         };
     }
 
-    private toRuntimeClockedBundle(
-        bundle: ALOutboundCommitBundle<TPrepared>
-    ): ALOutboundCommitBundle<TPrepared> {
-        if (bundle.durableEffects.length === 0) {
-            return bundle;
-        }
-
-        const nowMs = this.readNowMs();
+    private async readDispatch(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
+    ): Promise<ComputeALOutboundDispatchInput<TPrepared>> {
+        const read = await this.admissionStore.readOutgoingMessage(dispatch.msg, dispatch.planner);
+        const needsEntry = !read.plan.dropReason && (read.sentSnapshot?.outboxKey !== undefined ||
+            read.plan.persist || read.plan.preparedMessages.length === 0);
         return {
-            ...bundle,
-            durableEffects: bundle.durableEffects.map((effect) =>
-                effect.retryAtMs === undefined
-                    ? { ...effect, retryAtMs: nowMs }
-                    : effect
-            )
+            read,
+            outboxEntry: needsEntry
+                ? dispatch.options.fallbackEntry ?? this.dependencies.toOutboxEntry(dispatch.msg)
+                : undefined,
+            canFallback: this.dependencies.canFallback,
+            dispatchAtMs: this.readNowMs(),
+            intent: dispatch.intent,
+            phase: dispatch.phase,
+            options: dispatch.options
         };
     }
 
@@ -290,12 +292,5 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         catch (error) {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
-    }
-
-    private toComputeDependencies(): ALOutboundComputeDependencies {
-        return {
-            toOutboxEntry: this.dependencies.toOutboxEntry,
-            canFallback: this.dependencies.canFallback
-        };
     }
 }

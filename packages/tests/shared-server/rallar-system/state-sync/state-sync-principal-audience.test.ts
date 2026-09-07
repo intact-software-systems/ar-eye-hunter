@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
 import { createTestGroup } from '../../../create-test-group.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
 
@@ -17,7 +19,7 @@ describe('principal state-sync audience', () => {
             createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])),
             'server-1'
         );
-        const message = JSON.parse(entry!.resource) as ALMessage;
+        const message = decodePersistedALMessage(entry!.resource);
 
         expect(message.targets).toEqual({
             mode: 'broadcast',
@@ -66,15 +68,18 @@ describe('principal state-sync audience', () => {
     // than the one hosting the socket. That host's cache then still predates the
     // row, and resolving from the cache alone drops the snapshot that would have
     // installed it (observed as the api-v1-rtc-topology-convergence CI flake).
-    it('resolves the row payload sessions when the local cache lags the mutation', () => {
-        const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
+    it('delivers producer-authorized own-session carriers when the local cache lags the mutation', () => {
+        const messages = computeClientStateSyncEntries(createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])), 'server-1')
+            .map((entry) => decodePersistedALMessage(entry.resource));
         const webSocketServer = createOpenConnections(['alice-session-1']);
 
-        const recipients = resolveStateSyncRecipients(webSocketServer, message, {
-            readClientSnapshots: () => [],
-            readGroupSnapshots: () => [],
-            now: () => NOW_EPOCH_MS
-        });
+        const recipients = messages.flatMap((message) =>
+            resolveStateSyncRecipients(webSocketServer, message, {
+                readClientSnapshots: () => [],
+                readGroupSnapshots: () => [],
+                now: () => NOW_EPOCH_MS
+            }) ?? []
+        );
 
         expect(recipients).toBeDefined();
         expect(recipients!.map((recipient) => recipient.connectionId)).toEqual(['alice-session-1']);
@@ -161,7 +166,7 @@ function toPrincipalStampedMessage(principalId: string, sessionIds: readonly str
         createComputedClientSnapshotStateSync(createClientSnapshot(principalId, sessionIds)),
         'server-1'
     );
-    return JSON.parse(entry!.resource) as ALMessage;
+    return decodePersistedALMessage(entry!.resource);
 }
 
 function toPrincipalStampedEventMessage(principalId: string): ALMessage {
@@ -169,7 +174,7 @@ function toPrincipalStampedEventMessage(principalId: string): ALMessage {
         createComputedClientEventStateSync(createClientEvent(principalId)),
         'server-1'
     );
-    return JSON.parse(entry!.resource) as ALMessage;
+    return decodePersistedALMessage(entry!.resource);
 }
 
 function createOpenConnections(connectionIds: readonly string[]): JsonWebSocketServer {
@@ -177,7 +182,7 @@ function createOpenConnections(connectionIds: readonly string[]): JsonWebSocketS
     for (const connectionId of connectionIds) {
         server.connections.set(
             connectionId,
-            new ConnectionContext(connectionId, createOpenTestWebSocket())
+            new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() })
         );
     }
     return server;
@@ -252,27 +257,7 @@ function createClientSnapshot(principalId: string, sessionIds: readonly string[]
     const audit = createAuditStamp();
     return {
         stateRevision: 5,
-        principal: {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            principalId,
-            username: principalId,
-            displayName: principalId,
-            avatarUrl: null,
-            authProvider: null,
-            externalSubjectId: null,
-            status: 'active',
-            disabled: null,
-            deleted: null,
-            roles: [],
-            metadata: {},
-            snapshotVersion: 5,
-            profileVersion: 5,
-            presenceVersion: 1,
-            created: audit,
-            updated: audit,
-            lastSeenAtEpochMs: null
-        },
+        principal: createClientPrincipal(principalId),
         instances: sessionIds.map((sessionId) => ({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -310,6 +295,31 @@ function createClientSnapshot(principalId: string, sessionIds: readonly string[]
         isOnline: sessionIds.length > 0,
         activeSessionCount: sessionIds.length,
         lastSeenAtEpochMs: sessionIds.length > 0 ? NOW_EPOCH_MS : null
+    };
+}
+
+function createClientPrincipal(principalId: string): ClientSnapshot['principal'] {
+    const audit = createAuditStamp();
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        principalId,
+        username: principalId,
+        displayName: principalId,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        status: 'active',
+        disabled: null,
+        deleted: null,
+        roles: [],
+        metadata: {},
+        snapshotVersion: 5,
+        profileVersion: 5,
+        presenceVersion: 1,
+        created: audit,
+        updated: audit,
+        lastSeenAtEpochMs: null
     };
 }
 
@@ -365,7 +375,7 @@ function createGroupSnapshot(
         })),
         memberCount: principalIds.length,
         onlineMemberCount: principalIds.length
-    } as GroupSnapshot;
+    };
 }
 
 function createAuditStamp(): AuditStamp {

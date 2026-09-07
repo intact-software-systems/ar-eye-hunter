@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import type { JsonValue } from '../../json-compare/CompareJson.ts';
+import type { JsonValue } from '../../json-compare/compare-json-values.ts';
 
 import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
 import type { AssertionOutcomeVerdict } from './assertion-outcome-parity.ts';

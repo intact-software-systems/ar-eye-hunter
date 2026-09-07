@@ -1,6 +1,29 @@
 // deno-lint-ignore-file no-explicit-any
-import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
+import { Either } from '../../../shared/resilience/Either.ts';
+import { compareJson, COMPARISON, toConfig, type ComparisonResult } from '../../json-compare/compare-json-values.ts';
+import { toInteractionOutputFields } from '../execution/black-box-scenario-results.ts';
 import { normalizeBlackBoxResponseHeaders } from './normalize-black-box-response-headers.ts';
+
+export interface ToHttpStatusInput {
+    readonly config: any;
+    readonly result: string;
+    readonly actualJson: any;
+    readonly response: any;
+    readonly interaction: any;
+    readonly details?: any;
+}
+
+export interface ToHttpInteractionStatusInput {
+    readonly config: any;
+    readonly interaction: any;
+    readonly response: any;
+    readonly actualJson: any;
+}
+
+interface HttpResponseMismatch {
+    readonly result: string;
+    readonly details?: Readonly<Record<string, unknown>>;
+}
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
@@ -16,7 +39,7 @@ function toLowercaseHeaderNames(expectedHeaders: Record<string, any>): Record<st
     );
 }
 
-function compareExpectedHeaders(interaction: any, response: any): any | undefined {
+function compareExpectedHeaders(interaction: any, response: any): ComparisonResult | undefined {
     const expectedHeaders = interaction.response?.headers;
     if (!isRecord(expectedHeaders)) {
         return undefined;
@@ -33,18 +56,6 @@ function compareExpectedHeaders(interaction: any, response: any): any | undefine
     );
 }
 
-function toOutputReportFields(interaction: any): any {
-    return {
-        output: interaction.request.output,
-        outputPath: interaction.request.outputPath,
-        outputs: interaction.request.outputs,
-        transform: interaction.request.transform,
-        secret: interaction.request.secret,
-        redact: interaction.request.redact,
-        redactAs: interaction.request.redactAs
-    };
-}
-
 function toCorrelationReportFields(interaction: any): any {
     const correlation = interaction?.request?.correlation;
     if (!correlation) {
@@ -58,14 +69,8 @@ function toCorrelationReportFields(interaction: any): any {
     };
 }
 
-export function toStatus(
-    config: any,
-    result: string,
-    actualJson: any,
-    res: any,
-    interaction: any,
-    results: any = {}
-): any {
+export function toStatus(input: ToHttpStatusInput): any {
+    const { config, result, actualJson, response, interaction } = input;
     return {
         name: config.interactionName,
         status: FAILURE,
@@ -74,24 +79,25 @@ export function toStatus(
         method: interaction.request.method || 'GET',
         path: interaction.request.path,
         timeoutMs: interaction.request.timeoutMs,
-        attemptNumber: res.blackBoxAttemptNumber,
-        maxAttempts: res.blackBoxMaxAttempts,
+        attemptNumber: response.blackBoxAttemptNumber,
+        maxAttempts: response.blackBoxMaxAttempts,
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual: {
             body: actualJson,
-            headers: normalizeBlackBoxResponseHeaders(res.headers),
-            statusCode: res.status,
-            statusText: res.statusText
+            headers: normalizeBlackBoxResponseHeaders(response.headers),
+            statusCode: response.status,
+            statusText: response.statusText
         },
-        details: results,
+        details: input.details ?? {},
         ...config
     };
 }
 
-function toSuccessStatus(config: any, actualJson: any, response: any, interaction: any): any {
+function toSuccessStatus(input: ToHttpInteractionStatusInput): any {
+    const { config, actualJson, response, interaction } = input;
     return {
         name: config.interactionName,
         status: SUCCESS,
@@ -111,7 +117,7 @@ function toSuccessStatus(config: any, actualJson: any, response: any, interactio
             statusCode: response.status,
             statusText: response.statusText
         },
-        ...toOutputReportFields(interaction),
+        ...toInteractionOutputFields(interaction),
         input: interaction.request.input
     };
 }
@@ -154,7 +160,7 @@ function bodyExpectationAlternatives(response: any): any[] {
         : [];
 }
 
-function compareExpectedBody(expectedBody: any, actualJson: any, interaction: any): any {
+function compareExpectedBody(expectedBody: any, actualJson: any, interaction: any): ComparisonResult {
     return compareJson(
         expectedBody,
         actualJson,
@@ -166,102 +172,61 @@ function compareExpectedBody(expectedBody: any, actualJson: any, interaction: an
     );
 }
 
-export function toHttpInteractionStatus(
-    config: any,
-    interaction: any,
-    response: any,
-    actualJson: any
-): any {
-    const expectedStatuses = expectedHttpStatusCodes(interaction.response);
-    const hasExpectedStatus = expectedStatuses.length > 0;
+export function toHttpInteractionStatus(input: ToHttpInteractionStatusInput): any {
+    return validateHttpResponse(input).fold(
+        (mismatch) => toStatus({ ...input, ...mismatch }),
+        () => toSuccessStatus(input)
+    );
+}
 
-    const actualStatusCode = Number.parseInt(String(response.status), 10);
-    if (hasExpectedStatus && !expectedStatuses.includes(actualStatusCode)) {
-        return toStatus(
-            config,
-            'Expected responseCode not the same as actual responseCode',
-            actualJson,
-            response,
-            interaction,
-            {
-                expectedStatusCodes: expectedStatuses
-            }
-        );
+function validateHttpResponse(input: ToHttpInteractionStatusInput): Either<HttpResponseMismatch, true> {
+    const { interaction, response } = input;
+    const statusMismatch = computeHttpStatusMismatch(interaction, response);
+    if (statusMismatch) {
+        return Either.ofLeft(statusMismatch);
     }
-
-    if (!response.ok && !hasExpectedStatus) {
-        return toStatus(config, 'Server request failed.', actualJson, response, interaction);
-    }
-
     const headerComparison = compareExpectedHeaders(interaction, response);
     if (headerComparison !== undefined && !headerComparison.isEqual) {
-        return toStatus(
-            config,
-            'Expected response headers not the same as actual response headers',
-            actualJson,
-            response,
-            interaction,
-            {
-                expectedHeaders: interaction.response.headers,
-                headerComparison
-            }
-        );
+        return Either.ofLeft({
+            result: 'Expected response headers not the same as actual response headers',
+            details: { expectedHeaders: interaction.response.headers, headerComparison }
+        });
     }
+    const bodyMismatch = computeHttpBodyMismatch(input);
+    return bodyMismatch ? Either.ofLeft(bodyMismatch) : Either.ofRight(true);
+}
 
+function computeHttpStatusMismatch(interaction: any, response: any): HttpResponseMismatch | undefined {
+    const expectedStatuses = expectedHttpStatusCodes(interaction.response);
+    const actualStatusCode = Number.parseInt(String(response.status), 10);
+    if (expectedStatuses.length > 0 && !expectedStatuses.includes(actualStatusCode)) {
+        return {
+            result: 'Expected responseCode not the same as actual responseCode',
+            details: { expectedStatusCodes: expectedStatuses }
+        };
+    }
+    return !response.ok && expectedStatuses.length === 0 ? { result: 'Server request failed.' } : undefined;
+}
+
+function computeHttpBodyMismatch(input: ToHttpInteractionStatusInput): HttpResponseMismatch | undefined {
+    const { interaction, actualJson } = input;
     const bodyAlternatives = bodyExpectationAlternatives(interaction.response);
+    const expectsBody = bodyAlternatives.length > 0 || interaction.response?.body !== undefined;
+    if (expectsBody && (actualJson === undefined || actualJson === null)) {
+        return { result: 'Server with no body in response. Expects a body.' };
+    }
     if (bodyAlternatives.length > 0) {
-        if (actualJson === undefined || actualJson === null) {
-            return toStatus(
-                config,
-                'Server with no body in response. Expects a body.',
-                actualJson,
-                response,
-                interaction
-            );
-        }
-
-        const comparisons = bodyAlternatives.map((expectedBody) =>
-            compareExpectedBody(expectedBody, actualJson, interaction)
-        );
-        const matchedIndex = comparisons.findIndex((result) => result.isEqual);
-        if (matchedIndex < 0) {
-            return toStatus(
-                config,
-                'Expected response not to match any accepted response body',
-                actualJson,
-                response,
-                interaction,
-                {
-                    bodyAnyOf: bodyAlternatives,
-                    comparisons
-                }
-            );
+        const comparisons = bodyAlternatives.map((body) => compareExpectedBody(body, actualJson, interaction));
+        return comparisons.some((comparison) => comparison.isEqual) ? undefined : {
+            result: 'Expected response not to match any accepted response body',
+            details: { bodyAnyOf: bodyAlternatives, comparisons }
+        };
+    }
+    if (interaction.response?.body !== undefined) {
+        const comparison = compareExpectedBody(interaction.response.body, actualJson, interaction);
+        if (!comparison.isEqual) {
+            return { result: 'Expected response not the same as actual response', details: comparison };
         }
     }
-    else if (interaction?.response?.body !== undefined) {
-        if (actualJson === undefined || actualJson === null) {
-            return toStatus(
-                config,
-                'Server with no body in response. Expects a body.',
-                actualJson,
-                response,
-                interaction
-            );
-        }
-
-        const results = compareExpectedBody(interaction.response.body, actualJson, interaction);
-
-        if (!results.isEqual) {
-            return toStatus(
-                config,
-                'Expected response not the same as actual response',
-                actualJson,
-                response,
-                interaction,
-                results
-            );
-        }
-    }
-
-    return toSuccessStatus(config, actualJson, response, interaction);
+    return undefined;
 }

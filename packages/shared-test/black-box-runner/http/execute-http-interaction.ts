@@ -153,7 +153,7 @@ function executeSingleHttpAttempt(interaction: any, config: any): Promise<any> {
     return fetchWithRetry(interaction.request)
         .then(async (response) => {
             const actualJson = await toJson(response);
-            return toHttpInteractionStatus(config, interaction, response, actualJson);
+            return toHttpInteractionStatus({ config, interaction, response, actualJson });
         })
         .catch((e) => {
             return toHttpExceptionStatus(config, interaction, e);

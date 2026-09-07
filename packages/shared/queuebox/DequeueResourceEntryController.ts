@@ -3,6 +3,7 @@ import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-brea
 import { Either, EitherCollectors } from '../resilience/Either.ts';
 import { RateAdjuster, RateAdjusterPolicy, RateLimiter } from '../resilience/Resilience.ts';
 import { DequeueController, FailureDto, Reservator, SuccessDto } from './DequeueController.ts';
+import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import {
     DequeueResourceEntryRepository,
     toSaturatedResourceInboxFairnessScanBudget,
@@ -13,9 +14,9 @@ import {
 import * as Resource from './ResourceEntry.ts';
 import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
 import {
-    readResourceInboxAttemptTelemetry,
+    computeResourceInboxAttempt,
     recordResourceInboxAttemptRelease,
-    rememberResourceInboxAttemptTelemetry,
+    type ResourceInboxAttempt,
     type ResourceInboxAttemptReleaseTelemetry
 } from './ResourceInboxAttemptTelemetry.ts';
 import {
@@ -25,7 +26,6 @@ import {
     retryAfterAttempt,
     toResourceInboxFairnessTelemetry
 } from './ResourceInboxRetryPolicy.ts';
-export { readResourceInboxAttemptTelemetry } from './ResourceInboxAttemptTelemetry.ts';
 
 // -----------------------------------------
 // Minimal domain contracts (adjust/import)
@@ -67,22 +67,30 @@ export type ResourceInboxRetryExhaustionRecovery = Readonly<{
     finalizedAtEpochMs: number;
 }>;
 
-export class ResourceInboxFinalizedByHandlerError extends Error {
-    readonly code = 'resource-inbox-finalized-by-handler';
+export class ResourceInboxHandlerEntryError extends Error {
+    readonly code = 'resource-inbox-handler-entry-updated';
 
-    readonly entry: ResourceEntry;
-    readonly handlerError: Error;
+    readonly #entry: ResourceEntry;
+    readonly #handlerError: Error;
 
     constructor(
         entry: ResourceEntry,
         handlerError: Error
     ) {
-        super('Resource inbox entry was finalized by its handler', {
+        super('Resource inbox handler returned a persisted entry after failure', {
             cause: handlerError
         });
-        this.entry = entry;
-        this.handlerError = handlerError;
-        this.name = 'ResourceInboxFinalizedByHandlerError';
+        this.#entry = entry;
+        this.#handlerError = handlerError;
+        this.name = 'ResourceInboxHandlerEntryError';
+    }
+
+    get entry(): ResourceEntry {
+        return this.#entry;
+    }
+
+    get handlerError(): Error {
+        return this.#handlerError;
     }
 }
 
@@ -133,10 +141,6 @@ export class ResilienceDto {
             maxAttempts: this.retryPolicy.maxAttempts,
             finalizationStaleAfterMs: DequeueResourceEntryController.FINALIZATION_STALE_AFTER_MS
         };
-    }
-
-    get checkFailed(): InstanceType<typeof ResilienceDto.StatusChecker> {
-        return this.checkFairness;
     }
 
     success(): void {
@@ -209,7 +213,7 @@ export class ResilienceDto {
         concurrencyReduceStep: number,
         maxFairnessSelectionsInWindow: number = ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
         retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    ): InstanceType<typeof ResilienceDto> {
+    ): ResilienceDto {
         const policy = RateAdjuster.toPolicy(
             initialRate,
             maxRate,
@@ -256,9 +260,9 @@ export class DequeueResourceEntryController {
         maxToReserve: () => number,
         maxRetries: number,
         maxNumToDequeue: number,
-        resilience: InstanceType<typeof ResilienceDto>,
+        resilience: ResilienceDto,
         options: DequeueResourceEntryOptions = {}
-    ): DequeueController<Resource.Key, ResourceEntry, V> {
+    ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
         const retryPolicy = resilience.retryPolicy;
         if (
             options.retryPolicy &&
@@ -278,19 +282,24 @@ export class DequeueResourceEntryController {
             ((event: ResourceInboxFairnessTelemetry) => {
                 console.info('ResourceInbox reservation', event);
             });
-        const rememberLane = (
+        const toAttempts = (
             entries: Map<Resource.Key, ResourceEntry>,
-            lane: Reservator
-        ): Map<Resource.Key, ResourceEntry> => {
+            selectedLane: Reservator
+        ): Map<Resource.Key, ResourceInboxAttempt> => {
             const selectedAtEpochMs = nowEpochMs();
-            for (const entry of entries.values()) {
-                rememberResourceInboxAttemptTelemetry(entry, lane, selectedAtEpochMs);
-            }
-            return entries;
+            return new Map([...entries].map(([key, entry]) => [
+                key,
+                computeResourceInboxAttempt({
+                    entry,
+                    selectedLane,
+                    selectedAtEpochMs,
+                    selectedDueAtEpochMs: undefined
+                })
+            ]));
         };
 
         return DequeueController
-            .create<Resource.Key, ResourceEntry, V>()
+            .create<Resource.Key, ResourceInboxAttempt, V>()
             .withInboxTypesToDequeue(typesToDequeue)
             .withMaxNumToDequeue(maxNumToDequeue)
             .withMaxNumToReserve(maxToReserve)
@@ -311,15 +320,17 @@ export class DequeueResourceEntryController {
                                 ),
                             new Map<Resource.Key, ResourceInboxFinalizationSelection>()
                         );
-                        const entries = new Map<Resource.Key, ResourceEntry>();
+                        const entries = new Map<Resource.Key, ResourceInboxAttempt>();
                         for (const [key, selection] of selections) {
-                            rememberResourceInboxAttemptTelemetry(
-                                selection.entry,
-                                Reservator.FINALIZATION,
-                                selectedAtEpochMs,
-                                Number(selection.selectedDueTs.epochMilliseconds)
+                            entries.set(
+                                key,
+                                computeResourceInboxAttempt({
+                                    entry: selection.entry,
+                                    selectedLane: Reservator.FINALIZATION,
+                                    selectedAtEpochMs,
+                                    selectedDueAtEpochMs: Number(selection.selectedDueTs.epochMilliseconds)
+                                })
                             );
-                            entries.set(key, selection.entry);
                         }
                         return entries;
                     }
@@ -341,7 +352,7 @@ export class DequeueResourceEntryController {
                     : undefined
             )
             .onNewEntriesReserveDo(async (types, maxNumToReserve) =>
-                rememberLane(
+                toAttempts(
                     await dequeueResourceEntryRepository.reserveEntries(
                         types,
                         new Set([EntityStatus.NEW]),
@@ -354,7 +365,7 @@ export class DequeueResourceEntryController {
                 )
             )
             .onRetryEntriesReserveDo(async (types, maxNumToReserve) =>
-                rememberLane(
+                toAttempts(
                     await dequeueResourceEntryRepository.reserveEntries(
                         types,
                         new Set([EntityStatus.RETRY]),
@@ -390,18 +401,20 @@ export class DequeueResourceEntryController {
                                     selectedAtEpochMs
                                 )
                             );
-                            rememberResourceInboxAttemptTelemetry(
-                                selection.entry,
-                                Reservator.FAIRNESS,
-                                selectedAtEpochMs,
-                                Number(selection.selectedDueTs.epochMilliseconds)
-                            );
                         }
                         return new Map(
-                            [...reserved].map(([key, selection]) => [key, selection.entry])
+                            [...reserved].map(([key, selection]) => [
+                                key,
+                                computeResourceInboxAttempt({
+                                    entry: selection.entry,
+                                    selectedLane: Reservator.FAIRNESS,
+                                    selectedAtEpochMs,
+                                    selectedDueAtEpochMs: Number(selection.selectedDueTs.epochMilliseconds)
+                                })
+                            ])
                         );
                     },
-                    new Map<Resource.Key, ResourceEntry>()
+                    new Map<Resource.Key, ResourceInboxAttempt>()
                 )
             )
             .onTimeoutEntriesReserveDo(async (types, maxNumToReserve) => {
@@ -429,18 +442,18 @@ export class DequeueResourceEntryController {
                     );
                 }
 
-                return rememberLane(reservedTimeoutEntries, Reservator.TIMEOUT);
+                return toAttempts(reservedTimeoutEntries, Reservator.TIMEOUT);
             })
             .onReleaseEntriesDo(
                 // successReleaser
                 async (successByKey) => {
                     const released = await dequeueResourceEntryRepository.releaseEntries(
                         Array.from(successByKey.values())
-                            .map((dto) => dto.value),
+                            .map((dto) => dto.value.entry),
                         { status: EntityStatus.COMPLETED, delayMs: null }
                     );
 
-                    const out = new Map<Resource.Key, SuccessDto<Resource.Key, ResourceEntry, V>>();
+                    const out = new Map<Resource.Key, SuccessDto<Resource.Key, ResourceInboxAttempt, V>>();
 
                     for (const [k, v] of released.entries()) {
                         const original = Array.from(successByKey.values())
@@ -452,36 +465,33 @@ export class DequeueResourceEntryController {
 
                         recordResourceInboxAttemptRelease(
                             options.onAttemptReleaseTelemetry,
-                            original.value,
-                            v,
-                            'accepted'
+                            { attempt: original.value, released: v, classification: 'accepted', exception: undefined }
                         );
-                        out.set(k, new SuccessDto(k, v, original.computedValue));
+                        out.set(k, new SuccessDto(k, { ...original.value, entry: v }, original.computedValue));
                     }
                     return out;
                 },
                 // failureReleaser
                 async (failureByKey) => {
-                    const out = new Map<Resource.Key, FailureDto<Resource.Key, ResourceEntry>>();
-                    for (const failure of failureByKey.values()) {
-                        if (failure.exception instanceof ResourceInboxFinalizedByHandlerError) {
+                    const out = new Map<Resource.Key, FailureDto<Resource.Key, ResourceInboxAttempt>>();
+                    for (const original of failureByKey.values()) {
+                        const failure = toHandlerEntryFailure(original);
+                        if (
+                            original.exception instanceof ResourceInboxHandlerEntryError &&
+                            failure.value.entry.status !== EntityStatus.RESERVED
+                        ) {
                             recordResourceInboxAttemptRelease(
                                 options.onAttemptReleaseTelemetry,
-                                failure.value,
-                                failure.exception.entry,
-                                failure.exception.entry.status === EntityStatus.COMPLETED
-                                    ? 'accepted'
-                                    : 'non-retryable',
-                                failure.exception.handlerError
+                                {
+                                    attempt: original.value,
+                                    released: failure.value.entry,
+                                    classification: failure.value.entry.status === EntityStatus.COMPLETED
+                                        ? 'accepted'
+                                        : 'non-retryable',
+                                    exception: failure.exception
+                                }
                             );
-                            out.set(
-                                failure.key,
-                                new FailureDto(
-                                    failure.key,
-                                    failure.exception.entry,
-                                    failure.exception.handlerError
-                                )
-                            );
+                            out.set(failure.key, failure);
                             continue;
                         }
                         const nonRetryable = DequeueResourceEntryController.isNonRetryableException(failure);
@@ -489,7 +499,7 @@ export class DequeueResourceEntryController {
                             ? { status: 'failed' as const, delayMs: null }
                             : retryAfterAttempt(
                                 retryPolicy,
-                                failure.value.dequeueAudit.attempts,
+                                failure.value.entry.dequeueAudit.attempts,
                                 jitterUnit()
                             );
                         let disposition: ResourceInboxReleaseDisposition;
@@ -510,26 +520,28 @@ export class DequeueResourceEntryController {
                         }
                         else if (options.onRetryExhausted) {
                             const exhaustedAtEpochMs = nowEpochMs();
-                            const exhaustion = toRetryExhaustion(
+                            const exhaustion = toRetryExhaustion({
                                 failure,
-                                readResourceInboxAttemptTelemetry(failure.value)?.selectedLane ?? Reservator.NEW,
-                                retryPolicy.maxAttempts,
+                                lane: original.value.telemetry.selectedLane,
+                                processingAttempts: retryPolicy.maxAttempts,
                                 exhaustedAtEpochMs
-                            );
+                            });
                             const finalized = await options.onRetryExhausted(exhaustion);
                             options.onRetryExhaustionTelemetry?.(exhaustion);
                             recordResourceInboxAttemptRelease(
                                 options.onAttemptReleaseTelemetry,
-                                failure.value,
-                                finalized,
-                                'retryable',
-                                failure.exception
+                                {
+                                    attempt: original.value,
+                                    released: finalized,
+                                    classification: 'retryable',
+                                    exception: failure.exception
+                                }
                             );
                             out.set(
                                 failure.key,
                                 new FailureDto(
                                     failure.key,
-                                    finalized,
+                                    { ...failure.value, entry: finalized },
                                     failure.exception
                                 )
                             );
@@ -542,24 +554,24 @@ export class DequeueResourceEntryController {
                             };
                         }
                         const released = await dequeueResourceEntryRepository.releaseEntries(
-                            [failure.value],
+                            [failure.value.entry],
                             disposition
                         );
                         for (const [k, v] of released.entries()) {
-                            const original = Array.from(failureByKey.values())
-                                .find((dto) => isKeysEqual(dto.key, k));
-                            if (!original) {
+                            if (!isKeysEqual(failure.key, k)) {
                                 throw new Error(`Missing failure dto for key: ${String(k)}`);
                             }
 
                             recordResourceInboxAttemptRelease(
                                 options.onAttemptReleaseTelemetry,
-                                original.value,
-                                v,
-                                nonRetryable ? 'non-retryable' : 'retryable',
-                                original.exception
+                                {
+                                    attempt: original.value,
+                                    released: v,
+                                    classification: nonRetryable ? 'non-retryable' : 'retryable',
+                                    exception: failure.exception
+                                }
                             );
-                            out.set(k, new FailureDto(k, v, original.exception));
+                            out.set(k, new FailureDto(k, { ...failure.value, entry: v }, failure.exception));
                         }
                     }
 
@@ -569,7 +581,7 @@ export class DequeueResourceEntryController {
     }
 
     private static isNonRetryableException(
-        failure: FailureDto<Resource.Key, ResourceEntry>
+        failure: FailureDto<Resource.Key, ResourceInboxAttempt>
     ): boolean {
         return failure.exception instanceof NonRetryableException;
     }
@@ -604,8 +616,8 @@ export class DequeueResourceEntryController {
 
     static toResultsByKey<K, V, T>(
         dequeued: Map<Reservator, Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>>
-    ): Map<K, Either<RuntimeException, T>> {
-        const out = new Map<K, Either<RuntimeException, T>>();
+    ): Map<K, Either<Error, T>> {
+        const out = new Map<K, Either<Error, T>>();
 
         for (const entry of dequeued.values()) {
             for (const either of entry.values()) {
@@ -613,9 +625,9 @@ export class DequeueResourceEntryController {
                     (failure) =>
                         [
                             failure.key,
-                            Either.ofLeft<RuntimeException, T>(failure.exception as RuntimeException)
+                            Either.ofLeft<Error, T>(failure.exception)
                         ] as const,
-                    (success) => [success.key, Either.ofRight<RuntimeException, T>(success.computedValue)] as const
+                    (success) => [success.key, Either.ofRight<Error, T>(success.computedValue)] as const
                 );
                 out.set(kv[0], kv[1]);
             }
@@ -624,10 +636,6 @@ export class DequeueResourceEntryController {
         return out;
     }
 }
-
-// TS doesn't have a built-in RuntimeException; in your codebase you may just use Error.
-// This alias matches the intent of the Java signature.
-export type RuntimeException = Error;
 
 export type DequeueResourceEntryOptions = Readonly<{
     retryPolicy?: ResourceInboxRetryPolicy;
@@ -646,22 +654,45 @@ export type DequeueResourceEntryOptions = Readonly<{
     ) => Promise<ResourceEntry>;
 }>;
 
-function toRetryExhaustion(
-    failure: FailureDto<Resource.Key, ResourceEntry>,
-    lane: Reservator,
-    processingAttempts: number,
-    exhaustedAtEpochMs: number
-): ResourceInboxRetryExhaustion {
+function toHandlerEntryFailure(
+    failure: FailureDto<Resource.Key, ResourceInboxAttempt>
+): FailureDto<Resource.Key, ResourceInboxAttempt> {
+    if (!(failure.exception instanceof ResourceInboxHandlerEntryError)) {
+        return failure;
+    }
+    const { entry, handlerError } = failure.exception;
+    if (
+        !isKeysEqual(entry.key, failure.key) ||
+        entry.dequeueAudit.attempts !== failure.value.entry.dequeueAudit.attempts ||
+        (entry.status !== EntityStatus.RESERVED && entry.status !== EntityStatus.COMPLETED &&
+            entry.status !== EntityStatus.FAILED && entry.status !== EntityStatus.NON_RETRYABLE) ||
+        (entry.status === EntityStatus.RESERVED &&
+            !hasSameResourceEntryValue(entry, { ...failure.value.entry, resource: entry.resource }))
+    ) {
+        throw new Error('Handler entry does not identify the claimed reservation');
+    }
+    return new FailureDto(failure.key, { ...failure.value, entry }, handlerError);
+}
+
+interface RetryExhaustionInput {
+    readonly failure: FailureDto<Resource.Key, ResourceInboxAttempt>;
+    readonly lane: Reservator;
+    readonly processingAttempts: number;
+    readonly exhaustedAtEpochMs: number;
+}
+
+function toRetryExhaustion(input: RetryExhaustionInput): ResourceInboxRetryExhaustion {
+    const { failure, lane, processingAttempts, exhaustedAtEpochMs } = input;
     const createdAtEpochMs = Number(
-        failure.value.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
+        failure.value.entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
     );
-    const dueAtEpochMs = failure.value.dequeueAudit.nextTs
-        ? Number(failure.value.dequeueAudit.nextTs.epochMilliseconds)
-        : Number(failure.value.dequeueAudit.startTs?.epochMilliseconds ?? exhaustedAtEpochMs);
+    const dueAtEpochMs = failure.value.entry.dequeueAudit.nextTs
+        ? Number(failure.value.entry.dequeueAudit.nextTs.epochMilliseconds)
+        : Number(failure.value.entry.dequeueAudit.startTs?.epochMilliseconds ?? exhaustedAtEpochMs);
     return {
-        entry: failure.value,
+        entry: failure.value.entry,
         processingAttempts,
-        reservationAttempt: failure.value.dequeueAudit.attempts,
+        reservationAttempt: failure.value.entry.dequeueAudit.attempts,
         lane,
         classification: 'retryable',
         exhausted: true,
@@ -673,12 +704,12 @@ function toRetryExhaustion(
 }
 
 function toRetryExhaustionRecovery(
-    entry: ResourceEntry,
+    attempt: ResourceInboxAttempt,
     processingAttempts: number,
     finalizedAtEpochMs: number
 ): ResourceInboxRetryExhaustionRecovery {
-    const telemetry = readResourceInboxAttemptTelemetry(entry);
-    if (!telemetry || telemetry.selectedLane !== Reservator.FINALIZATION) {
+    const { entry, telemetry } = attempt;
+    if (telemetry.selectedLane !== Reservator.FINALIZATION) {
         throw new Error('Finalization recovery selection telemetry is missing');
     }
     return {

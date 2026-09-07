@@ -17,7 +17,7 @@ import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/cr
 import { EnqueuedType, type OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import type { OverlayMulticasterContext } from '@shared/multicast/OverlayMulticastContracts.ts';
+import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -73,7 +73,8 @@ describe('WebRtc overlay services', () => {
             { minSnapshotVersion: 5, ack: 'none', reliability: 'at-least-once' }
         );
         try {
-            await manager.forwardIfRequired(message, 'peer-1');
+            expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBeUndefined();
+            expect(await manager.forwardIfRequired(message, 'peer-1')).toHaveLength(1);
             groups.accept('group-1', { ...current, group: { ...current.group, snapshotVersion: 4 } });
             await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
             expect(channel.sendCalls).toEqual([]);
@@ -96,7 +97,7 @@ describe('WebRtc overlay services', () => {
         );
         const msg = {
             ...newALMulticastMessage(
-                'sender-1',
+                'self',
                 {
                     topicId: 'chat',
                     resourceId: 'msg-1',
@@ -296,7 +297,7 @@ describe('WebRtc overlay services', () => {
             rateLimiter: toRateLimiter()
         });
         const msg = newALMulticastMessage(
-            'sender-no-next-hop',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-no-next-hop',
@@ -377,7 +378,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
-            status: 'sent-immediate',
+            status: 'accepted',
             entries: []
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -496,7 +497,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
-            status: 'sent-immediate',
+            status: 'accepted',
             entries: []
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -538,8 +539,8 @@ describe('WebRtc overlay services', () => {
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
-        expect(first.status).toBe('sent-immediate');
-        expect(second.status).toBe('sent-immediate');
+        expect(first.status).toBe('accepted');
+        expect(second.status).toBe('accepted');
         expect(third).toMatchObject({
             status: 'rate-limited',
             entries: [],
@@ -741,7 +742,7 @@ describe('WebRtc overlay services', () => {
             rateLimiter: toRateLimiter()
         });
         const msg = newALMulticastMessage(
-            'sender-expired',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-expired',
@@ -895,8 +896,12 @@ function createOpenRtcChannel(): CapturedRtcChannel {
     const health = channel.readHealth();
     const sendCalls: object[][] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        if (typeof message !== 'object' || message === null) {
+            throw new Error('Expected an RTC message object');
+        }
         sendCalls.push([message]);
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return Object.assign(channel, { sendCalls });
 }
@@ -961,8 +966,9 @@ function createOverlayContext(
     };
 
     return {
+        nowMs: Date.now(),
         overlayId: groupId,
-        room,
+        room: { ...room, activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 })) },
         overlay
     };
 }

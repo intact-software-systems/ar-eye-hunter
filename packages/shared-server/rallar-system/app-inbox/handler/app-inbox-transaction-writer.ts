@@ -1,7 +1,11 @@
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
-import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import {
+    writeResourceInboxReservationFinish,
+    type ResourceInboxReservationFinish
+} from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
 import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
 import { timeRallarAsync } from '../../observability/timing.ts';
@@ -17,7 +21,7 @@ export type AppInboxHandlerFinalization =
     | Readonly<{ state: 'pending'; }>
     | Readonly<{
         state: 'transaction-finalized';
-        status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
+        status: ResourceInboxReservationFinish['status'];
         result: JsonWireValue;
     }>;
 
@@ -40,7 +44,6 @@ export namespace AppInboxTransactionWriter {
         readonly serviceId: string;
         readonly timing?: RallarTimingSink;
         readonly nowEpochMs?: () => number;
-        readonly timingNowEpochMs?: () => number;
     }
 }
 
@@ -88,6 +91,22 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         await this.writeFinalizedMutation(context, computed, async () => {});
     }
 
+    async writeComputedQueueFailure<Result>(
+        attempt: ResourceInboxAttempt,
+        computed: AppInboxCompletionComputed<Result>
+    ): Promise<void> {
+        await timeRallarAsync(this.config.timing, {
+            component: 'app-inbox-phase',
+            operation: 'transaction',
+            serviceId: this.config.serviceId,
+            requestId: attempt.entry.key.resourceId,
+            details: { ...attempt.telemetry, classification: 'non-retryable' }
+        }, async () =>
+            await runInPSqlTransaction(this.database, async (transaction) => {
+                await writeAppInboxCompletion(transaction, computed);
+            }));
+    }
+
     private async writeFinalizedMutation<DurableResult>(
         context: AppInboxExecutionMetadata,
         computed: AppInboxCompletionComputed<DurableResult>,
@@ -96,11 +115,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         this.ensurePending(context);
         await this.inTransaction(context, this.toTimingDetails(context), async (transaction) => {
             await write(transaction);
-            await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
-            const completed = await writeResourceInboxReservationFinish(transaction, computed.reservationFinish);
-            if (!completed) {
-                throw new AppInboxReservationConflictError(context.entry.key);
-            }
+            await writeAppInboxCompletion(transaction, computed);
         });
         this.finalizationByContext.set(context, {
             state: 'transaction-finalized',
@@ -145,11 +160,21 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         return toAppInboxAttemptTimingDetails(
             context.enqueue,
             context.entry,
-            this.config.timingNowEpochMs?.() ?? Date.now()
+            context.attemptTelemetry
         );
     }
 
     private nowEpochMs(): number {
         return this.config.nowEpochMs?.() ?? Date.now();
     }
+}
+
+async function writeAppInboxCompletion<Result>(
+    transaction: PSqlSql,
+    computed: AppInboxCompletionComputed<Result>
+): Promise<void> {
+    if (!await writeResourceInboxReservationFinish(transaction, computed.reservationFinish)) {
+        throw new AppInboxReservationConflictError(computed.reservationFinish.key);
+    }
+    await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
 }

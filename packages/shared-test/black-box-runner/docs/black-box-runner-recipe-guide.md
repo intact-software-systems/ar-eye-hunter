@@ -871,13 +871,16 @@ count is only as strong as the time the runner kept listening.
 ```
 
 `count` accepts a non-negative integer, or a range with either end optional:
-`{ "min": 1 }`, `{ "max": 3 }`, `{ "min": 1, "max": 3 }`. `count: 0` is a
-stricter absence claim than `expect.absent`, because the failure also reports
-how many frames were observed while it waited.
+`{ "min": 1 }`, `{ "max": 3 }`, `{ "min": 1, "max": 3 }`. `count: 0` asserts
+absence and reports how many matching frames were observed.
 
-It works on `ws.wait`, `rtc.wait`, and on a `ws.send` step that wants to count
-what its own send produced. The result carries `matchedCount` and
-`observedMessageCount`.
+It works on `ws.wait`, `rtc.wait`, `ws.send`, and `rtc.send`, including remote
+browser providers. The result carries `matchedCount` and `observedMessageCount`.
+The count includes previously retained frames on the selected connection;
+correlate the matcher to the operation being checked. It does not count frames
+already consumed before the wait. Consumption, observation loss, or a connection
+change during the window prevents the runner from certifying a count. A count
+wait itself leaves observations available for later checks.
 
 ## Array Comparison Is Unordered In Every Mode
 

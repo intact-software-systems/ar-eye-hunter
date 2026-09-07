@@ -1,10 +1,13 @@
+import { createRequire } from 'node:module';
+
 import {
     findMatchingBrace,
-    lineFromOffset,
-    lineOffsets,
     skipWhitespaceAndComments,
     splitTopLevelItems
 } from './source-text.mjs';
+
+const require = createRequire(import.meta.url);
+let typeScript;
 
 const discouragedServiceNameParts = [
     'Manager',
@@ -134,20 +137,21 @@ export function extractCommandTypesWithOptionalFields(lines) {
 }
 
 export function scanPlainObjectTypeAliases(raw) {
+    const ts = typeScript ??= require('ts-morph').ts;
+    const source = ts.createSourceFile('contracts.ts', raw, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const messages = [];
-    const aliasPattern = /(^|\n)\s*(?:export\s+)?type\s+([A-Za-z0-9_]+)(?:\s*<[^>]+>)?\s*=\s*\{/gu;
-    const offsets = lineOffsets(raw);
-    let match;
-
-    while ((match = aliasPattern.exec(raw)) !== null) {
-        const matchIndex = match.index + match[0].lastIndexOf('type');
-        messages.push(
-            `Type alias "${match[2]}" at line ${lineFromOffset(offsets, matchIndex)} ` +
-                'is a plain object contract. Prefer interface when no alias feature ' +
-                '(union, intersection, mapped type, tuple, function, or primitive) is required.'
-        );
+    function collectAliases(node) {
+        if (ts.isTypeAliasDeclaration(node) && ts.isTypeLiteralNode(node.type)) {
+            const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+            messages.push(
+                `Type alias "${node.name.text}" at line ${line} ` +
+                    'is a plain object contract. Prefer interface when no alias feature ' +
+                    '(union, intersection, mapped type, tuple, function, or primitive) is required.'
+            );
+        }
+        ts.forEachChild(node, collectAliases);
     }
-
+    collectAliases(source);
     return messages;
 }
 

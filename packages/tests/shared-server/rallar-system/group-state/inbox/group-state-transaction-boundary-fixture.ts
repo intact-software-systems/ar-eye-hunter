@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -336,6 +338,12 @@ async function createReservedContext(
             enqueue.type,
             enqueue
         ),
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };
 }
@@ -379,6 +387,12 @@ async function createReconfigureReservedContext(
             enqueue.type,
             enqueue
         ),
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };
 }

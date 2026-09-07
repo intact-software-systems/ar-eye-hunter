@@ -50,14 +50,9 @@ function toIssue(input: {
 function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
     const issues: AssertComparatorIssue[] = [];
     const actualNumber = Number(value);
-    const numericComparators: Array<[string, (actual: number, bound: number) => boolean]> = [
-        ['gt', (actual, bound) => actual > bound],
-        ['gte', (actual, bound) => actual >= bound],
-        ['lt', (actual, bound) => actual < bound],
-        ['lte', (actual, bound) => actual <= bound]
-    ];
+    const numericComparators = ['gt', 'gte', 'lt', 'lte'] as const;
 
-    for (const [comparator, satisfies] of numericComparators) {
+    for (const comparator of numericComparators) {
         if (entry[comparator] === undefined) {
             continue;
         }
@@ -74,7 +69,14 @@ function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
             continue;
         }
 
-        if (!satisfies(actualNumber, bound)) {
+        const satisfied = comparator === 'gt'
+            ? actualNumber > bound
+            : comparator === 'gte'
+            ? actualNumber >= bound
+            : comparator === 'lt'
+            ? actualNumber < bound
+            : actualNumber <= bound;
+        if (!satisfied) {
             issues.push(toIssue({
                 path: entry.path,
                 comparator,

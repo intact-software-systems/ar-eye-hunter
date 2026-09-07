@@ -7,7 +7,7 @@ function strictIssueCodes(step: ApiJsonObject): readonly string[] {
     const plan = explainBlackBoxRunnerPlan({
         rawConfig: { steps: [step] },
         profile: 'strict'
-    } as never);
+    });
 
     return (plan.issues ?? []).map((issue: { code: string; }) => issue.code);
 }

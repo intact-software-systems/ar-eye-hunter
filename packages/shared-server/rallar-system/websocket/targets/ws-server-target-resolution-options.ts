@@ -19,7 +19,5 @@ export interface WsServerTargetResolutionOptions {
         ref: GroupRef,
         message: ALMessage
     ) => GroupSnapshot | undefined;
-    readonly findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
-    readonly resolveGroupRef?: (groupId: string, message: ALMessage) => GroupRef | undefined;
     readonly now?: RallarSnapshotPresenceClock;
 }

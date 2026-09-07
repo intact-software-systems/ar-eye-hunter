@@ -13,7 +13,7 @@ import { decodePersistedALMessage, decodePersistedALMessageValue } from '@shared
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
-import type { OnQRtcMessageCallback } from '@shared/webrtc/QRtcClientCallbacks.ts';
+import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
@@ -123,10 +123,28 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         const message = createMulticast({ seq: 1, acknowledgeSubtree: true });
 
         await fixture.receive(message, 'peer-1');
-        await fixture.receive(shared.newALAckControlMessage('peer-2', 'self', message.id.msgId, 'delivered'), 'peer-2');
+        await fixture.receive(
+            shared.newALAckControlMessage({ v: 2, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2' }, {
+                fromPeerId: 'peer-2',
+                toPeerId: 'self',
+                ackedMsgId: message.id.msgId,
+                status: 'delivered',
+                observedAtEpochMs: Date.now()
+            }),
+            'peer-2'
+        );
         expect((await fixture.outbound()).filter((outgoing) => shared.parseALControlMessage(outgoing)?.type === 'ack')).toEqual([]);
 
-        await fixture.receive(shared.newALAckControlMessage('peer-3', 'self', message.id.msgId, 'delivered'), 'peer-3');
+        await fixture.receive(
+            shared.newALAckControlMessage({ v: 2, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3' }, {
+                fromPeerId: 'peer-3',
+                toPeerId: 'self',
+                ackedMsgId: message.id.msgId,
+                status: 'delivered',
+                observedAtEpochMs: Date.now()
+            }),
+            'peer-3'
+        );
 
         expect(delivered).toEqual([message.id.msgId]);
         expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
@@ -241,8 +259,9 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
         return channel;
     });
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...channel.readHealth(), readyState: 'open' });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
         ports.sent.push(decodePersistedALMessageValue(message));
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return {
         peerId,
@@ -259,7 +278,10 @@ function createRtcRoomMulticast(
 ): shared.WebRtcOverlayMulticastManager {
     const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2', 'peer-3'] });
     const groupCache = new shared.LatestRepository<string, GroupSnapshot>();
-    groupCache.accept('group-1', snapshot);
+    groupCache.accept('group-1', {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+    });
     const overlayCache = new shared.LatestRepository<string, shared.OverlayInfo>();
     overlayCache.accept('group-1', {
         sourceGroupStateCausalRevision: snapshot.causalRevision,
@@ -338,8 +360,8 @@ describe('RTC receiver consumer dispatch', () => {
         });
         const message = exclusiveMessage();
 
-        await sender.peer.channel.send(message);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered).toEqual([]);
@@ -349,7 +371,7 @@ describe('RTC receiver consumer dispatch', () => {
         const { sender, receiver } = createConnectedEndpoints();
         const message = exclusiveMessage();
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
     });
@@ -377,7 +399,7 @@ describe('RTC receiver consumer dispatch', () => {
             }
         );
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);

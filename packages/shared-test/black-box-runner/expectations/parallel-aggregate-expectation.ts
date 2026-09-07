@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
+import { compareJson, COMPARISON, toConfig } from '../../json-compare/compare-json-values.ts';
 import { validateAssertValueComparators } from './assert-value-comparators.ts';
 
 export interface ParallelAggregateFailure {
@@ -13,7 +13,7 @@ export interface ParallelAggregateFailure {
  * such as "at most K of N succeeded" can be asserted. Child failures are
  * decided before this, so an aggregate expectation can never mask one.
  */
-export function parallelAggregateFailure(
+export function computeParallelAggregateFailure(
     interaction: any,
     actual: any
 ): ParallelAggregateFailure | undefined {

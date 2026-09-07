@@ -95,7 +95,7 @@ export type AcceptedRtcTopologyWorkWrite =
 
 export interface RtcTopologyReplayRead {
     readonly mutation: RtcTopologyMutationInput['read'];
-    readonly outbox: ResourceEntry | null;
+    readonly outbox: readonly (ResourceEntry | undefined)[];
     readonly delivery: RtcTopologyDeliveryLogEntry | null;
 }
 
@@ -211,7 +211,7 @@ function validateRtcTopologyReplayRead(
     loaded: Extract<RtcTopologyMutationComputed, { outcome: 'loaded'; }>
 ): void {
     const outbox = input.read.outbox;
-    if (outbox === null) {
+    if (outbox.length === 0) {
         throw new RtcTopologyDeliveryCorruptionError(
             `RTC topology publication ${loaded.publication.publicationId} has no durable outbox`
         );

@@ -1,6 +1,5 @@
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
@@ -8,6 +7,7 @@ import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { readRtcTopologyWorkMessage } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
@@ -33,14 +33,11 @@ export interface RtcTopologyWorkEnvelope<T extends object> {
     readonly data: T;
 }
 
-export type PersistedRtcTopologyWork =
-    | (
-        & RtcTopologyGroupRevisionWork
-        & Readonly<{
-            [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
-        }>
-    )
-    | RtcTopologyRttRefreshWork;
+interface PersistedRtcTopologyGroupRevisionWork extends RtcTopologyGroupRevisionWork {
+    readonly [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
+}
+
+export type PersistedRtcTopologyWork = PersistedRtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
 
 interface RequireWorkKeysInput {
     readonly value: JsonWireObject;
@@ -68,7 +65,7 @@ export function readRtcTopologyWorkEnvelope(
     message: ALMessage,
     expectedWorkType: string
 ): RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
-    const persistedMessage = decodePersistedALMessageValue(message);
+    const persistedMessage = readRtcTopologyWorkMessage(message);
     const value = decodeJsonWireValue(
         JSON.parse(persistedMessage.payload.resource),
         'RTC topology work envelope'
@@ -302,7 +299,9 @@ function readOptionalCoalescedWorkMetadata(
         : undefined;
 }
 
-function optionalCoalescedMetadata(metadata: CoalescedAppOutboxWorkMetadata | undefined) {
+function optionalCoalescedMetadata(
+    metadata: CoalescedAppOutboxWorkMetadata | undefined
+): Pick<Extract<PersistedRtcTopologyWork, { kind: 'group-revision'; }>, typeof COALESCED_APP_OUTBOX_WORK_FIELD> {
     return metadata ? { [COALESCED_APP_OUTBOX_WORK_FIELD]: metadata } : {};
 }
 

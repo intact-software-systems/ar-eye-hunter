@@ -19,21 +19,21 @@ describe('toWaitCountBound', () => {
     // reading as though it asserts cardinality.
     it('rejects an object that names no bound', () => {
         expect(toWaitCountBound({})).toBeUndefined();
-        expect(toWaitCountBound({ exactly: 1 } as never)).toBeUndefined();
-        expect(toWaitCountBound({ minimum: 1 } as never)).toBeUndefined();
+        expect(toWaitCountBound({ exactly: 1 })).toBeUndefined();
+        expect(toWaitCountBound({ minimum: 1 })).toBeUndefined();
     });
 
     it('rejects an array, which is not a range', () => {
-        expect(toWaitCountBound([1, 3] as never)).toBeUndefined();
-        expect(toWaitCountBound([] as never)).toBeUndefined();
+        expect(toWaitCountBound([1, 3])).toBeUndefined();
+        expect(toWaitCountBound([])).toBeUndefined();
     });
 
     // The exact form required a real number while the range form coerced, so
     // the same value was accepted in one shape and rejected in the other.
     it('requires real numbers in both shapes rather than coercing one', () => {
-        expect(toWaitCountBound('2' as never)).toBeUndefined();
-        expect(toWaitCountBound({ min: '2' } as never)).toBeUndefined();
-        expect(toWaitCountBound({ min: 1, max: '3' } as never)).toBeUndefined();
+        expect(toWaitCountBound('2')).toBeUndefined();
+        expect(toWaitCountBound({ min: '2' })).toBeUndefined();
+        expect(toWaitCountBound({ min: 1, max: '3' })).toBeUndefined();
     });
 
     it('rejects negative, fractional and inverted bounds', () => {

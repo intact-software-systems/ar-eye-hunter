@@ -1,12 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import * as shared from '@shared/mod.ts';
-import type { OnWebSocketMessageCallback } from '@shared/websocket/JsonWebSocketClient.ts';
+import type { OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -22,6 +23,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const msg = shared.newALUnicastMessage(
             'self',
@@ -39,7 +41,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(socket.sentJsonStrings).toHaveLength(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
@@ -54,6 +56,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
         const msg = shared.newALUnicastMessage(
             'self',
             {
@@ -71,7 +74,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const first = await service.enqueueOutboxIfAbsent(msg);
         const second = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(first.status).toBe('sent-immediate');
+        expect(first.status).toBe('accepted');
         expect(second.status).toBe('duplicate');
         expect(second.entries).toEqual([]);
         expect(socket.sentJsonStrings).toHaveLength(1);
@@ -98,6 +101,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             },
             reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const msg = shared.newALUnicastMessage(
             'self',
@@ -133,6 +137,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 socket: socket.client,
                 sessionId: 'self'
             }).enableDefaultCallbacks();
+            onTestFinished(() => service.close());
 
             const msg = shared.newALUnicastMessage(
                 'self',
@@ -181,7 +186,16 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             expect(decodePersistedALMessage(socket.sentJsonStrings[1]).id.msgId).toBe(msg.id.msgId);
 
             await socket.receive(
-                shared.newALAckControlMessage('peer-1', 'self', msg.id.msgId, 'delivered')
+                shared.newALAckControlMessage(
+                    { v: 2, msgId: 'control-ack', ts: 0, senderId: 'peer-1' },
+                    {
+                        ackedMsgId: msg.id.msgId,
+                        fromPeerId: 'peer-1',
+                        toPeerId: 'self',
+                        status: 'delivered',
+                        observedAtEpochMs: 0
+                    }
+                )
             );
         }
         finally {
@@ -197,6 +211,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const seq1 = {
             ...shared.newALUnicastMessage(
@@ -210,6 +225,9 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 'chat.private-text.v1',
                 {
                     text: 'one'
+                },
+                {
+                    qos: { repair: { algo: 'retransmit', opts: { maxRepairs: 1 } } }
                 }
             ),
             ordering: {
@@ -230,6 +248,9 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 'chat.private-text.v1',
                 {
                     text: 'two'
+                },
+                {
+                    qos: { repair: { algo: 'retransmit', opts: { maxRepairs: 1 } } }
                 }
             ),
             ordering: {
@@ -243,18 +264,16 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await service.enqueueOutboxIfAbsent(seq2);
 
         const repair = shared.newALRepairControlMessage(
-            'peer-1',
-            'self',
-            seq2.id.msgId,
-            'missing-seq',
+            { v: 2, msgId: 'control-repair', ts: 0, senderId: 'peer-1' },
             {
-                status: 'gap',
-                trackKey: shared.InMemoryALOrderingStore.toTrackKey(seq1),
-                seq: 2,
+                msgId: seq2.id.msgId,
+                fromPeerId: 'peer-1',
+                toPeerId: 'self',
+                reason: 'missing-seq',
+                observedAtEpochMs: 0,
+                orderingKey: shared.toALOrderingTrackKey(seq1),
                 expectedSeq: 1,
-                lastContiguousSeq: 0,
-                missingSeqs: [1],
-                releasableSeqs: []
+                missingSeqs: [1]
             }
         );
 
@@ -273,6 +292,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const first = shared.newALUnicastMessage(
             'self',
@@ -354,6 +374,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const receivedByFirst: string[] = [];
         const receivedBySecond: string[] = [];
@@ -408,6 +429,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const deliveredTexts: string[] = [];
         service.onInboxMessageDo(
@@ -499,6 +521,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             },
             reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         let callbackCount = 0;
         service.onInboxMessageDo(
@@ -563,7 +586,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(callbackCount).toBe(1);
     });
 
-    it('buffers ordered gaps and queues negative controls on the ws receive path', async () => {
+    it('buffers ordered gaps and sends volatile negative controls on the ws receive path', async () => {
         const socket = createFakeWsSocket();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxClientService({
@@ -572,6 +595,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             socket: socket.client,
             sessionId: 'self'
         }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
 
         const deliveredTexts: string[] = [];
         service.onInboxMessageDo(
@@ -622,13 +646,13 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(seq2);
 
         expect(deliveredTexts).toEqual([]);
-        expect((await outbox.getAllKeys()).length).toBe(2);
+        expect((await outbox.getAllKeys()).length).toBe(0);
 
-        const queuedTypeIds = (await readQueueEntries(outbox))
-            .map((entry) => decodePersistedALMessage(entry.resource).payload.typeId)
+        const sentTypeIds = socket.sentJsonStrings
+            .map((serialized) => decodePersistedALMessage(serialized).payload.typeId)
             .sort();
 
-        expect(queuedTypeIds).toEqual([
+        expect(sentTypeIds).toEqual([
             shared.AL_CONTROL_NACK_TYPE_ID,
             shared.AL_CONTROL_REPAIR_TYPE_ID
         ].sort());

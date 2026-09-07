@@ -1,10 +1,11 @@
+import { describe, expect, it, vi } from 'vitest';
+
 import {
     initWsLifecycle,
     type RallarWsLifecycleCloseInput,
     type RallarWsLifecycleSocketService
 } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
-import { ConnectionContext, type WebSocketServerCallbacks } from '@shared/websocket/JsonWebSocketServer.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { ConnectionContext, type WebSocketServerCallbacks } from '@shared/websocket/json-web-socket-server.ts';
 
 describe('ws lifecycle service', () => {
     it('disconnects client and group session state when the websocket closes', async () => {
@@ -121,10 +122,7 @@ function createConnection(
     generationStartedAtEpochMs: number
 ): ConnectionContext {
     return new ConnectionContext(
-        id,
-        new LifecycleTestWebSocket(),
-        generationId,
-        generationStartedAtEpochMs
+        { id, socket: new LifecycleTestWebSocket(), generationId, generationStartedAtEpochMs }
     );
 }
 

@@ -1,9 +1,98 @@
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { ALQosInputProvider, normalizeALQosPolicy, planALMessageHandling, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
-import { InMemoryALDedupStore, InMemoryALOrderingStore, InMemoryALSupersedenceStore } from '@shared/al-contracts/al-runtime.ts';
 import { describe, expect, it } from 'vitest';
 
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALUnicastMessage,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import {
+    normalizeALQosPolicy,
+    planALMessageHandling,
+    resolveALQosNormalizationInput,
+    type ALMessagePlanningContext,
+    type ALQosInputProvider,
+    type ALQosNormalizationInput
+} from '@shared/al-contracts/al-policy.ts';
+
 describe('AL QoS policy', () => {
+    it('requires resynchronization without delivery, forwarding, ACKs or sequence repair', () => {
+        const msg = newALMulticastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'state' }, groupRef('room'), 'chat.v1', {}, {
+            reliability: 'at-least-once',
+            ack: 'receiver'
+        });
+        Object.freeze(msg.id);
+        Object.freeze(msg.route);
+        Object.freeze(msg.payload);
+        Object.freeze(msg.delivery);
+        Object.freeze(msg.targets);
+        Object.freeze(msg);
+        const orderingObservation = Object.freeze({ status: 'resync-required' as const, missingSeqs: Object.freeze([]), releasableSeqs: Object.freeze([]) });
+        const context = Object.freeze({
+            nowMs: msg.id.ts,
+            selfPeerId: 'self',
+            fromPeerId: 'sender',
+            groupMemberPeerIds: Object.freeze(['sender', 'self', 'next']),
+            connectedPeerIds: Object.freeze(['sender', 'next']),
+            overlayNeighborPeerIds: Object.freeze(['next']),
+            orderingObservation
+        });
+        const plan = planALMessageHandling(msg, context);
+        expect(plan.dropReason).toBe('resync-required');
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding.enabled).toBe(false);
+        expect(plan.ack.enabled).toBe(false);
+        expect(plan.repair.enabled).toBe(false);
+        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'sender', reason: 'resync-required', missingSeqs: [] });
+        expect(planALMessageHandling(msg, context)).toEqual(plan);
+    });
+
+    it('normalizes frozen policy facts deterministically without changing requests or defaults', () => {
+        const message: ALMessage = Object.freeze({
+            ...newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'receiver', 'chat.v1', {}),
+            qos: Object.freeze({
+                ack: Object.freeze({ algo: 'subtree' as const, opts: Object.freeze({ timeoutMs: 90_000 }) }),
+                durability: Object.freeze({ algo: 'local-inbox' as const }),
+                ownership: Object.freeze({ algo: 'exclusive' as const }),
+                fanout: Object.freeze({ algo: 'limit' as const, opts: Object.freeze({ limit: 12 }) })
+            })
+        });
+        const input: ALQosNormalizationInput = Object.freeze({
+            defaults: Object.freeze({ congestion: Object.freeze({ algo: 'defer' as const, opts: Object.freeze({ priority: 4 }) }) }),
+            capabilities: Object.freeze({ supportedAck: Object.freeze(['none', 'hop'] as const), maxAckTimeoutMs: 500, maxFanout: 5 }),
+            authorization: Object.freeze({ maxDurability: 'local-outbox' as const, allowedOwnerships: Object.freeze(['shared'] as const) }),
+            live: Object.freeze({ connectedNeighborCount: 2 })
+        });
+        const before = structuredClone({ message, input });
+        const normalized = normalizeALQosPolicy(message, input);
+        expect(normalized.effective.ack).toEqual({ algo: 'none', opts: { timeoutMs: 500 } });
+        expect(normalized.effective.durability.algo).toBe('local-outbox');
+        expect(normalized.effective.ownership.algo).toBe('shared');
+        expect(normalized.effective.fanout.opts.limit).toBe(2);
+        expect(normalized.effective.congestion).toEqual({ algo: 'defer', opts: { priority: 4 } });
+        expect(normalized.unmetRequirements).toEqual([]);
+        expect(normalizeALQosPolicy(message, input)).toEqual(normalized);
+        expect({ message, input }).toEqual(before);
+    });
+
+    it('does not emit a resync NACK without an upstream peer or after expiry', () => {
+        const message = newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'self', 'chat.v1', {}, { ttlMs: 1 });
+        const context: ALMessagePlanningContext = {
+            nowMs: message.id.ts,
+            selfPeerId: 'self',
+            orderingObservation: { status: 'resync-required', missingSeqs: [], releasableSeqs: [] }
+        };
+        const originating = planALMessageHandling(message, context);
+        expect(originating.dropReason).toBe('resync-required');
+        expect(originating.nack.enabled).toBe(false);
+        expect(originating.repair.enabled).toBe(false);
+        const expired = planALMessageHandling(message, { ...context, fromPeerId: 'sender', nowMs: message.id.ts + 2 });
+        expect(expired.nack.reason).toBe('expired');
+        expect(expired.nack.missingSeqs).toEqual([]);
+        expect(expired.ack.enabled).toBe(false);
+    });
+
     it('applies ttlMs to untargeted and unicast builders only when requested', () => {
         const ttlOptions = { ttlMs: 15_000 };
 
@@ -60,7 +149,6 @@ describe('AL QoS policy', () => {
                 text: 'hello'
             },
             {
-                membershipEpoch: 7,
                 ttlHops: 12,
                 reliability: 'at-least-once',
                 ack: 'all-logical-recipients',
@@ -181,6 +269,7 @@ describe('AL QoS policy', () => {
         const plan = planALMessageHandling(
             msg,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
                 fromPeerId: 'peer-1',
                 connectedPeerIds: ['peer-1', 'peer-2', 'peer-visited'],
@@ -220,8 +309,9 @@ describe('AL QoS policy', () => {
         const plan = planALMessageHandling(
             msg,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
-                seenDedupKeys: new Set([msg.id.msgId])
+                dedupSeen: true
             }
         );
 
@@ -231,8 +321,7 @@ describe('AL QoS policy', () => {
         expect(plan.ack.enabled).toBe(false);
     });
 
-    it('keeps semantic dedup sender-scoped by default', async () => {
-        const dedupStore = new InMemoryALDedupStore();
+    it('keeps semantic dedup sender-scoped by default', () => {
         const first = newALUnicastMessage(
             'sender-semantic-1',
             {
@@ -277,20 +366,18 @@ describe('AL QoS policy', () => {
         const firstPlan = planALMessageHandling(
             first,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
-                dedupStore
+                dedupSeen: false
             }
-        );
-        await dedupStore.mark(
-            firstPlan.dedupKey,
-            firstPlan.effective.dedup.opts.windowMs
         );
 
         const secondPlan = planALMessageHandling(
             second,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
-                dedupStore
+                dedupSeen: false
             }
         );
 
@@ -298,8 +385,7 @@ describe('AL QoS policy', () => {
         expect(secondPlan.dedupKey).not.toBe(firstPlan.dedupKey);
     });
 
-    it('keeps default supersedence keys sender-scoped', async () => {
-        const supersedenceStore = new InMemoryALSupersedenceStore();
+    it('keeps default supersedence keys sender-scoped', () => {
         const first = newALUnicastMessage(
             'sender-supersedence-1',
             {
@@ -344,21 +430,18 @@ describe('AL QoS policy', () => {
         const firstPlan = planALMessageHandling(
             first,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
-                supersedenceStore
+                supersedenceObservation: { status: 'current' }
             }
         );
-        await supersedenceStore.accept({
-            key: firstPlan.supersedence.key,
-            msgId: first.id.msgId,
-            ts: first.id.ts
-        });
 
         const secondPlan = planALMessageHandling(
             second,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
-                supersedenceStore
+                supersedenceObservation: { status: 'current' }
             }
         );
 
@@ -367,28 +450,7 @@ describe('AL QoS policy', () => {
         expect(secondPlan.supersedence.key).not.toBe(firstPlan.supersedence.key);
     });
 
-    it('defers local delivery when ordering runtime detects a gap', async () => {
-        const orderingStore = new InMemoryALOrderingStore();
-        const first = newALMulticastMessage(
-            'sender-4',
-            {
-                topicId: 'chat',
-                resourceId: 'msg-4',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'first'
-            },
-            {
-                seq: 1,
-                reliability: 'at-least-once'
-            }
-        );
-
-        await orderingStore.accept(first);
-
+    it('defers local delivery for an observed small gap while preserving forward progress', () => {
         const second = newALMulticastMessage(
             'sender-4',
             {
@@ -410,12 +472,13 @@ describe('AL QoS policy', () => {
         const plan = planALMessageHandling(
             second,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
                 fromPeerId: 'peer-1',
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                orderingStore
+                orderingObservation: { status: 'gap', missingSeqs: [2], releasableSeqs: [] }
             }
         );
 
@@ -426,35 +489,6 @@ describe('AL QoS policy', () => {
         expect(plan.nack.missingSeqs).toEqual([2]);
         expect(plan.orderingRuntime.status).toBe('gap');
         expect(plan.forwarding.enabled).toBe(true);
-    });
-
-    it('consults the dedup runtime store during planning', async () => {
-        const dedupStore = new InMemoryALDedupStore();
-        const msg = newALUnicastMessage(
-            'sender-5',
-            {
-                topicId: 'chat',
-                resourceId: 'msg-6',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'private hello'
-            }
-        );
-
-        await dedupStore.mark(msg.id.msgId, 60_000);
-
-        const plan = planALMessageHandling(
-            msg,
-            {
-                selfPeerId: 'self',
-                dedupStore
-            }
-        );
-
-        expect(plan.dropReason).toContain('Duplicate message');
     });
 
     it('resolves topic defaults, authz and live state from a qos provider', () => {
@@ -499,6 +533,7 @@ describe('AL QoS policy', () => {
         const plan = planALMessageHandling(
             msg,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
                 overloaded: true
             },
@@ -509,8 +544,7 @@ describe('AL QoS policy', () => {
         expect(plan.dropReason).toContain('overloaded');
     });
 
-    it('drops superseded messages when a newer message already owns the supersedence key', async () => {
-        const supersedenceStore = new InMemoryALSupersedenceStore();
+    it('drops superseded messages when a newer message already owns the supersedence key', () => {
         const newer = newALUnicastMessage(
             'sender-7',
             {
@@ -569,17 +603,12 @@ describe('AL QoS policy', () => {
             }
         };
 
-        await supersedenceStore.accept({
-            key: 'presence:peer-1',
-            msgId: newer.id.msgId,
-            ts: newer.id.ts
-        });
-
         const plan = planALMessageHandling(
             older,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
-                supersedenceStore
+                supersedenceObservation: { status: 'superseded', latestMsgId: newer.id.msgId }
             }
         );
 
@@ -605,6 +634,7 @@ describe('AL QoS policy', () => {
         const plan = planALMessageHandling(
             msg,
             {
+                nowMs: 0,
                 selfPeerId: 'self',
                 fromPeerId: 'sender-8',
                 overloaded: true

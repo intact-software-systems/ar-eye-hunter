@@ -11,9 +11,9 @@ describe('decideRtcTopologyReplayEntry', () => {
 
         expect(decideRtcTopologyReplayEntry(fixture)).toEqual({
             status: 'deliver-publication',
-            message: JSON.parse(fixture.outbox.resource)
+            messages: fixture.outbox.map((page) => JSON.parse(page.resource))
         });
-        expect(JSON.parse(fixture.outbox.resource).targets.recipientPeerIds).toEqual(['session-1']);
+        expect(JSON.parse(fixture.outbox[0].resource).targets.recipientPeerIds).toEqual(['session-1']);
     });
 
     it.each([

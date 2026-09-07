@@ -26,7 +26,7 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
     it.each(['multicast', 'broadcast'] as const)('rejects %s before a matching snapshot arrives', (mode) => {
         const manager = createDefaultSnapshotAdmissionManager(new LatestRepository());
 
-        const plan = manager.planIncomingMessage(createRoomMessage(mode), 'peer-1');
+        const plan = manager.planIncomingMessage(createRoomMessage(mode), { kind: 'rtc-peer', peerId: 'peer-1' });
 
         expect(plan.dropReason).toBe('not-yet-in-sync');
         expect(plan.localDelivery.enabled).toBe(false);
@@ -44,10 +44,10 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         const stale = createSnapshot();
         groupCache.accept('room-1', { ...stale, group: { ...stale.group, snapshotVersion: 1 } });
 
-        expect(manager.planIncomingMessage(message, 'peer-1').dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
         groupCache.accept('room-1', createSnapshot());
 
-        const admitted = manager.planIncomingMessage(message, 'peer-1');
+        const admitted = manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' });
         expect(admitted.dropReason).toBeUndefined();
         expect(admitted.localDelivery.enabled).toBe(true);
         expect(admitted.nack.enabled).toBe(false);
@@ -57,14 +57,14 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
     it.each(
         [
             { mode: 'multicast', deliversToNonmember: false },
-            { mode: 'broadcast', deliversToNonmember: true }
+            { mode: 'broadcast', deliversToNonmember: false }
         ] as const
     )('uses a current scoped snapshot without an overlay for $mode', ({ mode, deliversToNonmember }) => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         groupCache.accept('not-an-overlay-key', createSnapshot());
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        const plan = manager.planIncomingMessage(createRoomMessage(mode), 'peer-1');
+        const plan = manager.planIncomingMessage(createRoomMessage(mode), { kind: 'rtc-peer', peerId: 'peer-1' });
 
         expect(plan.dropReason).toBeUndefined();
         expect(plan.localDelivery.enabled).toBe(true);
@@ -74,7 +74,7 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
             activeSessions: snapshot.activeSessions.filter((session) => session.sessionId !== 'self'),
             onlineMemberCount: 2
         });
-        expect(manager.planIncomingMessage(createRoomMessage(mode), 'peer-1').localDelivery.enabled).toBe(deliversToNonmember);
+        expect(manager.planIncomingMessage(createRoomMessage(mode), { kind: 'rtc-peer', peerId: 'peer-1' }).localDelivery.enabled).toBe(deliversToNonmember);
         manager.dispose();
     });
 
@@ -87,7 +87,7 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         });
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        expect(manager.planIncomingMessage(createRoomMessage('multicast'), 'peer-1').dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
         manager.dispose();
     });
 
@@ -116,10 +116,10 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         const manager = createDefaultSnapshotAdmissionManager(groupCache, overlayCache);
         const message: ALMessage = { ...createRoomMessage('broadcast'), forwarding: { overlayId: 'foreign-overlay' } };
 
-        const plan = manager.planIncomingMessage(message, 'peer-1');
+        const plan = manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' });
 
-        expect(plan.dropReason).toBeUndefined();
-        expect(plan.localDelivery.enabled).toBe(true);
+        expect(plan.dropReason).toBe('unauthorized');
+        expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
         manager.dispose();
     });
@@ -129,31 +129,31 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         groupCache.acceptAt({ key: 'room-1', value: createSnapshot(), nowEpochMs: 1, expireAtEpochMs: 2 });
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        expect(manager.planIncomingMessage(createRoomMessage('multicast'), 'peer-1').dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
         manager.dispose();
     });
 
     it.each([
         { expiresAtEpochMs: 1_001, dropReason: undefined },
-        { expiresAtEpochMs: 1_000, dropReason: 'not-yet-in-sync' },
-        { expiresAtEpochMs: 999, dropReason: 'not-yet-in-sync' }
+        { expiresAtEpochMs: 1_000, dropReason: 'unauthorized' },
+        { expiresAtEpochMs: 999, dropReason: 'unauthorized' }
     ])('uses the outbound clock for snapshot expiry at $expiresAtEpochMs', ({ expiresAtEpochMs, dropReason }) => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const snapshot = createSnapshot();
         groupCache.accept('room-1', { ...snapshot, group: { ...snapshot.group, expiresAtEpochMs } });
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        expect(manager.planIncomingMessage(createRoomMessage('multicast'), 'peer-1').dropReason).toBe(dropReason);
+        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(dropReason);
         manager.dispose();
     });
 
-    it('keeps unversioned and originating plans independent of inbound snapshot admission', () => {
+    it('requires authority for unversioned and originating room plans', () => {
         const manager = createDefaultSnapshotAdmissionManager(new LatestRepository());
         const versioned = createRoomMessage('multicast');
         const unversioned: ALMessage = { ...versioned, targets: { mode: 'multicast', groupRef: roomRef } };
 
-        expect(manager.planIncomingMessage(unversioned, 'peer-1').dropReason).toBeUndefined();
-        expect(manager.planIncomingMessage(versioned).dropReason).toBeUndefined();
+        expect(manager.planIncomingMessage(unversioned, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(versioned).dropReason).toBe('not-yet-in-sync');
         manager.dispose();
     });
 });
