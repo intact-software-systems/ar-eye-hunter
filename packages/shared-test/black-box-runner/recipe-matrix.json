@@ -2118,7 +2118,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 admin support auth denial, explicit QueueBox-key explanation, constrained request warning, and OpenAPI contract coverage."
+      "description": "No-browser API-v1 admin support auth denial, explicit QueueBox-key explanation, constrained request warning, and OpenAPI contract coverage. Both explain routes for a client and a group are exercised elsewhere only as denials, so the narrative projection had never run against a target that resolves; a real client, a real group and the never-requested crdt-document route are now driven, and a resolved narrative must carry facts that a missing-target narrative does not. Explaining a RETRY or FAILED queue entry is NOT covered: reaching either needs five consecutive handler throws and there is no fault-injection surface, so it is recorded in the plan rather than faked."
     },
     {
       "id": "api-v1-black-box-control-auth",

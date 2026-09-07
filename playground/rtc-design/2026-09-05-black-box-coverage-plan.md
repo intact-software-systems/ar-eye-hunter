@@ -7,8 +7,8 @@ as a finished whole rather than slice by slice. Each slice table below marks its
 cluster-profile recipes and the presence-lease recipe are authored and preflight-clean but not yet
 verified against a live cluster.
 
-Still open in slice 6: the `api-v1-admin-support` append, which needs a genuinely failed AppInbox
-queue entry to explain against. Two framework defects
+Slice 6's one remaining gap is the RETRY/FAILED half of the `api-v1-admin-support` append, which no
+sequence of HTTP requests can reach; it is recorded under **Not in this plan** with the reason. Two framework defects
 found while writing the slices were fixed here (open findings 13 and 14); one product contract
 divergence is open for a maintainer (finding 12).
 
@@ -234,7 +234,7 @@ Durable machinery whose late-firing behaviour is asserted nowhere.
 | `api-v1-group-clock-after-the-fact`     | **delivered** in two recipes: `api-v1-activation-clock-decay` for the evidence-expiry arm (an already-stale `createdAtEpochMs` activates and the +30s heartbeat decays it, pinned to two status writes), and `api-v1-group-activation-partial-coverage` for the `degraded` band it cannot reach -- one observed edge of two or three, held by the dwell |
 | `api-v1-group-reconnect-across-stages`  | **delivered**: the socket is dropped during `connecting`, the group is activated from a third node while the client is offline, and the client reconnects on a node that never held the socket it replaces. The layout version must not move -- a stage change is not a replan                                                                          |
 | `api-v1-group-presence-lease-lifecycle` | **delivered**: the sweep DELETES the lapsed row rather than marking it disconnected, and `expired` is a reason no recipe had observed. Membership and stage must be untouched. Waits out the 60s sweep interval, which has no configuration knob                                                                                                        |
-| _(append to `api-v1-admin-support`)_    | explain against a **real** RETRY or FAILED queue entry, and the FAILED row in the queue breakdown                                                                                                                                                                                                                                                       |
+| _(append to `api-v1-admin-support`)_    | **partly delivered**: a real client, a real group and the never-requested `explain/crdt-document` are driven, and a resolved narrative must carry facts a missing-target one does not. The RETRY and FAILED arms are not reachable -- see **Not in this plan**                                                                                          |
 
 **Hazards.** The evidence-expiry arm is the `degraded` band no read can derive — it must be asserted
 off the group row, not the formation view, because only a writer can put a status there.
@@ -486,6 +486,12 @@ assertion. None is fixed by the recipes that found them.
   counters off the same server under the same run id. Exercising it inside either black-box profile
   would corrupt their measurements, so it needs a profile of its own — the same shape of problem as
   the AppInbox wait-budget entry above, and it should be costed with it.
+- **Explaining a RETRY or FAILED queue entry.** `DequeueController` needs five consecutive handler
+  throws to fail an entry, and a typed rejection is a value that completes it successfully, so no
+  sequence of HTTP requests can produce either state. There is no fault-injection surface, and
+  hard-coding an internal queue key to explain someone else's entry would test the key format rather
+  than the narrative. The reachable half — real client, group and CRDT-document targets — is
+  delivered on `api-v1-admin-support`; this half needs a fault-injection seam that does not exist.
 - **The four acceptance scenarios** the group-activation plan records as needing live-RTC, headless or
   browser-side infrastructure. Unchanged by this plan.
 
