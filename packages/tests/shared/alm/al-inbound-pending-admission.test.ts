@@ -160,7 +160,7 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     onTestFinished(() => runtime.dispose());
     const commit = vi.spyOn(store, 'commitBundle');
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
-    const unknown = newALAckControlMessage({ v: 2, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
+    const untrackedAck = newALAckControlMessage({ v: 2, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
         ackedMsgId: 'unknown',
         fromPeerId: 'sender',
         toPeerId: 'receiver',
@@ -169,7 +169,7 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     });
     await runtime.handleIncomingMessage({}, { kind: 'trusted-server' });
     await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
-    await runtime.handleIncomingMessage(unknown, { kind: 'rtc-peer', peerId: 'sender' });
+    await runtime.handleIncomingMessage(untrackedAck, { kind: 'rtc-peer', peerId: 'sender' });
     expect(commit).not.toHaveBeenCalled();
     await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
     expect(await store.workQueue.getAllKeys()).toEqual([]);

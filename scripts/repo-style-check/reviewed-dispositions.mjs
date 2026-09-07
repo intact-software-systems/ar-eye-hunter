@@ -989,6 +989,48 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // The corruption fixture deliberately writes malformed persisted fields so
+    // the actual admission reader/worker can reject them. The snapshot fixture
+    // decodes every captured wire value before the production bounded assembler.
+    Object.freeze({
+        path: 'packages/tests/shared/alm/al-outbound-admission-decoding.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'writeRawOutboundWork'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared/state-snapshot-test-fixture.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assembleStateSnapshotMessages'
+    }),
+    // The inbound and outbound directories already separate the two admission
+    // lifecycles. Their READMEs trace ingress/registration, read/compute/validate,
+    // guarded writes, and settlement in five direct landmarks. The shared AL
+    // prefix names that capability; another nesting level would scatter these
+    // adjacent owners without exposing an independent responsibility.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.directory-density',
+        symbol: 'inbound',
+        maximumMagnitude: 22
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:al',
+        maximumMagnitude: 19
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound',
+        rule: 'layout.directory-density',
+        symbol: 'outbound',
+        maximumMagnitude: 23
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:al',
+        maximumMagnitude: 22
+    }),
     // Cohesion review kept these lifecycle/decoder owners and their directory
     // together. Bounds describe only the reviewed signal and never change the
     // global thresholds or authorize a refactor-or-register tier exception.

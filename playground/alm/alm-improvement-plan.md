@@ -744,6 +744,13 @@ their focused regressions and full affected-file review before the final package
 PostgreSQL, and comparative performance gates. Keep current command results and publication
 status in the PR.
 
+The affected test harness must also preserve its own evidence contracts: count and absence
+windows use the owned clock, and an observation wait settles its in-flight reads before reporting
+success. Assertion/report operators validate their control fields while preserving opaque payloads.
+Recipe expansion preserves quoted and escaped variable strings, and finite traffic weights must
+not overflow into biased workload selection. Keep these corrections within the existing owners
+and verify the supported recipe behavior; they do not expand the ALM feature horizon.
+
 After merge, use the merged source as the starting point for a new branch and PR. Reassess the
 next useful delivery/receipt capability from current code, keeping only two slices concrete.
 Preserve the remaining requirement-to-evidence matrix rather than treating this first release as
