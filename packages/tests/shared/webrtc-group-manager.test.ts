@@ -1,8 +1,11 @@
 // dprint-ignore
 import {
+    afterEach,
+    beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
@@ -19,7 +22,10 @@ import type {
 } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import {
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    WebRtcGroupManager
+} from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcGroupPeerSelection } from '@shared/services/webrtc-group-manager-contracts.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import type { SimulatedNativeRtcPeerConnection } from './native-rtc-connection-fixture.ts';
@@ -1331,7 +1337,202 @@ describe('WebRtcGroupManager', () => {
         expect(diagnostics.retainedEvictionCount).toBe(2);
         expect(rtcQBox.knownPeerIds()).toHaveLength(5);
     });
+
+    /**
+     * A reset is the case these pin: it lands the group in `dormant`, where the dial matrix wants
+     * nobody, and then the group is quiet. The transition's own pass is the last event there is, so
+     * whether the grace is ever collected is decided entirely by what that pass schedules.
+     */
+    describe('retained expiry wake', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('disconnects a retention whose grace expires with no further event', async () => {
+            const retirement = await retireLayoutOverPeers();
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+            expect(retirement.manager.readDiagnostics()).toMatchObject({
+                retainedCreatedCount: 2,
+                retainedExpiredCount: 0
+            });
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual([]);
+            expect(retirement.manager.readDiagnostics()).toMatchObject({
+                retainedExpiredCount: 2,
+                disconnectCount: 2
+            });
+        });
+
+        it('holds the lanes for the whole grace window before collecting them', async () => {
+            const retirement = await retireLayoutOverPeers();
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+            expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(0);
+        });
+
+        // Shutdown stops the wakes and only then tears peers down, so a wake surviving the stop would
+        // reconcile against a half-dismantled transport and dial back the peers it just removed.
+        // The run count is what separates a cancelled wake from one that fired and found nothing.
+        it('stops the wake when shutdown stops the reconcile wakes', async () => {
+            const retirement = await retireLayoutOverPeers();
+            retirement.manager.stopReconcileWakes();
+            const passesBefore = retirement.manager.readDiagnostics().reconcileRunCount;
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS * 4);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+            expect(retirement.manager.readDiagnostics()).toMatchObject({
+                reconcileRunCount: passesBefore,
+                retainedExpiredCount: 0
+            });
+        });
+
+        // A stop leaves the retentions in place, so the restart has to adopt them: without an arm of
+        // its own the pair is asymmetric and every retention created before the stop is stranded.
+        it('re-arms the wake for retentions that outlived a stop', async () => {
+            const retirement = await retireLayoutOverPeers();
+            retirement.manager.stopReconcileWakes();
+            retirement.manager.startReconcileWakes();
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual([]);
+            expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(2);
+        });
+
+        // Benches and the churn simulations drive their own clock and never start the wakes; arming a
+        // real timer for them would outlive the run that created it.
+        it('arms nothing for a manager that never started its reconcile wakes', async () => {
+            const retirement = await retireLayoutOverPeers({ startReconcileWakes: false });
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS * 4);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+            expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(0);
+        });
+
+        // A flapping overlay re-desires what it retained, which empties the retention map; the wake
+        // the previous pass armed must go with it rather than fire on an empty set.
+        it('disarms the wake when the next epoch re-desires the retained peers', async () => {
+            const retirement = await retireLayoutOverPeers();
+            await acceptActiveLayoutGroup(
+                retirement.manager,
+                retirement.acceptedOverlayCache,
+                createGroupSnapshot({
+                    groupId: 'group-1',
+                    membershipVersion: 3,
+                    memberSessionIds: ['self', 'peer-a', 'peer-b']
+                })
+            );
+
+            const passesBefore = retirement.manager.readDiagnostics().reconcileRunCount;
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS * 4);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+            expect(retirement.manager.readDiagnostics()).toMatchObject({
+                reconcileRunCount: passesBefore,
+                retainedExpiredCount: 0,
+                disconnectCount: 0
+            });
+        });
+
+        /**
+         * Retentions created at different moments expire at different moments, so the pass a wake
+         * runs is the only thing that can arm the wake after it. Arming anywhere but the pass tail —
+         * at the event entry points, say — collects the first retention and strands every later one,
+         * and every other test here still passes, because they all retire in a single pass.
+         */
+        it('re-arms itself for a retention created after the one it collects', async () => {
+            const retirement = await retireLayoutOverPeers();
+            await vi.advanceTimersByTimeAsync(5_000);
+            await retireSecondGroupOverPeer(retirement, 'peer-c');
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 5_000 + 1);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-c']);
+            expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(2);
+
+            await vi.advanceTimersByTimeAsync(5_000 + 1);
+
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual([]);
+            expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(3);
+        });
+    });
 });
+
+interface RetiredLayoutFixture {
+    readonly manager: WebRtcGroupManager;
+    readonly rtcQBox: RtcConnectionHarness;
+    readonly acceptedOverlayCache: LatestRepository<string, OverlayInfo>;
+}
+
+/**
+ * An established two-peer mesh whose accepted layout is then retired into `dormant` — the state a
+ * manager `reset` leaves every member in, with both edges known, undesired and retained.
+ */
+async function retireLayoutOverPeers(
+    options: { readonly startReconcileWakes?: boolean; } = {}
+): Promise<RetiredLayoutFixture> {
+    const rtcQBox = createRtcConnectionHarness('self');
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const manager = new WebRtcGroupManager(rtcQBox.service, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        acceptedOverlayCache
+    });
+    if (options.startReconcileWakes !== false) {
+        manager.startReconcileWakes();
+    }
+
+    const active = createGroupSnapshot({
+        groupId: 'group-1',
+        membershipVersion: 1,
+        memberSessionIds: ['self', 'peer-a', 'peer-b']
+    });
+    await acceptActiveLayoutGroup(manager, acceptedOverlayCache, active);
+    for (const peerId of ['peer-a', 'peer-b']) {
+        rtcQBox.nativePeer(peerId).setConnected();
+    }
+
+    acceptedOverlayCache.take(toScopedOverlayId(active.group));
+    await manager.acceptGroupUpdate({
+        ...active,
+        causalRevision: { groupRevision: 2, presenceRevision: 2 },
+        group: { ...active.group, lifecycleState: 'dormant', snapshotVersion: 2, presenceVersion: 2 }
+    });
+
+    return { manager, rtcQBox, acceptedOverlayCache };
+}
+
+/** A second group retired later than the first, so its edge carries its own, later expiry. */
+async function retireSecondGroupOverPeer(
+    fixture: RetiredLayoutFixture,
+    peerId: string
+): Promise<void> {
+    const active = createGroupSnapshot({
+        groupId: 'group-2',
+        membershipVersion: 1,
+        memberSessionIds: ['self', peerId]
+    });
+    await acceptActiveLayoutGroup(fixture.manager, fixture.acceptedOverlayCache, active);
+    fixture.rtcQBox.nativePeer(peerId).setConnected();
+
+    fixture.acceptedOverlayCache.take(toScopedOverlayId(active.group));
+    await fixture.manager.acceptGroupUpdate({
+        ...active,
+        causalRevision: { groupRevision: 2, presenceRevision: 2 },
+        group: { ...active.group, lifecycleState: 'dormant', snapshotVersion: 2, presenceVersion: 2 }
+    });
+}
 
 interface ReconciledPeerSelectionObservation extends WebRtcGroupPeerSelection {
     readonly knownPeerIds: readonly string[];
