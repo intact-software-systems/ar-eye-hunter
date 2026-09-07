@@ -1,9 +1,12 @@
 import { expect } from '@playwright/test';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type {
     BlackBoxRallarFormationCommandInput,
     BlackBoxRallarFormationRoomStatus,
     BlackBoxRallarFormationSummary
 } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { RallarBlackBoxTestFormationCommandCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 import type { GroupLifecycleState } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import {
@@ -18,13 +21,24 @@ import { jsonRecord, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts'
 /**
  * The browser-side formation surface as the acceptance spec drives it.
  *
- * Recorded diagnostics are read from the control run snapshot. That snapshot is a newest-first tail
- * bounded at two thousand events across every agent in the run, so a scenario that must count events
- * from early in a long run reads the run's artifact bundle instead; `readFormationDiagnostics` says
- * which source it used. The snapshot decoder drops the control envelope's own timestamp, so topic and
- * time are read from the runtime event inside `payload`.
+ * Recorded diagnostics are read from the control run snapshot, and only from it. That snapshot is a
+ * newest-first tail bounded at two thousand events across every agent in the run, so a scenario whose
+ * evidence sits early in a long run can have it evicted before the read; nothing here falls back to
+ * the run's artifact bundle. The snapshot decoder drops the control envelope's own timestamp, so
+ * topic and time are read from the runtime event inside `payload`.
  */
 export interface LiveRtcFormationOperations {
+    /**
+     * A control command id no earlier command in this process has used.
+     *
+     * The control server treats a repeated commandId carrying the same payload as already done: it
+     * returns the first execution's envelope without queueing anything, skips dispatch because the
+     * command is complete, and answers the caller from its commandId-keyed result map. A reused id
+     * therefore reports the earlier execution's outcome while the agent is sent nothing at all, so
+     * every issued command mints its own id — including each attempt of a retry or poll, and every
+     * command sent to a page that was reopened under an agent's existing identity.
+     */
+    createCommandId(input: FormationCommandIdInput, name: string): string;
     command(input: FormationCommandInput): Promise<BlackBoxRallarFormationSummary>;
     tryCommand(input: FormationCommandInput): Promise<LiveRtcControlClient.Result>;
     readiness(input: FormationAgentInput): Promise<FormationReadiness>;
@@ -35,13 +49,18 @@ export interface LiveRtcFormationOperations {
     reopen(input: FormationReopenInput): Promise<LiveRtcControlClient.Agent>;
 }
 
-export interface FormationAgentInput {
+/** Everything a command id is built from: the agent it addresses and the scenario it belongs to. */
+export interface FormationCommandIdInput {
+    readonly agent: Pick<LiveRtcControlClient.FormationAgent, 'prefix'>;
+    readonly suffix: string;
+}
+
+export interface FormationAgentInput extends FormationCommandIdInput {
     readonly timeoutMs?: number;
     readonly control: LiveRtcControlClient;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.Agent;
     readonly groupId: string;
-    readonly suffix: string;
 }
 
 export interface FormationCommandInput extends FormationAgentInput {
@@ -97,31 +116,41 @@ const PEER_CREATED_TOPIC = 'rallar.browser.rtc.lifecycle';
 const READINESS_TIMEOUT_MS = 60_000;
 
 export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
+    let issuedCommandCount = 0;
+    const createCommandId = (input: FormationCommandIdInput, name: string): string => {
+        issuedCommandCount += 1;
+        return `formation-${name}-${input.agent.prefix}-${input.suffix}-${issuedCommandCount}`;
+    };
+
     return {
+        createCommandId,
+
         async command(input) {
+            const commandId = createCommandId(input, input.input.command);
             const result = await input.control.executeOk({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId: formationCommandId(input, input.input.command),
+                commandId,
                 command: {
                     kind: 'formation.command',
-                    commandId: formationCommandId(input, input.input.command),
+                    commandId,
                     ...toWireRoom(input),
                     ...toWireCommandFields(input.input),
                     ...(input.reason === undefined ? {} : { reason: input.reason })
                 }
             });
-            return requireSummary(record(input.control.resultValue(result)).formation, 'formation.command');
+            return decodeFormationSummary(record(input.control.resultValue(result)).formation, 'formation.command');
         },
 
         async tryCommand(input) {
+            const commandId = createCommandId(input, input.input.command);
             return await input.control.executeResult({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId: formationCommandId(input, input.input.command),
+                commandId,
                 command: {
                     kind: 'formation.command',
-                    commandId: formationCommandId(input, input.input.command),
+                    commandId,
                     ...toWireRoom(input),
                     ...toWireCommandFields(input.input),
                     ...(input.reason === undefined ? {} : { reason: input.reason })
@@ -130,13 +159,14 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
         },
 
         async readiness(input) {
+            const commandId = createCommandId(input, 'readiness');
             const result = await input.control.executeOk({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId: formationCommandId(input, 'readiness'),
+                commandId,
                 command: {
                     kind: 'formation.readiness',
-                    commandId: formationCommandId(input, 'readiness'),
+                    commandId,
                     ...toWireRoom(input),
                     // The in-browser wait and the poll that awaits it are the same budget; without
                     // this the command falls back to its own default and gives up first.
@@ -146,17 +176,18 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
             });
             const value = record(input.control.resultValue(result));
             return {
-                readyAtEpochMs: requireNumber(value.readyAtEpochMs, 'formation.readiness.readyAtEpochMs'),
-                formation: requireSummary(value.formation, 'formation.readiness')
+                readyAtEpochMs: decodeNumber(value.readyAtEpochMs, 'formation.readiness.readyAtEpochMs'),
+                formation: decodeFormationSummary(value.formation, 'formation.readiness')
             };
         },
 
         async health(input) {
+            const commandId = createCommandId(input, 'health');
             const result = await input.control.executeOk({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId: formationCommandId(input, 'health'),
-                command: { kind: 'health', commandId: formationCommandId(input, 'health') }
+                commandId,
+                command: { kind: 'health', commandId }
             });
             const value = record(input.control.resultValue(result));
             const rallar = record(value.rallar);
@@ -164,26 +195,27 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
             return {
                 // The whole block travels in the failure: a page that connected to the wrong scope
                 // and one that never connected are indistinguishable from the missing field alone.
-                formation: requireSummary(
+                formation: decodeFormationSummary(
                     rallar.formation ?? value.formation,
                     `health ${JSON.stringify(value)}`
                 ),
                 rtcStatus: {
-                    knownPeerIds: stringArray(rtcStatus.knownPeerIds),
-                    activePeerIds: stringArray(rtcStatus.activePeerIds),
-                    readyPeerIds: stringArray(rtcStatus.readyPeerIds)
+                    knownPeerIds: decodeStringArray(rtcStatus.knownPeerIds),
+                    activePeerIds: decodeStringArray(rtcStatus.activePeerIds),
+                    readyPeerIds: decodeStringArray(rtcStatus.readyPeerIds)
                 }
             };
         },
 
         async waitForStage(input) {
+            const commandId = createCommandId(input, `stage-${input.stage}`);
             await input.control.executeOk({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId: formationCommandId(input, `stage-${input.stage}`),
+                commandId,
                 command: {
                     kind: 'wait',
-                    commandId: formationCommandId(input, `stage-${input.stage}`),
+                    commandId,
                     timeoutMs: input.timeoutMs,
                     match: {
                         kind: 'diagnostic',
@@ -223,12 +255,19 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
             });
             // The accepted layout names sessions as its peers, so a reopen that mints a new session
             // moves the returning member's identity out of the layout and every pin downstream reads
-            // a member the group has never heard of.
-            const restored = await readRestoredSession(reopened);
-            expect(
-                restored.sessionId,
-                `Agent ${input.agent.prefix} reopened with a new session instead of the restored one`
-            ).toBe(session.sessionId);
+            // a member the group has never heard of. The caller only learns about the page it gets
+            // back, so a failing guard closes the context it was handed rather than leaking it.
+            try {
+                const restored = await readRestoredSession(reopened);
+                expect(
+                    restored.sessionId,
+                    `Agent ${input.agent.prefix} reopened with a new session instead of the restored one`
+                ).toBe(session.sessionId);
+            }
+            catch (error) {
+                await reopened.context.close();
+                throw toError(error);
+            }
             return reopened;
         }
     };
@@ -244,7 +283,9 @@ function toWireRoom(input: FormationAgentInput): LiveRtcJsonRecord {
 }
 
 /** The wire command is flat: `command`, `layout` and `landing` sit on it, and the bridge lifts them. */
-function toWireCommandFields(input: BlackBoxRallarFormationCommandInput): LiveRtcJsonRecord {
+function toWireCommandFields(
+    input: BlackBoxRallarFormationCommandInput
+): Pick<RallarBlackBoxTestFormationCommandCommand, 'command' | 'layout' | 'landing'> {
     if (input.command === 'connect') {
         return input.layout === undefined
             ? { command: input.command }
@@ -256,10 +297,6 @@ function toWireCommandFields(input: BlackBoxRallarFormationCommandInput): LiveRt
             : { command: input.command, landing: input.landing };
     }
     return { command: input.command };
-}
-
-function formationCommandId(input: FormationAgentInput, name: string): string {
-    return `formation-${name}-${input.agent.prefix}-${input.suffix}`;
 }
 
 async function readAgentEvents(input: FormationAgentInput): Promise<readonly FormationDiagnosticEvent[]> {
@@ -283,11 +320,11 @@ async function readRestoredSession(agent: LiveRtcControlClient.Agent): Promise<L
     expect(stored, `Agent ${agent.prefix} holds no auth.session to restore`).not.toBeNull();
     const session = record(JSON.parse(String(stored)));
     return {
-        clientId: requireString(session.clientId, 'auth.session.clientId'),
-        accessToken: requireString(session.accessToken, 'auth.session.accessToken'),
-        username: requireString(session.username, 'auth.session.username'),
-        sessionId: requireString(session.sessionId, 'auth.session.sessionId'),
-        expiresAtEpochMs: requireNumber(session.expiresAtEpochMs, 'auth.session.expiresAtEpochMs')
+        clientId: decodeString(session.clientId, 'auth.session.clientId'),
+        accessToken: decodeString(session.accessToken, 'auth.session.accessToken'),
+        username: decodeString(session.username, 'auth.session.username'),
+        sessionId: decodeString(session.sessionId, 'auth.session.sessionId'),
+        expiresAtEpochMs: decodeNumber(session.expiresAtEpochMs, 'auth.session.expiresAtEpochMs')
     };
 }
 
@@ -296,7 +333,7 @@ function record(value: RtcBaselineJson | undefined): LiveRtcJsonRecord {
     return jsonRecord(value) ?? {};
 }
 
-function stringArray(value: unknown): readonly string[] {
+function decodeStringArray(value: unknown): readonly string[] {
     return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 }
 
@@ -304,21 +341,23 @@ function stringArray(value: unknown): readonly string[] {
  * The block is required, not optional: two scenarios assert that fields inside it are absent, so a
  * decoder that tolerated a missing block would let them pass while proving nothing.
  */
-function requireSummary(value: unknown, source: string): BlackBoxRallarFormationSummary {
-    const summary = record(value);
+function decodeFormationSummary(value: unknown, source: string): BlackBoxRallarFormationSummary {
+    const summary: LiveRtcJsonRecord = typeof value === 'object' && value !== null
+        ? value as LiveRtcJsonRecord
+        : {};
     expect(
         typeof summary.stage === 'string',
         `${source} carried no formation summary: ${JSON.stringify(value)}`
     ).toBe(true);
-    return summary as unknown as BlackBoxRallarFormationSummary;
+    return value as BlackBoxRallarFormationSummary;
 }
 
-function requireString(value: unknown, path: string): string {
+function decodeString(value: unknown, path: string): string {
     expect(typeof value, `${path} must be a string`).toBe('string');
     return String(value);
 }
 
-function requireNumber(value: unknown, path: string): number {
+function decodeNumber(value: unknown, path: string): number {
     expect(typeof value, `${path} must be a number`).toBe('number');
     return Number(value);
 }
