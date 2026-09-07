@@ -57,7 +57,7 @@ function connectRallarStubRtc(interaction: any, config: any, context: any): Prom
         provider: interaction.request.provider || 'rallar',
         actor: interaction.request.actor,
         roomId: interaction.request.roomId,
-        connectedAtEpochMs: Date.now(),
+        connectedAtEpochMs: context.dependencies.now(),
         stub: true
     };
 
@@ -91,7 +91,7 @@ function sendRallarStubRtc(interaction: any, config: any, context: any): Promise
         );
     }
 
-    const sentAtEpochMs = Date.now();
+    const sentAtEpochMs = context.dependencies.now();
 
     const deliveries = computeStubRtcDeliveries({ connectionName, deliveredMessages, deliverTargets, sentAtEpochMs });
     for (const delivery of deliveries) {
@@ -165,7 +165,7 @@ function closeRallarStubRtc(interaction: any, config: any, context: any): Promis
     delete context.rtcConnections[connectionName];
 
     rememberRtcCloseEvent(connectionName, {
-        closedAtEpochMs: Date.now(),
+        closedAtEpochMs: context.dependencies.now(),
         closeRequested: true,
         stub: true
     }, context);

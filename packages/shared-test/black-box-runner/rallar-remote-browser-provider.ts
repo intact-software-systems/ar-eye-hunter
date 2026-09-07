@@ -1,8 +1,13 @@
+import type { ControlResultEnvelope } from '../rallar-bb-test/control-protocol.ts';
+import type { WaitObservationSource } from './expectations/wait-observation-source.ts';
+import {
+    decodeRemoteBrowserObservations,
+    type RemoteBrowserObservations
+} from './remote-browser/decode-remote-browser-observations.ts';
 import { storeRemoteBrowserEvents } from './remote-browser/store-remote-browser-events.ts';
 // deno-lint-ignore-file no-explicit-any
 import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestResult
+    RallarBlackBoxTestCommand
 } from '../rallar-bb-test/types.ts';
 import {
     toCloseCommand,
@@ -45,39 +50,6 @@ export interface RallarRemoteBrowserProviderOptions {
     readonly fetch?: RallarRemoteBrowserControlFetch;
     readonly pollIntervalMs?: number;
     readonly timeoutMs?: number;
-}
-
-export interface RallarRemoteBrowserControlError {
-    readonly code: string;
-    readonly message: string;
-    readonly details?: unknown;
-}
-
-export interface RallarRemoteBrowserControlResultEnvelope {
-    readonly kind: 'result';
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly ok: boolean;
-    readonly result?: RallarBlackBoxTestResult;
-    readonly error?: RallarRemoteBrowserControlError;
-    readonly replayed?: boolean;
-}
-
-export interface RallarRemoteBrowserControlEventEnvelope {
-    readonly kind: 'event' | 'diagnostic' | 'stats' | 'report';
-    readonly runId: string;
-    readonly agentId: string;
-    readonly atEpochMs: number;
-    readonly eventId?: string;
-    readonly commandId?: string;
-    readonly payload: unknown;
-}
-
-export interface RallarRemoteBrowserControlRunSnapshot {
-    readonly runId: string;
-    readonly results?: readonly RallarRemoteBrowserControlResultEnvelope[];
-    readonly events?: readonly RallarRemoteBrowserControlEventEnvelope[];
 }
 
 export interface RallarRemoteBrowserConfig {
@@ -123,7 +95,7 @@ interface WaitWithRemoteEventSyncInput {
     readonly remote: RallarRemoteBrowserConfig;
     readonly fetchFn: RallarRemoteBrowserControlFetch;
     readonly context: any;
-    readonly wait: () => Promise<any>;
+    readonly wait: (observations: WaitObservationSource) => Promise<any>;
 }
 
 interface RemoteHealthInput {
@@ -135,6 +107,7 @@ interface RemoteHealthInput {
 }
 
 interface RemoteRtcWaitInput {
+    readonly observations?: WaitObservationSource;
     readonly remote: RallarRemoteBrowserConfig;
     readonly fetchFn: RallarRemoteBrowserControlFetch;
     readonly context: any;
@@ -156,7 +129,7 @@ type RemoteRtcExpectation =
 interface RemoteRtcSendSubmission {
     readonly remote: RallarRemoteBrowserConfig;
     readonly command: RallarBlackBoxTestCommand;
-    readonly result: RallarRemoteBrowserControlResultEnvelope;
+    readonly result: ControlResultEnvelope;
     readonly connectionName: string;
     readonly sendStartedAtEpochMs: number;
     readonly sendEndedAtEpochMs: number;
@@ -166,7 +139,7 @@ interface RemoteRtcConnectCompletion {
     readonly remote: RallarRemoteBrowserConfig;
     readonly commandId: string;
     readonly connectionName: string;
-    readonly result: RallarRemoteBrowserControlResultEnvelope;
+    readonly result: ControlResultEnvelope;
     readonly connectStartedAtEpochMs: number;
     readonly connectedAtEpochMs: number;
 }
@@ -179,7 +152,7 @@ interface RemoteRtcConnectedState {
 interface RemoteCrdtCompletion {
     readonly remote: RallarRemoteBrowserConfig;
     readonly commandId: string;
-    readonly result: RallarRemoteBrowserControlResultEnvelope;
+    readonly result: ControlResultEnvelope;
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
 }
@@ -188,7 +161,7 @@ interface RemoteRtcCloseCompletion {
     readonly remote: RallarRemoteBrowserConfig;
     readonly commandId: string;
     readonly connectionName: string;
-    readonly result: RallarRemoteBrowserControlResultEnvelope;
+    readonly result: ControlResultEnvelope;
 }
 
 interface RtcProviderFailureStatusInput {
@@ -209,12 +182,6 @@ const DEFAULT_CONTROL_BASE_URL = 'http://localhost:5180';
 const DEFAULT_AGENT_ID = 'visible-agent-local';
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_POLL_INTERVAL_MS = 50;
-
-function readEnvironmentValue(key: string): string | undefined {
-    const env = (globalThis as { process?: { env?: Record<string, string | undefined>; }; })
-        .process?.env;
-    return env?.[key];
-}
 
 function firstString(values: readonly unknown[]): string | undefined {
     for (const value of values) {
@@ -259,7 +226,7 @@ export function readRallarRemoteBrowserConfig(input: ReadRallarRemoteBrowserConf
             config.controlBaseUrl,
             remoteOptions.controlBaseUrl,
             options.controlBaseUrl,
-            readEnvironmentValue('RALLAR_BLACK_BOX_CONTROL_BASE_URL')
+            context.remoteBrowserEnvironment?.['RALLAR_BLACK_BOX_CONTROL_BASE_URL']
         ],
         runIds: [
             request.runId,
@@ -268,7 +235,7 @@ export function readRallarRemoteBrowserConfig(input: ReadRallarRemoteBrowserConf
             config.runId,
             remoteOptions.runId,
             options.runId,
-            readEnvironmentValue('RALLAR_BLACK_BOX_RUN_ID')
+            context.remoteBrowserEnvironment?.['RALLAR_BLACK_BOX_RUN_ID']
         ],
         agentIds: [
             request.agentId,
@@ -277,7 +244,7 @@ export function readRallarRemoteBrowserConfig(input: ReadRallarRemoteBrowserConf
             config.agentId,
             remoteOptions.agentId,
             options.agentId,
-            readEnvironmentValue('RALLAR_BLACK_BOX_AGENT_ID')
+            context.remoteBrowserEnvironment?.['RALLAR_BLACK_BOX_AGENT_ID']
         ],
         tokens: [
             request.token,
@@ -286,7 +253,7 @@ export function readRallarRemoteBrowserConfig(input: ReadRallarRemoteBrowserConf
             config.token,
             remoteOptions.token,
             options.token,
-            readEnvironmentValue('RALLAR_BLACK_BOX_CONTROL_TOKEN')
+            context.remoteBrowserEnvironment?.['RALLAR_BLACK_BOX_CONTROL_TOKEN']
         ],
         pollIntervalMs: request.pollIntervalMs ?? control.pollIntervalMs ?? remoteOptions.pollIntervalMs ??
             options.pollIntervalMs,
@@ -361,8 +328,11 @@ function toCrdtProviderFailureStatus(input: RtcProviderFailureStatusInput): any 
     };
 }
 
-async function readJson(response: Response): Promise<any> {
-    return await response.json().catch(() => ({}));
+async function readControlHttpError(response: Response): Promise<string> {
+    const body: unknown = await response.json().catch(() => undefined);
+    return body !== null && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+        ? body.error
+        : response.statusText;
 }
 
 async function enqueueCommand(
@@ -390,11 +360,9 @@ async function enqueueCommand(
     );
 
     if (!response.ok) {
-        const body = await readJson(response);
+        const message = await readControlHttpError(response);
         throw new Error(
-            `Control server rejected command ${command.commandId}: ${response.status} ${
-                body.error ?? response.statusText
-            }`
+            `Control server rejected command ${command.commandId}: ${response.status} ${message}`
         );
     }
 }
@@ -402,7 +370,7 @@ async function enqueueCommand(
 async function fetchRunSnapshot(
     remote: RallarRemoteBrowserConfig,
     fetchFn: RallarRemoteBrowserControlFetch
-): Promise<RallarRemoteBrowserControlRunSnapshot | undefined> {
+): Promise<RemoteBrowserObservations | undefined> {
     const response = await fetchFn(joinUrl(remote.controlBaseUrl, `/runs/${encodeURIComponent(remote.runId)}`), {
         headers: authorizationHeaders(remote),
         signal: AbortSignal.timeout(remote.timeoutMs)
@@ -411,17 +379,17 @@ async function fetchRunSnapshot(
         return undefined;
     }
     if (!response.ok) {
-        const body = await readJson(response);
-        throw new Error(`Control server run lookup failed: ${response.status} ${body.error ?? response.statusText}`);
+        const message = await readControlHttpError(response);
+        throw new Error(`Control server run lookup failed: ${response.status} ${message}`);
     }
-    return await readJson(response) as RallarRemoteBrowserControlRunSnapshot;
+    return decodeRemoteBrowserObservations({ value: await response.json(), runId: remote.runId });
 }
 
 export async function syncRallarRemoteBrowserEvents(
     remote: RallarRemoteBrowserConfig,
     fetchFn: RallarRemoteBrowserControlFetch,
     context: any
-): Promise<RallarRemoteBrowserControlRunSnapshot | undefined> {
+): Promise<RemoteBrowserObservations | undefined> {
     const snapshot = await fetchRunSnapshot(remote, fetchFn);
     storeRemoteBrowserEvents(snapshot, context);
     return snapshot;
@@ -429,10 +397,10 @@ export async function syncRallarRemoteBrowserEvents(
 
 async function waitForCommandResult(
     input: RemoteCommandResultInput
-): Promise<RallarRemoteBrowserControlResultEnvelope> {
+): Promise<ControlResultEnvelope> {
     const { remote, fetchFn, context, commandId } = input;
-    const startedAt = Date.now();
-    while (Date.now() - startedAt <= remote.timeoutMs) {
+    const startedAt = context.dependencies.now();
+    while (context.dependencies.now() - startedAt <= remote.timeoutMs) {
         const snapshot = await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
         const result = snapshot?.results?.find((item) =>
             item.commandId === commandId && item.runId === remote.runId && item.agentId === remote.agentId
@@ -446,14 +414,14 @@ async function waitForCommandResult(
     throw new Error(`Timed out waiting for remote command result ${commandId}.`);
 }
 
-function resultDetails(result: RallarRemoteBrowserControlResultEnvelope): any {
+function resultDetails(result: ControlResultEnvelope): any {
     return result.result?.value ?? result.error?.details ?? result.error ?? result.result;
 }
 
 function toRemoteSendResult(
     status: string,
     connectionName: string,
-    result: RallarRemoteBrowserControlResultEnvelope
+    result: ControlResultEnvelope
 ): any {
     return {
         status,
@@ -464,7 +432,7 @@ function toRemoteSendResult(
 
 export async function executeRallarRemoteBrowserCommand(
     input: ExecuteRallarRemoteBrowserCommandInput
-): Promise<RallarRemoteBrowserControlResultEnvelope> {
+): Promise<ControlResultEnvelope> {
     const { remote, fetchFn, command } = input;
     await enqueueCommand(remote, fetchFn, command);
     return await waitForCommandResult({ ...input, commandId: command.commandId ?? '' });
@@ -476,7 +444,7 @@ async function waitWithRemoteEventSync(input: WaitWithRemoteEventSyncInput): Pro
     const synchronization = new RemoteBrowserObservationSync({ kind: 'events', remote, fetchFn, context });
     synchronization.start();
     try {
-        return await wait();
+        return await wait(synchronization);
     }
     finally {
         await synchronization.stop();
@@ -504,7 +472,7 @@ async function updateRemoteHealthDiagnostics(input: RemoteHealthInput): Promise<
         kind: 'diagnostic',
         topic: 'rallar.remote-browser.health',
         severity: 'info',
-        atEpochMs: Date.now(),
+        atEpochMs: context.dependencies.now(),
         commandId,
         connection: connectionName,
         provider: 'rallar-remote-browser',
@@ -575,7 +543,7 @@ async function waitForRemoteRtcObservation(input: RemoteRtcWaitInput, expectatio
         remote: input.remote,
         fetchFn: input.fetchFn,
         context: input.context,
-        wait: () => waitForRemoteRtcMatch(input, expectation)
+        wait: (observations) => waitForRemoteRtcMatch({ ...input, observations }, expectation)
     });
 }
 
@@ -756,7 +724,7 @@ export function createRallarRemoteBrowserRtcProvider(options: RallarRemoteBrowse
     };
 }
 
-namespace RemoteBrowserObservationSync {
+export namespace RemoteBrowserObservationSync {
     interface Connection {
         readonly remote: RallarRemoteBrowserConfig;
         readonly fetchFn: RallarRemoteBrowserControlFetch;
@@ -773,7 +741,7 @@ namespace RemoteBrowserObservationSync {
     export type Input = Events | Health;
 }
 
-class RemoteBrowserObservationSync {
+export class RemoteBrowserObservationSync {
     private readonly input: RemoteBrowserObservationSync.Input;
     private interval: ReturnType<typeof setInterval> | undefined;
     private pending: Promise<void> = Promise.resolve();
@@ -870,7 +838,7 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
         const commandId = toRallarRemoteBrowserCommandId('connect', interaction);
         const command = toConnectCommand(commandId, interaction);
         const connectionName = toRtcConnectionName(interaction.request);
-        const connectStartedAtEpochMs = Date.now();
+        const connectStartedAtEpochMs = context.dependencies.now();
 
         try {
             const result = await executeRallarRemoteBrowserCommand({
@@ -879,7 +847,7 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
                 context,
                 command
             });
-            const connectedAtEpochMs = Date.now();
+            const connectedAtEpochMs = context.dependencies.now();
             const completion = {
                 remote,
                 commandId,
@@ -936,14 +904,14 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
         const command = toSendCommand(commandId, interaction);
 
         try {
-            const sendStartedAtEpochMs = Date.now();
+            const sendStartedAtEpochMs = context.dependencies.now();
             const result = await executeRallarRemoteBrowserCommand({
                 remote,
                 fetchFn,
                 context,
                 command
             });
-            const sendEndedAtEpochMs = Date.now();
+            const sendEndedAtEpochMs = context.dependencies.now();
             const submission = { remote, command, result, connectionName, sendStartedAtEpochMs, sendEndedAtEpochMs };
             if (!result.ok) {
                 return toRemoteRtcSendFailure(config, interaction, submission);
@@ -987,14 +955,14 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
                     details: { remote, commandId, error: commandResult.left?.message }
                 });
             }
-            const startedAtEpochMs = Date.now();
+            const startedAtEpochMs = context.dependencies.now();
             const result = await executeRallarRemoteBrowserCommand({
                 remote,
                 fetchFn,
                 context,
                 command: commandResult.right
             });
-            const endedAtEpochMs = Date.now();
+            const endedAtEpochMs = context.dependencies.now();
             return toRemoteCrdtStatus(config, interaction, {
                 remote,
                 commandId,
@@ -1054,7 +1022,7 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
             rememberRtcCloseEvent(connectionName, {
                 closeRequested: true,
                 closed: result.ok,
-                closedAtEpochMs: Date.now(),
+                closedAtEpochMs: context.dependencies.now(),
                 provider: interaction.request.provider,
                 remote,
                 commandId,

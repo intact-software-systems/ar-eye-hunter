@@ -1,17 +1,18 @@
 // deno-lint-ignore-file no-explicit-any
 import type { RallarBlackBoxTestEvent } from '../../rallar-bb-test/types.ts';
-import type {
-    RallarRemoteBrowserControlEventEnvelope,
-    RallarRemoteBrowserControlRunSnapshot
-} from '../rallar-remote-browser-provider.ts';
-import { rememberRtcCloseEvent, rememberRtcDiagnostic, rememberRtcMessage } from '../rtc/rtc-wait-expectations.ts';
+import {
+    rememberRtcCloseEvent,
+    rememberRtcDiagnostic,
+    rememberRtcMessage
+} from '../rtc/rtc-wait-expectations.ts';
+import type { RemoteBrowserObservations } from './decode-remote-browser-observations.ts';
 
 interface RemoteBrowserObservationState {
     readonly seenEventIds: Set<string>;
 }
 
 export function storeRemoteBrowserEvents(
-    snapshot: RallarRemoteBrowserControlRunSnapshot | undefined,
+    snapshot: RemoteBrowserObservations | undefined,
     context: any
 ): void {
     const state = initRemoteBrowserObservationState(context);
@@ -21,10 +22,7 @@ export function storeRemoteBrowserEvents(
             continue;
         }
         state.seenEventIds.add(id);
-        const payload = eventPayload(event);
-        if (!payload) {
-            continue;
-        }
+        const payload = event.payload;
         const connectionName = payload.connection ?? 'default';
         if (payload.kind === 'diagnostic') {
             rememberRtcDiagnostic(connectionName, toRemoteRtcDiagnostic(payload, connectionName), context);
@@ -51,13 +49,6 @@ function initRemoteBrowserObservationState(context: any): RemoteBrowserObservati
         };
     }
     return context.rallarRemoteBrowser;
-}
-
-function eventPayload(event: RallarRemoteBrowserControlEventEnvelope): RallarBlackBoxTestEvent | undefined {
-    const payload = event.payload;
-    return payload && typeof payload === 'object' && 'kind' in payload
-        ? payload as RallarBlackBoxTestEvent
-        : undefined;
 }
 
 function parseRemoteWsData(data: unknown): unknown {

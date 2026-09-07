@@ -1,4 +1,9 @@
-import { toWsConnectionName, toWsFailureStatus, toWsSuccessStatus } from '../ws/ws-interaction-statuses.ts';
+import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
+import {
+    toWsConnectionName,
+    toWsFailureStatus,
+    toWsSuccessStatus
+} from '../ws/ws-interaction-statuses.ts';
 import {
     waitForWsClose,
     waitForWsMessage,
@@ -47,7 +52,7 @@ function sendWsFrame(input: LocalWsInput, ws: WebSocket): WsSendDetails {
         : request.body;
     const wirePayload = typeof payload === 'string' ? payload : JSON.stringify(payload === undefined ? {} : payload);
     const connectionName = toWsConnectionName(request);
-    const sendStartedAtEpochMs = Date.now();
+    const sendStartedAtEpochMs = input.context.dependencies.now();
     let exception: string | undefined;
     try {
         ws.send(wirePayload);
@@ -55,7 +60,7 @@ function sendWsFrame(input: LocalWsInput, ws: WebSocket): WsSendDetails {
     catch (error) {
         exception = error instanceof Error ? error.message : String(error);
     }
-    const sendEndedAtEpochMs = Date.now();
+    const sendEndedAtEpochMs = input.context.dependencies.now();
     return {
         sentConnection: connectionName,
         sent: payload,
@@ -78,18 +83,30 @@ function sendWs(input: LocalWsInput): Promise<WsInteractionResult> {
     const connectionName = toWsConnectionName(interaction.request);
     const ws = context.wsConnections[connectionName];
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket connection is not open', {
-            connection: connectionName,
-            ...toWsSocketState(ws)
-        }));
+        return Promise.resolve(
+            toWsFailureStatus({
+                config,
+                interaction,
+                result: 'WebSocket connection is not open',
+                details: {
+                    connection: connectionName,
+                    ...toWsSocketState(ws)
+                }
+            })
+        );
     }
     const details = sendWsFrame(input, ws);
     if (details.sendResult.status === 'failed') {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket send failed', {
-            ...details,
-            connection: connectionName,
-            sendFailedAtEpochMs: details.sendEndedAtEpochMs,
-            exception: details.sendResult.exception
+        return Promise.resolve(toWsFailureStatus({
+            config,
+            interaction,
+            result: 'WebSocket send failed',
+            details: {
+                ...details,
+                connection: connectionName,
+                sendFailedAtEpochMs: details.sendEndedAtEpochMs,
+                exception: details.sendResult.exception
+            }
         }));
     }
     if (interaction.response?.count !== undefined) {
@@ -106,9 +123,9 @@ function sendWs(input: LocalWsInput): Promise<WsInteractionResult> {
 
 export function executeLocalWsInteraction(
     interaction: WsInteraction,
-    config: unknown,
+    config: WsInteractionConfig,
     context: LocalWsContext
-): Promise<unknown> {
+): Promise<WsInteractionResult> {
     const action = interaction.request.action || 'send';
     if (action === 'connect' || action === 'open') {
         return openWs(interaction, config, context);
@@ -120,7 +137,9 @@ export function executeLocalWsInteraction(
         return closeWs(interaction, config, context);
     }
     if (action !== 'wait' && action !== 'expect') {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'Unsupported WebSocket action: ' + action));
+        return Promise.resolve(
+            toWsFailureStatus({ config, interaction, result: 'Unsupported WebSocket action: ' + action })
+        );
     }
     if (interaction.response?.absent !== undefined) {
         return waitForWsMessageAbsence({ interaction, config, context });
@@ -138,10 +157,11 @@ export function executeLocalWsInteraction(
         return waitForWsMessage({ interaction, config, context });
     }
     return Promise.resolve(
-        toWsFailureStatus(
+        toWsFailureStatus({
             config,
             interaction,
-            'WebSocket wait expects expect.message, expect.messages, expect.count, expect.absent, or expect.close'
-        )
+            result:
+                'WebSocket wait expects expect.message, expect.messages, expect.count, expect.absent, or expect.close'
+        })
     );
 }

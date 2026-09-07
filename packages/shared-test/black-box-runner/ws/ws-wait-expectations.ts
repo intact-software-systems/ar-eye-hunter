@@ -1,13 +1,39 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type { BlackBoxExecutionDependencies } from '../execution/black-box-scenario-context.ts';
+import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
+import type { WsInteractionConfig } from './ws-interaction-statuses.ts';
 
-import { compareJson, COMPARISON, toConfig } from '../../json-compare/compare-json-values.ts';
+import {
+    compareJson,
+    COMPARISON,
+    toConfig
+} from '../../json-compare/compare-json-values.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
 import type { LocalWsRequest } from '../execution/local-websocket-session.ts';
 import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
-import { toWaitCountBound, type WaitCountBound } from '../expectations/wait-count-bound.ts';
-import { toWsExpectedConnectionName, toWsFailureStatus, toWsSuccessStatus } from './ws-interaction-statuses.ts';
+import {
+    toWaitCountBound,
+    type WaitCountBound
+} from '../expectations/wait-count-bound.ts';
+import {
+    toWsExpectedConnectionName,
+    toWsFailureStatus,
+    toWsSuccessStatus
+} from './ws-interaction-statuses.ts';
 
 export interface WsInteractionRequest extends LocalWsRequest {
+    readonly scenarioExecutionNumber?: number;
+    readonly interactionExecutionNumber?: number;
+    readonly repeatIndex?: number;
+    readonly correlation?: Readonly<Record<string, unknown>>;
+    readonly output?: unknown;
+    readonly outputPath?: unknown;
+    readonly outputs?: unknown;
+    readonly transform?: unknown;
+    readonly secret?: boolean;
+    readonly redact?: boolean;
+    readonly redactAs?: string;
+    readonly input?: unknown;
     readonly action?: string;
     readonly expectConnection?: string;
     readonly send?: unknown;
@@ -45,14 +71,16 @@ export interface WsMessageObservation {
 }
 
 export interface WsWaitContext {
+    readonly dependencies: BlackBoxExecutionDependencies;
     readonly wsMessages: Record<string, WsMessageObservation[] | undefined>;
     readonly wsCloseEvents?: Record<string, unknown[] | undefined>;
     wsObservationLoss?: Record<string, number>;
 }
 
 export interface WsWaitInput {
+    readonly observations?: WaitObservationSource;
     readonly interaction: WsInteraction;
-    readonly config: unknown;
+    readonly config: WsInteractionConfig;
     readonly context: WsWaitContext;
     readonly details?: Readonly<Record<string, unknown>>;
     readonly observeCloseEvents?: boolean;
@@ -96,7 +124,7 @@ function startWsWaitWindow(input: WsWaitInput): WsWaitWindow {
     const connectionName = toWsExpectedConnectionName(input.interaction);
     return {
         connectionName,
-        startedAt: Date.now(),
+        startedAt: input.context.dependencies.now(),
         timeoutMs: Number(input.interaction.response?.withinMs ?? input.interaction.request.timeoutMs ?? 5000),
         observationLoss: input.context.wsObservationLoss?.[connectionName] ?? 0,
         closeEventCount: input.context.wsCloseEvents?.[connectionName]?.length ?? 0
@@ -119,25 +147,25 @@ export async function waitForWsMessageCount(input: WsWaitInput): Promise<WsInter
     const bound = toWaitCountBound(interaction.response?.count);
     const details = { ...input.details, connection: window.connectionName };
     if (interaction.response?.message === undefined || interaction.response.message === null) {
-        return toWsFailureStatus(
+        return toWsFailureStatus({
             config,
             interaction,
-            'WebSocket count wait expects expect.message to match frames against.',
+            result: 'WebSocket count wait expects expect.message to match frames against.',
             details
-        );
+        });
     }
     if (bound === undefined) {
-        return toWsFailureStatus(
+        return toWsFailureStatus({
             config,
             interaction,
-            'WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.',
+            result: 'WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.',
             details
-        );
+        });
     }
     if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
-        return toWsFailureStatus(config, interaction, 'WebSocket count duration must be positive', details);
+        return toWsFailureStatus({ config, interaction, result: 'WebSocket count duration must be positive', details });
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, window.timeoutMs));
+    await finishWsObservationWindow(input, window);
     return completeWsCount(input, window, bound);
 }
 
@@ -153,19 +181,24 @@ function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCo
         expectedCount: interaction.response?.count,
         matchedCount,
         observedMessageCount: messages.length,
-        waitedMs: Date.now() - window.startedAt
+        waitedMs: input.context.dependencies.now() - window.startedAt
     };
     if (!hasCompleteWsObservations(input, window)) {
-        return toWsFailureStatus(
+        return toWsFailureStatus({
             config,
             interaction,
-            'WebSocket count cannot be established because observations were discarded',
+            result: 'WebSocket count cannot be established because observations were discarded',
             details
-        );
+        });
     }
     return matchedCount >= bound.min && matchedCount <= bound.max
         ? toWsSuccessStatus(config, interaction, details)
-        : toWsFailureStatus(config, interaction, 'WebSocket message count did not match the expectation', details);
+        : toWsFailureStatus({
+            config,
+            interaction,
+            result: 'WebSocket message count did not match the expectation',
+            details
+        });
 }
 
 function hasCompleteWsObservations(input: WsWaitInput, window: WsWaitWindow): boolean {
@@ -194,18 +227,25 @@ export function waitForWsMessage(input: WsWaitInput): Promise<WsInteractionResul
                     connection: connectionName,
                     matchedMessage,
                     consumed: interaction.response?.consume === true,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }));
             }
-            else if (Date.now() - startedAt >= timeoutMs) {
+            else if (input.context.dependencies.now() - startedAt >= timeoutMs) {
                 clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedMessage,
-                    ...toBoundedWsWaitMessages(messages.map((message) => ({ ...message }))),
-                    waitedMs: Date.now() - startedAt
-                }));
+                resolve(
+                    toWsFailureStatus({
+                        config,
+                        interaction,
+                        result: 'Expected WebSocket message was not received',
+                        details: {
+                            ...details,
+                            connection: connectionName,
+                            expectedMessage,
+                            ...toBoundedWsWaitMessages(messages.map((message) => ({ ...message }))),
+                            waitedMs: input.context.dependencies.now() - startedAt
+                        }
+                    })
+                );
             }
         }, 25);
     });
@@ -260,10 +300,15 @@ export function waitForWsMessages(input: WsWaitInput): Promise<WsInteractionResu
     const expectedMessages = interaction.response?.messages;
     if (!Array.isArray(expectedMessages) || expectedMessages.length === 0) {
         return Promise.resolve(
-            toWsFailureStatus(config, interaction, 'Expected WebSocket messages must be a non-empty array', {
-                ...details,
-                connection: connectionName,
-                expectedMessages
+            toWsFailureStatus({
+                config,
+                interaction,
+                result: 'Expected WebSocket messages must be a non-empty array',
+                details: {
+                    ...details,
+                    connection: connectionName,
+                    expectedMessages
+                }
             })
         );
     }
@@ -276,7 +321,7 @@ export function waitForWsMessages(input: WsWaitInput): Promise<WsInteractionResu
                 connection: connectionName,
                 matchedMessages: matches.matchedMessages,
                 ordered: interaction.response?.ordered === true,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             };
             if (matches.missingMessages.length === 0) {
                 clearInterval(interval);
@@ -288,21 +333,21 @@ export function waitForWsMessages(input: WsWaitInput): Promise<WsInteractionResu
                     })
                 );
             }
-            else if (Date.now() - startedAt >= timeoutMs) {
+            else if (input.context.dependencies.now() - startedAt >= timeoutMs) {
                 clearInterval(interval);
-                resolve(toWsFailureStatus(
+                resolve(toWsFailureStatus({
                     config,
                     interaction,
-                    interaction.response?.ordered
+                    result: interaction.response?.ordered
                         ? 'Expected WebSocket messages were not received in the expected order'
                         : 'Expected WebSocket messages were not received',
-                    {
+                    details: {
                         ...common,
                         expectedMessages,
                         missingMessages: matches.missingMessages,
                         ...toBoundedWsWaitMessages(messages.map((message) => ({ ...message })))
                     }
-                ));
+                }));
             }
         }, 25);
     });
@@ -314,9 +359,14 @@ export function waitForWsClose(input: WsWaitInput): Promise<WsInteractionResult>
     const expectedClose = interaction.response?.close === true ? {} : interaction.response?.close;
     if (expectedClose === undefined) {
         return Promise.resolve(
-            toWsFailureStatus(config, interaction, 'WebSocket close expectation is missing. Use expect.close.', {
-                ...details,
-                connection: connectionName
+            toWsFailureStatus({
+                config,
+                interaction,
+                result: 'WebSocket close expectation is missing. Use expect.close.',
+                details: {
+                    ...details,
+                    connection: connectionName
+                }
             })
         );
     }
@@ -337,18 +387,25 @@ export function waitForWsClose(input: WsWaitInput): Promise<WsInteractionResult>
                     connection: connectionName,
                     matchedCloseEvent,
                     consumed: interaction.response?.consume === true,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }));
             }
-            else if (Date.now() - startedAt >= timeoutMs) {
+            else if (input.context.dependencies.now() - startedAt >= timeoutMs) {
                 clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket close event was not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedClose,
-                    closeEvents,
-                    waitedMs: Date.now() - startedAt
-                }));
+                resolve(
+                    toWsFailureStatus({
+                        config,
+                        interaction,
+                        result: 'Expected WebSocket close event was not received',
+                        details: {
+                            ...details,
+                            connection: connectionName,
+                            expectedClose,
+                            closeEvents,
+                            waitedMs: input.context.dependencies.now() - startedAt
+                        }
+                    })
+                );
             }
         }, 25);
     });
@@ -365,51 +422,67 @@ function completeWsAbsence(input: WsWaitInput, window: WsWaitWindow): WsInteract
         connection: connectionName,
         absent,
         observedMessageCount: messages.length,
-        waitedMs: Date.now() - startedAt
+        waitedMs: input.context.dependencies.now() - startedAt
     };
     if (matchedIndex >= 0) {
-        return toWsFailureStatus(config, interaction, 'WebSocket message expected to be absent was received', {
-            ...common,
-            matchedMessage: messages[matchedIndex],
-            matchedIndex
+        return toWsFailureStatus({
+            config,
+            interaction,
+            result: 'WebSocket message expected to be absent was received',
+            details: {
+                ...common,
+                matchedMessage: messages[matchedIndex],
+                matchedIndex
+            }
         });
     }
     const currentLoss = context.wsObservationLoss?.[connectionName] ?? 0;
     if (!hasCompleteWsObservations(input, window)) {
-        return toWsFailureStatus(
+        return toWsFailureStatus({
             config,
             interaction,
-            'WebSocket absence cannot be established because observations were discarded',
-            {
+            result: 'WebSocket absence cannot be established because observations were discarded',
+            details: {
                 ...common,
                 observationLossAtStart: observationLoss,
                 observationLossAtEnd: currentLoss
             }
-        );
+        });
     }
     return toWsSuccessStatus(config, interaction, { ...common, matchedMessage: undefined });
 }
 
-export function waitForWsMessageAbsence(input: WsWaitInput): Promise<WsInteractionResult> {
+export async function waitForWsMessageAbsence(input: WsWaitInput): Promise<WsInteractionResult> {
     const { interaction, config } = input;
     const window = startWsWaitWindow(input);
     if (interaction.response?.absent === undefined || interaction.response.absent === null) {
         return Promise.resolve(
-            toWsFailureStatus(
+            toWsFailureStatus({
                 config,
                 interaction,
-                'WebSocket absence wait expects expect.absent to be a partial message matcher.',
-                {
+                result: 'WebSocket absence wait expects expect.absent to be a partial message matcher.',
+                details: {
                     ...input.details,
                     connection: window.connectionName
                 }
-            )
+            })
         );
     }
     if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket absence duration must be positive'));
+        return Promise.resolve(
+            toWsFailureStatus({ config, interaction, result: 'WebSocket absence duration must be positive' })
+        );
     }
-    return new Promise((resolve) => {
-        setTimeout(() => resolve(completeWsAbsence(input, window)), window.timeoutMs);
-    });
+    await finishWsObservationWindow(input, window);
+    return completeWsAbsence(input, window);
+}
+
+async function finishWsObservationWindow(input: WsWaitInput, window: WsWaitWindow): Promise<void> {
+    const deadline = window.startedAt + window.timeoutMs;
+    let remaining = deadline - input.context.dependencies.now();
+    while (remaining > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+        remaining = deadline - input.context.dependencies.now();
+    }
+    await input.observations?.stop();
 }

@@ -1,13 +1,29 @@
 import type { LocalWsMessage } from '@shared-test/black-box-runner/execution/local-websocket-frame.ts';
-import { closeWs, openWs, type LocalWsContext } from '@shared-test/black-box-runner/execution/local-websocket-session.ts';
-import { waitForWsMessage, waitForWsMessageAbsence } from '@shared-test/black-box-runner/ws/ws-wait-expectations.ts';
+import {
+    closeWs,
+    openWs,
+    type LocalWsContext
+} from '@shared-test/black-box-runner/execution/local-websocket-session.ts';
+import {
+    waitForWsMessage,
+    waitForWsMessageAbsence
+} from '@shared-test/black-box-runner/ws/ws-wait-expectations.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { WebSocketServer } from 'ws';
-import { createClientSnapshot, createGroupSnapshot } from '../shared-web/state-cache/browser-state-cache-lifecycle-fixtures.ts';
+import {
+    createClientSnapshot,
+    createGroupSnapshot
+} from '../shared-web/state-cache/browser-state-cache-lifecycle-fixtures.ts';
 import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
 
 const NativeWebSocket = globalThis.WebSocket;
@@ -84,7 +100,7 @@ function readCompletedSnapshots(): LocalWsMessage['data'][] {
 beforeEach(() => {
     TestWebSocket.instances.length = 0;
     vi.stubGlobal('WebSocket', TestWebSocket);
-    context = { wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
+    context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
 });
 afterEach(async () => {
     await closeWs(interaction, config, context);
@@ -421,6 +437,7 @@ it('detects an incomplete foreign principal page without exposing partial snapsh
 });
 
 it('observes generation-specific unicast hydration even after the same revision was broadcast', async () => {
+    context = { ...context, dependencies: { now: () => 1000, createUuid: () => crypto.randomUUID() } };
     vi.spyOn(Date, 'now').mockReturnValue(1000);
     const socket = await openSession();
     const publication = topologyPages({ targets: { mode: 'broadcast', scope: 'room', groupRef } });

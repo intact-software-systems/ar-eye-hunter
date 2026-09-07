@@ -8,10 +8,10 @@ import {
     type JsonValue,
     type NotCompatibleResult
 } from '../../json-compare/compare-json-values.ts';
+import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import { toInteractionOutputFields } from '../execution/black-box-scenario-results.ts';
 import type {
-    RallarRemoteBrowserConfig,
-    RallarRemoteBrowserControlResultEnvelope
+    RallarRemoteBrowserConfig
 } from '../rallar-remote-browser-provider.ts';
 import { normalizeBlackBoxResponseHeaders } from './normalize-black-box-response-headers.ts';
 
@@ -128,7 +128,7 @@ type HttpResponseMismatchDetails = NotCompatibleResult | {
 
 interface RemoteHttpFailureDetails {
     readonly remote: RallarRemoteBrowserConfig;
-    readonly result: RallarRemoteBrowserControlResultEnvelope;
+    readonly result: ControlResultEnvelope;
 }
 
 const SUCCESS = 'SUCCESS';

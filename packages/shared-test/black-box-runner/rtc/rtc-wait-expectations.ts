@@ -1,10 +1,20 @@
+import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
 // deno-lint-ignore-file no-explicit-any
-import { compareJson, COMPARISON, toConfig, type CompareConfig } from '../../json-compare/compare-json-values.ts';
+import {
+    compareJson,
+    COMPARISON,
+    toConfig,
+    type CompareConfig
+} from '../../json-compare/compare-json-values.ts';
 import { toInteractionOutputFields } from '../execution/black-box-scenario-results.ts';
 import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
-import { toWaitCountBound, type WaitCountBound } from '../expectations/wait-count-bound.ts';
+import {
+    toWaitCountBound,
+    type WaitCountBound
+} from '../expectations/wait-count-bound.ts';
 
 export interface RtcWaitInput {
+    readonly observations?: WaitObservationSource;
     readonly interaction: any;
     readonly config: any;
     readonly context: any;
@@ -311,8 +321,8 @@ function computeRtcMessageMatchEvidence(input: RtcMessageMatchInput): RtcMessage
     return {
         indexes: matches.map((match) => match.observationIndex),
         matchedMessages,
-        missingMessages: input.expected.filter((expected) =>
-            matchedMessages.every((match) => match.expectedMessage !== expected)
+        missingMessages: input.expected.filter((_, expectedIndex) =>
+            matches.every((match) => match.expectedIndex !== expectedIndex)
         )
     };
 }
@@ -326,8 +336,8 @@ function computeRtcDiagnosticMatchEvidence(input: RtcObservationMatchInput): Rtc
     return {
         indexes: matches.map((match) => match.observationIndex),
         matchedDiagnostics,
-        missingDiagnostics: input.expected.filter((expected) =>
-            matchedDiagnostics.every((match) => match.expectedDiagnostic !== expected)
+        missingDiagnostics: input.expected.filter((_, expectedIndex) =>
+            matches.every((match) => match.expectedIndex !== expectedIndex)
         )
     };
 }
@@ -351,7 +361,7 @@ function startRtcWaitWindow(input: RtcWaitInput): RtcWaitWindow {
     const connectionName = toRtcExpectedConnectionName(input.interaction);
     return {
         connectionName,
-        startedAt: Date.now(),
+        startedAt: input.context.dependencies.now(),
         timeoutMs: Number.parseInt(input.interaction.response.withinMs || input.interaction.request.timeoutMs || 5000),
         consume: input.interaction.response.consume === true,
         ordered: input.interaction.response.ordered === true,
@@ -401,7 +411,7 @@ export async function waitForRtcMessageCount(input: RtcWaitInput): Promise<any> 
     if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
         return toRtcFailureStatus({ ...input, details: window.details, result: 'RTC count duration must be positive' });
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, window.timeoutMs));
+    await finishRtcObservationWindow(input, window);
     return completeRtcCount(input, window, bound);
 }
 
@@ -423,7 +433,7 @@ function completeRtcCount(input: RtcWaitInput, window: RtcObservationWindow, bou
         expectedCount: interaction.response.count,
         matchedCount,
         observedMessageCount: messages.length,
-        waitedMs: Date.now() - window.startedAt
+        waitedMs: input.context.dependencies.now() - window.startedAt
     };
     if (!hasCompleteRtcObservations(input, window)) {
         return toRtcFailureStatus({
@@ -473,11 +483,11 @@ export async function waitForRtcMessage(input: RtcWaitInput): Promise<any> {
                     details.sendStartedAtEpochMs,
                     match.receivedAtEpochMs
                 ),
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             });
         }
 
-        if (Date.now() - startedAt >= timeoutMs) {
+        if (input.context.dependencies.now() - startedAt >= timeoutMs) {
             return toRtcFailureStatus({
                 ...input,
                 result: 'Expected RTC message was not received',
@@ -485,7 +495,7 @@ export async function waitForRtcMessage(input: RtcWaitInput): Promise<any> {
                     ...details,
                     expectedMessage,
                     messages,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }
             });
         }
@@ -526,11 +536,11 @@ export async function waitForRtcDiagnostic(input: RtcWaitInput): Promise<any> {
                 ...details,
                 matchedDiagnostic: match,
                 consumed: consume,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             });
         }
 
-        if (Date.now() - startedAt >= timeoutMs) {
+        if (input.context.dependencies.now() - startedAt >= timeoutMs) {
             return toRtcFailureStatus({
                 ...input,
                 result: 'Expected RTC diagnostic was not received',
@@ -538,7 +548,7 @@ export async function waitForRtcDiagnostic(input: RtcWaitInput): Promise<any> {
                     ...details,
                     expectedDiagnostic,
                     diagnostics,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }
             });
         }
@@ -582,11 +592,11 @@ export async function waitForRtcDiagnostics(input: RtcWaitInput): Promise<any> {
                 matchedDiagnostics,
                 consumed: consume,
                 ordered,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             });
         }
 
-        if (Date.now() - startedAt >= timeoutMs) {
+        if (input.context.dependencies.now() - startedAt >= timeoutMs) {
             return toRtcFailureStatus({
                 ...input,
                 result: ordered
@@ -599,7 +609,7 @@ export async function waitForRtcDiagnostics(input: RtcWaitInput): Promise<any> {
                     missingDiagnostics,
                     ordered,
                     diagnostics,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }
             });
         }
@@ -638,11 +648,11 @@ export async function waitForRtcHealth(input: RtcWaitInput): Promise<any> {
             return toRtcSuccessStatus(config, interaction, {
                 ...details,
                 matchedHealth: health,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             });
         }
 
-        if (Date.now() - startedAt >= timeoutMs) {
+        if (input.context.dependencies.now() - startedAt >= timeoutMs) {
             return toRtcFailureStatus({
                 ...input,
                 result: 'Expected RTC health was not observed',
@@ -650,7 +660,7 @@ export async function waitForRtcHealth(input: RtcWaitInput): Promise<any> {
                     ...details,
                     expectedHealth,
                     health,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }
             });
         }
@@ -693,11 +703,11 @@ export async function waitForRtcMessages(input: RtcWaitInput): Promise<any> {
                 matchedMessages,
                 consumed: consume,
                 ordered,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             });
         }
 
-        if (Date.now() - startedAt >= timeoutMs) {
+        if (input.context.dependencies.now() - startedAt >= timeoutMs) {
             return toRtcFailureStatus({
                 ...input,
                 result: ordered
@@ -710,7 +720,7 @@ export async function waitForRtcMessages(input: RtcWaitInput): Promise<any> {
                     missingMessages,
                     ordered,
                     messages,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }
             });
         }
@@ -749,11 +759,11 @@ export async function waitForRtcClose(input: RtcWaitInput): Promise<any> {
                 ...details,
                 matchedCloseEvent: match,
                 consumed: consume,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             });
         }
 
-        if (Date.now() - startedAt >= timeoutMs) {
+        if (input.context.dependencies.now() - startedAt >= timeoutMs) {
             return toRtcFailureStatus({
                 ...input,
                 result: 'Expected RTC close event was not received',
@@ -761,7 +771,7 @@ export async function waitForRtcClose(input: RtcWaitInput): Promise<any> {
                     ...details,
                     expectedClose,
                     closeEvents,
-                    waitedMs: Date.now() - startedAt
+                    waitedMs: input.context.dependencies.now() - startedAt
                 }
             });
         }
@@ -769,9 +779,9 @@ export async function waitForRtcClose(input: RtcWaitInput): Promise<any> {
 }
 
 export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any> {
-    const { interaction, config, context } = input;
+    const { interaction, config } = input;
     const window = startRtcObservationWindow(input);
-    const { details, connectionName, startedAt } = window;
+    const { details, connectionName } = window;
     const absentMessage = interaction.response.absent;
 
     if (absentMessage === undefined || absentMessage === null) {
@@ -792,8 +802,15 @@ export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any
 
     // The full window is always waited: an absence claim is only as strong as
     // the time the runner kept listening for the offending frame.
-    await new Promise<void>((resolve) => setTimeout(resolve, window.timeoutMs));
+    await finishRtcObservationWindow(input, window);
 
+    return completeRtcAbsence(input, window);
+}
+
+function completeRtcAbsence(input: RtcWaitInput, window: RtcObservationWindow): any {
+    const { interaction, config, context } = input;
+    const { details, connectionName, startedAt } = window;
+    const absentMessage = interaction.response.absent;
     const messages = context.rtcMessages[connectionName] || [];
     const matchIndex = findRtcMessageIndex({
         messages: messages,
@@ -813,7 +830,7 @@ export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any
                 matchedMessage: messages[matchIndex],
                 matchedIndex: matchIndex,
                 observedMessageCount: messages.length,
-                waitedMs: Date.now() - startedAt
+                waitedMs: input.context.dependencies.now() - startedAt
             }
         });
     }
@@ -831,6 +848,16 @@ export async function waitForRtcMessageAbsence(input: RtcWaitInput): Promise<any
         absent: absentMessage,
         matchedMessage: undefined,
         observedMessageCount: messages.length,
-        waitedMs: Date.now() - startedAt
+        waitedMs: input.context.dependencies.now() - startedAt
     });
+}
+
+async function finishRtcObservationWindow(input: RtcWaitInput, window: RtcObservationWindow): Promise<void> {
+    const deadline = window.startedAt + window.timeoutMs;
+    let remaining = deadline - input.context.dependencies.now();
+    while (remaining > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+        remaining = deadline - input.context.dependencies.now();
+    }
+    await input.observations?.stop();
 }

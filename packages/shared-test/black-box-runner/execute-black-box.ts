@@ -2,12 +2,16 @@
 import { Either } from '../../shared/resilience/Either.ts';
 
 import { evaluateScenarioTransform } from './execution/black-box-output-transform.ts';
-import { isRecord, redactBlackBoxData } from './execution/black-box-redaction.ts';
+import {
+    isRecord,
+    redactBlackBoxData
+} from './execution/black-box-redaction.ts';
 import {
     toCorrelationReportFields,
     toPublicCorrelationConfig
 } from './execution/black-box-run-correlation.ts';
 import {
+    createDefaultExecutionDependencies,
     createMissingRtcProvider,
     createScenarioContext
 } from './execution/black-box-scenario-context.ts';
@@ -36,7 +40,11 @@ import {
     toRtcPayload,
     type RtcClient
 } from './rtc-provider.ts';
-import { rememberRtcCloseEvent, toRtcFailureStatus, toRtcSuccessStatus } from './rtc/rtc-wait-expectations.ts';
+import {
+    rememberRtcCloseEvent,
+    toRtcFailureStatus,
+    toRtcSuccessStatus
+} from './rtc/rtc-wait-expectations.ts';
 import { SafeOutputTransformError } from './scenario-transform/safe-output-transform.ts';
 
 const SUCCESS = 'SUCCESS';
@@ -110,16 +118,17 @@ interface ParallelSummary {
 }
 
 export async function executeBlackBox(interactions: any[], index = 0, options: any = {}): Promise<any> {
-    const startedAtEpochMs = Date.now();
-    const context = createScenarioContext(options);
+    const dependencies = options.dependencies ?? createDefaultExecutionDependencies();
+    const startedAtEpochMs = dependencies.now();
+    const context = createScenarioContext({ options, dependencies });
     try {
         await executeScenarioSteps({ interactions, index, options, context });
     }
     finally {
-        closeAllWsConnections(context);
+        await closeAllWsConnections(context);
         await closeAllRtcConnections(context);
     }
-    const endedAtEpochMs = Date.now();
+    const endedAtEpochMs = context.dependencies.now();
     return toReport({ context, options, startedAtEpochMs, endedAtEpochMs });
 }
 
@@ -680,16 +689,19 @@ function executeTransportInteraction(transport: string, input: TransportInteract
     switch (transport) {
         case 'ASSERT':
             return withPollUntil({
+                now: context.dependencies.now,
                 request: interaction.request,
                 execute: () => executeAssertInteraction(interaction, config, context)
             });
         case 'SET':
             return withPollUntil({
+                now: context.dependencies.now,
                 request: interaction.request,
                 execute: () => executeSetInteraction(interaction, config, context)
             });
         case 'PARALLEL':
             return withPollUntil({
+                now: context.dependencies.now,
                 request: interaction.request,
                 execute: () => executeParallelInteraction(interaction, config, context)
             });
@@ -703,7 +715,7 @@ function executeTransportInteraction(transport: string, input: TransportInteract
         default:
             return isRallarRemoteBrowserRequest(interaction.request)
                 ? executeRemoteHttpInteraction(interaction, config, context)
-                : executeHttpInteraction(interaction, config);
+                : executeHttpInteraction({ interaction, config, now: context.dependencies.now });
     }
 }
 
@@ -780,7 +792,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
     );
     const rendezvous = createParallelRendezvous(barrier ? maxConcurrency : 1);
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
-    const startedAtEpochMs = Date.now();
+    const startedAtEpochMs = context.dependencies.now();
     const groupResults = await runBoundedParallel(
         groups,
         maxConcurrency,
@@ -800,7 +812,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
             groups: groupResults,
             maxConcurrency,
             timeoutMs,
-            durationMs: Date.now() - startedAtEpochMs
+            durationMs: context.dependencies.now() - startedAtEpochMs
         }),
         barrier
     };
@@ -826,7 +838,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
 
 async function executeParallelGroup(input: ParallelGroupInput): Promise<ParallelGroupResult> {
     const { group, groupIndex, context } = input;
-    const groupStartedAtEpochMs = Date.now();
+    const groupStartedAtEpochMs = context.dependencies.now();
     const steps = Array.isArray(group.steps)
         ? group.steps
         : [];
@@ -839,7 +851,7 @@ async function executeParallelGroup(input: ParallelGroupInput): Promise<Parallel
             success: 0,
             failure: 1,
             result: 'Parallel group has no steps.',
-            durationMs: Date.now() - groupStartedAtEpochMs
+            durationMs: context.dependencies.now() - groupStartedAtEpochMs
         };
     }
 
@@ -863,7 +875,7 @@ async function executeParallelGroup(input: ParallelGroupInput): Promise<Parallel
         success: resultValues.filter((result) => result?.status === SUCCESS).length,
         failure: failureCount,
         resultKeys: resultValues.map((result) => result?.resultKey).filter(Boolean),
-        durationMs: Date.now() - groupStartedAtEpochMs
+        durationMs: context.dependencies.now() - groupStartedAtEpochMs
     };
 }
 
@@ -899,7 +911,7 @@ async function executeScenarioSteps(input: ScenarioStepsInput): Promise<any> {
 }
 
 async function executeMeasuredInteraction(interactionWithConfig: any, context: any): Promise<any> {
-    const startedAtEpochMs = Date.now();
+    const startedAtEpochMs = context.dependencies.now();
     let result: any;
     try {
         result = await executeInteraction(interactionWithConfig, context);
@@ -918,7 +930,7 @@ async function executeMeasuredInteraction(interactionWithConfig: any, context: a
             interaction
         };
     }
-    const endedAtEpochMs = Date.now();
+    const endedAtEpochMs = context.dependencies.now();
     return withMaxDurationBound({
         ...result,
         startedAtEpochMs,
@@ -952,30 +964,34 @@ function withMaxDurationBound(interactionData: any): any {
     };
 }
 
-function closeAllWsConnections(context: any): void {
-    Object.entries(context.wsConnections)
-        .forEach(([connectionName, ws]) => {
-            const socket = ws as WebSocket;
+interface WsCleanupConnection {
+    readonly readyState: number;
+    close(): void | Promise<void>;
+}
 
-            try {
-                rememberWsCloseEvent(connectionName, {
-                    autoCloseRequested: true,
-                    readyStateBeforeClose: socket.readyState,
-                    closedAtEpochMs: Date.now()
-                }, context);
-
-                socket.close();
-            }
-            catch (e) {
-                rememberWsCloseEvent(connectionName, {
-                    autoCloseRequested: true,
-                    autoCloseFailed: true,
-                    exception: e instanceof Error ? e.message : String(e),
-                    closedAtEpochMs: Date.now()
-                }, context);
-            }
-        });
-
+async function closeAllWsConnections(context: any): Promise<void> {
+    for (const [connectionName, socket] of Object.entries<WsCleanupConnection>(context.wsConnections)) {
+        const readyStateBeforeClose = socket.readyState;
+        try {
+            await socket.close();
+            rememberWsCloseEvent(connectionName, {
+                autoCloseRequested: true,
+                autoCloseSucceeded: true,
+                readyStateBeforeClose,
+                closedAtEpochMs: context.dependencies.now()
+            }, context);
+        }
+        catch (error) {
+            rememberWsCloseEvent(connectionName, {
+                autoCloseRequested: true,
+                autoCloseSucceeded: false,
+                autoCloseFailed: true,
+                readyStateBeforeClose,
+                exception: error instanceof Error ? error.message : String(error),
+                closedAtEpochMs: context.dependencies.now()
+            }, context);
+        }
+    }
     context.wsConnections = {};
 }
 
@@ -1005,7 +1021,7 @@ async function closeAllRtcConnections(context: any): Promise<void> {
             rememberRtcCloseEvent(connectionName, {
                 autoCloseRequested: true,
                 autoCloseSucceeded: true,
-                closedAtEpochMs: Date.now(),
+                closedAtEpochMs: context.dependencies.now(),
                 connection: toRtcConnectionDiagnostics(rtcConnection),
                 stub: rtcConnection?.stub === true
             }, context);
@@ -1016,7 +1032,7 @@ async function closeAllRtcConnections(context: any): Promise<void> {
                 autoCloseSucceeded: false,
                 autoCloseFailed: true,
                 exception: e instanceof Error ? e.message : String(e),
-                closedAtEpochMs: Date.now(),
+                closedAtEpochMs: context.dependencies.now(),
                 connection: toRtcConnectionDiagnostics(rtcConnection),
                 stub: rtcConnection?.stub === true
             }, context);

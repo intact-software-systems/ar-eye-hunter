@@ -1,6 +1,9 @@
 import { Either } from '../../../shared/resilience/Either.ts';
 
-import type { RallarBrowserDependencies, RallarBrowserRtcProviderOptions } from '../rallar-browser-rtc-provider.ts';
+import type {
+    RallarBrowserDependencies,
+    RallarBrowserRtcProviderOptions
+} from '../rallar-browser-rtc-provider.ts';
 import type {
     RallarRtcClientArgs,
     RallarRtcClientEventDispatcher,
@@ -40,6 +43,7 @@ export function initRallarBrowserProviderState(context: any): RallarBrowserProvi
 
 export namespace RallarBrowserSession {
     export interface Dependencies {
+        readonly now: () => number;
         readonly args: RallarRtcClientArgs;
         readonly dispatcher: RallarRtcClientEventDispatcher;
         readonly state: RallarBrowserProviderState;
@@ -283,7 +287,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
         dispatcher.emitMessage({
             kind: 'diagnostic',
             topic,
-            atEpochMs: Date.now(),
+            atEpochMs: this.dependencies.now(),
             connection: args.connection,
             actor: args.actor,
             provider: args.provider,
@@ -312,7 +316,7 @@ export class RallarBrowserSession implements RallarRtcRuntimeSession {
             groupId: args.groupId,
             overlayId: args.overlayId,
             ...toRallarScopeDiagnostics(args.request, args.roomId),
-            closedAtEpochMs: Date.now(),
+            closedAtEpochMs: this.dependencies.now(),
             ...data
         });
     }

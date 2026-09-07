@@ -6,7 +6,10 @@ import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import { assertValueMatches } from '../assert/assert-value-operators.ts';
 import { createRallarBlackBoxTestRuntime } from '../runtime.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRuntime } from '../types.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRuntime
+} from '../types.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,
@@ -103,6 +106,7 @@ export function evaluateCompleteArrayOutcomeParityRows(): readonly AssertionOutc
 // Both dialects hold the full window, then scan the whole buffer once, so a
 // frame buffered before the wait started violates the claim in both engines.
 export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly AssertionOutcomeParityRow[]> {
+    const dependencies = { now: Date.now, createUuid: () => crypto.randomUUID() };
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of ABSENCE_FIXTURES) {
         const runnerStatus = await waitForWsMessageAbsence({
@@ -115,6 +119,7 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly Asser
             },
             config: { interaction: { request: {} } },
             context: {
+                dependencies,
                 wsMessages: {
                     parityWs: fixture.bufferedTopics.map((topic) => ({ data: { topic } }))
                 }
@@ -160,9 +165,10 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly Asser
 export async function evaluatePollingOutcomeParityRows(
     input: EvaluatePollingOutcomeParityInput
 ): Promise<readonly AssertionOutcomeParityRow[]> {
+    const now = Date.now;
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of POLLING_FIXTURES) {
-        const runnerVerdict = await readPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt));
+        const runnerVerdict = await readPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt), now);
 
         const runtime = createDeterministicRuntime();
         const runtimeResult = await runtime.execute(toRuntimePollingCommand(fixture));
@@ -180,29 +186,34 @@ export async function evaluatePollingOutcomeParityRows(
 
 async function readPollingRunnerVerdict(
     fixture: PollingParityFixture,
-    fetch: typeof globalThis.fetch
+    fetch: typeof globalThis.fetch,
+    now: () => number
 ): Promise<AssertionOutcomeVerdict> {
     const previousFetch = globalThis.fetch;
     globalThis.fetch = fetch;
     try {
         const runnerStatus = await executeHttpInteraction({
-            name: fixture.fixtureId,
-            connection: 'api',
-            request: {
-                url: 'http://parity.invalid/status',
-                method: 'GET',
-                action: 'poll-until',
-                poll: {
-                    maxAttempts: fixture.maxAttempts,
-                    maxDurationMs: 5_000,
-                    backoffMs: 1,
-                    backoffMultiplier: 1
+            now,
+            interaction: {
+                name: fixture.fixtureId,
+                connection: 'api',
+                request: {
+                    url: 'http://parity.invalid/status',
+                    method: 'GET',
+                    action: 'poll-until',
+                    poll: {
+                        maxAttempts: fixture.maxAttempts,
+                        maxDurationMs: 5_000,
+                        backoffMs: 1,
+                        backoffMultiplier: 1
+                    }
+                },
+                response: {
+                    status: 200
                 }
             },
-            response: {
-                status: 200
-            }
-        }, { interaction: { request: {} } });
+            config: { interaction: { request: {} } }
+        });
         return isRunnerSuccess(runnerStatus) ? 'pass' : 'fail';
     }
     finally {

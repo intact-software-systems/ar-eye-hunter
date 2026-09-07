@@ -1,5 +1,9 @@
 // deno-lint-ignore-file no-explicit-any
-import { hasPollUntilPolicy, toBackoffMs, withPollUntil } from '../execution/with-poll-until.ts';
+import {
+    hasPollUntilPolicy,
+    toBackoffMs,
+    withPollUntil
+} from '../execution/with-poll-until.ts';
 import { toHttpInteractionStatus } from './http-response-expectations.ts';
 
 const FAILURE = 'FAILURE';
@@ -160,9 +164,17 @@ function executeSingleHttpAttempt(interaction: any, config: any): Promise<any> {
         });
 }
 
-export function executeHttpInteraction(interaction: any, config: any): Promise<any> {
+export interface ExecuteHttpInteractionInput {
+    readonly interaction: any;
+    readonly config: any;
+    readonly now: () => number;
+}
+
+export function executeHttpInteraction(input: ExecuteHttpInteractionInput): Promise<any> {
+    const { interaction, config, now } = input;
     if (hasPollUntilPolicy(interaction.request)) {
         return withPollUntil({
+            now,
             request: interaction.request,
             execute: () => executeSingleHttpAttempt(interaction, config)
         });

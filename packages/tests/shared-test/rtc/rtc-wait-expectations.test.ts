@@ -1,5 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    waitForRtcDiagnostics,
     waitForRtcHealth,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
@@ -13,7 +20,7 @@ function createWaitInput(response: Record<string, unknown>): RtcWaitInput {
     return {
         interaction,
         config: { interaction, interactionName: 'observe' },
-        context: { rtcMessages: { peer: [] }, rtcConnections: {}, rtcCloseEvents: {} }
+        context: { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, rtcMessages: { peer: [] }, rtcConnections: {}, rtcCloseEvents: {} }
     };
 }
 
@@ -62,6 +69,52 @@ describe('RTC observation waits', () => {
         await vi.advanceTimersByTimeAsync(50);
         expect((await complete).actual.matchedMessages).toHaveLength(2);
         expect(input.context.rtcMessages.peer).toEqual([]);
+    });
+
+    it.each([
+        { ordered: false, payload: 'x' },
+        { ordered: true, payload: 'x' },
+        { ordered: false, payload: { value: 1 } },
+        { ordered: true, payload: { value: 1 } }
+    ])('reports one missing message occurrence without consuming the partial match: %j', async ({ ordered, payload }) => {
+        vi.useFakeTimers();
+        const input = createWaitInput({ messages: [payload, payload], ordered, consume: true, withinMs: 50 });
+        input.context.rtcMessages.peer.push({ data: payload });
+        const waiting = waitForRtcMessages(input);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(await waiting).toMatchObject({
+            status: 'FAILURE',
+            actual: { matchedMessages: [{ expectedMessage: payload }], missingMessages: [payload] }
+        });
+        expect(input.context.rtcMessages.peer).toEqual([{ data: payload }]);
+        input.context.rtcMessages.peer.push({ data: payload });
+        const complete = waitForRtcMessages(input);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(await complete).toMatchObject({ status: 'SUCCESS' });
+        expect(input.context.rtcMessages.peer).toEqual([]);
+    });
+
+    it.each([
+        { ordered: false, payload: 'x' },
+        { ordered: true, payload: 'x' },
+        { ordered: false, payload: { value: 1 } },
+        { ordered: true, payload: { value: 1 } }
+    ])('reports one missing diagnostic occurrence without consuming the partial match: %j', async ({ ordered, payload }) => {
+        vi.useFakeTimers();
+        const input = createWaitInput({ diagnostics: [payload, payload], ordered, consume: true, withinMs: 50 });
+        input.context.rtcDiagnostics = { peer: [payload] };
+        const waiting = waitForRtcDiagnostics(input);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(await waiting).toMatchObject({
+            status: 'FAILURE',
+            actual: { matchedDiagnostics: [{ expectedDiagnostic: payload }], missingDiagnostics: [payload] }
+        });
+        expect(input.context.rtcDiagnostics.peer).toEqual([payload]);
+        input.context.rtcDiagnostics.peer.push(payload);
+        const complete = waitForRtcDiagnostics(input);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(await complete).toMatchObject({ status: 'SUCCESS' });
+        expect(input.context.rtcDiagnostics.peer).toEqual([]);
     });
 
     it('rejects a provider failure instead of leaving the wait unresolved', async () => {

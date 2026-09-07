@@ -683,6 +683,13 @@ original deadlines. Include active, waiting, superseded, completed, and expired 
 infer universal storage savings from large-payload results. Serialized readback bytes are useful
 layout evidence but do not measure physical IndexedDB allocation or runtime latency.
 
+Record actual send attempts alongside storage snapshots. An eager dispatch path may attempt each
+accepted state update before a newer update arrives, while a queued batch can discard older updates
+before its first send. The same producer input then performs different transport work; compare
+that coalescing tradeoff explicitly instead of attributing all row growth to storage layout.
+Distinguish enqueue completion from dispatch, and verify payload/work expiry separately from the
+configured retention of metadata such as versions and supersedence tracks.
+
 Include one slow/missing recipient, duplicate receipt traffic, many ordering tracks, and audiences
 beyond a single protocol page. Compare work for all recipients with selective retry of only missing
 ones, receipt aggregation, and replacement of obsolete state. A room-size increase must not turn a

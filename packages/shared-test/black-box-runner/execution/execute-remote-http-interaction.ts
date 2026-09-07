@@ -1,12 +1,15 @@
+import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
 // deno-lint-ignore-file no-explicit-any
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/types.ts';
-import { toHttpInteractionStatus, toStatus } from '../http/http-response-expectations.ts';
+import {
+    toHttpInteractionStatus,
+    toStatus
+} from '../http/http-response-expectations.ts';
 import {
     executeRallarRemoteBrowserCommand,
     readRallarRemoteBrowserConfig,
-    type RallarRemoteBrowserConfig,
-    type RallarRemoteBrowserControlResultEnvelope
+    type RallarRemoteBrowserConfig
 } from '../rallar-remote-browser-provider.ts';
 import { toCorrelationReportFields } from './black-box-run-correlation.ts';
 import {
@@ -77,7 +80,7 @@ function parseRemoteHttpBody(body: any): any {
     }
 }
 
-function toRemoteHttpResponse(result: RallarRemoteBrowserControlResultEnvelope): any {
+function toRemoteHttpResponse(result: ControlResultEnvelope): any {
     const value = remoteResultValue(result);
     const status = Number.parseInt(String(value?.status ?? 0), 10);
     return {

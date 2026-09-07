@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
@@ -14,7 +18,7 @@ import {
 const connection = 'wsAlice';
 
 function toContext(payloads: readonly ApiJsonValue[]): WsWaitContext {
-    return { wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
+    return { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
 }
 
 function toFrame(eventType: string): ApiJsonValue {

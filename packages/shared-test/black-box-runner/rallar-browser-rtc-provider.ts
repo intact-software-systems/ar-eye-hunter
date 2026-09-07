@@ -9,10 +9,20 @@ import {
     RallarBrowserSession,
     type RallarBrowserProviderState
 } from './browser/rallar-browser-session.ts';
-import type { RallarRtcClientArgs, RallarRtcClientEventDispatcher } from './rallar-rtc-provider.ts';
-import { createRallarRtcClientEventDispatcher, toRallarRtcClientArgs } from './rallar-rtc-provider.ts';
+import type {
+    RallarRtcClientArgs,
+    RallarRtcClientEventDispatcher
+} from './rallar-rtc-provider.ts';
+import {
+    createRallarRtcClientEventDispatcher,
+    toRallarRtcClientArgs
+} from './rallar-rtc-provider.ts';
 import { toRallarScopeDiagnostics } from './recipes/recipe-rallar-scope.ts';
-import { createRtcProviderFromClientFactory, type RtcClient, type RtcProvider } from './rtc-provider.ts';
+import {
+    createRtcProviderFromClientFactory,
+    type RtcClient,
+    type RtcProvider
+} from './rtc-provider.ts';
 import { toRtcConnectionName } from './rtc/rtc-wait-expectations.ts';
 
 export interface RallarBrowserRtcProviderOptions {
@@ -48,7 +58,7 @@ interface BrowserCrdtFailureInput {
 
 export function createRallarBrowserRtcProvider(options: RallarBrowserRtcProviderOptions = {}): RtcProvider {
     const provider = createRtcProviderFromClientFactory({
-        createClient: (request, _config, context) => new RallarBrowserRtcClient(request, context || {}, options)
+        createClient: (request, _config, context) => new RallarBrowserRtcClient(request, context, options)
     });
     return {
         ...provider,
@@ -57,6 +67,7 @@ export function createRallarBrowserRtcProvider(options: RallarBrowserRtcProvider
 }
 
 class RallarBrowserRtcClient implements RtcClient {
+    private readonly now: () => number;
     private readonly args: RallarRtcClientArgs;
     private readonly dispatcher: RallarRtcClientEventDispatcher;
     private readonly state: RallarBrowserProviderState;
@@ -67,6 +78,7 @@ class RallarBrowserRtcClient implements RtcClient {
     private lastCrdtCommandDiagnostics: any;
 
     constructor(request: any, context: any, options: RallarBrowserRtcProviderOptions) {
+        this.now = context.dependencies.now;
         this.args = toRallarRtcClientArgs(request);
         this.dispatcher = createRallarRtcClientEventDispatcher();
         this.state = initRallarBrowserProviderState(context);
@@ -78,6 +90,7 @@ class RallarBrowserRtcClient implements RtcClient {
 
     async connect(): Promise<void> {
         const session = new RallarBrowserSession({
+            now: this.now,
             args: this.args,
             dispatcher: this.dispatcher,
             state: this.state,
@@ -103,6 +116,7 @@ class RallarBrowserRtcClient implements RtcClient {
     async command(action: string, request: any): Promise<any> {
         if (!this.runtimeSession && isLocalOnlyCrdtOpen(action, request)) {
             const session = new RallarBrowserSession({
+                now: this.now,
                 args: this.args,
                 dispatcher: this.dispatcher,
                 state: this.state,
@@ -159,7 +173,7 @@ async function writeBrowserCrdtCommand(input: BrowserCrdtCommandInput): Promise<
     context.rtcConnections = context.rtcConnections || {};
     let connection = context.rtcConnections[connectionName];
     if (!connection?.client?.command && isLocalOnlyCrdtOpen(action, interaction.request)) {
-        connection = initBrowserCrdtConnection(input, connectionName, Date.now());
+        connection = initBrowserCrdtConnection(input, connectionName, input.context.dependencies.now());
     }
     const client: RtcClient | undefined = connection?.client;
     if (!client?.command) {
@@ -171,9 +185,9 @@ async function writeBrowserCrdtCommand(input: BrowserCrdtCommandInput): Promise<
         });
     }
     try {
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = input.context.dependencies.now();
         const result = await client.command(action, interaction.request);
-        const endedAtEpochMs = Date.now();
+        const endedAtEpochMs = input.context.dependencies.now();
         connection.lastCrdtCommandResult = result;
         connection.lastCrdtCommandAction = action;
         connection.lastCrdtCommandLatencyMs = endedAtEpochMs - startedAtEpochMs;

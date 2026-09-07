@@ -1,8 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
-import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type {
+    ApiJsonObject,
+    ApiJsonValue
+} from '@shared/api/api-json-value.ts';
 
-import { waitForRtcMessage, waitForRtcMessageCount } from '../../shared-test/black-box-runner/rtc/rtc-wait-expectations.ts';
+import {
+    waitForRtcMessage,
+    waitForRtcMessageCount
+} from '../../shared-test/black-box-runner/rtc/rtc-wait-expectations.ts';
 
 const connection = 'aliceRtc';
 
@@ -22,7 +34,10 @@ async function runCount(input: {
     const status = await waitForRtcMessageCount({
         interaction,
         config: { interactionName: 'countRtcFrames', interaction },
-        context: { rtcMessages: { [connection]: input.payloads.map((data) => ({ data })) } }
+        context: {
+            dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            rtcMessages: { [connection]: input.payloads.map((data) => ({ data })) }
+        }
     });
 
     return {
@@ -92,7 +107,7 @@ describe('RTC count observation window', () => {
     it('waits for a late duplicate before deciding an exact count', async () => {
         vi.useFakeTimers();
         const interaction = { request: { connection }, response: { message: motion, count: 1, withinMs: 100 } };
-        const context = { rtcMessages: { [connection]: [{ data: motion }] } };
+        const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, rtcMessages: { [connection]: [{ data: motion }] } };
         const pending = waitForRtcMessageCount({ interaction, context, config: { interaction } });
         await vi.advanceTimersByTimeAsync(50);
         context.rtcMessages[connection].push({ data: motion });
@@ -103,7 +118,7 @@ describe('RTC count observation window', () => {
     it('cannot certify a count after another wait consumes an observation', async () => {
         vi.useFakeTimers();
         const interaction = { request: { connection }, response: { message: motion, count: 1, withinMs: 100 } };
-        const context = { rtcMessages: { [connection]: [{ data: motion }] } };
+        const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, rtcMessages: { [connection]: [{ data: motion }] } };
         const pending = waitForRtcMessageCount({ interaction, context, config: { interaction } });
         const consuming = { request: { connection }, response: { message: motion, consume: true } };
         const consumed = waitForRtcMessage({ interaction: consuming, context, config: { interaction: consuming } });
@@ -117,7 +132,11 @@ describe('RTC count observation window', () => {
     it('cannot certify a count after the connection is replaced', async () => {
         vi.useFakeTimers();
         const interaction = { request: { connection }, response: { message: motion, count: 1, withinMs: 100 } };
-        const context = { rtcMessages: { [connection]: [{ data: motion }] }, rtcConnections: { [connection]: {} } };
+        const context = {
+            dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            rtcMessages: { [connection]: [{ data: motion }] },
+            rtcConnections: { [connection]: {} }
+        };
         const pending = waitForRtcMessageCount({ interaction, context, config: { interaction } });
         context.rtcConnections[connection] = {};
         await vi.advanceTimersByTimeAsync(100);

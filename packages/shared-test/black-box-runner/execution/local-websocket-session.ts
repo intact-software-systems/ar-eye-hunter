@@ -4,7 +4,12 @@ import { STATE_SNAPSHOT_LIMITS } from '@shared/api/state-snapshot-page.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
-import { toWsConnectionName, toWsFailureStatus, toWsSuccessStatus } from '../ws/ws-interaction-statuses.ts';
+import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
+import {
+    toWsConnectionName,
+    toWsFailureStatus,
+    toWsSuccessStatus
+} from '../ws/ws-interaction-statuses.ts';
 import {
     resolveWsOpenExpectation,
     validateWsOpenExpectation,
@@ -12,7 +17,12 @@ import {
     type WsOpenExpectation,
     type WsOpenOutcome
 } from '../ws/ws-open-expectation.ts';
-import { acceptLocalWsFrame, type LocalWsMessage } from './local-websocket-frame.ts';
+import type { WsInteractionResult } from '../ws/ws-wait-expectations.ts';
+import type { BlackBoxExecutionDependencies } from './black-box-scenario-context.ts';
+import {
+    acceptLocalWsFrame,
+    type LocalWsMessage
+} from './local-websocket-frame.ts';
 
 export interface LocalWsRequest {
     readonly url?: string;
@@ -34,6 +44,7 @@ export interface LocalWsInteraction {
 }
 
 export interface LocalWsContext {
+    readonly dependencies: BlackBoxExecutionDependencies;
     readonly wsConnections: Record<string, WebSocket | undefined>;
     readonly wsMessages: Record<string, LocalWsMessage[] | undefined>;
     readonly wsCloseEvents: Record<string, unknown[] | undefined>;
@@ -106,20 +117,24 @@ export function rememberWsCloseEvent(connectionName: string, closeEvent: unknown
     }
 }
 
-export function openWs(interaction: LocalWsInteraction, config: unknown, context: LocalWsContext): Promise<unknown> {
+export function openWs(
+    interaction: LocalWsInteraction,
+    config: WsInteractionConfig,
+    context: LocalWsContext
+): Promise<WsInteractionResult> {
     const expectation = validateWsOpenExpectation(interaction.response ?? {});
     if (expectation.left) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, expectation.left.message));
+        return Promise.resolve(toWsFailureStatus({ config, interaction, result: expectation.left.message }));
     }
     const request = interaction.request;
     const connectionName = toWsConnectionName(request);
     const url = request.url || request.path;
     const scope = request.snapshotScope === undefined ? undefined : readSnapshotScope(request.snapshotScope);
     if (scope?.left) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, scope.left.message));
+        return Promise.resolve(toWsFailureStatus({ config, interaction, result: scope.left.message }));
     }
     if (!url) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket URL is missing'));
+        return Promise.resolve(toWsFailureStatus({ config, interaction, result: 'WebSocket URL is missing' }));
     }
     if (scope?.right) {
         const parameters = new URL(url).searchParams;
@@ -128,17 +143,19 @@ export function openWs(interaction: LocalWsInteraction, config: unknown, context
             parameters.get('workspaceId') !== scope.right.workspaceId
         ) {
             return Promise.resolve(
-                toWsFailureStatus(
+                toWsFailureStatus({
                     config,
                     interaction,
-                    'snapshotScope must match the explicit authenticated WebSocket URL scope'
-                )
+                    result: 'snapshotScope must match the explicit authenticated WebSocket URL scope'
+                })
             );
         }
     }
     const timeoutMs = request.timeoutMs === undefined ? 5000 : Number(request.timeoutMs);
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket timeout must be positive'));
+        return Promise.resolve(
+            toWsFailureStatus({ config, interaction, result: 'WebSocket timeout must be positive' })
+        );
     }
     return new LocalWsConnection({
         interaction,
@@ -162,7 +179,7 @@ namespace LocalWsConnection {
     }
     export interface Input {
         readonly interaction: LocalWsInteraction;
-        readonly config: unknown;
+        readonly config: WsInteractionConfig;
         readonly context: LocalWsContext;
         readonly connectionName: string;
         readonly url: string;
@@ -178,7 +195,7 @@ class LocalWsConnection {
     readonly #socket: WebSocket;
     readonly #assembly = new StateSnapshotAssembly();
     #timeout: ReturnType<typeof setTimeout> | undefined;
-    #settle: ((result: unknown) => void) | undefined;
+    #settle: ((result: WsInteractionResult) => void) | undefined;
     #opened = false;
 
     constructor(input: LocalWsConnection.Input) {
@@ -186,7 +203,7 @@ class LocalWsConnection {
         this.#socket = new WebSocket(input.url);
     }
 
-    open(): Promise<unknown> {
+    open(): Promise<WsInteractionResult> {
         return new Promise((resolve) => {
             this.#settle = resolve;
             this.#timeout = setTimeout(() => {
@@ -238,7 +255,7 @@ class LocalWsConnection {
             value: event.data,
             scope,
             assembly: this.#assembly,
-            nowMs: Date.now()
+            nowMs: context.dependencies.now()
         });
         for (const record of records) {
             if (record.rejection) {
@@ -256,7 +273,7 @@ class LocalWsConnection {
             code: event.code,
             reason: event.reason,
             wasClean: event.wasClean,
-            closedAtEpochMs: Date.now()
+            closedAtEpochMs: context.dependencies.now()
         }, context);
         if (context.wsConnections[connectionName] === this.#socket) {
             delete context.wsConnections[connectionName];
@@ -317,21 +334,27 @@ class LocalWsConnection {
             this.#resolve(toWsSuccessStatus(config, interaction, details));
             return;
         }
-        this.#resolve(toWsFailureStatus(config, interaction, verdict.message ?? result.failureResult, details));
+        this.#resolve(
+            toWsFailureStatus({ config, interaction, result: verdict.message ?? result.failureResult, details })
+        );
         if (result.outcome === 'opened') {
             this.#dispose();
             this.#socket.close();
         }
     }
 
-    #resolve(result: unknown): void {
+    #resolve(result: WsInteractionResult): void {
         clearTimeout(this.#timeout);
         this.#settle?.(result);
         this.#settle = undefined;
     }
 }
 
-export function closeWs(interaction: LocalWsInteraction, config: unknown, context: LocalWsContext): Promise<unknown> {
+export function closeWs(
+    interaction: LocalWsInteraction,
+    config: WsInteractionConfig,
+    context: LocalWsContext
+): Promise<WsInteractionResult> {
     const request = interaction.request;
     const connectionName = toWsConnectionName(request);
     const ws = context.wsConnections[connectionName];
@@ -361,11 +384,18 @@ export function closeWs(interaction: LocalWsInteraction, config: unknown, contex
         }));
     }
     catch (error) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'Failed to close WebSocket connection', {
-            connection: connectionName,
-            closeCode,
-            closeReason,
-            exception: error instanceof Error ? error.message : String(error)
-        }));
+        return Promise.resolve(
+            toWsFailureStatus({
+                config,
+                interaction,
+                result: 'Failed to close WebSocket connection',
+                details: {
+                    connection: connectionName,
+                    closeCode,
+                    closeReason,
+                    exception: error instanceof Error ? error.message : String(error)
+                }
+            })
+        );
     }
 }

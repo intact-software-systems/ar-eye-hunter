@@ -158,9 +158,15 @@ function toStoredRtcDiagnostic(message: any, observation: RtcClientObservation, 
 }
 
 function registerRtcClientObservations(client: RtcClient, observation: RtcClientObservation): void {
-    client.onMessage?.((message) => writeRtcClientMessageObservation(message, observation, Date.now()));
+    client.onMessage?.((message) =>
+        writeRtcClientMessageObservation(message, observation, observation.context.dependencies.now())
+    );
     client.onClose?.((event) => {
-        const closeEvent = toStoredRtcCloseEvent(event, observation.interaction, Date.now());
+        const closeEvent = toStoredRtcCloseEvent(
+            event,
+            observation.interaction,
+            observation.context.dependencies.now()
+        );
         rememberRtcCloseEvent(observation.connectionName, closeEvent, observation.context);
     });
 }
@@ -261,7 +267,7 @@ class RtcClientProvider implements RtcProvider {
 
     async connect(interaction: any, config: any, context: any): Promise<any> {
         const connectionName = toRtcConnectionName(interaction.request);
-        const connectStartedAtEpochMs = Date.now();
+        const connectStartedAtEpochMs = context.dependencies.now();
 
         try {
             const client = await this.options.createClient(interaction.request, config, context);
@@ -269,7 +275,7 @@ class RtcClientProvider implements RtcProvider {
             registerRtcClientObservations(client, { interaction, context, connectionName });
 
             await client.connect();
-            const connectedAtEpochMs = Date.now();
+            const connectedAtEpochMs = context.dependencies.now();
             const diagnostics = client.diagnostics?.();
 
             const connectionMetadata = {
@@ -295,7 +301,7 @@ class RtcClientProvider implements RtcProvider {
             });
         }
         catch (e) {
-            const failedAtEpochMs = Date.now();
+            const failedAtEpochMs = context.dependencies.now();
             return toRtcFailureStatus({
                 config,
                 interaction,
@@ -333,13 +339,14 @@ class RtcClientProvider implements RtcProvider {
         }
 
         try {
-            sendStartedAtEpochMs = Date.now();
+            const startedAt: number = context.dependencies.now();
+            sendStartedAtEpochMs = startedAt;
             const sendResult = await client.send(payload, interaction);
-            const sendEndedAtEpochMs = Date.now();
+            const sendEndedAtEpochMs = context.dependencies.now();
             const diagnostics = client.diagnostics?.();
             connection.lastSendStartedAtEpochMs = sendStartedAtEpochMs;
             connection.lastSendEndedAtEpochMs = sendEndedAtEpochMs;
-            connection.lastSendLatencyMs = sendEndedAtEpochMs - sendStartedAtEpochMs;
+            connection.lastSendLatencyMs = sendEndedAtEpochMs - startedAt;
             if (sendResult !== undefined) {
                 connection.lastSendResult = sendResult;
             }
@@ -348,7 +355,7 @@ class RtcClientProvider implements RtcProvider {
             }
         }
         catch (e) {
-            const sendFailedAtEpochMs = Date.now();
+            const sendFailedAtEpochMs = context.dependencies.now();
             return toRtcClientSendFailure({
                 config,
                 interaction,
@@ -445,7 +452,7 @@ class RtcClientProvider implements RtcProvider {
         rememberRtcCloseEvent(connectionName, {
             closeRequested: true,
             closed: client !== undefined,
-            closedAtEpochMs: Date.now(),
+            closedAtEpochMs: context.dependencies.now(),
             provider: interaction.request.provider,
             actor: interaction.request.actor,
             roomId: interaction.request.roomId

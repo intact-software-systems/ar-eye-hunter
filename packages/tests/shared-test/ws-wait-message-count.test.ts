@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
@@ -23,7 +29,7 @@ function toInteraction(expectFields: WsInteractionResponse): WsInteraction {
 }
 
 function toContext(payloads: readonly ApiJsonValue[]): WsWaitContext {
-    return { wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
+    return { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
 }
 
 async function runCount(input: {

@@ -3,6 +3,312 @@ import path from 'node:path';
 import { findingMagnitude } from './finding-magnitude.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // The reviewed black-box execution owners retain raw native errors, decoded
+    // application payloads and deliberately malformed test inputs at their
+    // transport/comparison boundaries. Generated control fields are decoded
+    // before use. Session, adapter and observation-window responsibilities
+    // remain cohesive at the exact measured caps; deferred RTC construction
+    // runs only after module initialization. These entries do not waive timing
+    // or pending-observation correctness: those defects have separate fixes.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-session.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 89
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-session.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-session.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toBrowserErrorDetails'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-session.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toBrowserError'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/create-rallar-stub-rtc-provider.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execute-black-box.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 145
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execution/execute-local-ws-interaction.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRemoteWsPayload'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-browser-rtc-provider.ts',
+        rule: 'construction.forward-capture',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 82
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
+        rule: 'boundary.unknown',
+        symbol: 'firstString'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNumber'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readControlHttpError'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rallar-rtc-provider.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 12
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseRemoteWsData'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRemotePayloadRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRemoteRtcMessageData'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRemoteRtcDiagnostic'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rtc-provider.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 74
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rtc-provider.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rtc/rtc-wait-expectations.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 127
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rtc/rtc-wait-expectations.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 15
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rtc/rtc-wait-expectations.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/rtc/rtc-wait-expectations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'consumeRtcObservations'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-interaction-statuses.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-interaction-statuses.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toWsSuccessStatus'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 70
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'matchesWsValue'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'matchesWsMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts',
+        rule: 'boundary.unknown',
+        symbol: 'computeWsMessageMatches'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-websocket-scope-recipes.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/black-box-execution-dependencies.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/fake-remote-browser-control-server.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-provider-parity.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-provider-parity.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'expectedConnections'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/remote-browser-command-results.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'executeSnapshot'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/remote-browser-observation-lifecycle.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/browser-diagnostics.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/browser-routing.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/browser-routing.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'evaluatePage'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/browser-routing.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createPage'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/browser-session.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/client-contract.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/client-provider.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/data-channel.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/fake-rtc-client.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/fake-rtc-client.ts',
+        rule: 'boundary.unknown',
+        symbol: 'messageHandler'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/fake-rtc-client.ts',
+        rule: 'boundary.unknown',
+        symbol: 'closeHandler'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/fake-rtc-client.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createFakeRtcClient'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc-client-provider/runtime-provider.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rtc/rtc-wait-expectations.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createWaitInput'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/ws-wait-expectations.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // API state files expose separate mutation, event-cursor, point-read and
     // paged-dissemination contracts. Their direct consumers and README recover
     // each owner without another folder or forwarding module.

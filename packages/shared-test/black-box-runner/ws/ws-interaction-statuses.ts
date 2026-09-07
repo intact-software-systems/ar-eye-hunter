@@ -1,8 +1,32 @@
-// deno-lint-ignore-file no-explicit-any
+import type { LocalWsRequest } from '../execution/local-websocket-session.ts';
+import type {
+    WsInteraction,
+    WsInteractionRequest,
+    WsInteractionResult
+} from './ws-wait-expectations.ts';
+
+export interface WsInteractionConfig {
+    readonly interactionName?: string;
+    readonly interaction: WsInteraction;
+    readonly controlBaseUrl?: string;
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly token?: string;
+}
+
+export interface ToWsFailureStatusInput {
+    readonly config: WsInteractionConfig;
+    readonly interaction: WsInteraction;
+    readonly result: string;
+    readonly details?: Readonly<Record<string, unknown>>;
+}
+
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 
-function toOutputReportFields(interaction: any): any {
+function toOutputReportFields(
+    interaction: WsInteraction
+): Pick<WsInteractionRequest, 'output' | 'outputPath' | 'outputs' | 'transform' | 'secret' | 'redact' | 'redactAs'> {
     return {
         output: interaction.request.output,
         outputPath: interaction.request.outputPath,
@@ -14,7 +38,13 @@ function toOutputReportFields(interaction: any): any {
     };
 }
 
-function toCorrelationReportFields(interaction: any): any {
+interface WsCorrelationReportFields {
+    readonly runnerRunId?: unknown;
+    readonly runnerStepId?: unknown;
+    readonly correlation?: WsInteractionRequest['correlation'];
+}
+
+function toCorrelationReportFields(interaction: WsInteraction): WsCorrelationReportFields {
     const correlation = interaction?.request?.correlation;
     if (!correlation) {
         return {};
@@ -27,18 +57,22 @@ function toCorrelationReportFields(interaction: any): any {
     };
 }
 
-export function toWsConnectionName(request: any): string {
+export function toWsConnectionName(request: LocalWsRequest): string {
     return request.connection || request.name || 'default';
 }
 
-export function toWsExpectedConnectionName(interaction: any): string {
+export function toWsExpectedConnectionName(interaction: WsInteraction): string {
     return interaction.response?.connection ||
         interaction.response?.onConnection ||
         interaction.request?.expectConnection ||
         toWsConnectionName(interaction.request);
 }
 
-export function toWsSuccessStatus(config: any, interaction: any, details: any = {}): any {
+export function toWsSuccessStatus(
+    config: WsInteractionConfig,
+    interaction: WsInteraction,
+    details: Readonly<Record<string, unknown>> = {}
+): WsInteractionResult {
     return {
         name: config.interactionName,
         status: SUCCESS,
@@ -58,12 +92,8 @@ export function toWsSuccessStatus(config: any, interaction: any, details: any = 
     };
 }
 
-export function toWsFailureStatus(
-    config: any,
-    interaction: any,
-    result: string,
-    details: any = {}
-): any {
+export function toWsFailureStatus(input: ToWsFailureStatusInput): WsInteractionResult {
+    const { config, interaction, result, details = {} } = input;
     return {
         name: config.interactionName,
         status: FAILURE,

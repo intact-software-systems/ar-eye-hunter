@@ -2,13 +2,30 @@ import { evaluateScenarioTransform } from '@shared-test/black-box-runner/executi
 import { toRunnerCorrelationConfig } from '@shared-test/black-box-runner/execution/black-box-run-correlation.ts';
 import { resolveBlackBoxVariables } from '@shared-test/black-box-runner/execution/black-box-run-secrets.ts';
 import { resolvePlaceholders } from '@shared-test/black-box-runner/execution/black-box-value-resolution.ts';
-import { closeWs, openWs, type LocalWsContext } from '@shared-test/black-box-runner/execution/local-websocket-session.ts';
-import { readScenarioRecipeIncludes, type ScenarioRecipe } from '@shared-test/black-box-runner/recipes/read-scenario-recipe-includes.ts';
+import {
+    closeWs,
+    openWs,
+    type LocalWsContext
+} from '@shared-test/black-box-runner/execution/local-websocket-session.ts';
+import {
+    readScenarioRecipeIncludes,
+    type ScenarioRecipe
+} from '@shared-test/black-box-runner/recipes/read-scenario-recipe-includes.ts';
 import { toExecutableInteractions } from '@shared-test/black-box-runner/recipes/to-executable-interactions.ts';
-import { waitForWsMessages, type WsInteraction } from '@shared-test/black-box-runner/ws/ws-wait-expectations.ts';
+import {
+    waitForWsMessages,
+    type WsInteraction
+} from '@shared-test/black-box-runner/ws/ws-wait-expectations.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
 import { readApiV1Recipe } from './api-v1-recipe-test-fixture.ts';
 
@@ -46,7 +63,7 @@ const socketConnection = { request: { connection: 'scope-test' } };
 beforeEach(() => {
     TestWebSocket.instances.length = 0;
     vi.stubGlobal('WebSocket', TestWebSocket);
-    sockets = { wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
+    sockets = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
 });
 
 afterEach(async () => {
@@ -76,8 +93,9 @@ describe.each(['default', 'override'] as const)('%s recipe WebSocket scope', (sc
         expect(urlTransform).toBeDefined();
         expect(openRequest).toBeDefined();
         const context = {
+            dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
             variables,
-            correlation: toRunnerCorrelationConfig({}),
+            correlation: toRunnerCorrelationConfig({ options: {}, createUuid: () => crypto.randomUUID() }),
             outputs: {
                 aliceSessionId: 'session',
                 alphaSessionId: 'session',
@@ -140,7 +158,10 @@ it.each([
         { ...scope, workspaceId: 'another-workspace' },
         { ...scope, resourceId: 'another-group' }
     ].map((otherScope) => ({ data: { completedSnapshot: { route, typeId: 'overlay.topology', scope: otherScope } } }));
-    const context = { wsMessages: { 'scope-test': [...unrelated, { data: { completedSnapshot: { route, typeId: 'overlay.topology', scope } } }] } };
+    const context = {
+        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        wsMessages: { 'scope-test': [...unrelated, { data: { completedSnapshot: { route, typeId: 'overlay.topology', scope } } }] }
+    };
 
     const result = await waitForWsMessages({
         interaction: {

@@ -1,9 +1,15 @@
-import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
+import type {
+    ControlEventEnvelope,
+    ControlResultEnvelope
+} from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+    validateJsonSchema
+} from '../../shared-test/rallar-bb-test/schema.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
-    RallarBlackBoxTestHttpRequestCommand,
-    RallarBlackBoxTestResult
+    RallarBlackBoxTestHttpRequestCommand
 } from '../../shared-test/rallar-bb-test/types.ts';
 
 export namespace FakeRemoteBrowserControlServer {
@@ -27,31 +33,12 @@ export namespace FakeRemoteBrowserControlServer {
             }>;
         }>
         | Readonly<{ accepted: true; command: RallarBlackBoxTestCommand; }>;
-
-    export interface StoredResult {
-        readonly kind: 'result';
-        readonly runId: string;
-        readonly agentId: string;
-        readonly commandId: string;
-        readonly ok: boolean;
-        readonly result: RallarBlackBoxTestResult<CommandResultValue>;
-    }
-
-    export interface StoredEvent {
-        readonly kind: 'event';
-        readonly runId: string;
-        readonly agentId: string;
-        readonly atEpochMs: number;
-        readonly eventId: string;
-        readonly commandId: string;
-        readonly payload: RallarBlackBoxTestEvent;
-    }
 }
 
 export class FakeRemoteBrowserControlServer {
     readonly commands: RallarBlackBoxTestCommand[] = [];
-    readonly results: FakeRemoteBrowserControlServer.StoredResult[] = [];
-    readonly events: FakeRemoteBrowserControlServer.StoredEvent[] = [];
+    readonly results: ControlResultEnvelope[] = [];
+    readonly events: ControlEventEnvelope[] = [];
 
     fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = new URL(String(input));
@@ -98,6 +85,7 @@ export class FakeRemoteBrowserControlServer {
         if (event !== undefined) {
             this.events.push({
                 kind: 'event',
+                protocolVersion: 1,
                 runId,
                 agentId,
                 atEpochMs: now,
@@ -109,6 +97,7 @@ export class FakeRemoteBrowserControlServer {
 
         this.results.push({
             kind: 'result',
+            protocolVersion: 1,
             runId,
             agentId,
             commandId: command.commandId ?? 'missing-command',
