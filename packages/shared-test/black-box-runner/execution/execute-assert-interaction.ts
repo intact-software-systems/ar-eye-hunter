@@ -1,51 +1,91 @@
-// deno-lint-ignore-file no-explicit-any
 import { Either } from '../../../shared/resilience/Either.ts';
 import { toInteractionOutputFields } from './black-box-scenario-results.ts';
 
-import { compareJson, COMPARISON, toConfig, type ComparisonResult } from '../../json-compare/compare-json-values.ts';
+import {
+    compareJson,
+    COMPARISON,
+    type ComparisonResult
+} from '../../json-compare/compare-json-values.ts';
 import {
     validateAssertValueComparators,
     type AssertComparatorIssue
 } from '../expectations/assert-value-comparators.ts';
+import { decodeScenarioComparison, decodeScenarioNumber } from '../scenario-value-decoding.ts';
 import { evaluateScenarioTransform } from './black-box-output-transform.ts';
-import { isRecord } from './black-box-redaction.ts';
 import { toCorrelationReportFields } from './black-box-run-correlation.ts';
 import { resolveAssertActual, resolvePath } from './black-box-value-resolution.ts';
 
+export interface AssertInteractionResult {
+    readonly name: string;
+    readonly status: 'SUCCESS' | 'FAILURE';
+    readonly transport: 'ASSERT';
+    readonly expected: unknown;
+    readonly actual: unknown;
+    readonly details: unknown;
+    readonly result?: string;
+    readonly [field: string]: unknown;
+}
+
+interface MonotonicComparisonFailure {
+    readonly path: unknown;
+    readonly error?: string;
+    readonly values?: unknown;
+    readonly regressionIndex?: number;
+    readonly previous?: number;
+    readonly current?: number;
+}
+
+interface AssertInteractionInput {
+    readonly request: Readonly<Record<string, unknown>>;
+    readonly response: Readonly<Record<string, unknown>>;
+    readonly [field: string]: unknown;
+}
+
+interface AssertExecutionConfig {
+    readonly interactionName: string;
+    readonly interaction: AssertInteractionInput;
+    readonly [field: string]: unknown;
+}
+
 interface AssertStatusInput {
-    readonly config: any;
-    readonly interaction: any;
-    readonly actual: any;
-    readonly details?: any;
+    readonly config: AssertExecutionConfig;
+    readonly interaction: AssertInteractionInput;
+    readonly actual: unknown;
+    readonly details?: unknown;
 }
 interface AssertFailureStatusInput extends AssertStatusInput {
     readonly result: string;
 }
 
 interface AssertComputed {
-    readonly actual: any;
-    readonly response: any;
-    readonly expected: any;
-    readonly alternatives: readonly any[];
-    readonly comparators: readonly any[];
-    readonly monotonicFailures: readonly any[];
+    readonly actual: unknown;
+    readonly response: Readonly<Record<string, unknown>>;
+    readonly expected: unknown;
+    readonly alternatives: readonly unknown[];
+    readonly comparators: readonly unknown[];
+    readonly monotonicFailures: readonly MonotonicComparisonFailure[];
     readonly comparatorIssues: readonly AssertComparatorIssue[];
     readonly comparisons: readonly ComparisonResult[];
+    readonly comparisonFailure: Error | undefined;
 }
 
 interface AssertFailure {
     readonly result: string;
-    readonly details: any;
+    readonly details: unknown;
 }
 
 interface AssertEvidence {
-    readonly details: any;
+    readonly details: unknown;
 }
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 
-export function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
+export function executeAssertInteraction(
+    interaction: AssertInteractionInput,
+    config: AssertExecutionConfig,
+    context: unknown
+): Promise<AssertInteractionResult> {
     const actual = toResolvedAssertActual(interaction, context);
     const computed = computeAssertEvidence(actual, interaction.response);
     const validation = validateAssertEvidence(computed);
@@ -55,46 +95,54 @@ export function executeAssertInteraction(interaction: any, config: any, context:
     return Promise.resolve(status);
 }
 
-function computeAssertEvidence(actual: any, response: any): AssertComputed {
+function computeAssertEvidence(actual: unknown, response: Readonly<Record<string, unknown>>): AssertComputed {
     const expected = response.body !== undefined
         ? response.body
         : response.expect !== undefined
         ? response.expect
         : response.expected;
-    const alternatives = Array.isArray(response.anyOf) ? response.anyOf : [];
+    const alternatives = Array.isArray(response.anyOf) ? Array.from(response.anyOf) : [];
     const comparators = Array.isArray(response.comparators) ? response.comparators : [];
     const hasEvidence = actual !== undefined &&
         (expected !== undefined || alternatives.length > 0 || comparators.length > 0);
-    const monotonicFailures = hasEvidence ? monotonicComparisonFailures(actual, response.monotonicPaths) : [];
-    const comparatorIssues = hasEvidence && monotonicFailures.length === 0
-        ? validateAssertValueComparators(actual, comparators)
+    const monotonicFailures = actual !== undefined ? monotonicComparisonFailures(actual, response.monotonicPaths) : [];
+    const comparatorIssues = actual !== undefined && monotonicFailures.length === 0
+        ? validateAssertValueComparators(actual, response.comparators)
         : [];
+    const configuration = decodeScenarioComparison(
+        response.comparison === undefined ? COMPARISON.COMPATIBLE : response.comparison,
+        response.ignoreJsonKeys === undefined ? [] : response.ignoreJsonKeys,
+        response.ignoreJsonPaths === undefined ? [] : response.ignoreJsonPaths
+    );
     const expectedValues = alternatives.length > 0 ? alternatives : expected !== undefined ? [expected] : [];
-    const comparisons = hasEvidence && monotonicFailures.length === 0 && comparatorIssues.length === 0
-        ? expectedValues.map((value: any) =>
+    const comparisonConfig = configuration.right;
+    const comparisons = hasEvidence && monotonicFailures.length === 0 && comparatorIssues.length === 0 &&
+            comparisonConfig !== undefined
+        ? expectedValues.map((value: unknown) =>
             compareJson(
                 value,
                 actual,
-                toConfig(
-                    response.comparison || COMPARISON.COMPATIBLE,
-                    response.ignoreJsonKeys || [],
-                    response.ignoreJsonPaths || []
-                )
+                comparisonConfig
             )
         )
         : [];
-    return { actual, response, expected, alternatives, comparators, monotonicFailures, comparatorIssues, comparisons };
+    return {
+        actual,
+        response,
+        expected,
+        alternatives,
+        comparators,
+        monotonicFailures,
+        comparatorIssues,
+        comparisons,
+        comparisonFailure: configuration.left ?? (response.anyOf !== undefined && !Array.isArray(response.anyOf)
+            ? new Error('Assert anyOf must be an array.')
+            : undefined)
+    };
 }
 
 function validateAssertEvidence(computed: AssertComputed): Either<AssertFailure, AssertEvidence> {
     const { actual, expected, alternatives, comparators, monotonicFailures, comparatorIssues, comparisons } = computed;
-    if (expected === undefined && alternatives.length === 0 && comparators.length === 0) {
-        return Either.ofLeft({
-            result: 'Assert step is missing expected value. ' +
-                'Use expect.body, expect.expect, expect.expected, or expect.comparators.',
-            details: {}
-        });
-    }
     if (actual === undefined) {
         return Either.ofLeft({
             result: 'Assert step is missing actual value. Use actual or expect.actual.',
@@ -113,6 +161,19 @@ function validateAssertEvidence(computed: AssertComputed): Either<AssertFailure,
             details: { comparators, failures: comparatorIssues }
         });
     }
+    if (computed.comparisonFailure !== undefined) {
+        return Either.ofLeft({
+            result: 'Assert comparison failed',
+            details: { reason: 'invalid-comparison', message: computed.comparisonFailure.message }
+        });
+    }
+    if (expected === undefined && alternatives.length === 0 && comparators.length === 0) {
+        return Either.ofLeft({
+            result: 'Assert step is missing expected value. ' +
+                'Use expect.body, expect.expect, expect.expected, or expect.comparators.',
+            details: {}
+        });
+    }
     if (alternatives.length > 0) {
         const matchedIndex = comparisons.findIndex((comparison) => comparison.isEqual);
         return matchedIndex < 0
@@ -128,7 +189,7 @@ function validateAssertEvidence(computed: AssertComputed): Either<AssertFailure,
         : Either.ofLeft({ result: 'Assert comparison failed', details: comparison });
 }
 
-function toAssertSuccessStatus(input: AssertStatusInput): any {
+function toAssertSuccessStatus(input: AssertStatusInput): AssertInteractionResult {
     const { config, interaction, actual } = input;
     return {
         name: config.interactionName,
@@ -146,7 +207,7 @@ function toAssertSuccessStatus(input: AssertStatusInput): any {
     };
 }
 
-function toAssertFailureStatus(input: AssertFailureStatusInput): any {
+function toAssertFailureStatus(input: AssertFailureStatusInput): AssertInteractionResult {
     const { config, interaction, actual, result } = input;
     return {
         name: config.interactionName,
@@ -164,12 +225,15 @@ function toAssertFailureStatus(input: AssertFailureStatusInput): any {
     };
 }
 
-function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
-    if (!Array.isArray(paths)) {
+function monotonicComparisonFailures(actual: unknown, paths: unknown): MonotonicComparisonFailure[] {
+    if (paths === undefined) {
         return [];
     }
+    if (!Array.isArray(paths)) {
+        return [{ path: paths, error: 'Monotonic assertion paths must be an array.' }];
+    }
 
-    return paths.flatMap<any>((path) => {
+    return Array.from(paths).flatMap<MonotonicComparisonFailure>((path) => {
         if (typeof path !== 'string' || path.length <= 0) {
             return [{ path, error: 'Monotonic assertion paths must be non-empty strings.' }];
         }
@@ -189,8 +253,8 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
             return [{ path, values, error: 'Monotonic assertion path must resolve to a non-empty array.' }];
         }
 
-        const numericValues = values.map((value) => Number(value));
-        if (numericValues.some((value) => !Number.isFinite(value))) {
+        const numericValues = Array.from(values, decodeScenarioNumber);
+        if (!numericValues.every((value): value is number => value !== undefined)) {
             return [{ path, values, error: 'Monotonic assertion values must be finite numbers.' }];
         }
 
@@ -209,9 +273,10 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
     });
 }
 
-function toResolvedAssertActual(interaction: any, context: any): any {
+function toResolvedAssertActual(interaction: AssertInteractionInput, context: unknown): unknown {
     return interaction.response.actual !== undefined
-        ? isRecord(interaction.response.actual) && interaction.response.actual.transform !== undefined
+        ? typeof interaction.response.actual === 'object' && interaction.response.actual !== null &&
+                'transform' in interaction.response.actual && interaction.response.actual.transform !== undefined
             ? evaluateScenarioTransform({
                 transform: interaction.response.actual.transform,
                 context,

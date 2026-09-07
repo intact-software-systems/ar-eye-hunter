@@ -1,5 +1,9 @@
 import path from 'node:path';
 
+import { toError } from '../../shared/resilience/to-error.ts';
+
+import { decodeScenarioPositiveInteger } from './scenario-value-decoding.ts';
+
 import { collectApiV1StateWriteEvidence } from './api-v1-state-write-evidence.ts';
 import {
     artifactEventsWithTruncation,
@@ -14,6 +18,7 @@ import * as artifactBounds from './artifacts/with-bounded-artifact-report-result
 import { executeBlackBox } from './execute-black-box.ts';
 import { redactBlackBoxData } from './execution/black-box-redaction.ts';
 import { resolveBlackBoxVariables } from './execution/black-box-run-secrets.ts';
+import { groupInteractionResultsByName, type StoredInteractionResult } from './execution/black-box-scenario-results.ts';
 import { parseScenarioCliOptions, scenarioCliHelp } from './parse-scenario-cli-options.ts';
 import {
     collectBlackBoxRunnerEnvRequirements,
@@ -28,11 +33,10 @@ import {
 } from './recipes/read-scenario-recipe-includes.ts';
 import {
     firstNonNegativeInteger,
-    firstPositiveInteger,
     readScenarioWorkload,
     type ScenarioWorkload
 } from './recipes/scenario-workload.ts';
-import { toExecutableInteractions } from './recipes/to-executable-interactions.ts';
+import { toExecutableInteractions, type ExecutableInteraction } from './recipes/to-executable-interactions.ts';
 import {
     computeScenarioScaleMetrics,
     computeScenarioSoakMetrics,
@@ -44,7 +48,33 @@ import {
 } from './reports/scenario-post-run-assertions.ts';
 import utils from './utils.ts';
 
-type JsonRecord = Record<string, unknown>;
+interface ScenarioRunSummary {
+    readonly total: number;
+    readonly success: number;
+    readonly failure: number;
+    readonly postRunAssertions?: { readonly failure: number; };
+    readonly [field: string]: unknown;
+}
+
+interface ScenarioRunReport {
+    readonly summary: ScenarioRunSummary;
+    readonly resultsList: readonly StoredInteractionResult[];
+    readonly [field: string]: unknown;
+}
+
+interface ScenarioMeasuredRun {
+    readonly runIndex: number;
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
+    readonly summary: ScenarioRunSummary;
+    readonly report: ScenarioRunReport;
+}
+
+interface JsonRecord {
+    readonly [field: string]: unknown;
+}
+
+const now = Date.now;
 
 const cliOptions = parseScenarioCliOptions(process.argv.slice(2)).fold(
     (error) => {
@@ -72,17 +102,18 @@ const recipeConfigPath = path.resolve(recipeRootDir, cliOptions.config);
 const rawInput = utils.openFile(cliOptions.config) as ScenarioRecipe;
 
 let includeExpansion: ScenarioRecipeIncludes;
-let includeExpansionError: unknown;
+let includeExpansionError: Error | undefined;
 
 try {
     includeExpansion = readScenarioRecipeIncludes(rawInput, recipeConfigPath, recipeRootDir);
 }
 catch (caught) {
+    const error = toError(caught);
     if (!preflightMode) {
-        throw caught;
+        throw error;
     }
 
-    includeExpansionError = caught;
+    includeExpansionError = error;
     includeExpansion = {
         config: rawInput,
         includes: []
@@ -146,7 +177,7 @@ const scaleConfig = asRecord(executionConfig.scale);
 const soakConfig = asRecord(executionConfig.soak);
 const soakMode = Object.keys(soakConfig).length > 0 && soakConfig.enabled !== false;
 
-const requestedIterations = firstPositiveInteger([
+const requestedIterations = decodeScenarioPositiveInteger([
     cliOptions.iterations,
     soakConfig.iterations,
     soakConfig.runs,
@@ -155,7 +186,7 @@ const requestedIterations = firstPositiveInteger([
     executionConfig.iterations,
     executionConfig.runs
 ]);
-const maxDurationMs = firstPositiveInteger([
+const maxDurationMs = decodeScenarioPositiveInteger([
     cliOptions.durationMs,
     soakConfig.durationMs,
     soakConfig.maxDurationMs,
@@ -165,7 +196,7 @@ const maxDurationMs = firstPositiveInteger([
     executionConfig.maxDurationMs
 ]) || 0;
 const maxRuns = requestedIterations ||
-    firstPositiveInteger([
+    decodeScenarioPositiveInteger([
         soakConfig.maxRuns,
         soakConfig.maxIterations,
         scaleConfig.maxRuns,
@@ -192,7 +223,7 @@ function normalizeEventKindCaps(value: unknown): Record<string, number> {
     return Object.fromEntries(
         Object.entries(asRecord(value))
             .flatMap(([kind, limit]) => {
-                const parsed = firstPositiveInteger([limit]);
+                const parsed = decodeScenarioPositiveInteger([limit]);
                 return parsed ? [[kind, parsed]] : [];
             })
     );
@@ -200,7 +231,7 @@ function normalizeEventKindCaps(value: unknown): Record<string, number> {
 
 function configuredArtifactLimits(): JsonRecord {
     const options = configuredArtifactOptions();
-    const maxEvents = firstPositiveInteger([options.maxEvents, options.maxArtifactEvents, options.eventLimit]);
+    const maxEvents = decodeScenarioPositiveInteger([options.maxEvents, options.maxArtifactEvents, options.eventLimit]);
     const maxEventsByKind = normalizeEventKindCaps(
         options.maxEventsByKind ||
             options.maxEventsPerKind ||
@@ -213,7 +244,7 @@ function configuredArtifactLimits(): JsonRecord {
     };
 }
 
-function withConfiguredArtifactLimits(report: any): any {
+function withConfiguredArtifactLimits(report: ScenarioRunReport): ScenarioRunReport {
     const configured = configuredArtifactLimits();
     if (Object.keys(configured).length <= 0) {
         return report;
@@ -230,8 +261,8 @@ function withConfiguredArtifactLimits(report: any): any {
 
 let trafficExpansion: ScenarioWorkload;
 let expandedInput: ScenarioRecipe;
-let scenarioJson: unknown[];
-let planExpansionError: unknown = includeExpansionError;
+let scenarioJson: ExecutableInteraction[];
+let planExpansionError: Error | undefined = includeExpansionError;
 
 try {
     if (includeExpansionError !== undefined) {
@@ -249,11 +280,12 @@ try {
     scenarioJson = toExecutableInteractions(expandedInput);
 }
 catch (caught) {
+    const error = toError(caught);
     if (!preflightMode) {
-        throw caught;
+        throw error;
     }
 
-    planExpansionError = caught;
+    planExpansionError = error;
     trafficExpansion = {
         config: input
     };
@@ -261,15 +293,16 @@ catch (caught) {
     scenarioJson = [];
 }
 
-async function writeArtifacts(report: any, dir: string): Promise<void> {
+async function writeArtifacts(report: ScenarioRunReport, dir: string): Promise<void> {
     await Deno.mkdir(dir, {
         recursive: true
     });
-    const artifactReport = withArtifactReport(withConfiguredArtifactLimits(report));
-    const selection = selectArtifactEvents(artifactReport);
+    const generatedAtEpochMs = now();
+    const artifactReport = withArtifactReport(withConfiguredArtifactLimits(report), generatedAtEpochMs);
+    const selection = selectArtifactEvents(artifactReport, generatedAtEpochMs);
     const events = artifactEventsWithTruncation(selection);
     const metadata = {
-        generatedAtEpochMs: Date.now(),
+        generatedAtEpochMs,
         config: cliOptions.config,
         workingDirectory: cliOptions.workingDirectory || '.',
         dryRun,
@@ -286,7 +319,7 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
     const expandedRecipe = redactBlackBoxData({
         schemaVersion: 1,
         kind: 'black-box-runner.expanded-recipe',
-        generatedAtEpochMs: Date.now(),
+        generatedAtEpochMs,
         sourceConfig: cliOptions.config,
         includeMetadata: input.includeMetadata,
         recipe: expandedInput
@@ -324,7 +357,7 @@ function sleep(ms: number): Promise<void> {
         : Promise.resolve();
 }
 
-function withSoakReport(report: any): any {
+function withSoakReport(report: ScenarioRunReport): ScenarioRunReport {
     const soak = trafficExpansion.soak;
     if (!soak) {
         return report;
@@ -337,7 +370,7 @@ function withSoakReport(report: any): any {
     };
 }
 
-function withTrafficPlanReport(report: any): any {
+function withTrafficPlanReport(report: ScenarioRunReport): ScenarioRunReport {
     if (!trafficExpansion.artifact) {
         return report;
     }
@@ -371,7 +404,7 @@ function configuredPostRunAssertions(): JsonRecord[] {
     ];
 }
 
-function withPostRunAssertions(report: any, assertions: JsonRecord[]): any {
+function withPostRunAssertions(report: ScenarioRunReport, assertions: JsonRecord[]): ScenarioRunReport {
     if (assertions.length <= 0) {
         return report;
     }
@@ -388,7 +421,7 @@ function withPostRunAssertions(report: any, assertions: JsonRecord[]): any {
         ...report,
         summary: {
             ...report.summary,
-            ok: Number(report.summary?.failure || 0) <= 0 && failures.length <= 0,
+            ok: report.summary.failure <= 0 && failures.length <= 0,
             postRunAssertions: summary,
             firstPostRunAssertionFailure: failures[0]
                 ? {
@@ -408,7 +441,7 @@ function withPostRunAssertions(report: any, assertions: JsonRecord[]): any {
     }, resolvedVariables.redactions);
 }
 
-function withFinalReportChecks(report: any, includePostRunAssertions: boolean): any {
+function withFinalReportChecks(report: ScenarioRunReport, includePostRunAssertions: boolean): ScenarioRunReport {
     if (!includePostRunAssertions) {
         return report;
     }
@@ -419,19 +452,20 @@ function withFinalReportChecks(report: any, includePostRunAssertions: boolean): 
     }
 
     const reportWithMetrics = withConfiguredArtifactLimits(withScenarioMetrics(report));
-    const reportWithArtifact = withArtifactReport(reportWithMetrics);
+    const generatedAtEpochMs = now();
+    const reportWithArtifact = withArtifactReport(reportWithMetrics, generatedAtEpochMs);
     const reportWithAssertions = withPostRunAssertions(reportWithArtifact, assertions);
 
-    return withArtifactReport(reportWithAssertions);
+    return withArtifactReport(reportWithAssertions, generatedAtEpochMs);
 }
 
-function hasReportFailures(report: any): boolean {
-    return Number(report?.summary?.failure || 0) > 0 ||
-        Number(report?.summary?.postRunAssertions?.failure || 0) > 0;
+function hasReportFailures(report: ScenarioRunReport): boolean {
+    return report.summary.failure > 0 ||
+        (report.summary.postRunAssertions?.failure || 0) > 0;
 }
 
-function annotateRunResults(report: any, runIndex: number): any[] {
-    return (report.resultsList || []).map((result: any) => ({
+function annotateRunResults(report: ScenarioRunReport, runIndex: number): StoredInteractionResult[] {
+    return (report.resultsList || []).map((result) => ({
         ...result,
         runIndex,
         stepResultKey: result.resultKey,
@@ -439,15 +473,7 @@ function annotateRunResults(report: any, runIndex: number): any[] {
     }));
 }
 
-function toResultsByName(results: any[]): Record<string, any[]> {
-    return results.reduce<Record<string, any[]>>((byName, result) => {
-        byName[result.name] = byName[result.name] || [];
-        byName[result.name].push(result);
-        return byName;
-    }, {});
-}
-
-function mergeRunStores(runs: any[], storeName: string): Record<string, unknown[]> {
+function mergeRunStores(runs: ScenarioMeasuredRun[], storeName: string): Record<string, unknown[]> {
     return runs.reduce<Record<string, unknown[]>>((merged, run) => {
         Object.entries(asRecord(run.report?.[storeName])).forEach(([connection, values]) => {
             const key = ['run' + run.runIndex, connection].join(':');
@@ -464,7 +490,7 @@ function mergeRunStores(runs: any[], storeName: string): Record<string, unknown[
     }, {});
 }
 
-function toFirstRunFailure(firstFailure: any): JsonRecord {
+function toFirstRunFailure(firstFailure: StoredInteractionResult): JsonRecord {
     return {
         resultKey: firstFailure.resultKey,
         stepResultKey: firstFailure.stepResultKey,
@@ -483,7 +509,11 @@ function toFirstRunFailure(firstFailure: any): JsonRecord {
     };
 }
 
-function aggregateReports(runs: any[], startedAtEpochMs: number, endedAtEpochMs: number): any {
+function aggregateReports(
+    runs: ScenarioMeasuredRun[],
+    startedAtEpochMs: number,
+    endedAtEpochMs: number
+): ScenarioRunReport {
     const resultsList = runs.flatMap((run) => annotateRunResults(run.report, run.runIndex));
     const results = Object.fromEntries(resultsList.map((result) => [result.resultKey, result]));
     const firstFailure = resultsList.find((result) => result.status === 'FAILURE');
@@ -525,7 +555,7 @@ function aggregateReports(runs: any[], startedAtEpochMs: number, endedAtEpochMs:
         correlation: runs.at(0)?.report?.correlation,
         results,
         resultsList,
-        resultsByName: toResultsByName(resultsList),
+        resultsByName: groupInteractionResultsByName(resultsList),
         outputs: runs.at(-1)?.report?.outputs || {},
         outputsByRun: Object.fromEntries(runs.map((run) => [String(run.runIndex), run.report?.outputs || {}])),
         metrics: computeScenarioScaleMetrics(resultsList, runs),
@@ -539,7 +569,7 @@ function aggregateReports(runs: any[], startedAtEpochMs: number, endedAtEpochMs:
     };
 }
 
-async function executeOnce(includePostRunAssertions = true, runIndex = 1): Promise<any> {
+async function executeOnce(includePostRunAssertions = true, runIndex = 1): Promise<ScenarioRunReport> {
     const report = await executeBlackBox(scenarioJson, 0, {
         failFast,
         dryRun,
@@ -553,12 +583,12 @@ async function executeOnce(includePostRunAssertions = true, runIndex = 1): Promi
     return withFinalReportChecks(withTrafficPlanReport(withSoakReport(report)), includePostRunAssertions);
 }
 
-async function executeScale(): Promise<any> {
-    const runs: any[] = [];
-    const startedAtEpochMs = Date.now();
+async function executeScale(): Promise<ScenarioRunReport> {
+    const runs: ScenarioMeasuredRun[] = [];
+    const startedAtEpochMs = now();
 
     while (runs.length < maxRuns) {
-        if (runs.length > 0 && maxDurationMs > 0 && Date.now() - startedAtEpochMs >= maxDurationMs) {
+        if (runs.length > 0 && maxDurationMs > 0 && now() - startedAtEpochMs >= maxDurationMs) {
             break;
         }
 
@@ -566,9 +596,9 @@ async function executeScale(): Promise<any> {
             await sleep(delayMs);
         }
         const runIndex = runs.length + 1;
-        const runStartedAtEpochMs = Date.now();
+        const runStartedAtEpochMs = now();
         const report = await executeOnce(false, runIndex);
-        const runEndedAtEpochMs = Date.now();
+        const runEndedAtEpochMs = now();
 
         runs.push({
             runIndex,
@@ -583,7 +613,7 @@ async function executeScale(): Promise<any> {
         }
     }
 
-    return withFinalReportChecks(aggregateReports(runs, startedAtEpochMs, Date.now()), true);
+    return withFinalReportChecks(aggregateReports(runs, startedAtEpochMs, now()), true);
 }
 
 if (preflightMode) {
@@ -623,7 +653,7 @@ else {
             }
         })
         .catch((e) => {
-            console.error(e);
+            console.error(toError(e));
             process.exit(1);
         });
 }

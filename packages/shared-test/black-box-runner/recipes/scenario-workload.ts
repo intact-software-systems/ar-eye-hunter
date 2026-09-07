@@ -1,14 +1,89 @@
 import utils from '../utils.ts';
 import type { ScenarioRecipe } from './read-scenario-recipe-includes.ts';
 
-export interface TrafficPlanArtifact extends JsonRecord {
+export type TrafficPlanArtifact = GeneratedTrafficPlanArtifact | ReplayedTrafficPlanArtifact;
+
+interface TrafficPlanContent extends Record<string, unknown> {
     readonly version: number;
     readonly seed: number;
-    readonly replay: boolean;
-    readonly generator: JsonRecord;
-    readonly decisions: JsonRecord[];
-    readonly steps: JsonRecord[];
-    readonly replayRecipe: JsonRecord;
+    readonly steps: Record<string, unknown>[];
+    readonly replayRecipe: ScenarioRecipe;
+}
+
+export interface GeneratedTrafficPlanArtifact extends TrafficPlanContent {
+    readonly replay: false;
+    readonly generator: TrafficPlanGenerator;
+    readonly decisions: TrafficDecision[];
+}
+
+export interface ReplayedTrafficPlanArtifact extends TrafficPlanContent {
+    readonly replay: true;
+    readonly generator: TrafficReplaySource;
+    readonly decisions: Record<string, unknown>[];
+}
+
+export interface TrafficReplaySource {
+    readonly replayFrom: unknown;
+}
+
+export interface TrafficPlanGenerator extends Record<string, unknown> {
+    readonly pacing: TrafficPacingConfig;
+    readonly operations: TrafficOperationSummary[];
+}
+
+export interface TrafficOperationSummary {
+    readonly name: string;
+    readonly index: number;
+    readonly weight: number;
+    readonly stepCount: number;
+}
+
+export interface TrafficDecision {
+    readonly sequence: number;
+    readonly operation: string;
+    readonly operationIndex: number;
+    readonly operationRandom: number;
+    readonly random: number;
+    readonly randomInt: number;
+    readonly delayMs: number;
+    readonly burstIndex: number;
+    readonly burstPosition: number;
+    readonly pacing: TrafficPacingConfig;
+}
+
+interface TrafficOperation {
+    readonly name: string;
+    readonly index: number;
+    readonly weight: number;
+    readonly steps: Record<string, unknown>[];
+}
+
+interface TrafficTemplateRoot extends Record<string, unknown> {
+    readonly traffic: TrafficTemplateValues;
+}
+
+interface TrafficTemplateValues {
+    readonly seed: number;
+    readonly sequence: number;
+    readonly iteration: number;
+    readonly operation: string;
+    readonly operationIndex: number;
+    readonly random: number;
+    readonly randomInt: number;
+    readonly pacing: TrafficPacingConfig;
+}
+
+interface InlineLoopTemplateRoot extends Record<string, unknown> {
+    readonly loop: InlineLoopTemplateValues;
+}
+
+interface InlineLoopTemplateValues {
+    readonly name: string;
+    readonly index: number;
+    readonly iteration: number;
+    readonly stepIndex: number;
+    readonly count: number;
+    readonly elapsedMs: number;
 }
 
 export interface ScenarioWorkloadLimits {
@@ -38,10 +113,87 @@ export interface ScenarioWorkload {
     readonly soak?: ScenarioSoakSummary;
 }
 
-type JsonRecord = Record<string, unknown>;
+interface TrafficAnnotatedStep extends Record<string, unknown> {
+    readonly trafficPlan: TrafficPlanIdentity;
+    readonly trafficSeed: number;
+    readonly trafficSequence: number;
+    readonly trafficOperation: string;
+}
+
+interface TrafficPlanIdentity {
+    readonly seed: number;
+    readonly pacing?: TrafficPacingConfig;
+}
+
+interface InlineLoopAnnotatedStep extends Record<string, unknown> {
+    readonly loopName: string;
+    readonly loopIndex: number;
+    readonly loopIteration: number;
+    readonly loopStepIndex: number;
+    readonly loopCount: number;
+    readonly loopElapsedMs: number;
+    readonly loopPhase: 'body';
+    readonly repeatIndex: unknown;
+}
+
+interface ScenarioDelayRequest {
+    readonly delayMs: number;
+}
+
+interface ScenarioDelayStep<Value> extends Record<string, unknown> {
+    readonly name: string;
+    readonly type: 'set';
+    readonly output: string;
+    readonly value: Value;
+    readonly request: ScenarioDelayRequest;
+}
+
+interface InlineLoopDelayValue {
+    readonly delayedMs: number;
+    readonly loopName: string;
+    readonly loopIteration: number;
+    readonly loopCount: number;
+}
+
+interface InlineLoopDelayStep extends ScenarioDelayStep<InlineLoopDelayValue> {
+    readonly loopName: string;
+    readonly loopIteration: number;
+    readonly loopCount: number;
+    readonly loopPhase: 'delay';
+    readonly repeatIndex: number;
+}
+
+interface TrafficDelayValue {
+    readonly delayedMs: number;
+    readonly trafficSequence: number;
+    readonly burstSize: number;
+    readonly maxInFlight: number | undefined;
+}
+
+interface TrafficDelayStep extends ScenarioDelayStep<TrafficDelayValue>, TrafficAnnotatedStep {
+    readonly trafficPacing: TrafficPacingConfig;
+}
+
+interface SoakDelayValue {
+    readonly delayedMs: number;
+    readonly soakIteration: number;
+}
+
+interface SoakDelayStep extends ScenarioDelayStep<SoakDelayValue> {
+    readonly soakPhase: 'delay';
+    readonly soakIteration: number;
+    readonly repeatIndex: number;
+}
+
+interface SoakAnnotatedStep extends Record<string, unknown> {
+    readonly soakPhase: string;
+    readonly soakIteration?: unknown;
+    readonly repeatIndex?: unknown;
+    readonly soakLoopIndex?: unknown;
+}
 
 interface ScenarioStepSelection {
-    readonly allSteps: JsonRecord[];
+    readonly allSteps: Record<string, unknown>[];
     readonly configured: unknown;
     readonly fieldName: string;
     readonly stepLabel: string;
@@ -55,13 +207,13 @@ interface InlineLoopDelay {
 }
 
 interface InlineLoopExpansion {
-    readonly step: JsonRecord;
+    readonly step: Record<string, unknown>;
     readonly stepIndex: number;
-    readonly allSteps: JsonRecord[];
+    readonly allSteps: Record<string, unknown>[];
     readonly depth: number;
 }
 
-interface TrafficPacingConfig {
+export interface TrafficPacingConfig {
     rateHz?: number;
     intervalMs: number;
     jitterMs: number;
@@ -76,7 +228,7 @@ interface TrafficDelayInput {
     readonly jitterRandom: number;
 }
 
-interface TrafficDelayStep {
+interface TrafficDelayStepInput {
     readonly sequence: number;
     readonly configuredDelayMs: number;
     readonly seed: number;
@@ -86,27 +238,27 @@ interface TrafficDelayStep {
 interface TrafficReplayContent {
     readonly version: number;
     readonly seed: number;
-    readonly steps: JsonRecord[];
-    readonly decisions?: JsonRecord[];
+    readonly steps: Record<string, unknown>[];
+    readonly decisions?: TrafficDecision[];
 }
 
 interface TrafficLoopInput {
-    readonly allSteps: JsonRecord[];
+    readonly allSteps: Record<string, unknown>[];
     readonly seed: number;
     readonly count: number;
     readonly pacing: TrafficPacingConfig;
-    readonly operations: JsonRecord[];
+    readonly operations: TrafficOperation[];
 }
 
 interface TrafficLoopComputed {
-    readonly steps: JsonRecord[];
-    readonly decisions: JsonRecord[];
+    readonly steps: Record<string, unknown>[];
+    readonly decisions: TrafficDecision[];
 }
 
 interface TrafficTemplateInput {
     readonly seed: number;
     readonly sequence: number;
-    readonly operation: JsonRecord;
+    readonly operation: TrafficOperation;
     readonly randomValue: number;
     readonly randomInt: number;
     readonly pacing: TrafficPacingConfig;
@@ -118,8 +270,8 @@ interface SoakStepPosition {
     readonly loopIndex?: number;
 }
 
-function asRecord(value: unknown): JsonRecord {
-    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+function asRecord(value: unknown): Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 export function readScenarioWorkload(config: ScenarioRecipe, limits: ScenarioWorkloadLimits): ScenarioWorkload {
@@ -140,7 +292,7 @@ export function readScenarioWorkload(config: ScenarioRecipe, limits: ScenarioWor
 
 function computeSoakSummary(
     config: ScenarioRecipe,
-    soakConfig: JsonRecord,
+    soakConfig: Record<string, unknown>,
     limits: ScenarioWorkloadLimits
 ): ScenarioSoakSummary {
     const originalSteps = config.steps || [];
@@ -206,17 +358,17 @@ function firstPositiveNumber(values: readonly unknown[]): number | undefined {
     return undefined;
 }
 
-function stepName(step: JsonRecord, index: number): string {
+function stepName(step: Record<string, unknown>, index: number): string {
     return typeof step.name === 'string' && step.name.length > 0
         ? step.name
         : 'step-' + (index + 1);
 }
 
-function cloneStep(step: JsonRecord): JsonRecord {
+function cloneStep(step: Record<string, unknown>): Record<string, unknown> {
     return JSON.parse(JSON.stringify(step));
 }
 
-function resolveStepList(selection: ScenarioStepSelection): JsonRecord[] {
+function resolveStepList(selection: ScenarioStepSelection): Record<string, unknown>[] {
     const { allSteps, configured, fieldName, stepLabel } = selection;
     if (!Array.isArray(configured)) {
         return [];
@@ -236,18 +388,21 @@ function resolveStepList(selection: ScenarioStepSelection): JsonRecord[] {
 
     return configured
         .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
-        .map((item) => cloneStep(item as JsonRecord));
+        .map((item) => cloneStep(item as Record<string, unknown>));
 }
 
 function resolveRecipeStepList(
-    allSteps: Array<JsonRecord>,
+    allSteps: Array<Record<string, unknown>>,
     configured: unknown,
     fieldName: string
-): Array<JsonRecord> {
+): Array<Record<string, unknown>> {
     return resolveStepList({ allSteps, configured, fieldName, stepLabel: 'soak' });
 }
 
-function resolveSoakLoopSteps(allSteps: Array<JsonRecord>, config: JsonRecord): Array<JsonRecord> {
+function resolveSoakLoopSteps(
+    allSteps: Array<Record<string, unknown>>,
+    config: Record<string, unknown>
+): Array<Record<string, unknown>> {
     return resolveRecipeStepList(
         allSteps,
         config.loopSteps || config.loop || config.steps,
@@ -274,7 +429,7 @@ function createSeededRandom(seed: number): () => number {
     };
 }
 
-function resolveTemplatePath(path: string, root: JsonRecord): unknown {
+function resolveTemplatePath(path: string, root: Record<string, unknown>): unknown {
     return path
         .split('.')
         .reduce<unknown>((value, segment) => {
@@ -302,12 +457,14 @@ function stringifyTemplateValue(value: unknown): string {
     return String(value);
 }
 
-function resolveTrafficTemplate<T>(value: T, root: JsonRecord): T {
+function resolveTrafficTemplate(value: Record<string, unknown>, root: Record<string, unknown>): Record<string, unknown>;
+function resolveTrafficTemplate(value: unknown, root: Record<string, unknown>): unknown;
+function resolveTrafficTemplate(value: unknown, root: Record<string, unknown>): unknown {
     if (typeof value === 'string') {
         const exactPlaceholderMatch = value.match(/^\{([^{}]+)}$/);
         if (exactPlaceholderMatch) {
             const resolved = resolveTemplatePath(exactPlaceholderMatch[1], root);
-            return (resolved === undefined ? value : resolved) as T;
+            return (resolved === undefined ? value : resolved);
         }
 
         return value.replaceAll(/\{([^{}]+)}/g, (match, path) => {
@@ -315,31 +472,34 @@ function resolveTrafficTemplate<T>(value: T, root: JsonRecord): T {
             return resolved === undefined
                 ? match
                 : stringifyTemplateValue(resolved);
-        }) as T;
+        });
     }
 
     if (Array.isArray(value)) {
-        return value.map((item) => resolveTrafficTemplate(item, root)) as T;
+        return value.map((item) => resolveTrafficTemplate(item, root));
     }
 
     if (value && typeof value === 'object') {
         return Object.fromEntries(
             Object.entries(value)
                 .map(([key, nested]) => [key, resolveTrafficTemplate(nested, root)])
-        ) as T;
+        );
     }
 
     return value;
 }
 
-function isInlineLoopStep(step: JsonRecord): boolean {
+function isInlineLoopStep(step: Record<string, unknown>): boolean {
     const stepType = String(step.type || '').toLowerCase();
     return stepType === 'loop' ||
         stepType.startsWith('loop.') ||
         (step.loop === true && Array.isArray(step.steps));
 }
 
-function toInlineLoopSteps(allSteps: Array<JsonRecord>, step: JsonRecord): Array<JsonRecord> {
+function toInlineLoopSteps(
+    allSteps: Array<Record<string, unknown>>,
+    step: Record<string, unknown>
+): Array<Record<string, unknown>> {
     const loopConfig = Array.isArray(step.loop)
         ? step.loop
         : undefined;
@@ -352,7 +512,7 @@ function toInlineLoopSteps(allSteps: Array<JsonRecord>, step: JsonRecord): Array
     });
 }
 
-function toInlineLoopIntervalMs(step: JsonRecord): number {
+function toInlineLoopIntervalMs(step: Record<string, unknown>): number {
     const request = asRecord(step.request);
     const rateHz = firstPositiveNumber([step.rateHz, request.rateHz]);
 
@@ -365,12 +525,12 @@ function toInlineLoopIntervalMs(step: JsonRecord): number {
     ]) || 0;
 }
 
-function toInlineLoopMessageCount(step: JsonRecord): number | undefined {
+function toInlineLoopMessageCount(step: Record<string, unknown>): number | undefined {
     const request = asRecord(step.request);
     return firstPositiveInteger([step.messageCount, request.messageCount, step.messages, request.messages]);
 }
 
-function toInlineLoopIterationCount(step: JsonRecord, loopStepCount: number, intervalMs: number): number {
+function toInlineLoopIterationCount(step: Record<string, unknown>, loopStepCount: number, intervalMs: number): number {
     const request = asRecord(step.request);
     const configuredIterations = firstPositiveInteger([
         step.count,
@@ -407,8 +567,8 @@ function sanitizedStepName(value: string): string {
     return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'loop';
 }
 
-function annotateInlineLoopStep(step: JsonRecord, root: JsonRecord): JsonRecord {
-    const loop = asRecord(root.loop);
+function annotateInlineLoopStep(step: Record<string, unknown>, root: InlineLoopTemplateRoot): InlineLoopAnnotatedStep {
+    const loop = root.loop;
 
     return {
         ...resolveTrafficTemplate(step, root),
@@ -423,7 +583,7 @@ function annotateInlineLoopStep(step: JsonRecord, root: JsonRecord): JsonRecord 
     };
 }
 
-function toInlineLoopDelayStep(delay: InlineLoopDelay): JsonRecord {
+function toInlineLoopDelayStep(delay: InlineLoopDelay): InlineLoopDelayStep {
     const { loopName, iteration, iterations, intervalMs } = delay;
     return {
         name: loopName + 'Delay',
@@ -447,10 +607,10 @@ function toInlineLoopDelayStep(delay: InlineLoopDelay): JsonRecord {
 }
 
 export function expandInlineLoopSteps(
-    rawSteps: Array<JsonRecord>,
-    allSteps: Array<JsonRecord> = rawSteps,
+    rawSteps: Array<Record<string, unknown>>,
+    allSteps: Array<Record<string, unknown>> = rawSteps,
     depth = 0
-): Array<JsonRecord> {
+): Array<Record<string, unknown>> {
     if (depth > 20) {
         throw new Error('Inline loop nesting exceeded 20 levels.');
     }
@@ -462,7 +622,7 @@ export function expandInlineLoopSteps(
     );
 }
 
-function computeInlineLoopSteps(expansion: InlineLoopExpansion): JsonRecord[] {
+function computeInlineLoopSteps(expansion: InlineLoopExpansion): Record<string, unknown>[] {
     const { step, stepIndex, allSteps, depth } = expansion;
     const loopSteps = toInlineLoopSteps(allSteps, step);
     if (loopSteps.length <= 0) {
@@ -473,7 +633,7 @@ function computeInlineLoopSteps(expansion: InlineLoopExpansion): JsonRecord[] {
     const intervalMs = toInlineLoopIntervalMs(step);
     const iterations = toInlineLoopIterationCount(step, loopSteps.length, intervalMs);
     const messageCount = toInlineLoopMessageCount(step);
-    const expandedSteps: Array<JsonRecord> = [];
+    const expandedSteps: Array<Record<string, unknown>> = [];
     let loopIndex = 0;
 
     for (let iterationIndex = 0; iterationIndex < iterations; iterationIndex++) {
@@ -516,7 +676,10 @@ function computeInlineLoopSteps(expansion: InlineLoopExpansion): JsonRecord[] {
     return expandedSteps;
 }
 
-function toTrafficOperationSteps(allSteps: Array<JsonRecord>, operation: JsonRecord): Array<JsonRecord> {
+function toTrafficOperationSteps(
+    allSteps: Array<Record<string, unknown>>,
+    operation: Record<string, unknown>
+): Array<Record<string, unknown>> {
     if (Array.isArray(operation.steps)) {
         return resolveRecipeStepList(allSteps, operation.steps, 'trafficPlan.operations.steps');
     }
@@ -528,7 +691,10 @@ function toTrafficOperationSteps(allSteps: Array<JsonRecord>, operation: JsonRec
     return [];
 }
 
-function toTrafficOperations(allSteps: Array<JsonRecord>, config: JsonRecord): Array<JsonRecord> {
+function toTrafficOperations(
+    allSteps: Array<Record<string, unknown>>,
+    config: Record<string, unknown>
+): TrafficOperation[] {
     const operations = Array.isArray(config.operations)
         ? config.operations
         : [];
@@ -536,26 +702,40 @@ function toTrafficOperations(allSteps: Array<JsonRecord>, config: JsonRecord): A
     return operations
         .filter((operation) => operation && typeof operation === 'object' && !Array.isArray(operation))
         .map((operation, index) => {
-            const operationConfig = operation as JsonRecord;
+            const operationConfig = operation as Record<string, unknown>;
             const steps = toTrafficOperationSteps(allSteps, operationConfig);
 
             return {
                 name: String(operationConfig.name || 'operation-' + (index + 1)),
                 index: index + 1,
-                weight: Math.max(0, Number(operationConfig.weight ?? 1)),
+                weight: toTrafficOperationWeight(operationConfig.weight ?? 1),
                 steps
             };
         })
-        .filter((operation) => (operation.steps as Array<JsonRecord>).length > 0 && Number(operation.weight) > 0);
+        .filter((operation) => operation.steps.length > 0 && operation.weight > 0);
 }
 
-function chooseTrafficOperation(operations: Array<JsonRecord>, random: number): JsonRecord {
-    const totalWeight = operations.reduce((total, operation) => total + Number(operation.weight || 0), 0);
-    const roll = random * totalWeight;
+function toTrafficOperationWeight(value: unknown): number {
+    const weight = Number(value);
+    if (!Number.isFinite(weight)) {
+        throw new Error('Traffic operation weight must be finite.');
+    }
+    return Math.max(0, weight);
+}
+
+function chooseTrafficOperation(operations: readonly TrafficOperation[], random: number): TrafficOperation {
+    const totalWeight = operations.reduce((total, operation) => total + operation.weight, 0);
+    const scale = Number.isFinite(totalWeight)
+        ? 1
+        : operations.reduce((largest, operation) => Math.max(largest, operation.weight), 0);
+    const boundedTotalWeight = scale === 1
+        ? totalWeight
+        : operations.reduce((total, operation) => total + operation.weight / scale, 0);
+    const roll = random * boundedTotalWeight;
     let cursor = 0;
 
     for (const operation of operations) {
-        cursor += Number(operation.weight || 0);
+        cursor += operation.weight / scale;
         if (roll < cursor) {
             return operation;
         }
@@ -564,8 +744,8 @@ function chooseTrafficOperation(operations: Array<JsonRecord>, random: number): 
     return operations[operations.length - 1];
 }
 
-function annotateTrafficStep(step: JsonRecord, root: JsonRecord): JsonRecord {
-    const traffic = asRecord(root.traffic);
+function annotateTrafficStep(step: Record<string, unknown>, root: TrafficTemplateRoot): TrafficAnnotatedStep {
+    const traffic = root.traffic;
 
     return {
         ...resolveTrafficTemplate(step, root),
@@ -578,7 +758,10 @@ function annotateTrafficStep(step: JsonRecord, root: JsonRecord): JsonRecord {
     };
 }
 
-function toTrafficPacingConfig(planConfig: JsonRecord, limits: ScenarioWorkloadLimits): TrafficPacingConfig {
+function toTrafficPacingConfig(
+    planConfig: Record<string, unknown>,
+    limits: ScenarioWorkloadLimits
+): TrafficPacingConfig {
     const rateHz = firstPositiveNumber([planConfig.rateHz]);
     const intervalMs = firstNonNegativeInteger([
         planConfig.intervalMs,
@@ -612,7 +795,7 @@ function toTrafficDelayMs(input: TrafficDelayInput): number {
     return Math.max(0, pacing.intervalMs + jitter);
 }
 
-function toTrafficDelayStep(delay: TrafficDelayStep): JsonRecord {
+function toTrafficDelayStep(delay: TrafficDelayStepInput): TrafficDelayStep {
     const { sequence, configuredDelayMs, seed, pacing } = delay;
     return {
         name: 'trafficDelay',
@@ -638,10 +821,13 @@ function toTrafficDelayStep(delay: TrafficDelayStep): JsonRecord {
     };
 }
 
-function readReplayTrafficPlan(config: ScenarioRecipe, planConfig: JsonRecord): TrafficPlanArtifact | undefined {
+function readReplayTrafficPlan(
+    config: ScenarioRecipe,
+    planConfig: Record<string, unknown>
+): TrafficPlanArtifact | undefined {
     const replaySource = planConfig.replayFrom || planConfig.replayPath;
     const replayPlan = typeof replaySource === 'string'
-        ? utils.openFile(replaySource) as JsonRecord
+        ? utils.openFile(replaySource) as Record<string, unknown>
         : asRecord(planConfig.expandedPlan || planConfig.replay || planConfig.plan);
 
     if (Object.keys(replayPlan).length <= 0) {
@@ -649,9 +835,9 @@ function readReplayTrafficPlan(config: ScenarioRecipe, planConfig: JsonRecord): 
     }
 
     const steps = Array.isArray(replayPlan.steps)
-        ? replayPlan.steps as Array<JsonRecord>
+        ? replayPlan.steps as Array<Record<string, unknown>>
         : Array.isArray(asRecord(replayPlan.replayRecipe).steps)
-        ? asRecord(replayPlan.replayRecipe).steps as Array<JsonRecord>
+        ? asRecord(replayPlan.replayRecipe).steps as Array<Record<string, unknown>>
         : [];
 
     if (steps.length <= 0) {
@@ -668,7 +854,7 @@ function readReplayTrafficPlan(config: ScenarioRecipe, planConfig: JsonRecord): 
             replayFrom: replaySource
         },
         decisions: Array.isArray(replayPlan.decisions)
-            ? replayPlan.decisions as Array<JsonRecord>
+            ? replayPlan.decisions as Array<Record<string, unknown>>
             : [],
         steps,
         replayRecipe: toTrafficReplayRecipe(config, { version: 1, seed, steps })
@@ -677,9 +863,9 @@ function readReplayTrafficPlan(config: ScenarioRecipe, planConfig: JsonRecord): 
 
 function toGeneratedTrafficPlan(
     config: ScenarioRecipe,
-    planConfig: JsonRecord,
+    planConfig: Record<string, unknown>,
     limits: ScenarioWorkloadLimits
-): TrafficPlanArtifact {
+): GeneratedTrafficPlanArtifact {
     if (!Array.isArray(config.steps)) {
         throw new Error('Traffic plan mode requires an explicit steps array.');
     }
@@ -726,7 +912,7 @@ function toGeneratedTrafficPlan(
                 name: operation.name,
                 index: operation.index,
                 weight: operation.weight,
-                stepCount: (operation.steps as Array<JsonRecord>).length
+                stepCount: operation.steps.length
             }))
         },
         decisions: generated.decisions,
@@ -735,7 +921,7 @@ function toGeneratedTrafficPlan(
     };
 }
 
-function toTrafficReplayRecipe(config: ScenarioRecipe, content: TrafficReplayContent): JsonRecord {
+function toTrafficReplayRecipe(config: ScenarioRecipe, content: TrafficReplayContent): ScenarioRecipe {
     return {
         ...config,
         steps: content.steps,
@@ -750,7 +936,7 @@ function computeTrafficLoop(input: TrafficLoopInput): TrafficLoopComputed {
     const { allSteps, seed, count, pacing, operations } = input;
     const random = createSeededRandom(seed);
     const jitterRandom = createSeededRandom(seed ^ 0x9E3779B9);
-    const decisions: Array<JsonRecord> = [];
+    const decisions: TrafficDecision[] = [];
     const generatedLoopSteps = Array.from({ length: count }).flatMap((_ignored, index) => {
         const sequence = index + 1;
         const operationRandom = random();
@@ -778,7 +964,7 @@ function computeTrafficLoop(input: TrafficLoopInput): TrafficLoopComputed {
         });
 
         const operationSteps = expandInlineLoopSteps(
-            (operation.steps as Array<JsonRecord>).map((step) => annotateTrafficStep(cloneStep(step), root)),
+            operation.steps.map((step) => annotateTrafficStep(cloneStep(step), root)),
             allSteps
         );
 
@@ -793,7 +979,7 @@ function computeTrafficLoop(input: TrafficLoopInput): TrafficLoopComputed {
     return { steps: generatedLoopSteps, decisions };
 }
 
-function toTrafficTemplateRoot(input: TrafficTemplateInput): JsonRecord {
+function toTrafficTemplateRoot(input: TrafficTemplateInput): TrafficTemplateRoot {
     const { seed, sequence, operation, randomValue, randomInt, pacing } = input;
     return {
         traffic: {
@@ -809,11 +995,15 @@ function toTrafficTemplateRoot(input: TrafficTemplateInput): JsonRecord {
     };
 }
 
-function toSoakMessageCount(config: JsonRecord): number | undefined {
+function toSoakMessageCount(config: Record<string, unknown>): number | undefined {
     return firstPositiveInteger([config.messageCount, config.messages]);
 }
 
-function toSoakIterationCount(config: JsonRecord, loopStepCount: number, limits: ScenarioWorkloadLimits): number {
+function toSoakIterationCount(
+    config: Record<string, unknown>,
+    loopStepCount: number,
+    limits: ScenarioWorkloadLimits
+): number {
     const configuredIterations = firstPositiveInteger([limits.requestedIterations, config.iterations, config.runs]);
 
     if (configuredIterations) {
@@ -834,7 +1024,7 @@ function toSoakIterationCount(config: JsonRecord, loopStepCount: number, limits:
     return limits.maxRuns;
 }
 
-function annotateSoakStep(step: JsonRecord, position: SoakStepPosition): JsonRecord {
+function annotateSoakStep(step: Record<string, unknown>, position: SoakStepPosition): SoakAnnotatedStep {
     const { phase, iteration, loopIndex } = position;
     return {
         ...step,
@@ -844,7 +1034,7 @@ function annotateSoakStep(step: JsonRecord, position: SoakStepPosition): JsonRec
     };
 }
 
-function toSoakDelayStep(iteration: number, configuredDelayMs: number): JsonRecord {
+function toSoakDelayStep(iteration: number, configuredDelayMs: number): SoakDelayStep {
     return {
         name: 'soakDelay',
         type: 'set',
@@ -864,7 +1054,7 @@ function toSoakDelayStep(iteration: number, configuredDelayMs: number): JsonReco
 
 function toSoakExpandedConfig(
     config: ScenarioRecipe,
-    soakConfig: JsonRecord,
+    soakConfig: Record<string, unknown>,
     limits: ScenarioWorkloadLimits
 ): ScenarioRecipe {
     if (!Array.isArray(config.steps)) {

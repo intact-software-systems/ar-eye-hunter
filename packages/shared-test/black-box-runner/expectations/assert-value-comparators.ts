@@ -1,12 +1,32 @@
-// deno-lint-ignore-file no-explicit-any
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { decodeScenarioNumber, decodeScenarioText } from '../scenario-value-decoding.ts';
 
 export interface AssertComparatorIssue {
-    readonly path: any;
+    readonly path: unknown;
     readonly comparator: string;
-    readonly expected: any;
-    readonly actual: any;
+    readonly expected: unknown;
+    readonly actual: unknown;
     readonly message: string;
+}
+
+interface AssertComparator {
+    readonly path: string;
+    readonly gt?: unknown;
+    readonly gte?: unknown;
+    readonly lt?: unknown;
+    readonly lte?: unknown;
+    readonly between?: unknown;
+    readonly length?: unknown;
+    readonly contains?: unknown;
+    readonly matches?: unknown;
+    readonly equals?: unknown;
+    readonly notEquals?: unknown;
+    readonly exists?: unknown;
+}
+
+interface AssertComparatorValue {
+    readonly found: boolean;
+    readonly value: unknown;
 }
 
 function toPathSegments(path: string): string[] {
@@ -17,55 +37,44 @@ function toPathSegments(path: string): string[] {
         .filter((segment) => segment.length > 0);
 }
 
-function resolveComparatorValue(path: string, root: any): { found: boolean; value?: any; } {
+function resolveComparatorValue(path: string, root: unknown): AssertComparatorValue {
     let value = root;
 
     for (const segment of toPathSegments(path)) {
         if (value === undefined || value === null) {
-            return { found: false };
+            return { found: false, value: undefined };
         }
 
-        value = value[segment];
+        const record = Object(value) as Record<string, unknown>;
+        value = record[segment];
     }
 
-    return value === undefined ? { found: false } : { found: true, value };
+    return { found: value !== undefined, value };
 }
 
-function toIssue(input: {
-    path: any;
-    comparator: string;
-    expected: any;
-    actual: any;
-    message: string;
-}): AssertComparatorIssue {
-    return {
-        path: input.path,
-        comparator: input.comparator,
-        expected: input.expected,
-        actual: input.actual,
-        message: input.message
-    };
-}
-
-function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
+function numericIssues(entry: AssertComparator, value: unknown): AssertComparatorIssue[] {
     const issues: AssertComparatorIssue[] = [];
-    const actualNumber = Number(value);
     const numericComparators = ['gt', 'gte', 'lt', 'lte'] as const;
+
+    if (!numericComparators.some((comparator) => entry[comparator] !== undefined)) {
+        return issues;
+    }
+    const actualNumber = decodeScenarioNumber(value);
 
     for (const comparator of numericComparators) {
         if (entry[comparator] === undefined) {
             continue;
         }
 
-        const bound = Number(entry[comparator]);
-        if (!Number.isFinite(actualNumber) || !Number.isFinite(bound)) {
-            issues.push(toIssue({
+        const bound = decodeScenarioNumber(entry[comparator]);
+        if (actualNumber === undefined || bound === undefined) {
+            issues.push({
                 path: entry.path,
                 comparator,
                 expected: entry[comparator],
                 actual: value,
                 message: 'Comparator requires finite numeric values.'
-            }));
+            });
             continue;
         }
 
@@ -77,122 +86,141 @@ function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
             ? actualNumber < bound
             : actualNumber <= bound;
         if (!satisfied) {
-            issues.push(toIssue({
+            issues.push({
                 path: entry.path,
                 comparator,
                 expected: entry[comparator],
                 actual: value,
                 message: `Expected value ${comparator} ${bound}.`
-            }));
+            });
         }
     }
 
     return issues;
 }
 
-function betweenIssues(entry: any, value: any): AssertComparatorIssue[] {
+function betweenIssues(entry: AssertComparator, value: unknown): AssertComparatorIssue[] {
     if (entry.between === undefined) {
         return [];
     }
 
-    const bounds = Array.isArray(entry.between) ? entry.between.map(Number) : [];
-    const actualNumber = Number(value);
-    if (bounds.length !== 2 || bounds.some((bound: number) => !Number.isFinite(bound))) {
-        return [toIssue({
+    const rawBounds: unknown[] = Array.isArray(entry.between) ? entry.between : [];
+    const bounds = Array.from(rawBounds, decodeScenarioNumber);
+    const actualNumber = decodeScenarioNumber(value);
+    if (bounds.length !== 2 || !bounds.every((bound): bound is number => bound !== undefined)) {
+        return [{
             path: entry.path,
             comparator: 'between',
             expected: entry.between,
             actual: value,
             message: 'Comparator between requires a [low, high] numeric pair.'
-        })];
+        }];
     }
 
-    if (!Number.isFinite(actualNumber) || actualNumber < bounds[0] || actualNumber > bounds[1]) {
-        return [toIssue({
+    if (actualNumber === undefined || actualNumber < bounds[0] || actualNumber > bounds[1]) {
+        return [{
             path: entry.path,
             comparator: 'between',
             expected: entry.between,
             actual: value,
             message: `Expected value between ${bounds[0]} and ${bounds[1]} inclusive.`
-        })];
+        }];
     }
 
     return [];
 }
 
-function lengthIssues(entry: any, value: any): AssertComparatorIssue[] {
+function lengthIssues(entry: AssertComparator, value: unknown): AssertComparatorIssue[] {
     if (entry.length === undefined) {
         return [];
     }
 
-    const expectedLength = Number(entry.length);
+    const expectedLength = decodeScenarioNumber(entry.length);
     const actualLength = Array.isArray(value) || typeof value === 'string'
         ? value.length
         : undefined;
     if (actualLength === undefined || actualLength !== expectedLength) {
-        return [toIssue({
+        return [{
             path: entry.path,
             comparator: 'length',
             expected: entry.length,
             actual: value,
-            message: `Expected an array or string of length ${expectedLength}.`
-        })];
+            message: expectedLength === undefined
+                ? 'Comparator length requires a finite numeric value.'
+                : `Expected an array or string of length ${expectedLength}.`
+        }];
     }
 
     return [];
 }
 
-function stringIssues(entry: any, value: any): AssertComparatorIssue[] {
+function stringIssues(entry: AssertComparator, value: unknown): AssertComparatorIssue[] {
     const issues: AssertComparatorIssue[] = [];
-
     if (entry.contains !== undefined) {
-        if (typeof value !== 'string' || !value.includes(String(entry.contains))) {
-            issues.push(toIssue({
+        const expected = decodeScenarioText(entry.contains);
+        if (typeof value !== 'string' || expected === undefined || !value.includes(expected)) {
+            issues.push({
                 path: entry.path,
                 comparator: 'contains',
                 expected: entry.contains,
                 actual: value,
-                message: `Expected a string containing ${String(entry.contains)}.`
-            }));
+                message: expected === undefined
+                    ? 'Comparator contains requires a scalar text value.'
+                    : `Expected a string containing ${expected}.`
+            });
         }
     }
-
     if (entry.matches !== undefined) {
-        if (typeof value !== 'string' || !new RegExp(String(entry.matches)).test(value)) {
-            issues.push(toIssue({
-                path: entry.path,
-                comparator: 'matches',
-                expected: entry.matches,
-                actual: value,
-                message: `Expected a string matching /${String(entry.matches)}/.`
-            }));
-        }
+        issues.push(...regexIssues(entry, value));
     }
-
     return issues;
 }
 
-function equalityIssues(entry: any, value: any): AssertComparatorIssue[] {
+function regexIssues(entry: AssertComparator, value: unknown): AssertComparatorIssue[] {
+    const pattern = decodeScenarioText(entry.matches);
+    let matches = false;
+    let valid = pattern !== undefined;
+    if (pattern !== undefined) {
+        try {
+            const expression = new RegExp(pattern);
+            matches = typeof value === 'string' && expression.test(value);
+        }
+        catch {
+            valid = false;
+        }
+    }
+    return matches ? [] : [{
+        path: entry.path,
+        comparator: 'matches',
+        expected: entry.matches,
+        actual: value,
+        message: valid
+            ? `Expected a string matching /${pattern}/.`
+            : 'Comparator matches requires a valid regular expression.'
+    }];
+}
+
+function equalityIssues(entry: AssertComparator, value: unknown): AssertComparatorIssue[] {
     const issues: AssertComparatorIssue[] = [];
 
     if (entry.equals !== undefined && !jsonEquals(entry.equals, value)) {
-        issues.push(toIssue({
+        issues.push({
             path: entry.path,
             comparator: 'equals',
             expected: entry.equals,
             actual: value,
             message: 'Expected the value to equal the expected value.'
-        }));
+        });
     }
 
     if (entry.notEquals !== undefined && jsonEquals(entry.notEquals, value)) {
-        issues.push(toIssue({
+        issues.push({
             path: entry.path,
             comparator: 'notEquals',
             expected: entry.notEquals,
             actual: value,
             message: 'Expected the value to differ from the expected value.'
-        }));
+        });
     }
 
     return issues;
@@ -203,19 +231,28 @@ function equalityIssues(entry: any, value: any): AssertComparatorIssue[] {
  * absent path is the assertion rather than a failure to make one. Every other
  * comparator needs a value to compare and reports an unresolved path.
  */
-function existenceIssues(entry: any, found: boolean): AssertComparatorIssue[] {
+function existenceIssues(entry: AssertComparator, found: boolean): AssertComparatorIssue[] {
     if (entry.exists === undefined) {
         return [];
     }
 
-    const expected = Boolean(entry.exists);
-    return expected === found ? [] : [toIssue({
+    if (typeof entry.exists !== 'boolean') {
+        return [{
+            path: entry.path,
+            comparator: 'exists',
+            expected: entry.exists,
+            actual: found,
+            message: 'Comparator exists requires a boolean value.'
+        }];
+    }
+    const expected = entry.exists;
+    return expected === found ? [] : [{
         path: entry.path,
         comparator: 'exists',
         expected,
         actual: found,
         message: expected ? 'Expected the path to resolve to a value.' : 'Expected the path to be absent.'
-    })];
+    }];
 }
 
 const COMPARATOR_KEYS = [
@@ -230,27 +267,31 @@ const COMPARATOR_KEYS = [
     'equals',
     'notEquals',
     'exists'
-];
+] as const;
 
-function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
-    if (typeof entry?.path !== 'string' || entry.path.length <= 0) {
-        return [toIssue({
-            path: entry?.path,
+function entryIssues(raw: unknown, actual: unknown): AssertComparatorIssue[] {
+    const record = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+        ? raw as Record<string, unknown>
+        : {};
+    if (typeof record.path !== 'string' || record.path.length <= 0) {
+        return [{
+            path: record.path,
             comparator: 'path',
             expected: undefined,
             actual: undefined,
             message: 'Comparator entries need a non-empty string path.'
-        })];
+        }];
     }
 
+    const entry: AssertComparator = { ...record, path: record.path };
     if (!COMPARATOR_KEYS.some((key) => entry[key] !== undefined)) {
-        return [toIssue({
+        return [{
             path: entry.path,
             comparator: 'none',
             expected: undefined,
             actual: undefined,
             message: `Comparator entries need at least one of: ${COMPARATOR_KEYS.join(', ')}.`
-        })];
+        }];
     }
 
     const resolved = resolveComparatorValue(entry.path, actual);
@@ -263,13 +304,13 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
     if (!resolved.found) {
         return [
             ...existence,
-            toIssue({
+            {
                 path: entry.path,
                 comparator: 'path',
                 expected: undefined,
                 actual: undefined,
                 message: 'Comparator path did not resolve to a value.'
-            })
+            }
         ];
     }
 
@@ -286,12 +327,21 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
 // Pure validate-all pass over expect.comparators: every entry is evaluated and
 // every failing comparator is reported, never just the first.
 export function validateAssertValueComparators(
-    actual: any,
-    comparators: any
+    actual: unknown,
+    comparators: unknown
 ): readonly AssertComparatorIssue[] {
-    if (!Array.isArray(comparators)) {
+    if (comparators === undefined) {
         return [];
     }
+    if (!Array.isArray(comparators)) {
+        return [{
+            path: undefined,
+            comparator: 'collection',
+            expected: 'array',
+            actual: comparators,
+            message: 'Assert comparators must be an array.'
+        }];
+    }
 
-    return comparators.flatMap((entry) => entryIssues(entry, actual));
+    return Array.from(comparators).flatMap((entry) => entryIssues(entry, actual));
 }

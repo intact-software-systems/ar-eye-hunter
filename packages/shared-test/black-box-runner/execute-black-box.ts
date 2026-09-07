@@ -16,6 +16,7 @@ import {
     createScenarioContext
 } from './execution/black-box-scenario-context.ts';
 import {
+    groupInteractionResultsByName,
     storeInteractionData,
     toInteractionOutputFields,
     toResultKey
@@ -426,11 +427,7 @@ function toReport(input: ExecutionReportInput): any {
     const { context } = input;
     const resultsList = toResultEntries(context.results);
     const results = Object.fromEntries(resultsList.map((result: any) => [result.resultKey, result]));
-    const resultsByName = resultsList.reduce<Record<string, any[]>>((byName, result: any) => {
-        byName[result.name] = byName[result.name] || [];
-        byName[result.name].push(result);
-        return byName;
-    }, {});
+    const resultsByName = groupInteractionResultsByName(resultsList);
 
     return redactBlackBoxData({
         summary: {

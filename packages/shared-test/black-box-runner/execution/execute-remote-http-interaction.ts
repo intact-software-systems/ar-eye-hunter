@@ -110,13 +110,16 @@ function withRemoteHttpDetails(status: any, details: any): any {
 export async function executeRemoteHttpInteraction(interaction: any, config: any, context: any): Promise<any> {
     const remote = readRallarRemoteBrowserConfig({
         request: interaction.request,
-        config: config,
-        context: context,
+        config,
+        context,
         options: remoteBrowserOptions(context)
     });
     const fetchFn = remoteBrowserFetch(context);
-    const commandId = toRallarRemoteBrowserCommandId('http', interaction);
-
+    const identity = toRallarRemoteBrowserCommandId('http', interaction);
+    if (identity.right === undefined) {
+        return toRemoteHttpException({ interaction, config, remote, error: identity.left! });
+    }
+    const commandId = identity.right;
     try {
         const command = toRemoteHttpCommand(commandId, interaction, context);
         const result = await executeRallarRemoteBrowserCommand({

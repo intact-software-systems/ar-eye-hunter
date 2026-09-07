@@ -1,5 +1,27 @@
-// deno-lint-ignore-file no-explicit-any
-import { compareJson, COMPARISON, toConfig } from '../../json-compare/compare-json-values.ts';
+import { Either } from '../../../shared/resilience/Either.ts';
+import {
+    compareJson,
+    COMPARISON,
+    type CompareConfig
+} from '../../json-compare/compare-json-values.ts';
+import {
+    decodeScenarioComparison,
+    decodeScenarioNumber,
+    decodeScenarioText
+} from '../scenario-value-decoding.ts';
+
+export interface PostRunAssertionResult {
+    readonly name: string;
+    readonly path: string | undefined;
+    readonly operator: string;
+    readonly source: string | undefined;
+    readonly index: number | undefined;
+    readonly actual: unknown;
+    readonly expected: unknown;
+    readonly status: 'SUCCESS' | 'FAILURE';
+    readonly result?: string;
+    readonly details?: Readonly<Record<string, unknown>>;
+}
 
 interface ReportPathValue {
     readonly found: boolean;
@@ -16,6 +38,7 @@ interface JsonRecord {
 }
 
 interface PostRunComparisonInput {
+    readonly config: CompareConfig;
     readonly spec: JsonRecord;
     readonly operator: string;
     readonly found: boolean;
@@ -36,11 +59,6 @@ function asRecord(value: unknown): JsonRecord {
 
 function stringValue(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function numberFromPath(value: unknown): number | undefined {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : undefined;
 }
 
 function postRunOperatorKeys(): string[] {
@@ -160,7 +178,7 @@ function reportPathSegments(path: string): string[] {
     return segments.filter((segment) => segment.length > 0);
 }
 
-function resolveReportPath(report: any, path: string | undefined): ReportPathValue {
+function resolveReportPath(report: unknown, path: string | undefined): ReportPathValue {
     if (!path || path.trim().length <= 0) {
         return {
             found: false
@@ -180,7 +198,7 @@ function resolveReportPath(report: any, path: string | undefined): ReportPathVal
             };
         }
 
-        value = value[segment];
+        value = (Object(value) as JsonRecord)[segment];
     }
 
     return value === undefined
@@ -193,13 +211,19 @@ function resolveReportPath(report: any, path: string | undefined): ReportPathVal
         };
 }
 
-function firstConfiguredOperator(spec: JsonRecord): string {
-    const explicit = stringValue(spec.operator) ?? stringValue(spec.op);
-    if (explicit) {
-        return explicit;
+function firstConfiguredOperator(spec: JsonRecord): Either<PostRunComparison, string> {
+    const explicit = spec.operator !== undefined ? spec.operator : spec.op;
+    if (explicit !== undefined) {
+        const operator = stringValue(explicit);
+        return operator !== undefined
+            ? Either.ofRight(operator)
+            : Either.ofLeft({
+                pass: false,
+                expected: spec.expected,
+                details: { reason: 'invalid-post-run-operator', operator: explicit }
+            });
     }
-
-    return postRunOperatorKeys().find((key) => spec[key] !== undefined) ?? 'equals';
+    return Either.ofRight(postRunOperatorKeys().find((key) => spec[key] !== undefined) ?? 'equals');
 }
 
 function operatorExpectedValue(spec: JsonRecord, aliases: string[]): unknown {
@@ -221,10 +245,10 @@ function numberComparison(
     actual: unknown,
     expected: unknown
 ): NumericComparison {
-    const actualNumber = Number(actual);
-    const expectedNumber = Number(expected);
+    const actualNumber = decodeScenarioNumber(actual);
+    const expectedNumber = decodeScenarioNumber(expected);
 
-    if (!Number.isFinite(actualNumber) || !Number.isFinite(expectedNumber)) {
+    if (actualNumber === undefined || expectedNumber === undefined) {
         return {
             pass: false,
             details: {
@@ -258,30 +282,18 @@ function numberComparison(
     };
 }
 
-function includesValue(actual: unknown, expected: unknown, spec: JsonRecord): boolean {
+function includesValue(actual: unknown, expected: unknown, config: CompareConfig): boolean | undefined {
     if (typeof actual === 'string') {
-        return actual.includes(String(expected));
+        const text = decodeScenarioText(expected);
+        return text === undefined ? undefined : actual.includes(text);
     }
-
     if (Array.isArray(actual)) {
-        return actual.some((item) =>
-            compareJson(
-                expected,
-                item,
-                toConfig(
-                    String(spec.comparison || COMPARISON.COMPATIBLE),
-                    toIgnoredJsonMatchers(spec.ignoreJsonKeys),
-                    toIgnoredJsonMatchers(spec.ignoreJsonPaths)
-                )
-            ).isEqual
-        );
+        return actual.some((item) => compareJson(expected, item, config).isEqual);
     }
-
-    if (actual && typeof actual === 'object' && typeof expected === 'string') {
-        return Object.prototype.hasOwnProperty.call(actual, expected);
+    if (actual && typeof actual === 'object') {
+        return typeof expected === 'string' ? Object.prototype.hasOwnProperty.call(actual, expected) : undefined;
     }
-
-    return false;
+    return undefined;
 }
 
 function postRunAssertionName(spec: JsonRecord, index: number, path: string | undefined): string {
@@ -291,17 +303,34 @@ function postRunAssertionName(spec: JsonRecord, index: number, path: string | un
         'post-run-assertion-' + (index + 1);
 }
 
-export function toPostRunAssertionResult(spec: JsonRecord, index: number, report: any): JsonRecord {
+export function toPostRunAssertionResult(spec: JsonRecord, index: number, report: unknown): PostRunAssertionResult {
     const path = stringValue(spec.path ?? spec.metric ?? spec.from);
-    const operator = firstConfiguredOperator(spec);
+    const selectedOperator = firstConfiguredOperator(spec);
     const resolved = spec.actual !== undefined ? { found: true, value: spec.actual } : resolveReportPath(report, path);
-    const comparison = computePostRunComparison({ spec, operator, found: resolved.found, actual: resolved.value });
+    const configuration = decodeScenarioComparison(
+        spec.comparison === undefined ? COMPARISON.COMPATIBLE : spec.comparison,
+        spec.ignoreJsonKeys === undefined ? [] : spec.ignoreJsonKeys,
+        spec.ignoreJsonPaths === undefined ? [] : spec.ignoreJsonPaths
+    );
+    const comparison = selectedOperator.fold(
+        (failure) => failure,
+        (operator) =>
+            configuration.fold<PostRunComparison>(
+                (error) => ({
+                    expected: operatorExpectedValue(spec, [operator]),
+                    pass: false,
+                    details: { reason: 'invalid-comparison', message: error.message }
+                }),
+                (config) =>
+                    computePostRunComparison({ spec, operator, config, found: resolved.found, actual: resolved.value })
+            )
+    );
     return {
         name: postRunAssertionName(spec, index, path),
         path,
-        operator,
+        operator: selectedOperator.right ?? 'unknown',
         source: stringValue(spec.source),
-        index: numberFromPath(spec.index),
+        index: decodeScenarioNumber(spec.index),
         actual: resolved.value,
         expected: comparison.expected,
         status: comparison.pass ? 'SUCCESS' : 'FAILURE',
@@ -310,10 +339,14 @@ export function toPostRunAssertionResult(spec: JsonRecord, index: number, report
 }
 
 function computePostRunComparison(input: PostRunComparisonInput): PostRunComparison {
-    const { spec, operator, found, actual } = input;
+    const { spec, operator, found, actual, config } = input;
     if (operator === 'exists') {
-        const expected = spec.exists === undefined ? true : Boolean(spec.exists);
-        return { expected, pass: found === expected, details: { reason: expected ? 'path-missing' : 'path-present' } };
+        const expected = spec.exists === undefined ? true : spec.exists;
+        return {
+            expected,
+            pass: typeof expected === 'boolean' && found === expected,
+            details: { reason: expected ? 'path-missing' : 'path-present' }
+        };
     }
     if (!found) {
         return {
@@ -323,7 +356,7 @@ function computePostRunComparison(input: PostRunComparisonInput): PostRunCompari
         };
     }
     if (['equals', 'eq', 'expected', 'notEquals', 'ne'].includes(operator)) {
-        return computeEqualityComparison(spec, actual, operator === 'notEquals' || operator === 'ne');
+        return computeEqualityComparison(input);
     }
     if (['gt', 'gte', 'min', 'atLeast', 'lt', 'lte', 'max', 'atMost'].includes(operator)) {
         const expected = operatorExpectedValue(spec, [operator, 'value', 'expected']);
@@ -339,10 +372,10 @@ function computePostRunComparison(input: PostRunComparisonInput): PostRunCompari
     }
     if (operator === 'includes' || operator === 'contains' || operator === 'notIncludes') {
         const expected = operatorExpectedValue(spec, ['includes', 'contains', 'notIncludes', 'expected', 'value']);
-        const includes = includesValue(actual, expected, spec);
+        const includes = includesValue(actual, expected, config);
         return {
             expected,
-            pass: operator === 'notIncludes' ? !includes : includes,
+            pass: includes !== undefined && (operator === 'notIncludes' ? !includes : includes),
             details: { reason: operator === 'notIncludes' ? 'value-was-included' : 'value-was-not-included' }
         };
     }
@@ -353,7 +386,9 @@ function computePostRunComparison(input: PostRunComparisonInput): PostRunCompari
     };
 }
 
-function computeEqualityComparison(spec: JsonRecord, actual: unknown, negate: boolean): PostRunComparison {
+function computeEqualityComparison(input: PostRunComparisonInput): PostRunComparison {
+    const { spec, actual, operator, config } = input;
+    const negate = operator === 'notEquals' || operator === 'ne';
     const expected = operatorExpectedValue(
         spec,
         negate ? ['notEquals', 'ne', 'expected', 'equals', 'eq'] : ['equals', 'eq', 'expected']
@@ -361,11 +396,7 @@ function computeEqualityComparison(spec: JsonRecord, actual: unknown, negate: bo
     const comparison = compareJson(
         expected,
         actual,
-        toConfig(
-            String(spec.comparison || COMPARISON.COMPATIBLE),
-            negate ? [] : toIgnoredJsonMatchers(spec.ignoreJsonKeys),
-            negate ? [] : toIgnoredJsonMatchers(spec.ignoreJsonPaths)
-        )
+        negate ? { ...config, ignoreJsonKeys: [], ignoreJsonPaths: [] } : config
     );
     return {
         expected,
@@ -377,17 +408,15 @@ function computeEqualityComparison(spec: JsonRecord, actual: unknown, negate: bo
 function computeRangeComparison(spec: JsonRecord, actual: unknown): PostRunComparison {
     const expected = operatorExpectedValue(spec, ['between']);
     const range = Array.isArray(expected) ? expected : [];
-    const actualNumber = Number(actual);
-    const min = Number(range[0]);
-    const max = Number(range[1]);
+    const bounds = Array.from(range, decodeScenarioNumber);
+    if (bounds.length !== 2 || !bounds.every((value): value is number => value !== undefined)) {
+        return { expected, pass: false, details: { reason: 'between-requires-numeric-pair' } };
+    }
+    const actualNumber = decodeScenarioNumber(actual);
+    const [min, max] = bounds;
     return {
         expected,
-        pass: Number.isFinite(actualNumber) && Number.isFinite(min) && Number.isFinite(max) && actualNumber >= min &&
-            actualNumber <= max,
+        pass: actualNumber !== undefined && actualNumber >= min && actualNumber <= max,
         details: { reason: 'between-threshold-not-met', min: range[0], max: range[1] }
     };
-}
-
-function toIgnoredJsonMatchers(value: unknown): string[] {
-    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 }

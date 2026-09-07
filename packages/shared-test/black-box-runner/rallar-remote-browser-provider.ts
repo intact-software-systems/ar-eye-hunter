@@ -10,13 +10,9 @@ import type {
     RallarBlackBoxTestCommand
 } from '../rallar-bb-test/types.ts';
 import {
-    toCloseCommand,
-    toConnectCommand,
-    toCrdtCommand,
-    toHealthCommand,
-    toRallarRemoteBrowserCommandId,
-    toRallarScopeFields,
-    toSendCommand
+    prepareRemoteBrowserCommand,
+    prepareRemoteBrowserConnection,
+    toRallarScopeFields
 } from './remote-browser/remote-browser-commands.ts';
 import {
     type RtcProvider
@@ -24,7 +20,6 @@ import {
 import {
     rememberRtcCloseEvent,
     rememberRtcDiagnostic,
-    toRtcConnectionName,
     toRtcExpectedConnectionName,
     toRtcFailureStatus,
     toRtcSuccessStatus,
@@ -104,6 +99,7 @@ interface RemoteHealthInput {
     readonly context: any;
     readonly interaction: any;
     readonly commandId: string;
+    readonly command: RallarBlackBoxTestCommand;
 }
 
 interface RemoteRtcWaitInput {
@@ -142,6 +138,14 @@ interface RemoteRtcConnectCompletion {
     readonly result: ControlResultEnvelope;
     readonly connectStartedAtEpochMs: number;
     readonly connectedAtEpochMs: number;
+}
+
+interface RemoteRtcConnectAcceptance {
+    readonly context: any;
+    readonly config: any;
+    readonly interaction: any;
+    readonly closeCommand: ExecuteRallarRemoteBrowserCommandInput;
+    readonly completion: RemoteRtcConnectCompletion;
 }
 
 interface RemoteRtcConnectedState {
@@ -193,7 +197,7 @@ function firstString(values: readonly unknown[]): string | undefined {
 }
 
 function toNumber(value: unknown, fallback: number): number {
-    const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
@@ -452,13 +456,13 @@ async function waitWithRemoteEventSync(input: WaitWithRemoteEventSyncInput): Pro
 }
 
 async function updateRemoteHealthDiagnostics(input: RemoteHealthInput): Promise<void> {
-    const { remote, fetchFn, context, interaction, commandId } = input;
+    const { remote, fetchFn, context, interaction, commandId, command } = input;
     const connectionName = toRtcExpectedConnectionName(interaction);
     const result = await executeRallarRemoteBrowserCommand({
         remote,
         fetchFn,
         context,
-        command: toHealthCommand(commandId, interaction)
+        command: { ...command, commandId }
     });
     if (!result.ok) {
         return;
@@ -484,12 +488,23 @@ async function updateRemoteHealthDiagnostics(input: RemoteHealthInput): Promise<
 async function waitForRemoteRtcHealth(input: RemoteRtcWaitInput): Promise<any> {
     const { remote, fetchFn, context, interaction, config } = input;
     const details = input.details ?? {};
-    const commandIdPrefix = toRallarRemoteBrowserCommandId('health', interaction);
+    const preparation = prepareRemoteBrowserCommand('health', interaction);
+    if (preparation.right === undefined) {
+        return toFailureFromError({
+            config,
+            interaction,
+            message: 'Remote RTC health failed',
+            error: preparation.left
+        });
+    }
+    const commandIdPrefix = preparation.right.commandId;
+    const command = preparation.right.command;
     await updateRemoteHealthDiagnostics({
         remote,
         fetchFn,
         context,
         interaction,
+        command,
         commandId: `${commandIdPrefix}-health-0`
     }).catch(() => undefined);
 
@@ -499,7 +514,8 @@ async function waitForRemoteRtcHealth(input: RemoteRtcWaitInput): Promise<any> {
         fetchFn,
         context,
         interaction,
-        commandIdPrefix
+        commandIdPrefix,
+        command
     });
     synchronization.start();
     try {
@@ -580,7 +596,7 @@ function toRemoteRtcSendDetails(interaction: any, submission: RemoteRtcSendSubmi
         provider: interaction.request.provider,
         remote,
         commandId: command.commandId,
-        ...toRallarScopeFields(interaction.request),
+        ...toRallarScopeFields(interaction.request).right,
         result: resultDetails(result),
         sendResult: toRemoteSendResult('sent', connectionName, result),
         sendStartedAtEpochMs,
@@ -634,10 +650,18 @@ function computeRemoteRtcConnectedState(
             connection: connectionName,
             connected: true,
             remote,
-            ...toRallarScopeFields(interaction.request),
+            ...toRallarScopeFields(interaction.request).right,
             result: diagnostics
         }
     };
+}
+
+function completeRemoteRtcConnection(acceptance: RemoteRtcConnectAcceptance): any {
+    const { context, config, interaction, completion, closeCommand } = acceptance;
+    const connected = computeRemoteRtcConnectedState(interaction, completion);
+    const client = new RemoteRtcConnection(closeCommand);
+    storeRemoteRtcConnection(context, completion.connectionName, { client, ...connected.connection });
+    return toRtcSuccessStatus(config, interaction, connected.details);
 }
 
 function storeRemoteRtcConnection(context: any, connectionName: string, connection: any): void {
@@ -737,6 +761,7 @@ export namespace RemoteBrowserObservationSync {
         readonly kind: 'health';
         readonly interaction: any;
         readonly commandIdPrefix: string;
+        readonly command: RallarBlackBoxTestCommand;
     }
     export type Input = Events | Health;
 }
@@ -788,7 +813,8 @@ export class RemoteBrowserObservationSync {
                     fetchFn: input.fetchFn,
                     context: input.context,
                     interaction: input.interaction,
-                    commandId: `${input.commandIdPrefix}-health-${this.sequence}`
+                    commandId: `${input.commandIdPrefix}-health-${this.sequence}`,
+                    command: input.command
                 });
             }
             else {
@@ -828,6 +854,16 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
     }
     async connect(interaction: any, config: any, context: any): Promise<any> {
         const { options, fetchFn } = this;
+        const preparation = prepareRemoteBrowserConnection(interaction);
+        if (preparation.right === undefined) {
+            return toFailureFromError({
+                config,
+                interaction,
+                message: 'Remote RTC connect failed',
+                error: preparation.left
+            });
+        }
+        const { commandId, command, connectionName, closeCommand } = preparation.right;
 
         const remote = readRallarRemoteBrowserConfig({
             request: interaction.request,
@@ -835,9 +871,6 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
             context,
             options
         });
-        const commandId = toRallarRemoteBrowserCommandId('connect', interaction);
-        const command = toConnectCommand(commandId, interaction);
-        const connectionName = toRtcConnectionName(interaction.request);
         const connectStartedAtEpochMs = context.dependencies.now();
 
         try {
@@ -859,15 +892,13 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
             if (!result.ok) {
                 return toRemoteRtcConnectFailure(config, interaction, completion);
             }
-            const connected = computeRemoteRtcConnectedState(interaction, completion);
-            const client = new RemoteRtcConnection({
-                remote,
-                fetchFn,
+            return completeRemoteRtcConnection({
                 context,
-                command: toCloseCommand(`${commandId}-auto-close`, interaction)
+                config,
+                interaction,
+                completion,
+                closeCommand: { remote, fetchFn, context, command: closeCommand }
             });
-            storeRemoteRtcConnection(context, connectionName, { client, ...connected.connection });
-            return toRtcSuccessStatus(config, interaction, connected.details);
         }
         catch (error) {
             return toFailureFromError({
@@ -881,8 +912,17 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
 
     async send(interaction: any, config: any, context: any): Promise<any> {
         const { options, fetchFn } = this;
+        const preparation = prepareRemoteBrowserCommand('send', interaction);
+        if (preparation.right === undefined) {
+            return toFailureFromError({
+                config,
+                interaction,
+                message: 'Remote RTC send failed',
+                error: preparation.left
+            });
+        }
+        const { commandId, command, connectionName } = preparation.right;
 
-        const connectionName = toRtcConnectionName(interaction.request);
         if (!context.rtcConnections[connectionName]) {
             return toRtcFailureStatus({
                 config,
@@ -900,8 +940,6 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
             context,
             options
         });
-        const commandId = toRallarRemoteBrowserCommandId('send', interaction);
-        const command = toSendCommand(commandId, interaction);
 
         try {
             const sendStartedAtEpochMs = context.dependencies.now();
@@ -935,6 +973,16 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
 
     async command(interaction: any, config: any, context: any): Promise<any> {
         const { options, fetchFn } = this;
+        const preparation = prepareRemoteBrowserCommand('crdt', interaction);
+        if (preparation.right === undefined) {
+            return toCrdtProviderFailureStatus({
+                config,
+                interaction,
+                result: 'Remote CRDT command failed',
+                details: { error: preparation.left?.message }
+            });
+        }
+        const { commandId, command } = preparation.right;
 
         const remote = readRallarRemoteBrowserConfig({
             request: interaction.request,
@@ -942,25 +990,14 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
             context,
             options
         });
-        const action = String(interaction.request.action || 'open');
-        const commandId = toRallarRemoteBrowserCommandId(`crdt-${action}`, interaction);
 
         try {
-            const commandResult = toCrdtCommand(commandId, interaction);
-            if (commandResult.right === undefined) {
-                return toCrdtProviderFailureStatus({
-                    config,
-                    interaction,
-                    result: 'Remote CRDT command failed',
-                    details: { remote, commandId, error: commandResult.left?.message }
-                });
-            }
             const startedAtEpochMs = context.dependencies.now();
             const result = await executeRallarRemoteBrowserCommand({
                 remote,
                 fetchFn,
                 context,
-                command: commandResult.right
+                command
             });
             const endedAtEpochMs = context.dependencies.now();
             return toRemoteCrdtStatus(config, interaction, {
@@ -998,16 +1035,23 @@ class RallarRemoteBrowserRtcProvider implements RtcProvider {
 
     async close(interaction: any, config: any, context: any): Promise<any> {
         const { options, fetchFn } = this;
+        const preparation = prepareRemoteBrowserCommand('close', interaction);
+        if (preparation.right === undefined) {
+            return toFailureFromError({
+                config,
+                interaction,
+                message: 'Remote RTC close failed',
+                error: preparation.left
+            });
+        }
+        const { commandId, command, connectionName } = preparation.right;
 
-        const connectionName = toRtcConnectionName(interaction.request);
         const remote = readRallarRemoteBrowserConfig({
             request: interaction.request,
             config,
             context,
             options
         });
-        const commandId = toRallarRemoteBrowserCommandId('close', interaction);
-        const command = toCloseCommand(commandId, interaction);
 
         try {
             const result = await executeRallarRemoteBrowserCommand({

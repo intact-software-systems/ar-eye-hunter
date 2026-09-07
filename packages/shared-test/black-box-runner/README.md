@@ -57,6 +57,12 @@ and baseline interpretation lives in `playground/rtc-design/baselines/`.
   computes comparison evidence before reporting validation failures.
   [computeParallelAggregateFailure](./expectations/parallel-aggregate-expectation.ts#computeParallelAggregateFailure)
   checks parallel aggregate expectations after child results have succeeded.
+- [Scenario value decoding](./scenario-value-decoding.ts) narrows numeric,
+  text and comparison configuration before assertion or report decisions.
+  [Post-run assertions](./reports/scenario-post-run-assertions.ts) produce the
+  final threshold outcomes. [Artifact selection](./artifacts/scenario-run-artifacts.ts)
+  owns bounded event selection and typed index counters; the CLI supplies its
+  captured artifact timestamp.
 - [openWs](./execution/local-websocket-session.ts#openWs)
   owns bounded wire observations and scoped snapshot assembly. WS recipes
   inspect `completedSnapshot` after complete assembly; `observedSnapshotPage`

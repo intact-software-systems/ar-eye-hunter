@@ -2,21 +2,35 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ScenarioInput } from '../scenario-algorithm.ts';
 
-export interface ScenarioRecipe extends ScenarioInput {
+export interface ScenarioRecipe extends Partial<ScenarioInput> {
     variables?: Record<string, unknown>;
     execution?: Record<string, unknown>;
     steps?: Array<Record<string, unknown>>;
     fragments?: Record<string, unknown>;
-    includeMetadata?: Record<string, unknown>;
+    includeMetadata?: ScenarioIncludeMetadata;
     trafficPlan?: Record<string, unknown>;
     postRunAssertions?: unknown;
     secrets?: unknown;
     secretVariables?: unknown;
 }
 
+export interface ScenarioIncludeReceipt {
+    readonly source: string;
+    readonly path: string | undefined;
+    readonly parent: string;
+    readonly stepIndex: number;
+    readonly stepCount: number;
+}
+
+export interface ScenarioIncludeMetadata {
+    readonly schemaVersion: 1;
+    readonly configPath: string;
+    readonly includes: readonly ScenarioIncludeReceipt[];
+}
+
 export interface ScenarioRecipeIncludes {
     readonly config: ScenarioRecipe;
-    readonly includes: readonly Record<string, unknown>[];
+    readonly includes: readonly ScenarioIncludeReceipt[];
 }
 
 interface IncludeReference {
@@ -35,7 +49,7 @@ interface IncludeLocation {
 interface RecipeIncludeRead {
     readonly rootDir: string;
     readonly inlineFragments: Record<string, unknown>;
-    readonly includes: Record<string, unknown>[];
+    readonly includes: ScenarioIncludeReceipt[];
     readonly variables: Record<string, unknown>;
     readonly connections: Record<string, unknown>;
     readonly defaults: Record<string, unknown>;
@@ -47,10 +61,8 @@ interface RecipeFragmentRead {
     readonly filePath: string;
 }
 
-type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord {
-    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+function asRecord(value: unknown): Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function asArray(value: unknown): unknown[] {
@@ -61,7 +73,7 @@ function stringValue(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function cloneJson<T>(value: T): T {
+function cloneJson(value: unknown): unknown {
     return JSON.parse(JSON.stringify(value));
 }
 
@@ -112,35 +124,44 @@ function resolveIncludeFilePath(includePath: string, parentFilePath: string, roo
     return resolved;
 }
 
-function applyIncludeVariables<T>(value: T, variables: JsonRecord): T {
+function applyIncludeVariables(
+    value: Record<string, unknown>,
+    variables: Record<string, unknown>
+): Record<string, unknown>;
+function applyIncludeVariables(value: unknown, variables: Record<string, unknown>): unknown;
+function applyIncludeVariables(value: unknown, variables: Record<string, unknown>): unknown {
     if (typeof value === 'string') {
         const exact = value.match(/^\{([^{}]+)}$/);
         if (exact && Object.prototype.hasOwnProperty.call(variables, exact[1])) {
-            return variables[exact[1]] as T;
+            return variables[exact[1]];
         }
 
         return value.replaceAll(/\{([^{}]+)}/g, (match, key) => {
             return Object.prototype.hasOwnProperty.call(variables, key)
                 ? String(variables[key])
                 : match;
-        }) as T;
+        });
     }
 
     if (Array.isArray(value)) {
-        return value.map((item) => applyIncludeVariables(item, variables)) as T;
+        return value.map((item) => applyIncludeVariables(item, variables));
     }
 
     if (value && typeof value === 'object') {
         return Object.fromEntries(
             Object.entries(value)
                 .map(([key, nested]) => [key, applyIncludeVariables(nested, variables)])
-        ) as T;
+        );
     }
 
     return value;
 }
 
-function withIncludeNameAffixes(step: JsonRecord, prefix?: string, suffix?: string): JsonRecord {
+function withIncludeNameAffixes(
+    step: Record<string, unknown>,
+    prefix?: string,
+    suffix?: string
+): Record<string, unknown> {
     if (!prefix && !suffix) {
         return step;
     }
@@ -187,16 +208,16 @@ function withIncludeNameAffixes(step: JsonRecord, prefix?: string, suffix?: stri
     };
 }
 
-function fragmentSteps(value: unknown): JsonRecord[] {
+function fragmentSteps(value: unknown): Record<string, unknown>[] {
     if (Array.isArray(value)) {
-        return value.filter(isJsonRecord);
+        return value.filter(isRecipeRecord);
     }
 
     const record = asRecord(value);
-    return asArray(record.steps).filter(isJsonRecord);
+    return asArray(record.steps).filter(isRecipeRecord);
 }
 
-function isJsonRecord(value: unknown): value is JsonRecord {
+function isRecipeRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
@@ -268,8 +289,12 @@ function assertNoIncludeCycle(source: string, stack: readonly string[]): void {
     }
 }
 
-function readRecipeSteps(steps: readonly unknown[], location: IncludeLocation, read: RecipeIncludeRead): JsonRecord[] {
-    const expanded: JsonRecord[] = [];
+function readRecipeSteps(
+    steps: readonly unknown[],
+    location: IncludeLocation,
+    read: RecipeIncludeRead
+): Record<string, unknown>[] {
+    const expanded: Record<string, unknown>[] = [];
     for (const [stepIndex, step] of steps.entries()) {
         const record = asRecord(step);
         if (!record.include) {
@@ -307,7 +332,11 @@ function readRecipeSteps(steps: readonly unknown[], location: IncludeLocation, r
     return expanded;
 }
 
-function readNestedRecipeIncludes(step: JsonRecord, location: IncludeLocation, read: RecipeIncludeRead): JsonRecord {
+function readNestedRecipeIncludes(
+    step: Record<string, unknown>,
+    location: IncludeLocation,
+    read: RecipeIncludeRead
+): Record<string, unknown> {
     const expanded = { ...step };
     for (const field of ['steps', 'loopSteps', 'setupSteps', 'cleanupSteps']) {
         if (Array.isArray(step[field])) {

@@ -1,7 +1,5 @@
 import type { TrafficPlanArtifact } from '../recipes/scenario-workload.ts';
-import { firstPositiveInteger } from '../recipes/scenario-workload.ts';
-
-// deno-lint-ignore-file no-explicit-any
+import { decodeScenarioPositiveInteger, decodeScenarioText } from '../scenario-value-decoding.ts';
 
 interface JsonRecord {
     [key: string]: unknown;
@@ -15,7 +13,90 @@ interface ArtifactEventRecord extends JsonRecord {
 export interface ArtifactEventSelection {
     allEvents: ArtifactEventRecord[];
     emittedEvents: ArtifactEventRecord[];
-    index: JsonRecord;
+    index: ArtifactIndex;
+}
+
+interface ArtifactEventCounts {
+    readonly total: number;
+    readonly byKind: Readonly<Record<string, number>>;
+    readonly byTransport: Readonly<Record<string, number>>;
+    readonly byStatus: Readonly<Record<string, number>>;
+}
+
+interface ArtifactSuccessSummary {
+    readonly name: unknown;
+    readonly transport: string;
+    readonly action: unknown;
+    readonly connection: string | undefined;
+    readonly status: 'SUCCESS';
+    count: number;
+    readonly firstSequence: number;
+    lastSequence: number;
+}
+
+interface ArtifactRunSummary {
+    readonly runIndex: string;
+    total: number;
+    success: number;
+    failure: number;
+    emitted: number;
+    omitted: number;
+}
+
+interface ArtifactConnectionSummary {
+    readonly connection: string;
+    total: number;
+    emitted: number;
+    omitted: number;
+    readonly byKind: Record<string, number>;
+    readonly byTransport: Record<string, number>;
+    readonly byStatus: Record<string, number>;
+}
+
+interface ArtifactTruncation {
+    readonly truncated: boolean;
+    readonly totalEvents: number;
+    readonly emittedEvents: number;
+    readonly omittedEvents: number;
+    readonly omittedByKind: Readonly<Record<string, number>>;
+    readonly maxEvents: number | undefined;
+    readonly maxEventsByKind: Readonly<Record<string, number>>;
+    readonly preservedFailureEvents: number;
+    readonly preservedDiagnosticEvents: number;
+}
+
+interface ArtifactIndex {
+    readonly schemaVersion: 1;
+    readonly kind: 'black-box-runner.artifact-index';
+    readonly generatedAtEpochMs: number;
+    readonly runnerRunId: unknown;
+    readonly correlation: unknown;
+    readonly summary: unknown;
+    readonly counts: {
+        readonly total: ArtifactEventCounts;
+        readonly emitted: ArtifactEventCounts;
+        readonly omitted: ArtifactEventCounts;
+    };
+    readonly firstFailure: JsonRecord | undefined;
+    readonly stepResults: readonly JsonRecord[];
+    readonly perRun: readonly ArtifactRunSummary[];
+    readonly perConnection: readonly ArtifactConnectionSummary[];
+    readonly compaction: {
+        readonly compacted: boolean;
+        readonly repeatedSuccessSummaries: readonly ArtifactSuccessSummary[];
+    };
+    readonly truncation: ArtifactTruncation;
+}
+
+interface ArtifactReportSummary {
+    readonly eventCount: number;
+    readonly maxEvents: number | undefined;
+    readonly maxEventsByKind: Readonly<Record<string, number>>;
+    readonly emittedEvents: number;
+    readonly omittedEvents: number;
+    readonly omittedByKind: Readonly<Record<string, number>>;
+    readonly truncated: boolean;
+    readonly compactedSuccessGroups: number;
 }
 
 interface ArtifactLimitConfig {
@@ -24,7 +105,8 @@ interface ArtifactLimitConfig {
 }
 
 interface BuildArtifactIndexInput {
-    report: any;
+    report: JsonRecord;
+    generatedAtEpochMs: number;
     allEvents: readonly ArtifactEventRecord[];
     emittedEvents: readonly ArtifactEventRecord[];
     omittedEvents: readonly ArtifactEventRecord[];
@@ -37,10 +119,6 @@ function asRecord(value: unknown): JsonRecord {
         : {};
 }
 
-function asArray(value: unknown): unknown[] {
-    return Array.isArray(value) ? value : [];
-}
-
 function stringValue(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
@@ -48,13 +126,15 @@ function stringValue(value: unknown): string | undefined {
 function normalizeEventKindCaps(value: unknown): Record<string, number> {
     return Object.fromEntries(
         Object.entries(asRecord(value))
-            .map(([kind, limit]) => [kind, Number.parseInt(String(limit), 10)] as const)
-            .filter((entry) => Number.isFinite(entry[1]) && entry[1] > 0)
+            .flatMap(([kind, limit]) => {
+                const parsed = decodeScenarioPositiveInteger([limit]);
+                return parsed === undefined ? [] : [[kind, parsed]];
+            })
     );
 }
 
 function incrementCount(target: Record<string, number>, key: unknown): void {
-    const normalizedKey = String(key || 'unknown');
+    const normalizedKey = decodeScenarioText(key || 'unknown') ?? 'unknown';
     target[normalizedKey] = (target[normalizedKey] || 0) + 1;
 }
 
@@ -66,8 +146,8 @@ export function toJsonLine(value: unknown): string {
     return JSON.stringify(value) + '\n';
 }
 
-function resultEvents(report: any): unknown[] {
-    return (report.resultsList || []).map((result: any) => ({
+function resultEvents(report: JsonRecord): unknown[] {
+    return (Array.isArray(report.resultsList) ? report.resultsList.map(asRecord) : []).map((result) => ({
         kind: 'step-result',
         name: result.name,
         status: result.status,
@@ -90,18 +170,17 @@ function resultEvents(report: any): unknown[] {
     }));
 }
 
-function postRunAssertionEvents(report: any): unknown[] {
-    const results = Array.isArray(report.postRunAssertions?.results)
-        ? report.postRunAssertions.results
-        : [];
+function postRunAssertionEvents(report: JsonRecord): unknown[] {
+    const rawResults = asRecord(report.postRunAssertions).results;
+    const results = Array.isArray(rawResults) ? rawResults.map(asRecord) : [];
 
-    return results.map((result: any) => ({
+    return results.map((result) => ({
         kind: 'post-run-assertion',
         name: result.name,
         status: result.status,
         path: result.path,
         operator: result.operator,
-        runnerRunId: report.runnerRunId ?? report.correlation?.runnerRunId,
+        runnerRunId: report.runnerRunId ?? asRecord(report.correlation).runnerRunId,
         correlation: report.correlation,
         expected: result.expected,
         actual: result.actual,
@@ -110,7 +189,7 @@ function postRunAssertionEvents(report: any): unknown[] {
     }));
 }
 
-function keyedStoreEvents(kind: string, store: any): unknown[] {
+function keyedStoreEvents(kind: string, store: unknown): unknown[] {
     return Object.entries(asRecord(store)).flatMap(([connection, values]) => {
         return Array.isArray(values)
             ? values.map((value) => ({
@@ -122,7 +201,7 @@ function keyedStoreEvents(kind: string, store: any): unknown[] {
     });
 }
 
-function artifactEvents(report: any): unknown[] {
+function artifactEvents(report: JsonRecord): unknown[] {
     return [
         ...resultEvents(report),
         ...postRunAssertionEvents(report),
@@ -139,11 +218,11 @@ function artifactEventKind(event: JsonRecord): string {
 }
 
 function artifactEventStatus(event: JsonRecord): string {
-    return String(event.status || asRecord(event.result).status || 'unknown');
+    return decodeScenarioText(event.status || asRecord(event.result).status || 'unknown') ?? 'unknown';
 }
 
 function artifactEventTransport(event: JsonRecord): string {
-    return String(event.transport || asRecord(event.value).transport || 'unknown');
+    return decodeScenarioText(event.transport || asRecord(event.value).transport || 'unknown') ?? 'unknown';
 }
 
 function artifactEventConnection(event: JsonRecord): string | undefined {
@@ -154,7 +233,7 @@ function artifactEventRunIndex(event: JsonRecord): string {
     const runIndex = event.runIndex ?? asRecord(event.result).runIndex;
     return runIndex === undefined || runIndex === null
         ? 'unknown'
-        : String(runIndex);
+        : decodeScenarioText(runIndex) ?? 'unknown';
 }
 
 function isFailureArtifactEvent(event: JsonRecord): boolean {
@@ -189,10 +268,10 @@ function eventPointer(event: ArtifactEventRecord): JsonRecord {
     };
 }
 
-function eventCounts(events: readonly ArtifactEventRecord[]): JsonRecord {
-    const byKind: Record<string, number> = {};
-    const byTransport: Record<string, number> = {};
-    const byStatus: Record<string, number> = {};
+function eventCounts(events: readonly ArtifactEventRecord[]): ArtifactEventCounts {
+    const byKind: Record<string, number> = Object.create(null);
+    const byTransport: Record<string, number> = Object.create(null);
+    const byStatus: Record<string, number> = Object.create(null);
 
     events.forEach((event) => {
         incrementCount(byKind, artifactEventKind(event));
@@ -208,7 +287,7 @@ function eventCounts(events: readonly ArtifactEventRecord[]): JsonRecord {
     };
 }
 
-function toArtifactEventRecords(report: any): ArtifactEventRecord[] {
+function toArtifactEventRecords(report: JsonRecord): ArtifactEventRecord[] {
     return artifactEvents(report).map((event, index) => ({
         ...asRecord(event),
         kind: stringValue(asRecord(event).kind) ?? 'unknown',
@@ -216,19 +295,22 @@ function toArtifactEventRecords(report: any): ArtifactEventRecord[] {
     }));
 }
 
-function artifactLimitConfig(report: any): ArtifactLimitConfig {
+function artifactLimitConfig(report: JsonRecord): ArtifactLimitConfig {
     return {
-        maxEvents: firstPositiveInteger([report?.artifactLimits?.maxEvents, report?.summary?.soak?.maxArtifactEvents]),
-        maxEventsByKind: normalizeEventKindCaps(report?.artifactLimits?.maxEventsByKind)
+        maxEvents: decodeScenarioPositiveInteger([
+            asRecord(report.artifactLimits).maxEvents,
+            asRecord(asRecord(report.summary).soak).maxArtifactEvents
+        ]),
+        maxEventsByKind: normalizeEventKindCaps(asRecord(report.artifactLimits).maxEventsByKind)
     };
 }
 
-export function selectArtifactEvents(report: any): ArtifactEventSelection {
+export function selectArtifactEvents(report: JsonRecord, generatedAtEpochMs: number): ArtifactEventSelection {
     const allEvents = toArtifactEventRecords(report);
     const limits = artifactLimitConfig(report);
     const emittedEvents: ArtifactEventRecord[] = [];
     const omittedEvents: ArtifactEventRecord[] = [];
-    const emittedByKind: Record<string, number> = {};
+    const emittedByKind: Record<string, number> = Object.create(null);
 
     allEvents.forEach((event) => {
         const kind = artifactEventKind(event);
@@ -249,17 +331,17 @@ export function selectArtifactEvents(report: any): ArtifactEventSelection {
     return {
         allEvents,
         emittedEvents,
-        index: buildArtifactIndex({ report, allEvents, emittedEvents, omittedEvents, limits })
+        index: buildArtifactIndex({ report, generatedAtEpochMs, allEvents, emittedEvents, omittedEvents, limits })
     };
 }
 
 export function artifactEventsWithTruncation(selection: ArtifactEventSelection): unknown[] {
-    const omittedEvents = Number(asRecord(selection.index.truncation).omittedEvents || 0);
+    const { omittedEvents } = selection.index.truncation;
     if (omittedEvents <= 0) {
         return selection.emittedEvents;
     }
 
-    const truncation = asRecord(selection.index.truncation);
+    const truncation = selection.index.truncation;
     return [
         ...selection.emittedEvents,
         {
@@ -274,8 +356,8 @@ export function artifactEventsWithTruncation(selection: ArtifactEventSelection):
     ];
 }
 
-function compactSuccessSummaries(omittedEvents: readonly ArtifactEventRecord[]): JsonRecord[] {
-    const groups = new Map<string, JsonRecord>();
+function compactSuccessSummaries(omittedEvents: readonly ArtifactEventRecord[]): ArtifactSuccessSummary[] {
+    const groups = new Map<string, ArtifactSuccessSummary>();
 
     omittedEvents
         .filter((event) => event.kind === 'step-result' && artifactEventStatus(event) === 'SUCCESS')
@@ -291,13 +373,13 @@ function compactSuccessSummaries(omittedEvents: readonly ArtifactEventRecord[]):
                 transport: artifactEventTransport(event),
                 action: event.action,
                 connection: artifactEventConnection(event),
-                status: 'SUCCESS',
+                status: 'SUCCESS' as const,
                 count: 0,
                 firstSequence: event.sequence,
                 lastSequence: event.sequence
             };
 
-            existing.count = Number(existing.count || 0) + 1;
+            existing.count += 1;
             existing.lastSequence = event.sequence;
             groups.set(key, existing);
         });
@@ -308,8 +390,8 @@ function compactSuccessSummaries(omittedEvents: readonly ArtifactEventRecord[]):
 function perRunSummaries(
     allEvents: readonly ArtifactEventRecord[],
     emittedSequences: ReadonlySet<number>
-): JsonRecord[] {
-    const runs = new Map<string, JsonRecord>();
+): ArtifactRunSummary[] {
+    const runs = new Map<string, ArtifactRunSummary>();
 
     allEvents
         .filter((event) => event.kind === 'step-result')
@@ -325,18 +407,18 @@ function perRunSummaries(
                 omitted: 0
             };
 
-            summary.total = Number(summary.total || 0) + 1;
+            summary.total += 1;
             if (status === 'SUCCESS') {
-                summary.success = Number(summary.success || 0) + 1;
+                summary.success += 1;
             }
             if (status === 'FAILURE') {
-                summary.failure = Number(summary.failure || 0) + 1;
+                summary.failure += 1;
             }
             if (emittedSequences.has(event.sequence)) {
-                summary.emitted = Number(summary.emitted || 0) + 1;
+                summary.emitted += 1;
             }
             else {
-                summary.omitted = Number(summary.omitted || 0) + 1;
+                summary.omitted += 1;
             }
 
             runs.set(runIndex, summary);
@@ -348,8 +430,8 @@ function perRunSummaries(
 function perConnectionSummaries(
     allEvents: readonly ArtifactEventRecord[],
     emittedSequences: ReadonlySet<number>
-): JsonRecord[] {
-    const connections = new Map<string, JsonRecord>();
+): ArtifactConnectionSummary[] {
+    const connections = new Map<string, ArtifactConnectionSummary>();
 
     allEvents.forEach((event) => {
         const connection = artifactEventConnection(event);
@@ -362,21 +444,21 @@ function perConnectionSummaries(
             total: 0,
             emitted: 0,
             omitted: 0,
-            byKind: {},
-            byTransport: {},
-            byStatus: {}
+            byKind: Object.create(null),
+            byTransport: Object.create(null),
+            byStatus: Object.create(null)
         };
 
-        summary.total = Number(summary.total || 0) + 1;
+        summary.total += 1;
         if (emittedSequences.has(event.sequence)) {
-            summary.emitted = Number(summary.emitted || 0) + 1;
+            summary.emitted += 1;
         }
         else {
-            summary.omitted = Number(summary.omitted || 0) + 1;
+            summary.omitted += 1;
         }
-        incrementCount(summary.byKind as Record<string, number>, artifactEventKind(event));
-        incrementCount(summary.byTransport as Record<string, number>, artifactEventTransport(event));
-        incrementCount(summary.byStatus as Record<string, number>, artifactEventStatus(event));
+        incrementCount(summary.byKind, artifactEventKind(event));
+        incrementCount(summary.byTransport, artifactEventTransport(event));
+        incrementCount(summary.byStatus, artifactEventStatus(event));
 
         connections.set(connection, summary);
     });
@@ -384,7 +466,7 @@ function perConnectionSummaries(
     return [...connections.values()];
 }
 
-function buildArtifactIndex(input: BuildArtifactIndexInput): JsonRecord {
+function buildArtifactIndex(input: BuildArtifactIndexInput): ArtifactIndex {
     const { report, allEvents, emittedEvents, omittedEvents, limits } = input;
     const emittedSequences = new Set(emittedEvents.map((event) => event.sequence));
     const omittedByKind = eventCounts(omittedEvents).byKind;
@@ -400,7 +482,7 @@ function buildArtifactIndex(input: BuildArtifactIndexInput): JsonRecord {
     return {
         schemaVersion: 1,
         kind: 'black-box-runner.artifact-index',
-        generatedAtEpochMs: Date.now(),
+        generatedAtEpochMs: input.generatedAtEpochMs,
         runnerRunId: report.runnerRunId,
         correlation: report.correlation,
         summary: report.summary,
@@ -431,9 +513,12 @@ function buildArtifactIndex(input: BuildArtifactIndexInput): JsonRecord {
     };
 }
 
-export function withArtifactReport(report: any): any {
-    const selection = selectArtifactEvents(report);
-    const truncation = asRecord(selection.index.truncation);
+export function withArtifactReport<T extends Record<string, unknown>>(
+    report: T,
+    generatedAtEpochMs: number
+): T & { readonly artifact: ArtifactReportSummary; } {
+    const selection = selectArtifactEvents(report, generatedAtEpochMs);
+    const truncation = selection.index.truncation;
 
     return {
         ...report,
@@ -446,15 +531,15 @@ export function withArtifactReport(report: any): any {
             omittedEvents: truncation.omittedEvents,
             omittedByKind: truncation.omittedByKind,
             truncated: truncation.truncated,
-            compactedSuccessGroups: asArray(asRecord(selection.index.compaction).repeatedSuccessSummaries).length
+            compactedSuccessGroups: selection.index.compaction.repeatedSuccessSummaries.length
         }
     };
 }
 
-export function failureBundle(report: any): unknown {
-    const failures = (report.resultsList || [])
-        .filter((result: any) => result.status === 'FAILURE')
-        .map((result: any) => ({
+export function failureBundle(report: JsonRecord): unknown {
+    const failures = (Array.isArray(report.resultsList) ? report.resultsList.map(asRecord) : [])
+        .filter((result) => result.status === 'FAILURE')
+        .map((result) => ({
             resultKey: result.resultKey,
             name: result.name,
             transport: result.transport,
@@ -476,8 +561,9 @@ export function failureBundle(report: any): unknown {
             interactionExecutionNumber: result.interactionExecutionNumber,
             repeatIndex: result.repeatIndex
         }));
-    const postRunAssertionFailures = (report.postRunAssertions?.results || [])
-        .filter((result: any) => result.status === 'FAILURE');
+    const rawPostRunResults = asRecord(report.postRunAssertions).results;
+    const postRunAssertionFailures = (Array.isArray(rawPostRunResults) ? rawPostRunResults.map(asRecord) : [])
+        .filter((result) => result.status === 'FAILURE');
 
     return {
         summary: report.summary,
@@ -488,7 +574,7 @@ export function failureBundle(report: any): unknown {
     };
 }
 
-export function withExpandedPlanCorrelation(artifact: TrafficPlanArtifact, report: any): unknown {
+export function withExpandedPlanCorrelation(artifact: TrafficPlanArtifact, report: JsonRecord): unknown {
     return {
         ...artifact,
         runnerRunId: report.runnerRunId,

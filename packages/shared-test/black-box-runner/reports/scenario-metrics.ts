@@ -1,3 +1,5 @@
+import { decodeScenarioNumber, decodeScenarioText } from '../scenario-value-decoding.ts';
+
 export interface ScenarioOutcomeMetrics {
     readonly attempted: number;
     readonly succeeded: number;
@@ -40,6 +42,11 @@ export interface ScenarioSoakMetrics extends ScenarioMetrics {
     readonly events: Readonly<Record<string, number>>;
 }
 
+interface ScenarioScaleRunObservation {
+    readonly summary?: unknown;
+    readonly report?: unknown;
+}
+
 interface ScenarioLatencyBreakdown {
     readonly stepDuration: ScenarioLatencyMetrics;
     readonly connect: ScenarioLatencyMetrics;
@@ -67,13 +74,6 @@ function asRecord(value: unknown): Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
         : {};
-}
-
-function numberFromPath(value: unknown): number | undefined {
-    const parsed = Number(value);
-    return Number.isFinite(parsed)
-        ? parsed
-        : undefined;
 }
 
 function latencyMetric(values: number[]): ScenarioLatencyMetrics {
@@ -109,26 +109,26 @@ function latencyMetric(values: number[]): ScenarioLatencyMetrics {
 }
 
 function incrementCount(target: Record<string, number>, key: unknown): void {
-    const normalized = String(key || 'unknown');
+    const normalized = decodeScenarioText(key || 'unknown') ?? 'unknown';
     target[normalized] = (target[normalized] || 0) + 1;
 }
 
-function countReconnects(results: any[]): number {
+function countReconnects(results: readonly Record<string, unknown>[]): number {
     const seen = new Set<string>();
     let reconnects = 0;
 
     results.forEach((result) => {
-        const action = String(result.action || '').toLowerCase();
+        const action = (decodeScenarioText(result.action) ?? '').toLowerCase();
         if (action !== 'connect' && action !== 'open') {
             return;
         }
 
-        const connection = result.connection || result.actual?.connection;
+        const connection = decodeScenarioText(result.connection || asRecord(result.actual).connection);
         if (!connection) {
             return;
         }
 
-        const key = [result.runIndex, result.transport, connection].join(':');
+        const key = [decodeScenarioText(result.runIndex), decodeScenarioText(result.transport), connection].join(':');
         if (seen.has(key)) {
             reconnects++;
             return;
@@ -151,7 +151,7 @@ function ratio(numerator: number, denominator: number): number {
         : 1;
 }
 
-function resultOutcomeMetrics(matching: any[]): ScenarioOutcomeMetrics {
+function resultOutcomeMetrics(matching: readonly Record<string, unknown>[]): ScenarioOutcomeMetrics {
     const succeeded = matching.filter((result) => result.status === 'SUCCESS').length;
     const failed = matching.filter((result) => result.status === 'FAILURE').length;
 
@@ -163,13 +163,13 @@ function resultOutcomeMetrics(matching: any[]): ScenarioOutcomeMetrics {
     };
 }
 
-function flattenStoreValues(store: unknown): any[] {
+function flattenStoreValues(store: unknown): unknown[] {
     return Object.values(asRecord(store))
         .flatMap((values) => Array.isArray(values) ? values : []);
 }
 
 function diagnosticSeverity(value: unknown): string {
-    const severity = String(asRecord(value).severity || '').toLowerCase();
+    const severity = (decodeScenarioText(asRecord(value).severity) ?? '').toLowerCase();
     if (severity === 'warn') {
         return 'warning';
     }
@@ -177,18 +177,18 @@ function diagnosticSeverity(value: unknown): string {
 }
 
 function diagnosticTopic(value: unknown): string {
-    return String(asRecord(value).topic || 'unknown');
+    return decodeScenarioText(asRecord(value).topic || 'unknown') ?? 'unknown';
 }
 
-function diagnosticMetricsFromValues(values: any[]): ScenarioDiagnosticMetrics {
-    const bySeverity: Record<string, number> = {
+function diagnosticMetricsFromValues(values: readonly unknown[]): ScenarioDiagnosticMetrics {
+    const bySeverity: Record<string, number> = Object.assign(Object.create(null), {
         debug: 0,
         info: 0,
         warning: 0,
         error: 0,
         unknown: 0
-    };
-    const byTopic: Record<string, number> = {};
+    });
+    const byTopic: Record<string, number> = Object.create(null);
 
     values.forEach((value) => {
         incrementCount(bySeverity, diagnosticSeverity(value));
@@ -202,11 +202,11 @@ function diagnosticMetricsFromValues(values: any[]): ScenarioDiagnosticMetrics {
     };
 }
 
-function diagnosticMetricsFromReport(report: any): ScenarioDiagnosticMetrics {
+function diagnosticMetricsFromReport(report: Record<string, unknown>): ScenarioDiagnosticMetrics {
     return diagnosticMetricsFromValues(flattenStoreValues(report.rtcDiagnostics));
 }
 
-function countNestedArrayValues(results: any[], fieldName: string): number {
+function countNestedArrayValues(results: readonly Record<string, unknown>[], fieldName: string): number {
     return results.reduce((count, result) => {
         const actualValues = asRecord(result.actual);
         const detailValues = asRecord(result.details);
@@ -218,14 +218,16 @@ function countNestedArrayValues(results: any[], fieldName: string): number {
     }, 0);
 }
 
-export function computeScenarioMetrics(report: any): ScenarioMetrics {
-    const results = Array.isArray(report.resultsList) ? report.resultsList : [];
-    const byTransport: Record<string, number> = {};
-    const byAction: Record<string, number> = {};
-    const byStatus: Record<string, number> = {};
-    const closeResults = results.filter((result: any) => String(result.action || '').toLowerCase() === 'close');
+export function computeScenarioMetrics(report: Record<string, unknown>): ScenarioMetrics {
+    const results = Array.isArray(report.resultsList) ? report.resultsList.map(asRecord) : [];
+    const byTransport: Record<string, number> = Object.create(null);
+    const byAction: Record<string, number> = Object.create(null);
+    const byStatus: Record<string, number> = Object.create(null);
+    const closeResults = results.filter((result) =>
+        (decodeScenarioText(result.action) ?? '').toLowerCase() === 'close'
+    );
 
-    results.forEach((result: any) => {
+    results.forEach((result) => {
         incrementCount(byTransport, result.transport);
         incrementCount(byAction, result.action || result.method || result.transport);
         incrementCount(byStatus, result.status);
@@ -236,14 +238,16 @@ export function computeScenarioMetrics(report: any): ScenarioMetrics {
         byAction,
         byStatus,
         sends: resultOutcomeMetrics(
-            results.filter((result: any) => String(result.action || '').toLowerCase() === 'send')
+            results.filter((result) => (decodeScenarioText(result.action) ?? '').toLowerCase() === 'send')
         ),
         waits: resultOutcomeMetrics(
-            results.filter((result: any) => ['wait', 'expect'].includes(String(result.action || '').toLowerCase()))
+            results.filter((result) =>
+                ['wait', 'expect'].includes((decodeScenarioText(result.action) ?? '').toLowerCase())
+            )
         ),
         latencyMs: computeScenarioLatencies(results),
         failures: {
-            total: results.filter((result: any) => result.status === 'FAILURE').length,
+            total: results.filter((result) => result.status === 'FAILURE').length,
             missingExpectedMessages: countNestedArrayValues(results, 'missingMessages'),
             missingExpectedDiagnostics: countNestedArrayValues(results, 'missingDiagnostics')
         },
@@ -251,40 +255,42 @@ export function computeScenarioMetrics(report: any): ScenarioMetrics {
         diagnostics: diagnosticMetricsFromReport(report),
         cleanup: {
             closeSteps: closeResults.length,
-            closeSuccess: closeResults.filter((result: any) => result.status === 'SUCCESS').length,
-            closeFailure: closeResults.filter((result: any) => result.status === 'FAILURE').length,
+            closeSuccess: closeResults.filter((result) => result.status === 'SUCCESS').length,
+            closeFailure: closeResults.filter((result) => result.status === 'FAILURE').length,
             rtcCloseEvents: countArrayValues(report.rtcCloseEvents),
             wsCloseEvents: countArrayValues(report.wsCloseEvents)
         }
     };
 }
 
-function computeScenarioLatencies(results: any[]): ScenarioLatencyBreakdown {
+function computeScenarioLatencies(results: readonly Record<string, unknown>[]): ScenarioLatencyBreakdown {
     return {
         stepDuration: latencyMetric(
-            results.map((result: any) => numberFromPath(result.durationMs)).filter((
+            results.map((result) => decodeScenarioNumber(result.durationMs)).filter((
                 value: number | undefined
             ): value is number => value !== undefined)
         ),
         connect: latencyMetric(
-            results.map((result: any) => numberFromPath(result.actual?.connectLatencyMs)).filter((
+            results.map((result) => decodeScenarioNumber(asRecord(result.actual).connectLatencyMs)).filter((
                 value: number | undefined
             ): value is number => value !== undefined)
         ),
         send: latencyMetric(
-            results.map((result: any) => numberFromPath(result.actual?.sendLatencyMs)).filter((
+            results.map((result) => decodeScenarioNumber(asRecord(result.actual).sendLatencyMs)).filter((
                 value: number | undefined
             ): value is number => value !== undefined)
         ),
         firstPayload: latencyMetric(
-            results.map((result: any) => numberFromPath(result.actual?.firstPayloadLatencyMs)).filter((
+            results.map((result) => decodeScenarioNumber(asRecord(result.actual).firstPayloadLatencyMs)).filter((
                 value: number | undefined
             ): value is number => value !== undefined)
         )
     };
 }
 
-export function withScenarioMetrics(report: any): any {
+export function withScenarioMetrics<T extends Record<string, unknown>>(
+    report: T
+): T & { readonly metrics: Readonly<Record<string, unknown>>; } {
     return {
         ...report,
         metrics: {
@@ -294,42 +300,50 @@ export function withScenarioMetrics(report: any): any {
     };
 }
 
-function uniqueRepeatIndexes(results: any[]): number[] {
+function uniqueRepeatIndexes(results: readonly Record<string, unknown>[]): number[] {
     return [
         ...new Set(
             results
-                .map((result: any) => Number.parseInt(String(result.repeatIndex), 10))
+                .map((result) => Number.parseInt(decodeScenarioText(result.repeatIndex) ?? '', 10))
                 .filter((value: number) => Number.isFinite(value) && value > 0)
         )
     ].sort((a, b) => a - b);
 }
 
-export function computeScenarioScaleMetrics(results: any[], runs: any[]): ScenarioMetrics {
+export function computeScenarioScaleMetrics(
+    results: readonly Record<string, unknown>[],
+    runs: readonly ScenarioScaleRunObservation[]
+): ScenarioMetrics {
     const metrics = computeScenarioMetrics({ resultsList: results });
     return {
         ...metrics,
         latencyMs: {
             ...metrics.latencyMs,
             runDuration: latencyMetric(
-                runs.map((run) => numberFromPath(run.summary?.durationMs))
+                runs.map((run) => decodeScenarioNumber(asRecord(run.summary).durationMs))
                     .filter((value): value is number => value !== undefined)
             )
         },
         failures: {
             ...metrics.failures,
-            runs: runs.filter((run) => (run.summary?.failure || 0) > 0).length
+            runs: runs.filter((run) => (decodeScenarioNumber(asRecord(run.summary).failure) ?? 0) > 0).length
         },
-        diagnostics: diagnosticMetricsFromValues(runs.flatMap((run) => flattenStoreValues(run.report?.rtcDiagnostics))),
+        diagnostics: diagnosticMetricsFromValues(
+            runs.flatMap((run) => flattenStoreValues(asRecord(run.report).rtcDiagnostics))
+        ),
         cleanup: {
             ...metrics.cleanup,
-            rtcCloseEvents: runs.reduce((count, run) => count + countArrayValues(run.report?.rtcCloseEvents), 0),
-            wsCloseEvents: runs.reduce((count, run) => count + countArrayValues(run.report?.wsCloseEvents), 0)
+            rtcCloseEvents: runs.reduce(
+                (count, run) => count + countArrayValues(asRecord(run.report).rtcCloseEvents),
+                0
+            ),
+            wsCloseEvents: runs.reduce((count, run) => count + countArrayValues(asRecord(run.report).wsCloseEvents), 0)
         }
     };
 }
 
-export function computeScenarioSoakMetrics(report: any): ScenarioSoakMetrics {
-    const results = Array.isArray(report.resultsList) ? report.resultsList : [];
+export function computeScenarioSoakMetrics(report: Record<string, unknown>): ScenarioSoakMetrics {
+    const results = Array.isArray(report.resultsList) ? report.resultsList.map(asRecord) : [];
     return {
         ...computeScenarioMetrics(report),
         sameConnection: true,

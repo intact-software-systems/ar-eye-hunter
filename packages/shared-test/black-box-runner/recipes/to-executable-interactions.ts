@@ -3,35 +3,117 @@ import type { ScenarioRecipe } from './read-scenario-recipe-includes.ts';
 import { expandInlineLoopSteps } from './scenario-workload.ts';
 import { toRecipeStepAction } from './to-recipe-step-action.ts';
 
-type JsonRecord = Record<string, unknown>;
+export interface ExecutableStepMetadata {
+    readonly scenarioExecutionNumber: number;
+    readonly interactionExecutionNumber: number;
+    readonly repeatIndex: unknown;
+    readonly soakPhase: unknown;
+    readonly soakIteration: unknown;
+    readonly soakLoopIndex: unknown;
+    readonly trafficPlan: unknown;
+    readonly trafficSequence: unknown;
+    readonly trafficOperation: unknown;
+    readonly trafficSeed: unknown;
+    readonly trafficPacing: unknown;
+    readonly loopName: unknown;
+    readonly loopIndex: unknown;
+    readonly loopIteration: unknown;
+    readonly loopStepIndex: unknown;
+    readonly loopCount: unknown;
+    readonly loopElapsedMs: unknown;
+    readonly loopPhase: unknown;
+}
+
+export interface ExecutableRequest extends ExecutableStepMetadata, Record<string, unknown> {}
+
+export interface ExecutableTransport {
+    readonly request: ExecutableRequest;
+    readonly response: Record<string, unknown>;
+}
+
+export interface ExecutableInteraction extends Record<string, unknown> {
+    readonly HTTP?: ExecutableTransport;
+    readonly WS?: ExecutableTransport;
+    readonly RTC?: ExecutableTransport;
+    readonly CRDT?: ExecutableTransport;
+    readonly SET?: ExecutableTransport;
+    readonly ASSERT?: ExecutableTransport;
+    readonly PARALLEL?: ExecutableParallelTransport;
+}
+
+interface ParallelGroupSpec {
+    readonly name: string;
+    readonly steps: readonly unknown[];
+}
+
+export interface ExecutableParallelGroup {
+    readonly name: string;
+    readonly index: number;
+    readonly steps: ExecutableInteraction[];
+}
+
+export interface ExecutableParallelRequest extends ExecutableRequest {
+    readonly groups: ExecutableParallelGroup[];
+}
+
+export interface ExecutableParallelTransport {
+    readonly request: ExecutableParallelRequest;
+    readonly response: Record<string, unknown>;
+}
 
 interface ExecutableBuildState {
     nextInteractionExecutionNumber: number;
 }
 
 interface ParallelStepInput {
-    readonly step: JsonRecord;
+    readonly step: Record<string, unknown>;
     readonly config: ScenarioRecipe;
     readonly state: ExecutableBuildState;
     readonly interactionExecutionNumber: number;
 }
 
-function asRecord(value: unknown): JsonRecord {
-    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+function asRecord(value: unknown): Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function replaceVariables<T>(data: T, variables: Record<string, unknown> = {}): T {
-    let text = JSON.stringify(data);
-
-    Object.entries(variables)
-        .forEach(([key, value]) => {
-            text = text.replaceAll('{' + key + '}', String(value));
-        });
-
-    return JSON.parse(text);
+function replaceVariableText(text: string, variables: Record<string, unknown>): string {
+    for (const [key, value] of Object.entries(variables)) {
+        text = text.replaceAll('{' + key + '}', () => String(value));
+    }
+    return text;
 }
 
-function toStepExecutionMetadata(step: JsonRecord, interactionExecutionNumber: number): JsonRecord {
+function replaceVariables(data: ScenarioRecipe, variables: Record<string, unknown> = {}): ScenarioRecipe {
+    return Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [
+            replaceVariableText(key, variables),
+            replaceVariableValue(value, variables)
+        ])
+    );
+}
+
+function replaceVariableValue(data: unknown, variables: Record<string, unknown>): unknown {
+    if (typeof data === 'string') {
+        return replaceVariableText(data, variables);
+    }
+    if (Array.isArray(data)) {
+        return data.map((value) => replaceVariableValue(value, variables));
+    }
+    if (data !== null && typeof data === 'object') {
+        return Object.fromEntries(
+            Object.entries(data).map(([key, value]) => [
+                replaceVariableText(key, variables),
+                replaceVariableValue(value, variables)
+            ])
+        );
+    }
+    return data;
+}
+
+function toStepExecutionMetadata(
+    step: Record<string, unknown>,
+    interactionExecutionNumber: number
+): ExecutableStepMetadata {
     return {
         scenarioExecutionNumber: 1,
         interactionExecutionNumber,
@@ -70,7 +152,7 @@ function joinUrl(baseUrl: unknown, path: unknown): unknown {
     return baseUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
 }
 
-function connectionRequestDefaults(connection: JsonRecord): JsonRecord {
+function connectionRequestDefaults(connection: Record<string, unknown>): Record<string, unknown> {
     const {
         headers: _headers,
         resilience: _resilience,
@@ -82,7 +164,7 @@ function connectionRequestDefaults(connection: JsonRecord): JsonRecord {
     return requestDefaults;
 }
 
-function toConnection(config: Record<string, unknown>, step: Record<string, unknown>): JsonRecord {
+function toConnection(config: Record<string, unknown>, step: Record<string, unknown>): Record<string, unknown> {
     const connections = asRecord(config.connections);
     const connectionName = step.connection;
 
@@ -132,9 +214,9 @@ function withDefaultsAndConnection(
         },
         expect: {
             ...expect,
-            comparison: expect.comparison || defaults.comparison,
-            ignoreJsonKeys: expect.ignoreJsonKeys || defaults.ignoreJsonKeys,
-            ignoreJsonPaths: expect.ignoreJsonPaths || defaults.ignoreJsonPaths
+            comparison: expect.comparison === undefined ? defaults.comparison : expect.comparison,
+            ignoreJsonKeys: expect.ignoreJsonKeys === undefined ? defaults.ignoreJsonKeys : expect.ignoreJsonKeys,
+            ignoreJsonPaths: expect.ignoreJsonPaths === undefined ? defaults.ignoreJsonPaths : expect.ignoreJsonPaths
         }
     };
 }
@@ -149,7 +231,7 @@ function toExecutableStep(
     step: Record<string, unknown>,
     interactionExecutionNumber: number,
     inferredInputs: string[] = []
-): Record<string, unknown> {
+): ExecutableInteraction {
     const request = asRecord(step.request);
     const expect = asRecord(step.expect || step.response);
 
@@ -264,33 +346,24 @@ function toRepeatedSteps(steps: Array<Record<string, unknown>>): Array<Record<st
     });
 }
 
-function toParallelGroupSpecs(step: Record<string, unknown>): Array<JsonRecord> {
+function toParallelGroupSpecs(step: Record<string, unknown>): ParallelGroupSpec[] {
     if (Array.isArray(step.groups)) {
         return step.groups
             .filter((group) => group && typeof group === 'object' && !Array.isArray(group))
-            .map((group, index) => ({
-                name: String((group as JsonRecord).name || 'group-' + (index + 1)),
-                steps: Array.isArray((group as JsonRecord).steps)
-                    ? (group as JsonRecord).steps
-                    : []
-            }));
+            .map((group, index) => {
+                const record = asRecord(group);
+                return {
+                    name: String(record.name || 'group-' + (index + 1)),
+                    steps: Array.isArray(record.steps) ? record.steps : []
+                };
+            });
     }
-
     if (Array.isArray(step.steps)) {
         return step.steps.map((nestedStep, index) => {
-            if (
-                nestedStep && typeof nestedStep === 'object' && !Array.isArray(nestedStep) &&
-                Array.isArray((nestedStep as JsonRecord).steps)
-            ) {
-                return {
-                    name: String((nestedStep as JsonRecord).name || 'group-' + (index + 1)),
-                    steps: (nestedStep as JsonRecord).steps
-                };
-            }
-
+            const record = asRecord(nestedStep);
             return {
-                name: String((nestedStep as JsonRecord)?.name || 'group-' + (index + 1)),
-                steps: [nestedStep]
+                name: String(record.name || 'group-' + (index + 1)),
+                steps: Array.isArray(record.steps) ? record.steps : [nestedStep]
             };
         });
     }
@@ -298,11 +371,11 @@ function toParallelGroupSpecs(step: Record<string, unknown>): Array<JsonRecord> 
     return [];
 }
 
-function toExecutableParallelStep(input: ParallelStepInput): Record<string, unknown> {
+function toExecutableParallelStep(input: ParallelStepInput): ExecutableInteraction {
     const { step, config, state, interactionExecutionNumber } = input;
     const request = asRecord(step.request);
     const expect = asRecord(step.expect || step.response);
-    const groups = toParallelGroupSpecs(step).map((group, groupIndex) => {
+    const groups: ExecutableParallelGroup[] = toParallelGroupSpecs(step).map((group, groupIndex) => {
         const groupName = String(group.name || 'group-' + (groupIndex + 1));
         const rawSteps = Array.isArray(group.steps)
             ? group.steps
@@ -318,7 +391,7 @@ function toExecutableParallelStep(input: ParallelStepInput): Record<string, unkn
         return {
             name: groupName,
             index: groupIndex + 1,
-            steps: toExecutableSteps(rawSteps as Array<Record<string, unknown>>, config, state)
+            steps: toExecutableSteps(rawSteps, config, state)
         };
     });
 
@@ -347,10 +420,10 @@ function toExecutableSteps(
     rawSteps: Array<Record<string, unknown>>,
     config: ScenarioRecipe,
     state: ExecutableBuildState
-): Array<Record<string, unknown>> {
-    const expandedRawSteps = expandInlineLoopSteps(rawSteps as Array<JsonRecord>) as Array<Record<string, unknown>>;
+): ExecutableInteraction[] {
+    const expandedRawSteps = expandInlineLoopSteps(rawSteps);
     const steps = toRepeatedSteps(expandedRawSteps)
-        .map((step: Record<string, unknown>) => withDefaultsAndConnection(step, config as Record<string, unknown>));
+        .map((step: Record<string, unknown>) => withDefaultsAndConnection(step, config));
 
     return steps
         .map((step: Record<string, unknown>, index: number) => {
@@ -365,12 +438,12 @@ function toExecutableSteps(
         });
 }
 
-export function toExecutableInteractions(config: ScenarioRecipe): unknown[] {
+export function toExecutableInteractions(config: ScenarioRecipe): ExecutableInteraction[] {
     const normalizedConfig = replaceVariables(config, config.variables);
 
     if (Array.isArray(normalizedConfig.steps)) {
         return toExecutableSteps(
-            normalizedConfig.steps as Array<Record<string, unknown>>,
+            normalizedConfig.steps,
             normalizedConfig,
             {
                 nextInteractionExecutionNumber: 1
@@ -378,5 +451,8 @@ export function toExecutableInteractions(config: ScenarioRecipe): unknown[] {
         );
     }
 
-    return scenarioAlgorithms.createScenarios(normalizedConfig).flatMap((a) => a);
+    if (!normalizedConfig.interactions) {
+        throw new Error('Recipe requires steps or interactions.');
+    }
+    return scenarioAlgorithms.createScenarios({ ...normalizedConfig, interactions: normalizedConfig.interactions });
 }
