@@ -16,6 +16,16 @@ export function validateALOutboundControlAdmission(
     if (!read.owner || !read.sent || read.sent.msg.id.senderId !== read.owner) {
         return rejectedControl('AL control has no retained outbound message obligation');
     }
+    if (
+        candidate.nextVersion?.senderId !== read.owner ||
+        !Number.isSafeInteger(candidate.nextVersion.version) ||
+        candidate.nextVersion.version !== (read.ownerVersion?.version ?? 0) + 1
+    ) {
+        return Either.ofLeft({
+            code: 'malformed',
+            message: 'AL control version differs from its captured owner observation'
+        });
+    }
     if (read.parsed.payload.toPeerId !== read.owner) {
         return rejectedControl('AL control is addressed to another outbound message owner');
     }

@@ -294,7 +294,7 @@ allocation/byte impact needs measurement.
 [Outbound computation](../../packages/shared/alm/outbound/compute-al-outbound-dispatch.ts)
 stores sent-message state and effects containing both `msg` and prepared transport values.
 Queue effects also contain serialized entries. [Inbound preparation](../../packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts)
-and [QueueBoxUtilities](../../packages/shared/services/QueueBoxUtilities.ts) retain multiple
+and [QueueBoxUtilities](../../packages/shared/services/queue-box-utilities.ts) retain multiple
 representations for delivery.
 
 **Correction and proof:** one canonical durable envelope referenced by compact work/receipt

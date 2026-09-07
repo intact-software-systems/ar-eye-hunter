@@ -479,7 +479,7 @@ async function persistSentMessage(
     const snapshot = createSentSnapshot(msgId);
     const read = await admissionStore.readOutgoingMessage(
         snapshot.msg,
-        () => ({ persist: true, preparedMessages: [] })
+        () => ({ msg: snapshot.msg, persist: true, preparedMessages: [] })
     );
     const status = await admissionStore.commitBundle({
         senderId: snapshot.msg.id.senderId,
@@ -513,7 +513,8 @@ function createOutboundUnicastMessage(resourceId: string): ALMessage {
         'chat.private-text.v1',
         {
             text: resourceId
-        }
+        },
+        { ttlMs: 30_000 }
     );
 }
 

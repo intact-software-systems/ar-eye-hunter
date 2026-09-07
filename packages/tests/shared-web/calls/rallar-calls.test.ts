@@ -1,8 +1,8 @@
 import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';

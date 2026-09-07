@@ -23,6 +23,25 @@ describe('AL outbound durable effect lifecycle', () => {
         vi.restoreAllMocks();
     });
 
+    it('does not send when the deadline passes during the receipt read', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const store = createDefaultOutboundTestAdmissionStore();
+        const send = vi.fn(async () => ({ status: 'sent' as const }));
+        vi.spyOn(store, 'readReceiptState').mockImplementation(async () => {
+            vi.setSystemTime(2_000);
+            return undefined;
+        });
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore: store },
+            sendPreparedMessage: send,
+            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+        });
+        await runtime.enqueueIfAbsent(createOutboundMessage('expires-during-receipt-read', { ttlMs: 1_000 }));
+        expect(send).not.toHaveBeenCalled();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+    });
+
     it('recovers a retained send when durable completion fails after its native settlement', async () => {
         vi.useFakeTimers();
         const admissionStore = createDefaultOutboundTestAdmissionStore();
@@ -45,7 +64,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 sent.push(String(prepared.msgId));
                 return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent' };
             },
-            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         const message = createOutboundMessage('retained-completion-failure');
         await runtime.enqueueIfAbsent(message);
@@ -72,7 +91,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 attempts.push(String(prepared.msgId));
                 return { status: 'queued', settled: settlement.promise };
             },
-            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         const message = createOutboundMessage(`retained-${status}`);
         await runtime.enqueueIfAbsent(message);
@@ -98,6 +117,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -118,6 +138,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -146,6 +167,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 repairTracking: {
@@ -155,6 +177,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'repair', msgId: plannedMsg.id.msgId, trigger: request.trigger }]
             })
@@ -226,6 +249,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -267,6 +291,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -294,6 +319,7 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: blockingSend,
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -304,6 +330,7 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: blockingSend,
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -364,6 +391,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -379,6 +407,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -404,7 +433,7 @@ describe('AL outbound durable effect lifecycle', () => {
         runtime.dispose();
     });
 
-    it('recomputes from the latest read after a commit conflict', async () => {
+    it('returns an admission conflict to its owner before a fresh attempt', async () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
@@ -444,6 +473,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -459,6 +489,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -470,9 +501,8 @@ describe('AL outbound durable effect lifecycle', () => {
             })
         });
 
-        const conflictEnqueue = enqueueOutboundOrThrow(runtime, msg);
-        await vi.advanceTimersByTimeAsync(10);
-        await conflictEnqueue;
+        await expect(enqueueOutboundOrThrow(runtime, msg)).rejects.toThrow('Outbound commit conflict');
+        await enqueueOutboundOrThrow(runtime, msg);
         await vi.advanceTimersByTimeAsync(200);
 
         expect(rejectedFirstCommit).toBe(true);
@@ -488,6 +518,7 @@ describe('AL outbound durable effect lifecycle', () => {
             outbox,
             stores: { admissionStore },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
@@ -544,6 +575,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -571,7 +603,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(pending.map((effect) => effect.payload)).toEqual([payload]);
     });
 
-    it('retries the complete control-message admission after optimistic conflicts', async () => {
+    it('returns a control admission conflict without an inner retry', async () => {
         vi.useFakeTimers();
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         let attempts = 0;
@@ -591,6 +623,7 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -610,10 +643,8 @@ describe('AL outbound durable effect lifecycle', () => {
                 }
             )
         );
-        await vi.advanceTimersByTimeAsync(500);
-
-        await expect(accepted).resolves.toBe(true);
-        expect(attempts).toBe(4);
+        await expect(accepted).rejects.toThrow('simulated outbound control conflict');
+        expect(attempts).toBe(1);
         runtime.dispose();
     });
 
@@ -631,6 +662,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 throw new Error('network closed');
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
@@ -656,7 +688,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
                 return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(leaseExpiresAt - Date.now() - 1);

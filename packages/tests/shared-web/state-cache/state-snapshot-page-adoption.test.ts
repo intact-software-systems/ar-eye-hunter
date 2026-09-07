@@ -3,8 +3,8 @@ import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/brow
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import * as groups from '@shared/repository/group-state-snapshots-repository.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshot, createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';

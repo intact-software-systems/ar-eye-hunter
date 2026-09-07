@@ -1,3 +1,4 @@
+import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -172,8 +173,9 @@ export class ALOutboundWorkHandler<TPrepared> {
             }
         }
         catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
+            if (error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException) {
+                await this.dependencies.admissionStore.rejectEffect(effect.entry);
+                return;
             }
             if (!this.disposed) {
                 await this.retry(effect);
@@ -193,8 +195,9 @@ export class ALOutboundWorkHandler<TPrepared> {
             }
         }
         catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
+            if (error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException) {
+                await this.dependencies.admissionStore.rejectEffect(effect.entry);
+                return;
             }
             if (!this.disposed) {
                 await this.retry(effect);

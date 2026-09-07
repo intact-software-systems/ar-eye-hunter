@@ -37,7 +37,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { authSession } from '../../group-state/group-state-test-runtime.ts';
 import {

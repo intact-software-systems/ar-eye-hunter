@@ -5,11 +5,11 @@ import type {
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
+import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../al-runtime-state-stores.ts';
-import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type {
     ALOutboundRepairHint,
@@ -63,6 +63,7 @@ export interface ALControlAdmissionCandidate {
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
     readonly versionExpireAtTimestamp: number;
+    readonly nextVersion: ALOutboundVersionedClientRecord | undefined;
 }
 
 export function computeALOutboundControlAdmission(
@@ -81,12 +82,13 @@ export function computeALOutboundControlAdmission(
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? toALOutboundPendingAckExpireAtTimestamp(pending.value)
             : Math.max(
-                read.sent ? resolveExplicitOutboundMessageExpireAtMs(read.sent.msg) ?? 0 : 0,
+                read.sent ? resolveALMessageExpireAtMs(read.sent.msg) ?? 0 : 0,
                 toExpireAtTimestampFromNow(retention.durableEffectTtlMs, read.nowMs)
             ),
         repairEffect: toRepairHintEffect(read, retention),
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
-        versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs)
+        versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
+        nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
     };
 }
 

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -74,9 +75,19 @@ export function decodeALOutboundWorkEntry<TPrepared>(
         ) {
             throw new TypeError('Outbound work identity differs from its queue slot');
         }
+        const payload = decodeALOutboundEffectPayload(stored.payload, stored.effectId, decodePrepared);
+        if ('msg' in payload) {
+            const deadline = resolveALMessageExpireAtMs(payload.msg);
+            if (!Number.isSafeInteger(deadline) || deadline !== Number(entry.audit.expiryTs.epochMilliseconds)) {
+                throw new TypeError('Outbound work deadline differs from its message');
+            }
+            if ('entry' in payload && Number(payload.entry.audit.expiryTs.epochMilliseconds) !== deadline) {
+                throw new TypeError('Outbound physical queue deadline differs from its message');
+            }
+        }
         return {
             effectId: stored.effectId,
-            payload: decodeALOutboundEffectPayload(stored.payload, stored.effectId, decodePrepared),
+            payload,
             entry,
             attempts: entry.dequeueAudit.attempts,
             retryAtMs: Number(

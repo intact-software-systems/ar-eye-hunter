@@ -32,8 +32,8 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
-import { QueueBoxUtilities } from '../QueueBoxUtilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import {
     type WsDeliveryDiagnosticsSink,

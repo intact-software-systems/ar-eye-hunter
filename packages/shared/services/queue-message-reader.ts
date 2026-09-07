@@ -12,8 +12,8 @@ import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/ResourceInboxAttemptTelemetry.ts';
 import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';
 
+import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnQueuedMessageCallback, OnRejectedQueuedMessageCallback } from './queue-message-callbacks.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 
 export namespace QueueMessageReader {
     export interface Config {
@@ -53,11 +53,13 @@ export class QueueMessageReader {
 
     async dequeue(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
         await QueueBoxUtilities.defaultDequeue(
-            this.repository,
-            typesToDequeue,
-            resilience,
-            (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
-            this.config.dequeueOptions
+            {
+                qbox: this.repository,
+                typesToDequeue: typesToDequeue,
+                resilience: resilience,
+                onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
+                options: this.config.dequeueOptions
+            }
         );
     }
 

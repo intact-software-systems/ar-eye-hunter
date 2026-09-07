@@ -62,9 +62,7 @@ describe('AL state retained across runtime recreation', () => {
             {
                 text: 'hello'
             },
-            {
-                reliability: 'at-least-once'
-            }
+            { ttlMs: 30_000, reliability: 'at-least-once' }
         );
 
         await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
@@ -124,7 +122,8 @@ describe('AL state retained across runtime recreation', () => {
             'presence.state.v1',
             {
                 online: true
-            }
+            },
+            { ttlMs: 30_000 }
         );
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
@@ -146,7 +145,8 @@ describe('AL state retained across runtime recreation', () => {
             'presence.state.v1',
             {
                 online: false
-            }
+            },
+            { ttlMs: 30_000 }
         );
 
         const [secondEntry] = await enqueueOutboundOrThrow(restartedForSupersedence, secondPresence);
@@ -345,6 +345,7 @@ function createDefaultOutboundRuntime(
         decodePreparedMessage: decodeOutboundTestPayload,
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: (msg) => ({
+            msg: msg,
             persist: msg.payload.typeId === 'presence.state.v1',
             preparedMessages: msg.payload.typeId === 'presence.state.v1'
                 ? []
@@ -373,6 +374,7 @@ function createDefaultOutboundRuntime(
                 : undefined
         }),
         planRepairMessage: async (msg, request) => ({
+            msg: msg,
             persist: false,
             preparedMessages: [
                 {
@@ -406,6 +408,7 @@ function createBufferedOrderedMessage(seq: number, text: string) {
             text
         },
         {
+            ttlMs: 30_000,
             seq,
             reliability: 'at-least-once',
             ack: 'none',
@@ -430,7 +433,8 @@ function createOutboundMessage(resourceId: string) {
         'chat.private-text.v1',
         {
             text: resourceId
-        }
+        },
+        { ttlMs: 30_000 }
     );
 }
 

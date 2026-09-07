@@ -1,4 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
+import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
@@ -61,11 +62,12 @@ export class WsQueueBoxServerOutboundPlanning {
     }
 
     planOutboundMessage(
-        message: ALMessage,
+        original: ALMessage,
         phase: WsQueueBoxServerOutboundPhase,
         clusterPublisherRegistered: boolean
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-        const normalized = this.normalizePolicy(message);
+        const normalized = this.normalizePolicy(original);
+        const message = toALOutboundMessage(original, normalized.effective);
         const persist = shouldPersistOutbox(normalized.effective);
 
         return this.validateMessage(message, {
@@ -73,10 +75,9 @@ export class WsQueueBoxServerOutboundPlanning {
             representNoCurrentRecipient: phase === 'dequeue'
         }).fold(
             (error) =>
-                toNoRouteDispatchPlan(
-                    `Invalid WS server outbound message ${message.id.msgId}: ${error}`
-                ),
+                toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
             (recipients) => ({
+                msg: message,
                 persist,
                 preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
                     ? [{ kind: 'cluster-local-complete', message }]
@@ -105,6 +106,7 @@ export class WsQueueBoxServerOutboundPlanning {
         }
 
         return {
+            msg: message,
             persist: false,
             preparedMessages: recipients.map((recipient) => ({
                 kind: 'recipient',
@@ -180,9 +182,10 @@ function toNoResolvedRecipientsReason(
 }
 
 function toNoRouteDispatchPlan(
+    message: ALMessage,
     dropReason: string
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { dropReason, persist: false, preparedMessages: [] };
+    return { msg: message, dropReason, persist: false, preparedMessages: [] };
 }
 
 function toAckTrackingPlan(

@@ -29,8 +29,8 @@ import type { ResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttempt
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnQueuedMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
 

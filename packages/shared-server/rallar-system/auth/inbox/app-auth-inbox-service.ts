@@ -9,10 +9,10 @@ import type {
     WebSocketTicketResponse
 } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-command-identity.ts';
@@ -592,9 +592,19 @@ export class AppAuthInboxService {
                 senderId: reservation.senderId,
                 data: null
             });
-            const entry = await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
+            const observations = await this.authInboxRepository.findAllByTopicAndResourceId(
+                placeholder.key.topicId,
+                placeholder.key.resourceId
+            );
+            const observedAtMs = Date.now();
+            const existing = observations.find((entry) =>
+                isKeysEqual(entry.key, placeholder.key) && entry.audit.expiryTs.epochMilliseconds > observedAtMs
+            );
+            const candidate = existing ??
+                toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())));
+            const entry = existing ?? await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
                 placeholder,
-                async () => toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())))
+                async () => candidate
             );
             const intent = readAuthReplayIntent(entry, reservation.type);
             if (!intent || !(await matches(intent))) {

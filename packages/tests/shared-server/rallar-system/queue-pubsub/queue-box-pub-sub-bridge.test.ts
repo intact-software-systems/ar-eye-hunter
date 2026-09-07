@@ -10,7 +10,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { describe, expect, it, vi } from 'vitest';
 

@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -27,7 +28,7 @@ import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
@@ -43,6 +44,39 @@ describe('WebRtc overlay services', () => {
     afterEach(() => {
         vi.useRealTimers();
         vi.restoreAllMocks();
+    });
+
+    it('unregisters owned queue work and stops its timer when disposed', async () => {
+        vi.useFakeTimers();
+        const channel = createOpenRtcChannel();
+        const connectionService = createConnectionService(['peer-1'], { 'peer-1': { channel } });
+        const resources = createDefaultALOutboundRuntimeResources();
+        const claim = vi.spyOn(resources.admissionStore, 'claimReadyEffects');
+        const manager = new WebRtcOverlayMulticastManager({
+            outbox: new InMemoryQueueBox(),
+            connectionService,
+            groupCache: new LatestRepository(),
+            overlayCache: new LatestRepository(),
+            multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundRuntime: resources,
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter()
+        });
+        onTestFinished(() => manager.dispose());
+        await manager.enqueueIfAbsent(createUnicastRtcMessage('self', 'dispose-owned-work'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(claim).toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBeGreaterThan(0);
+        manager.dispose();
+        claim.mockClear();
+        const sends = channel.sendCalls.length;
+        await vi.advanceTimersByTimeAsync(60_000);
+        await resources.queueEngine.executeOnce();
+        expect(claim).not.toHaveBeenCalled();
+        expect(channel.sendCalls).toHaveLength(sends);
+        expect(vi.getTimerCount()).toBe(0);
     });
 
     it('holds a queued relay until its exact room snapshot catches up again', async () => {
@@ -64,6 +98,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const message = newALMulticastMessage(
             'peer-1',
             { topicId: 'chat', contextId: 'group-1', resourceId: 'snapshot-forward' },
@@ -161,6 +196,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
             'sender-2',
@@ -210,6 +246,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUntargetedMessage(
             'sender-no-targets',
             {
@@ -251,6 +288,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'sender-missing-context',
             {
@@ -296,6 +334,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
             {
@@ -363,6 +402,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
             {
@@ -434,6 +474,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
             {
@@ -482,6 +523,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-immediate',
             {
@@ -528,6 +570,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
             rateLimiter: RateLimiter.init(1_000, 2)
         });
+        onTestFinished(() => manager.dispose());
 
         const first = await manager.enqueueIfAbsent(
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-1')
@@ -576,6 +619,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: circuitBreaker,
             rateLimiter: RateLimiter.init(1_000, 20)
         });
+        onTestFinished(() => manager.dispose());
 
         const result = await manager.enqueueIfAbsent(
             createUnicastRtcMessage('sender-circuit-open', 'msg-circuit-open')
@@ -606,6 +650,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const message = createUnicastRtcMessage('sender-corrupt', 'persisted-corrupt');
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX);
         await queue.enqueueIfAbsent({
@@ -639,6 +684,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-durable',
             {
@@ -688,6 +734,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-duplicate',
             {
@@ -741,6 +788,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
             {
@@ -790,6 +838,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
             'sender-3',

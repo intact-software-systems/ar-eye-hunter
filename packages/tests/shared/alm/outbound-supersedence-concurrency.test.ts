@@ -62,7 +62,8 @@ describe('outbound shared supersedence decisions', () => {
         expect(await store.commitBundle(newDecision.bundle!, decodeOutboundTestPayload)).toBe('conflict');
         const retry = await readDecision(store, newer);
         expect(await store.commitBundle(retry.bundle!, decodeOutboundTestPayload)).toBe('committed');
-        const latest = await store.readOutgoingMessage(createMessage('observer', 4), () => ({
+        const latest = await store.readOutgoingMessage(createMessage('observer', 4), (message) => ({
+            msg: message,
             persist: false,
             preparedMessages: [],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
@@ -91,6 +92,7 @@ function createMessage(senderId: string, sequence: number): ALMessage {
 
 async function readDecision(store: ALOutboundAdmissionStore, message: ALMessage, supersedenceKey = 'shared-topic') {
     const read = await store.readOutgoingMessage(message, () => ({
+        msg: message,
         persist: false,
         preparedMessages: [{ text: message.id.msgId }],
         supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }

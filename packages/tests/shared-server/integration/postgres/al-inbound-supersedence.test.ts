@@ -11,7 +11,7 @@ import { toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-
 import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 

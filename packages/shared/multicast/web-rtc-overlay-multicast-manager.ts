@@ -3,6 +3,7 @@ import {
     isSameGroupRef,
     toScopedOverlayId
 } from '@shared/api/api-type-utils.ts';
+import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 
 import { ALMessage, readALTargetGroupRef } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
@@ -49,7 +50,7 @@ import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts'
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
-import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type {
     QRtcDataChannel,
@@ -496,27 +497,30 @@ export class WebRtcOverlayMulticastManager {
         return this.planOutgoingMessage(msg);
     }
 
-    private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALMessage> {
-        const context = this.readOverlayContext(msg);
+    private planOutgoingMessage(original: ALMessage): ALOutboundDispatchPlan<ALMessage> {
+        const context = this.readOverlayContext(original);
+        const msg = toALOutboundMessage(original, this.readOutgoingQosPolicy(original, context).effective);
 
         if (!msg.targets) {
             return this.toUnaddressedDispatchPlan(msg, this.readOutgoingQosPolicy(msg, context).effective);
         }
 
         if (msg.targets.mode === 'unicast') {
-            return this.planOutboundDispatch(this.planDirectDispatch(msg));
+            return this.planOutboundDispatch(msg, this.planDirectDispatch(msg));
         }
 
         if (!context) {
             return {
                 dropReason: `Skipping RTC outbound message ${msg.id.msgId} without overlay context`,
                 persist: false,
+                msg,
                 preparedMessages: []
             };
         }
 
         const multicaster = this.getOrCreateMulticaster(context.overlayId);
         return this.planOutboundDispatch(
+            msg,
             multicaster.createOriginatingPlan(
                 msg,
                 context,
@@ -543,11 +547,13 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: `Skipping RTC outbound message ${msg.id.msgId} without targets or next hop`,
                 persist: false,
+                msg,
                 preparedMessages: []
             };
         }
         return {
             persist: true,
+            msg,
             preparedMessages: [msg],
             ackTracking: this.toAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
             repairTracking: this.toRepairTrackingPlan(effective),
@@ -555,11 +561,15 @@ export class WebRtcOverlayMulticastManager {
         };
     }
 
-    private planOutboundDispatch(plan: OverlayMulticastDispatchPlan): ALOutboundDispatchPlan<ALMessage> {
+    private planOutboundDispatch(
+        msg: ALMessage,
+        plan: OverlayMulticastDispatchPlan
+    ): ALOutboundDispatchPlan<ALMessage> {
         if (plan.handlingPlan.dropReason) {
             return {
                 dropReason: `Skipping planned RTC dispatch: ${plan.handlingPlan.dropReason}`,
                 persist: false,
+                msg,
                 preparedMessages: []
             };
         }
@@ -568,6 +578,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: this.describeNoDispatchReason(plan),
                 persist: false,
+                msg,
                 preparedMessages: []
             };
         }
@@ -583,6 +594,7 @@ export class WebRtcOverlayMulticastManager {
                 return {
                     dropReason: `Skipping immediate RTC dispatch without RTC channel for peer ${missingPeerId}`,
                     persist: false,
+                    msg,
                     preparedMessages: []
                 };
             }
@@ -590,6 +602,7 @@ export class WebRtcOverlayMulticastManager {
 
         return {
             persist: plan.handlingPlan.forwarding.persist,
+            msg,
             preparedMessages: plan.transportMessages,
             ackTracking: this.toAckTrackingPlan(
                 plan.handlingPlan.effective,
@@ -845,12 +858,14 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
                 persist: false,
+                msg,
                 preparedMessages: []
             };
         }
         const normalized = this.readOutgoingQosPolicy(msg, this.readOverlayContext(msg));
         return {
             persist: false,
+            msg,
             preparedMessages: [
                 {
                     ...msg,

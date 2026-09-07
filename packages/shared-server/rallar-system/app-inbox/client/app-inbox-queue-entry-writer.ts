@@ -2,7 +2,7 @@ import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-c
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import { isCompletedOrFailed, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { serializeCanonicalMutationCommand } from '../../protocol/json-wire-identity.ts';
 import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';

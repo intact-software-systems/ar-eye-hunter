@@ -187,15 +187,7 @@ describe('PSql admission optimistic retry', () => {
             msgId: 'outbound-retry-conflict',
             maxAttempts: 1,
             expireAtTimestamp: Date.now() + 60_000,
-            createEffect: (attempt) => ({
-                effectId: `nack-retry:outbound-retry-conflict:not-yet-in-sync:${attempt}`,
-                expireAtTimestamp: Date.now() + 60_000,
-                payload: {
-                    kind: 'nack-retry',
-                    msgId: 'outbound-retry-conflict',
-                    reason: 'not-yet-in-sync'
-                }
-            })
+            retryAtMs: Date.now()
         }, decodeALOutboundPreparedMessage)).resolves.toEqual({ status: 'conflict' });
     });
 
@@ -223,38 +215,54 @@ describe('PSql admission optimistic retry', () => {
         }, decodeALOutboundPreparedMessage)).rejects.toThrow('outbound storage unavailable');
     });
 
-    it('commits an outbound message after an apply-time CAS loss', async () => {
+    it('returns an actual post-read admission conflict before a fresh caller attempt succeeds', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { repository } = storage;
-        const namespace = 'psql-test:outbound:runtime-retry';
-        const plan = () => ({ persist: true, preparedMessages: [] });
+        const namespace = 'psql-test:outbound:runtime-conflict';
+        const admissionNamespace = `${namespace}:outbound:admission`;
+        const stores = createDefaultPSqlALOutboundRuntimeStores({ namespace, repository });
+        const outbox = new InMemoryQueueBox(new Map());
+        const events: string[] = [];
         const runtime = createDefaultALOutboundMessageRuntime({
-            outbox: new InMemoryQueueBox(new Map()),
-            stores: createDefaultPSqlALOutboundRuntimeStores({ namespace, repository }),
+            outbox,
+            stores,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             decodePreparedMessage: decodeALOutboundPreparedMessage,
-            planOutgoingMessage: plan,
+            planOutgoingMessage: (msg: ALMessage) => {
+                events.push('planner-read');
+                return { msg, persist: true, preparedMessages: [] };
+            },
             sendPreparedMessage: async () => {
                 throw new Error('An outbox-only admission must not submit a transport send');
             }
         });
         onTestFinished(() => runtime.dispose());
-        conflictNextAdmissionCommit(storage, { namespace: `${namespace}:outbound:admission`, senderId: 'self' });
-
-        const result = await runtime.enqueueIfAbsent(
-            createOutboundMessage('outbound-runtime-retry')
-        );
-
-        expect(result.status).toBe('enqueued');
-        const admissionNamespace = `${namespace}:outbound:admission`;
-        expect(
-            await repository.findEntry(
+        await runtime.ready();
+        const commit = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (candidate, decodePrepared) => {
+            expect(candidate.expectedVersion).toBeUndefined();
+            events.push('candidate-read');
+            await repository.upsert(
                 admissionNamespace,
-                `${admissionNamespace}:version:self`
-            )
-        ).toBeDefined();
-        runtime.dispose();
+                `${admissionNamespace}:version:self`,
+                JSON.stringify({ senderId: 'self', version: 1 }),
+                Date.now() + 60_000
+            );
+            events.push('injected-version');
+            return await commit(candidate, decodePrepared);
+        });
+        const message = createOutboundMessage('outbound-runtime-conflict');
+        const result = await runtime.enqueueIfAbsent(message);
+        expect(events).toEqual(['planner-read', 'candidate-read', 'injected-version']);
+        expect(result).toMatchObject({ status: 'failed', reason: 'Outbound commit conflict', message, entries: [] });
+        expect(await stores.admissionStore.getSentMessage(message.id.msgId)).toBeUndefined();
+        expect(await stores.admissionStore.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
+        expect(await outbox.getAllKeys()).toEqual([]);
+        const fresh = await runtime.enqueueIfAbsent(message);
+        expect(fresh.status).toBe('enqueued');
+        expect(await stores.admissionStore.getSentMessage(message.id.msgId)).toMatchObject({ msg: JSON.parse(JSON.stringify(message)) });
+        expect(await outbox.getAllKeys()).toHaveLength(1);
     });
 });
 
@@ -264,7 +272,8 @@ function createOutboundMessage(resourceId: string) {
         { topicId: 'chat', resourceId, contextId: 'chat-1' },
         'peer-1',
         'chat.private-text.v1',
-        { text: 'hello' }
+        { text: 'hello' },
+        { ttlMs: 30_000 }
     );
 }
 
@@ -290,7 +299,8 @@ function createInboundMessage(msgId: string): ALMessage {
         { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
         'self',
         'chat.private-text.v1',
-        { text: 'retry' }
+        { text: 'retry' },
+        { ttlMs: 30_000 }
     );
     return { ...original, id: { ...original.id, msgId } };
 }

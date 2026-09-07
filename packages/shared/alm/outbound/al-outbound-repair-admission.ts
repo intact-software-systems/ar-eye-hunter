@@ -4,11 +4,10 @@ import {
     parseALControlMessage,
     type ALParsedControlMessage
 } from '../../al-contracts/al-control.ts';
+import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import { RetryableConflictError, tryWithPolicy } from '../../resilience/TryWith.ts';
+import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
-import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
-import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
@@ -69,25 +68,9 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (decoded.left || !await this.hasCurrentRepairAuthority(decoded.right!)) {
             return false;
         }
-        const acceptance = await tryWithPolicy(
-            async () => {
-                try {
-                    return await this.admissionStore.acceptControlMessage<TPrepared>(
-                        msg,
-                        this.dependencies.decodePreparedMessage
-                    );
-                }
-                catch (error) {
-                    if (error instanceof ALAdmissionBackendConflictError) {
-                        throw new RetryableConflictError(
-                            'Outbound control-message admission conflict',
-                            { cause: error }
-                        );
-                    }
-                    throw error;
-                }
-            },
-            ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
+        const acceptance = await this.admissionStore.acceptControlMessage<TPrepared>(
+            msg,
+            this.dependencies.decodePreparedMessage
         );
         if (acceptance.handled) {
             await this.scheduleNotYetInSyncRetryIfRequired(msg);
@@ -135,13 +118,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
         const msgId = parsed.payload.msgId;
 
-        await tryWithPolicy<void>(
-            () => this.scheduleNotYetInSyncRetryOnce(msgId),
-            ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
-        );
+        await this.scheduleNotYetInSyncRetry(msgId);
     }
 
-    private async scheduleNotYetInSyncRetryOnce(msgId: string): Promise<void> {
+    private async scheduleNotYetInSyncRetry(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
@@ -159,13 +139,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             expectedVersion: read.clientRecord?.version,
             msgId,
             maxAttempts: retry.maxAttempts,
-            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
-            createEffect: (attempt) => ({
-                effectId: toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', attempt]),
-                retryAtMs,
-                expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
-                payload: { kind: 'nack-retry', msgId, reason: 'not-yet-in-sync' }
-            })
+            expireAtTimestamp: resolveALMessageExpireAtMs(msg),
+            retryAtMs
         }, this.dependencies.decodePreparedMessage);
         if (result.status === 'conflict') {
             throw new RetryableConflictError('Outbound not-yet-in-sync retry commit conflict');
@@ -177,13 +152,6 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     async handlePendingAckTimeout(msgId: string): Promise<void> {
-        await tryWithPolicy(
-            () => this.handlePendingAckTimeoutOnce(msgId),
-            ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
-        );
-    }
-
-    private async handlePendingAckTimeoutOnce(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const pending = read.pendingAck;
         const msg = read.sentSnapshot?.msg;

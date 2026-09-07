@@ -136,6 +136,7 @@ export function createFlakyOutboundAdmissionStore(
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decodePrepared)
                 : inner.claimReadyEffects(input, decodePrepared),
+        rejectEffect: (reservation) => inner.rejectEffect(reservation),
         completeEffect: (reservation) =>
             hooks.completeEffect
                 ? hooks.completeEffect(reservation)
@@ -164,7 +165,7 @@ export function createOutboundMessage(
         {
             text: resourceId
         },
-        options
+        { ttlMs: options?.ttlMs ?? 30_000 }
     );
 }
 

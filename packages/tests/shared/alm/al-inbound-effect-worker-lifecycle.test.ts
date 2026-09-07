@@ -14,7 +14,7 @@ import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 describe('inbound durable effect worker lifecycle', () => {

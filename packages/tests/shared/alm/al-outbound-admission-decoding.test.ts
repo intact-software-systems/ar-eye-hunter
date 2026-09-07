@@ -14,7 +14,7 @@ import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
 describe('outbound admission persisted-record validation', () => {
@@ -114,7 +114,7 @@ describe('outbound admission persisted-record validation', () => {
         await backend.write(async (tx) => {
             await tx.set(`outbound:control:acks:${msg.id.msgId}`, { kind: 'nacks', values: [] });
         });
-        await expect(store.readOutgoingMessage(msg, () => ({ persist: false, preparedMessages: [] })))
+        await expect(store.readOutgoingMessage(msg, () => ({ msg: msg, persist: false, preparedMessages: [] })))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -173,7 +173,7 @@ describe('outbound admission persisted-record validation', () => {
             decodePreparedMessage: decodeALOutboundPreparedMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
             sendPreparedMessage: async (message) => {
                 sent.push(message.id.msgId);
 
@@ -221,7 +221,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(claimed.payload.replaceExisting).toBe(true);
     });
 
-    it.each(['ack-timeout', 'repair-hint', 'nack-retry'])('keeps corruption typed through %s replay', async (kind) => {
+    it.each(['ack-timeout', 'repair-hint', 'nack-retry'])('terminates corrupt %s replay as non-retryable', async (kind) => {
         const { backend, store } = createAdmission();
         const msg = createMessage();
         const payload = kind === 'ack-timeout'
@@ -243,13 +243,18 @@ describe('outbound admission persisted-record validation', () => {
             decodePreparedMessage: decodeALOutboundPreparedMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
             sendPreparedMessage: async () => {
                 throw new Error('Corrupt replay must never send');
             }
         });
         try {
-            await expect(runtime.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+            await runtime.ready();
+            const workId = kind === 'nack-retry'
+                ? toALOutboundEffectId(['nack-retry', msg.id.msgId, 'not-yet-in-sync', 1])
+                : effect.effectId;
+            expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', workId)))
+                .toMatchObject({ status: EntityStatus.NON_RETRYABLE });
         }
         finally {
             runtime.dispose();
@@ -437,11 +442,7 @@ async function scheduleNotYetInSyncRetry(
         msgId,
         maxAttempts: 3,
         expireAtTimestamp: Date.now() + 60_000,
-        createEffect: (attempt) => ({
-            effectId: toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', attempt]),
-            expireAtTimestamp: Date.now() + 60_000,
-            payload: { kind: 'nack-retry', msgId, reason: 'not-yet-in-sync' }
-        })
+        retryAtMs: Date.now()
     }, decodePersistedALMessageValue);
 }
 
@@ -455,7 +456,8 @@ function createMessage() {
         },
         'peer',
         'chat.text.v1',
-        { text: 'hello' }
+        { text: 'hello' },
+        { ttlMs: 60_000 }
     );
 }
 
@@ -488,7 +490,11 @@ async function writeRawOutboundWork(
         toALOutboundWorkKey('outbound', effectId),
         toALOutboundWorkType('outbound'),
         { namespace: raw.namespace ?? 'outbound', effectId: raw.effectId, payload: raw.payload },
-        Temporal.Instant.fromEpochMilliseconds(Date.now() + 60_000)
+        Temporal.Instant.fromEpochMilliseconds(
+            typeof raw.payload === 'object' && raw.payload !== null && 'msg' in raw.payload
+                ? decodePersistedALMessageValue(raw.payload.msg).constraints!.expiresAtMs!
+                : Date.now() + 60_000
+        )
     );
     await backend.workQueue.setItem(entry.key, entry, { expireAtTimestamp: Date.now() + 60_000 });
     return entry;

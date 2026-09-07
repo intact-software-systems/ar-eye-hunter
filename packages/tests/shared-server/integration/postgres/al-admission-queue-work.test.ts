@@ -346,13 +346,15 @@ function createSupersedingMessage(senderId: string, sequence: number): ALMessage
         },
         'recipient',
         'chat.message.v1',
-        { sequence }
+        { sequence },
+        { ttlMs: 30_000 }
     );
     return { ...message, ordering: { seq: sequence, orderingKey: 'shared-topic' } };
 }
 
 async function readSupersedenceDecision(store: ALOutboundAdmissionStore, message: ALMessage) {
     const read = await store.readOutgoingMessage(message, () => ({
+        msg: message,
         persist: false,
         preparedMessages: [message],
         supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }

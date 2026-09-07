@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
-import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type {
     ALOutboundAdmissionMutation,
     ALOutboundCommitBundle,
@@ -25,6 +25,7 @@ export interface ALOutboundCommitDispatchOptions {
 }
 
 export interface ALOutboundComputedDto<TPrepared> {
+    readonly msg?: ALMessage;
     readonly bundle?: ALOutboundCommitBundle<TPrepared>;
     readonly status: ALOutboundEnqueueStatus;
     readonly reason?: string;
@@ -69,7 +70,7 @@ export function computeALOutboundDispatch<TPrepared>(
 ): ALOutboundComputedDto<TPrepared> {
     const earlyResult = toEarlyDispatchResult(input);
     if (earlyResult) {
-        return earlyResult;
+        return { ...earlyResult, msg: input.read.msg };
     }
 
     const strategy = toALOutboundDispatchStrategy(input);
@@ -85,6 +86,10 @@ function toEarlyDispatchResult<TPrepared>(
     input: ComputeALOutboundDispatchInput<TPrepared>
 ): ALOutboundComputedDto<TPrepared> | undefined {
     const { read } = input;
+    const expiresAtMs = resolveALMessageExpireAtMs(read.msg);
+    if (expiresAtMs !== undefined && expiresAtMs <= input.dispatchAtMs) {
+        return { status: 'expired', reason: 'Message expired or is too stale', entries: [] };
+    }
     if (read.plan.dropReason) {
         return {
             status: toALOutboundEnqueueStatusFromReason(read.plan.dropReason),
@@ -141,7 +146,7 @@ function buildALOutboundDispatchResult<TPrepared>(
             kind: 'set-msg-owner',
             msgId: read.msg.id.msgId,
             senderId: read.msg.id.senderId,
-            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg)
+            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg)
         }
     ];
     const durableEffects: ALOutboundDurableEffectWrite<TPrepared>[] = [];
@@ -173,7 +178,7 @@ function appendALOutboundDispatchEffects<TPrepared>(
         );
         input.effects.push({
             effectId: toALOutboundEffectId(['outbox', read.msg.id.msgId]),
-            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg),
+            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
             payload: {
                 kind: 'enqueue-outbox',
                 msg: read.msg,
@@ -199,7 +204,7 @@ function appendALOutboundDispatchEffects<TPrepared>(
                     index,
                     preparedFingerprint
                 ]),
-                expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg),
+                expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
                 payload: { kind: 'send-prepared', msg: read.msg, prepared, preparedFingerprint, phase }
             });
         });
@@ -207,7 +212,7 @@ function appendALOutboundDispatchEffects<TPrepared>(
     else if (input.strategy.fallback) {
         input.effects.push({
             effectId: toALOutboundEffectId(['fallback', read.msg.id.msgId, phase]),
-            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg),
+            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
             payload: {
                 kind: 'fallback-dispatch',
                 msg: read.msg,
@@ -239,7 +244,7 @@ function toALOutboundComputedResult<TPrepared>(
                 retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
             }))
         } satisfies ALOutboundCommitBundle<TPrepared>;
-    return { status, reason, entries: input.entries, bundle };
+    return { msg: input.read.msg, status, reason, entries: input.entries, bundle };
 }
 
 function toSkippedDispatchResult<TPrepared>(msgId: string): ALOutboundComputedDto<TPrepared> {
@@ -359,7 +364,7 @@ function toSentMessageMutation(
             outboxKey: metadata.outboxKey,
             supersedenceKey: metadata.supersedenceKey
         } satisfies ALOutboundSentMessageSnapshot,
-        expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg)
+        expireAtTimestamp: resolveALMessageExpireAtMs(msg)
     };
 }
 

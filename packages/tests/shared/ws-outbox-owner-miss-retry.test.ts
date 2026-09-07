@@ -24,7 +24,7 @@ import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.t
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {

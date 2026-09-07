@@ -20,8 +20,8 @@ import { toError } from '../resilience/to-error.ts';
 import type { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';
 import type { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
 import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnMessageCallback } from './queue-message-callbacks.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 import type { QRtcPeerDto } from './web-rtc-connection-service.ts';
 import {
     defaultMaxMissedPings,

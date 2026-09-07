@@ -4,7 +4,7 @@ import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/al-outbound-
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createDefaultOutboundTestAdmissionStore, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
@@ -26,7 +26,7 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ persist: true, preparedMessages: [] }),
+            planner: () => ({ msg: message, persist: true, preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
             options: {}
@@ -44,6 +44,7 @@ describe('outbound dispatch value ownership', () => {
         const store = createDefaultOutboundTestAdmissionStore();
         const message = createOutboundMessage('immutable-dispatch');
         const read = await store.readOutgoingMessage(message, () => ({
+            msg: message,
             persist: true,
             preparedMessages: [] as readonly OutboundTestPayload[],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
@@ -90,6 +91,7 @@ describe('outbound dispatch value ownership', () => {
         const store = createDefaultOutboundTestAdmissionStore();
         const message = createOutboundMessage('exhausted-repair');
         const observed = await store.readOutgoingMessage(message, () => ({
+            msg: message,
             persist: false,
             preparedMessages: [{ resourceId: 'exhausted-repair' }]
         }));

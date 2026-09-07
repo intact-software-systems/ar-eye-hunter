@@ -181,14 +181,14 @@ export class BrowserRallarMessageSender {
             input.exceptPeerIds
         );
         const result = await this.sendCapturedMessage(context, firstCarrier, message);
-        const fallback = computeFallbackDisposition(result.status, message.constraints?.expiresAtMs, Date.now());
+        const fallback = computeFallbackDisposition(result.status, result.message.constraints?.expiresAtMs, Date.now());
         if (fallback === 'expired') {
             return { ...result, status: 'expired', reason: 'Message deadline elapsed before fallback.' };
         }
         if (fallback === 'stop') {
             return result;
         }
-        return await this.sendCapturedMessage(context, firstCarrier === 'rtc' ? 'ws' : 'rtc', message);
+        return await this.sendCapturedMessage(context, firstCarrier === 'rtc' ? 'ws' : 'rtc', result.message);
     }
 
     private async sendCapturedMessage(
@@ -213,7 +213,7 @@ export class BrowserRallarMessageSender {
             ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(message)
             : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
         wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, enqueueResult);
-        return toRallarMessageSendResult(carrier, message, enqueueResult);
+        return toRallarMessageSendResult(carrier, enqueueResult);
     }
 
     private resolveRtcMessageTarget<T>(input: RallarRtcSendInput<T>): ResolvedRtcMessageTarget {
@@ -329,13 +329,12 @@ function computeFallbackDisposition(
 
 function toRallarMessageSendResult(
     transport: RallarMessageTransport,
-    message: ALMessage,
     result: ALOutboundEnqueueResult
 ): RallarMessageSendResult {
     return {
         transport,
         status: result.status,
-        message,
+        message: result.message,
         entry: result.entry,
         entries: result.entries,
         reason: result.reason

@@ -68,9 +68,19 @@ export class ALOutboundAdmissionControlStore {
         if (validated.left) {
             return { handled: false };
         }
+        const effects = this.effectStore.computeEffects(
+            await this.effectStore.readEffects(validated.right!.repairEffect ? [validated.right!.repairEffect] : []),
+            nowMs
+        );
+        const workValidated = this.effectStore.validateEffects(effects, decodePrepared);
+        if (workValidated.left) {
+            throw workValidated.left;
+        }
         await this.backend.write(async (tx) => {
             await this.assertControlAdmissionFence(tx, validated.right!.read);
-            await this.applyControlAdmission(tx, validated.right!, decodePrepared);
+            await this.effectStore.assertObservations(tx, effects);
+            this.effectStore.writeEffects(tx, effects);
+            await this.applyControlAdmission(tx, validated.right!);
         });
         return { handled: true };
     }
@@ -159,10 +169,9 @@ export class ALOutboundAdmissionControlStore {
         }
     }
 
-    private async applyControlAdmission<TPrepared>(
+    private async applyControlAdmission(
         tx: ALAdmissionWorkWriteContext,
-        candidate: ALControlAdmissionCandidate,
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+        candidate: ALControlAdmissionCandidate
     ): Promise<void> {
         const { read } = candidate;
         await tx.set(
@@ -187,12 +196,9 @@ export class ALOutboundAdmissionControlStore {
         if (candidate.removeRepairAttempt) {
             await tx.remove(this.toRepairAttemptKey(read.targetMsgId));
         }
-        if (candidate.repairEffect) {
-            await this.effectStore.persistEffect(tx, candidate.repairEffect, decodePrepared);
-        }
         await tx.set(
             this.toVersionKey(read.owner!),
-            { senderId: read.owner!, version: (read.ownerVersion?.version ?? 0) + 1 },
+            candidate.nextVersion!,
             candidate.versionExpireAtTimestamp
         );
     }

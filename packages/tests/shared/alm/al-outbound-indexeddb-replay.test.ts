@@ -17,7 +17,7 @@ import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import {
@@ -81,6 +81,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             queueEngine: new InboxOutboxEngine(),
             stores: { admissionStore: store },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ text: msg.route.resourceId }],
                 ackTracking: {
@@ -109,7 +110,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const runtime2 = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
             stores: { admissionStore: store },
-            planOutgoingMessage: () => {
+            planOutgoingMessage: (msg) => {
                 throw new Error('Replay must use the retained message');
             },
             sendPreparedMessage: async (message) => {
@@ -139,7 +140,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: engine,
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [{ text: 'engine-owned' }] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ text: 'engine-owned' }] }),
             sendPreparedMessage: async (message) => {
                 sent.push(message.text ?? '');
                 return sent.length === 1 ? { status: 'not-ready', retryAfterMs: 20 } : { status: 'sent' };
@@ -179,7 +180,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [{ text: 'retained' }] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ text: 'retained' }] }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
         });
         const msg = createOutboundMessage('queue-owned-send');
@@ -242,7 +243,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const msg = createOutboundMessage('queued');
         const runtime1 = createDefaultOutboundTestRuntime({
             stores: { admissionStore: createFlakyOutboundAdmissionStore(store, { claimReadyEffects: async () => [] }) },
-            planOutgoingMessage: () => ({ persist: true, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: true, preparedMessages: [] }),
             sendPreparedMessage: async () => {
                 throw new Error('No transport effect was planned');
             }
@@ -266,7 +267,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const runtime2 = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store },
             outbox,
-            planOutgoingMessage: () => {
+            planOutgoingMessage: (msg) => {
                 throw new Error('Saved queue effect must not replan');
             },
             sendPreparedMessage: async () => {

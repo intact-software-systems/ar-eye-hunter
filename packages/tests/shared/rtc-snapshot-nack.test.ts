@@ -7,7 +7,7 @@ import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/al
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 

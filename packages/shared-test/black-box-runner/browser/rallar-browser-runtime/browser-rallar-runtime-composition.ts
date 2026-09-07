@@ -220,7 +220,8 @@ export async function readBlackBoxRtcMessageNacks(
     if (!admissionStore) {
         throw new Error('RTC outbound admission diagnostics are unavailable.');
     }
-    const observation = await admissionStore.readRepairMessage(messageId, () => ({
+    const observation = await admissionStore.readRepairMessage(messageId, (msg) => ({
+        msg,
         persist: false,
         preparedMessages: []
     }));

@@ -10,7 +10,7 @@ import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     afterEach,
     beforeEach,

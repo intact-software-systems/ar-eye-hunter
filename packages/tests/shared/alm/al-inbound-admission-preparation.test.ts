@@ -24,7 +24,7 @@ import {
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { validateALInboundCommitBundle } from '@shared/alm/inbound/validate-al-inbound-commit-bundle.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('inbound admission preparation boundary', () => {

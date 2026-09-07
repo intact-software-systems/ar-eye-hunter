@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -115,6 +116,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
             'self',
@@ -173,6 +175,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
             'self',
@@ -228,6 +231,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
             'self',
@@ -282,6 +286,7 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter()
             });
+            onTestFinished(() => manager.dispose());
 
             const msg = shared.newALMulticastMessage(
                 'self',
@@ -341,6 +346,7 @@ describe('multicast QoS integration', () => {
             expect(connectionService.sendByPeerId.get('peer-2')).toBeUndefined();
 
             await vi.advanceTimersByTimeAsync(100);
+            await vi.waitFor(() => expect(connectionService.sendByPeerId.get('peer-2')).toHaveLength(1));
 
             expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
             expect(connectionService.sendByPeerId.get('peer-2')).toHaveLength(1);
@@ -376,6 +382,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
             'self',
@@ -425,6 +432,9 @@ describe('multicast QoS integration', () => {
             )
         );
 
+        if (authority === 'current') {
+            await vi.waitFor(() => expect(connectionService.sendByPeerId.get('peer-2')).toHaveLength(2));
+        }
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-2')).toHaveLength(authority === 'current' ? 2 : 1);
         if (authority === 'current') {
@@ -452,6 +462,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALUnicastMessage(
             'sender-4',
@@ -501,6 +512,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALUnicastMessage(
             'sender-4b',
@@ -547,6 +559,7 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = shared.newALUnicastMessage(
             'sender-5',

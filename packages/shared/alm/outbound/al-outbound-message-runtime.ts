@@ -1,13 +1,14 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
-import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException, type ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '../../services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '../../services/queue-box-utilities.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundDurableEffect,
     ALOutboundEffectSnapshot,
     ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
@@ -76,6 +77,7 @@ export interface ALOutboundRepairRequest {
 }
 
 export interface ALOutboundDispatchPlan<TPrepared> {
+    readonly msg: ALMessage;
     readonly dropReason?: string;
     readonly persist: boolean;
     readonly preparedMessages: readonly TPrepared[];
@@ -281,7 +283,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         });
         return {
             status: computed.status,
-            message: msg,
+            message: computed.msg ?? msg,
             entry: computed.entries[0],
             entries: computed.entries,
             reason: computed.reason
@@ -300,29 +302,47 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return;
         }
         await QueueBoxUtilities.defaultDequeue(
-            this.dependencies.outbox,
-            typesToDequeue,
-            resilience,
-            async (entry) => {
-                const msg = this.dependencies.readMessageFromEntry(entry);
-                const clusterDispatch = this.dependencies.beforeDequeueDispatch?.(msg, entry);
-                const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
-                    ? clusterDispatch ?? false
-                    : await clusterDispatch;
-                const computed = await this.commitDispatchPlan({
-                    msg,
-                    planner: this.dependencies.planDequeuedMessage,
-                    intent: 'dequeue',
-                    phase: 'dequeue',
-                    options: {
-                        fallbackEntry: entry
+            {
+                qbox: this.dependencies.outbox,
+                typesToDequeue: typesToDequeue,
+                resilience: resilience,
+                onDequeuedDo: async (entry) => {
+                    const msg = this.readQueuedMessage(entry);
+                    const clusterDispatch = this.dependencies.beforeDequeueDispatch?.(msg, entry);
+                    const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
+                        ? clusterDispatch ?? false
+                        : await clusterDispatch;
+                    const computed = await this.commitDispatchPlan({
+                        msg,
+                        planner: this.dependencies.planDequeuedMessage,
+                        intent: 'dequeue',
+                        phase: 'dequeue',
+                        options: {
+                            fallbackEntry: entry
+                        }
+                    });
+                    if (computed.status === 'failed' || (computed.status === 'no-route' && !clusterPublished)) {
+                        if (computed.status === 'failed') {
+                            throw new NonRetryableException(computed.reason);
+                        }
+                        throw new Error(computed.reason);
                     }
-                });
-                if (computed.status === 'no-route' && !clusterPublished) {
-                    throw new Error(computed.reason);
-                }
+                },
+                options: {}
             }
         );
+    }
+
+    private readQueuedMessage(entry: ResourceEntry): ALMessage {
+        try {
+            return this.dependencies.readMessageFromEntry(entry);
+        }
+        catch (error) {
+            if (error instanceof TypeError) {
+                throw new NonRetryableException(error.message);
+            }
+            throw error;
+        }
     }
 
     async acceptControlMessage(msg: ALMessage): Promise<boolean> {
@@ -369,31 +389,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
 
         switch (effect.payload.kind) {
-            case 'send-prepared': {
-                const receipts = await this.dependencies.admissionStore.readReceiptState(effect.payload.msg.id.msgId);
-                if (receipts && isALOutboundReceiptComplete(receipts)) {
-                    return { status: 'completed' };
-                }
-                const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, effect.attempts, Math.random());
-                const sendResult = await this.dependencies.sendPreparedMessage(
-                    effect.payload.prepared,
-                    effect.payload.phase,
-                    {
-                        signal: this.sendSignal,
-                        expiresAtMs: effect.expireAtTimestamp,
-                        leaseUntilMs: effect.leaseUntilMs
-                    }
-                );
-                if (sendResult.status === 'queued') {
-                    return {
-                        status: 'retained',
-                        settled: sendResult.settled.then((settled) =>
-                            computeALOutboundSendDisposition(settled, this.readNowMs(), retry.delayMs ?? 0)
-                        )
-                    };
-                }
-                return computeALOutboundSendDisposition(sendResult, this.readNowMs(), retry.delayMs ?? 0);
-            }
+            case 'send-prepared':
+                return await this.writePreparedMessage(effect.payload, {
+                    signal: this.sendSignal,
+                    expiresAtMs: effect.expireAtTimestamp,
+                    leaseUntilMs: effect.leaseUntilMs
+                }, effect.attempts);
             case 'enqueue-outbox':
                 if (effect.payload.replaceExisting) {
                     await this.dependencies.outbox.enqueue(effect.payload.entry);
@@ -422,6 +423,38 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 });
                 return { status: 'completed' };
         }
+    }
+
+    private async writePreparedMessage(
+        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }>,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle,
+        attempts: number
+    ): Promise<ALOutboundWorkAttemptResult> {
+        const receipts = await this.dependencies.admissionStore.readReceiptState(payload.msg.id.msgId);
+        if (receipts && isALOutboundReceiptComplete(receipts)) {
+            return { status: 'completed' };
+        }
+        if (
+            (lifecycle.expiresAtMs !== undefined && lifecycle.expiresAtMs <= this.readNowMs()) ||
+            lifecycle.signal.aborted
+        ) {
+            return { status: 'completed' };
+        }
+        const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, attempts, Math.random());
+        const sendResult = await this.dependencies.sendPreparedMessage(
+            payload.prepared,
+            payload.phase,
+            lifecycle
+        );
+        if (sendResult.status === 'queued') {
+            return {
+                status: 'retained',
+                settled: sendResult.settled.then((settled) =>
+                    computeALOutboundSendDisposition(settled, this.readNowMs(), retry.delayMs ?? 0)
+                )
+            };
+        }
+        return computeALOutboundSendDisposition(sendResult, this.readNowMs(), retry.delayMs ?? 0);
     }
 
     private readNowMs(): number {

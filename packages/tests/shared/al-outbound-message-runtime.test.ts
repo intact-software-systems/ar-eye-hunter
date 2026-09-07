@@ -1,3 +1,4 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -51,8 +52,8 @@ describe('ALOutboundMessageRuntime', () => {
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
-            planDequeuedMessage: () => ({ persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
+            planDequeuedMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
             beforeDequeueDispatch: undefined,
             planRepairMessage: undefined,
             onFallbackDequeue: undefined,
@@ -81,8 +82,9 @@ describe('ALOutboundMessageRuntime', () => {
     it('returns no-route when the outbound planner drops enqueue', async () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
                 dropReason: 'No route for outbound enqueue',
+                msg: msg,
                 persist: false,
                 preparedMessages: []
             })
@@ -106,7 +108,8 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: []
             })
@@ -132,6 +135,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -157,7 +161,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }],
                 ackTracking: {
@@ -173,7 +178,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
-        const plan = () => ({ persist: false, preparedMessages: [] });
+        const plan = (msg: ALMessage) => ({ msg: msg, persist: false, preparedMessages: [] });
         const beforeAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
         await runtime.acceptControlMessage(newALAckControlMessage(
             { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
@@ -219,6 +224,7 @@ describe('ALOutboundMessageRuntime', () => {
                 retryAfterMs: 25
             }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -235,7 +241,7 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(24);
@@ -258,7 +264,8 @@ describe('ALOutboundMessageRuntime', () => {
                 status: 'no-targets',
                 reason: 'solo room'
             }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -276,7 +283,7 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);
@@ -299,7 +306,8 @@ describe('ALOutboundMessageRuntime', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -343,7 +351,8 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -389,6 +398,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => {
                 planned.push(msg.route.resourceId);
                 return {
+                    msg: msg,
                     persist: false,
                     preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }]
                 };
@@ -431,7 +441,8 @@ describe('ALOutboundMessageRuntime', () => {
                 return nowMs;
             },
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -461,7 +472,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: []
             })
@@ -488,7 +500,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: []
             })
@@ -512,6 +525,7 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -564,6 +578,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
@@ -579,6 +594,7 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             }),
             planRepairMessage: async (msg, request) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -623,6 +639,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
@@ -633,6 +650,7 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             }),
             planRepairMessage: async (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
             })
@@ -654,6 +672,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
@@ -718,6 +737,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -776,6 +796,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) =>
                 persistRetry
                     ? {
+                        msg: msg,
                         persist: true,
                         preparedMessages: [],
                         retryTracking: {
@@ -785,6 +806,7 @@ describe('ALOutboundMessageRuntime', () => {
                         }
                     }
                     : {
+                        msg: msg,
                         persist: false,
                         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
@@ -838,6 +860,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -895,6 +918,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -948,6 +972,7 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -969,7 +994,8 @@ describe('ALOutboundMessageRuntime', () => {
             'presence.state.v1',
             {
                 online: true
-            }
+            },
+            { ttlMs: 30_000 }
         );
         const second = newALUnicastMessage(
             'self',
@@ -982,7 +1008,8 @@ describe('ALOutboundMessageRuntime', () => {
             'presence.state.v1',
             {
                 online: false
-            }
+            },
+            { ttlMs: 30_000 }
         );
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, first);
@@ -1008,6 +1035,7 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -1030,7 +1058,8 @@ describe('ALOutboundMessageRuntime', () => {
                 'presence.state.v1',
                 {
                     online: true
-                }
+                },
+                { ttlMs: 30_000 }
             ),
             ordering: {
                 orderingKey: 'presence',
@@ -1050,7 +1079,8 @@ describe('ALOutboundMessageRuntime', () => {
                 'presence.state.v1',
                 {
                     online: false
-                }
+                },
+                { ttlMs: 30_000 }
             ),
             ordering: {
                 orderingKey: 'presence',
@@ -1091,6 +1121,7 @@ describe('ALOutboundMessageRuntime', () => {
                 return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -1106,6 +1137,7 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -1155,7 +1187,8 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [
                     { peerId: 'peer-1' },
@@ -1178,6 +1211,7 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
@@ -1186,7 +1220,8 @@ describe('ALOutboundMessageRuntime', () => {
                     maxAttempts: 1
                 }
             }),
-            planRepairMessage: async () => ({
+            planRepairMessage: async (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: []
             })

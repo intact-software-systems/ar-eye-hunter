@@ -8,6 +8,7 @@ import type {
     ALReadyable,
     ALSupersedenceInput
 } from '../../al-contracts/al-runtime.ts';
+import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -21,7 +22,6 @@ import type {
 } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
-import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
 import {
     acceptALSupersedenceObservation,
     type ALLatestSupersedenceValue,
@@ -45,8 +45,11 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundRepairTrigger
 } from './al-outbound-message-runtime.ts';
+import { decodeALOutboundWorkEntry, isPendingALOutboundWork, toALOutboundWorkKey } from './al-outbound-work-entry.ts';
+import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 import { toALOutboundPendingAckExpireAtTimestamp } from './transition-al-outbound-pending-ack.ts';
+import { validateALOutboundPlannedMessage } from './validate-al-outbound-dispatch.ts';
 
 export interface CreateALOutboundAdmissionStoreInput {
     readonly namespace: string;
@@ -78,6 +81,7 @@ export interface ALOutboundSupersedenceReadState {
 
 export interface ALOutboundMessageReadDto<TPrepared> {
     readonly kind: 'outgoing';
+    readonly originalMsg: ALMessage;
     readonly msg: ALMessage;
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
@@ -222,23 +226,38 @@ export interface ALOutboundCommitBundle<TPrepared> {
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
 }
 
+interface ALOutboundStateWrite {
+    readonly key: string;
+    readonly value:
+        | string
+        | ALOutboundSentMessageSnapshot
+        | ALOutboundPendingAckSnapshot
+        | ALOutboundRepairAttemptSnapshot
+        | ALLatestSupersedenceValue
+        | ALReplacementSupersedenceValue
+        | undefined;
+    readonly expireAtTimestamp: number | undefined;
+    readonly supersedenceGuard: { readonly expected: ALLatestSupersedenceValue | undefined; } | undefined;
+}
+
 export interface ALOutboundControlAcceptance {
     readonly handled: boolean;
 }
 
-export interface ALOutboundNotYetInSyncRetrySchedule<TPrepared> {
+export interface ALOutboundNotYetInSyncRetrySchedule {
     readonly senderId: string;
     readonly expectedVersion: number | undefined;
     readonly msgId: string;
     readonly maxAttempts: number;
     readonly expireAtTimestamp: number | undefined;
-    readonly createEffect: (attempt: number) => ALOutboundDurableEffectWrite<TPrepared>;
+    readonly retryAtMs: number;
 }
 
-interface ALOutboundNotYetInSyncRetryRead<TPrepared> {
-    readonly current: ALOutboundVersionedClientRecord | undefined;
-    readonly retry: ALOutboundNotYetInSyncRetrySnapshot | undefined;
-    readonly pending: ALOutboundEffectSnapshot<TPrepared> | undefined;
+interface ALOutboundRetryScheduleAttempt<TPrepared> {
+    readonly schedule: ALOutboundNotYetInSyncRetrySchedule;
+    readonly effect: ALOutboundDurableEffectWrite<TPrepared>;
+    readonly attempts: number;
+    readonly nowMs: number;
 }
 
 export type ALOutboundNotYetInSyncRetryScheduleResult =
@@ -269,7 +288,7 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     commitBundle<TPrepared>(
         bundle: ALOutboundCommitBundle<TPrepared>,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<'committed' | 'conflict'>;
+    ): Promise<'committed' | 'conflict' | 'expired'>;
 
     acceptControlMessage<TPrepared>(
         msg: ALMessage,
@@ -277,7 +296,7 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     ): Promise<ALOutboundControlAcceptance>;
 
     scheduleNotYetInSyncRetry<TPrepared>(
-        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
+        schedule: ALOutboundNotYetInSyncRetrySchedule,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<ALOutboundNotYetInSyncRetryScheduleResult>;
 
@@ -287,6 +306,8 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]>;
 
     completeEffect(reservation: ResourceEntry): Promise<void>;
+
+    rejectEffect(reservation: ResourceEntry): Promise<void>;
 
     rescheduleEffect(input: RescheduleALOutboundEffectInput): Promise<void>;
 
@@ -337,6 +358,10 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const nowMs = Date.now();
         const plan = planner(msg);
+        const messageValidation = validateALOutboundPlannedMessage(msg, plan.msg);
+        if (messageValidation.left) {
+            throw new NonRetryableException(messageValidation.left.message);
+        }
         const supersedenceInput = toSupersedenceInput(msg, plan);
         const supersedence = await this.readSupersedenceState(supersedenceInput?.key, msg.id.msgId);
         const latestSnapshot = supersedence.latest?.latestMsgId
@@ -349,7 +374,8 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
         return {
             kind: 'outgoing',
-            msg,
+            originalMsg: msg,
+            msg: plan.msg,
             nowMs,
             clientRecord: await this.backend.read(
                 this.toVersionKey(msg.id.senderId),
@@ -385,6 +411,13 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
         const sentSnapshot = await this.getSentMessage(msgId);
         const msg = sentSnapshot?.msg;
+        const plan = msg ? planner(msg) : undefined;
+        if (msg && plan) {
+            const messageValidation = validateALOutboundPlannedMessage(msg, plan.msg);
+            if (messageValidation.left) {
+                throw new NonRetryableException(messageValidation.left.message);
+            }
+        }
         return {
             kind: 'repair',
             msgId,
@@ -403,7 +436,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             ),
             acks: await this.controlStore.readAcks(msgId),
             nacks: await this.controlStore.readNacks(msgId),
-            plan: msg ? planner(msg) : undefined
+            plan
         };
     }
 
@@ -444,11 +477,25 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     async commitBundle<TPrepared>(
         bundle: ALOutboundCommitBundle<TPrepared>,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<'committed' | 'conflict'> {
+    ): Promise<'committed' | 'conflict' | 'expired'> {
         if (bundle.mutations.length === 0 && bundle.durableEffects.length === 0) {
             return 'committed';
         }
 
+        const nowMs = Date.now();
+        const observations = await this.effectStore.readEffects(bundle.durableEffects);
+        const effects = this.effectStore.computeEffects(observations, nowMs);
+        const validated = this.effectStore.validateEffects(effects, decodePrepared);
+        if (validated.left) {
+            throw validated.left;
+        }
+        const writeAtMs = Date.now();
+        if (effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= writeAtMs)) {
+            return 'expired';
+        }
+        const mutations = bundle.mutations.map((mutation) => this.computeMutation(mutation, nowMs));
+        const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
+        const versionExpireAt = nowMs + this.retention.versionTtlMs;
         try {
             return await this.backend.write(async (tx) => {
                 const current = await tx.read(
@@ -460,15 +507,18 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     return 'conflict';
                 }
 
-                for (const mutation of bundle.mutations) {
+                await this.effectStore.assertObservations(tx, effects);
+                await this.assertMutationObservations(tx, mutations);
+                const eligibilityAtMs = Date.now();
+                if (effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs)) {
+                    return 'expired';
+                }
+                this.effectStore.writeEffects(tx, effects);
+                for (const mutation of mutations) {
                     await this.applyMutation(tx, mutation);
                 }
 
-                for (const effect of bundle.durableEffects) {
-                    await this.effectStore.persistEffect(tx, effect, decodePrepared);
-                }
-
-                await this.bumpVersion(tx, bundle.senderId, currentVersion);
+                await tx.set(this.toVersionKey(bundle.senderId), version, versionExpireAt);
                 return 'committed';
             });
         }
@@ -488,53 +538,80 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     async scheduleNotYetInSyncRetry<TPrepared>(
-        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
+        schedule: ALOutboundNotYetInSyncRetrySchedule,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<ALOutboundNotYetInSyncRetryScheduleResult> {
+        const nowMs = Date.now();
+        const retry = await this.backend.read(
+            this.toNotYetInSyncRetryKey(schedule.msgId),
+            (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
+        );
+        const existing = retry
+            ? await this.backend.workQueue.getItem(
+                toALOutboundWorkKey(this.namespace, retry.pendingEffectId)
+            )
+            : undefined;
+        if (existing !== undefined && isPendingALOutboundWork(existing)) {
+            const pending = decodeALOutboundWorkEntry(existing, this.namespace, decodePrepared);
+            if (pending.payload.kind !== 'nack-retry' || pending.payload.msgId !== schedule.msgId) {
+                throw new ALAdmissionCorruptionError(
+                    this.toNotYetInSyncRetryKey(schedule.msgId),
+                    new TypeError('Persisted retry points to another effect')
+                );
+            }
+            return { status: 'pending', retryAtMs: pending.retryAtMs };
+        }
+        const attempts = retry?.attempts ?? 0;
+        if (attempts >= schedule.maxAttempts) {
+            return { status: 'exhausted' };
+        }
+        const effect: ALOutboundDurableEffectWrite<TPrepared> = {
+            effectId: toALOutboundEffectId(['nack-retry', schedule.msgId, 'not-yet-in-sync', attempts + 1]),
+            retryAtMs: schedule.retryAtMs,
+            expireAtTimestamp: schedule.expireAtTimestamp,
+            payload: { kind: 'nack-retry', msgId: schedule.msgId, reason: 'not-yet-in-sync' }
+        };
+        const result = await this.commitRetrySchedule(
+            { schedule, effect, attempts: attempts + 1, nowMs },
+            decodePrepared
+        );
+        return result;
+    }
+
+    private async commitRetrySchedule<TPrepared>(
+        { schedule, effect, attempts, nowMs }: ALOutboundRetryScheduleAttempt<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundNotYetInSyncRetryScheduleResult> {
+        const observations = await this.effectStore.readEffects([effect]);
+        const candidates = this.effectStore.computeEffects(observations, nowMs);
+        const validated = this.effectStore.validateEffects(candidates, decodePrepared);
+        if (validated.left) {
+            throw validated.left;
+        }
+        const retry = { msgId: schedule.msgId, attempts, pendingEffectId: effect.effectId };
+        const expireAt = schedule.expireAtTimestamp ?? nowMs + this.retention.repairAttemptTtlMs;
+        const version = { senderId: schedule.senderId, version: (schedule.expectedVersion ?? 0) + 1 };
+        const versionExpireAt = nowMs + this.retention.versionTtlMs;
+        if (expireAt <= Date.now()) {
+            return { status: 'exhausted' };
+        }
         try {
             return await this.backend.write(async (tx) => {
-                const { current, retry, pending } = await this.readNotYetInSyncRetry(tx, schedule, decodePrepared);
+                const current = await tx.read(
+                    this.toVersionKey(schedule.senderId),
+                    (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
+                );
                 if (current?.version !== schedule.expectedVersion) {
                     return { status: 'conflict' };
                 }
-
-                if (pending) {
-                    if (
-                        pending.payload.kind !== 'nack-retry' ||
-                        pending.payload.msgId !== schedule.msgId
-                    ) {
-                        throw new ALAdmissionCorruptionError(
-                            this.toNotYetInSyncRetryKey(schedule.msgId),
-                            new TypeError(
-                                'Persisted AL not-yet-in-sync retry snapshot points to another effect'
-                            )
-                        );
-                    }
-                    return { status: 'pending', retryAtMs: pending.retryAtMs };
-                }
-
-                const attempts = retry?.attempts ?? 0;
-                if (attempts >= schedule.maxAttempts) {
+                await this.effectStore.assertObservations(tx, candidates);
+                if (expireAt <= Date.now()) {
                     return { status: 'exhausted' };
                 }
-
-                const nextAttempt = attempts + 1;
-                const effect = schedule.createEffect(nextAttempt);
-                await this.effectStore.persistEffect(tx, effect, decodePrepared);
-                await tx.set(
-                    this.toNotYetInSyncRetryKey(schedule.msgId),
-                    {
-                        msgId: schedule.msgId,
-                        attempts: nextAttempt,
-                        pendingEffectId: effect.effectId
-                    } satisfies ALOutboundNotYetInSyncRetrySnapshot,
-                    resolveExpireAtTimestampWithFallback(
-                        schedule.expireAtTimestamp,
-                        this.retention.repairAttemptTtlMs
-                    )
-                );
-                await this.bumpVersion(tx, schedule.senderId, current?.version);
-                return { status: 'scheduled', retryAtMs: effect.retryAtMs ?? Date.now() };
+                this.effectStore.writeEffects(tx, candidates);
+                await tx.set(this.toNotYetInSyncRetryKey(schedule.msgId), retry, expireAt);
+                await tx.set(this.toVersionKey(schedule.senderId), version, versionExpireAt);
+                return { status: 'scheduled', retryAtMs: schedule.retryAtMs };
             });
         }
         catch (error) {
@@ -545,30 +622,15 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         }
     }
 
-    private async readNotYetInSyncRetry<TPrepared>(
-        tx: ALAdmissionWorkWriteContext,
-        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<ALOutboundNotYetInSyncRetryRead<TPrepared>> {
-        const current = await tx.read(
-            this.toVersionKey(schedule.senderId),
-            (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
-        );
-        const retry = await tx.read(
-            this.toNotYetInSyncRetryKey(schedule.msgId),
-            (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
-        );
-        const pending = retry
-            ? await this.effectStore.readEffect(tx, retry.pendingEffectId, decodePrepared)
-            : undefined;
-        return { current, retry, pending };
-    }
-
     async claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]> {
         return await this.effectStore.claimReadyEffects(input, decodePrepared);
+    }
+
+    async rejectEffect(reservation: ResourceEntry): Promise<void> {
+        await this.effectStore.rejectEffect(reservation);
     }
 
     async completeEffect(reservation: ResourceEntry): Promise<void> {
@@ -604,86 +666,110 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         };
     }
 
-    private async applyMutation(
-        tx: ALAdmissionWorkWriteContext,
-        mutation: ALOutboundAdmissionMutation
-    ): Promise<void> {
+    private computeMutation(mutation: ALOutboundAdmissionMutation, nowMs: number): ALOutboundStateWrite {
         switch (mutation.kind) {
             case 'set-msg-owner':
-                return await tx.set(
-                    this.toMsgOwnerKey(mutation.msgId),
-                    mutation.senderId,
-                    resolveExpireAtTimestampWithFallback(
-                        mutation.expireAtTimestamp,
-                        this.retention.msgOwnerTtlMs
-                    )
-                );
+                return {
+                    key: this.toMsgOwnerKey(mutation.msgId),
+                    value: mutation.senderId,
+                    expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.msgOwnerTtlMs,
+                    supersedenceGuard: undefined
+                };
             case 'set-sent-message':
-                return await tx.set(
-                    this.toSentMessageKey(mutation.snapshot.msgId),
-                    mutation.snapshot,
-                    resolveExpireAtTimestampWithFallback(
-                        mutation.expireAtTimestamp,
-                        this.retention.sentMessageTtlMs
-                    )
-                );
-            case 'delete-sent-message':
-                return await tx.remove(this.toSentMessageKey(mutation.msgId));
-            case 'set-pending-ack':
-                return await tx.set(
-                    this.toPendingAckKey(mutation.snapshot.msgId),
-                    mutation.snapshot,
-                    mutation.expireAtTimestamp ?? toALOutboundPendingAckExpireAtTimestamp(mutation.snapshot)
-                );
-            case 'delete-pending-ack':
-                return await tx.remove(this.toPendingAckKey(mutation.msgId));
+                return {
+                    key: this.toSentMessageKey(mutation.snapshot.msgId),
+                    value: mutation.snapshot,
+                    expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.sentMessageTtlMs,
+                    supersedenceGuard: undefined
+                };
             case 'set-repair-attempt':
-                return await tx.set(
-                    this.toRepairAttemptKey(mutation.snapshot.msgId),
-                    mutation.snapshot,
-                    resolveExpireAtTimestampWithFallback(
-                        mutation.expireAtTimestamp,
-                        this.retention.repairAttemptTtlMs
-                    )
-                );
+                return {
+                    key: this.toRepairAttemptKey(mutation.snapshot.msgId),
+                    value: mutation.snapshot,
+                    expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.repairAttemptTtlMs,
+                    supersedenceGuard: undefined
+                };
+            case 'set-pending-ack':
+                return {
+                    key: this.toPendingAckKey(mutation.snapshot.msgId),
+                    value: mutation.snapshot,
+                    expireAtTimestamp: mutation.expireAtTimestamp ??
+                        toALOutboundPendingAckExpireAtTimestamp(mutation.snapshot),
+                    supersedenceGuard: undefined
+                };
+            case 'delete-sent-message':
+                return {
+                    key: this.toSentMessageKey(mutation.msgId),
+                    value: undefined,
+                    expireAtTimestamp: undefined,
+                    supersedenceGuard: undefined
+                };
+            case 'delete-pending-ack':
+                return {
+                    key: this.toPendingAckKey(mutation.msgId),
+                    value: undefined,
+                    expireAtTimestamp: undefined,
+                    supersedenceGuard: undefined
+                };
             case 'delete-repair-attempt':
-                return await tx.remove(this.toRepairAttemptKey(mutation.msgId));
-            case 'set-supersedence-latest': {
-                const current = await tx.read(
-                    this.toSupersedenceLatestKey(mutation.supersedenceKey),
-                    (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
-                );
-                if (!jsonEquals(current, mutation.expected)) {
-                    throw new ALAdmissionBackendConflictError('Outbound shared supersedence observation changed');
-                }
-                return await tx.set(
-                    this.toSupersedenceLatestKey(mutation.supersedenceKey),
-                    mutation.value,
-                    mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
-                );
-            }
+                return {
+                    key: this.toRepairAttemptKey(mutation.msgId),
+                    value: undefined,
+                    expireAtTimestamp: undefined,
+                    supersedenceGuard: undefined
+                };
+            case 'set-supersedence-latest':
             case 'set-supersedence-replacement':
-                return await tx.set(
-                    this.toSupersedenceReplacementKey(mutation.msgId),
-                    mutation.value,
-                    mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
-                );
+                return this.computeSupersedenceMutation(mutation);
         }
     }
 
-    private async bumpVersion(
+    private computeSupersedenceMutation(
+        mutation: Extract<
+            ALOutboundAdmissionMutation,
+            { kind: 'set-supersedence-latest' | 'set-supersedence-replacement'; }
+        >
+    ): ALOutboundStateWrite {
+        switch (mutation.kind) {
+            case 'set-supersedence-latest':
+                return {
+                    key: this.toSupersedenceLatestKey(mutation.supersedenceKey),
+                    value: mutation.value,
+                    expireAtTimestamp: mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
+                    supersedenceGuard: { expected: mutation.expected }
+                };
+            case 'set-supersedence-replacement':
+                return {
+                    key: this.toSupersedenceReplacementKey(mutation.msgId),
+                    value: mutation.value,
+                    expireAtTimestamp: mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
+                    supersedenceGuard: undefined
+                };
+        }
+    }
+
+    private async assertMutationObservations(
         tx: ALAdmissionWorkWriteContext,
-        senderId: string,
-        currentVersion: number | undefined
+        writes: readonly ALOutboundStateWrite[]
     ): Promise<void> {
-        const version = currentVersion ??
-            (await tx.read(this.toVersionKey(senderId), (value) => decodeALAdmissionClientRecord(value, senderId)))
-                ?.version;
-        await tx.set(
-            this.toVersionKey(senderId),
-            { senderId, version: (version ?? 0) + 1 } satisfies ALOutboundVersionedClientRecord,
-            toExpireAtTimestampFromNow(this.retention.versionTtlMs)
-        );
+        for (const write of writes) {
+            if (write.supersedenceGuard === undefined) {
+                continue;
+            }
+            const current = await tx.read(write.key, (value) => decodeALAdmissionSupersedenceValue(value, 'latest'));
+            if (!jsonEquals(current, write.supersedenceGuard.expected)) {
+                throw new ALAdmissionBackendConflictError('Outbound shared supersedence observation changed');
+            }
+        }
+    }
+
+    private async applyMutation(tx: ALAdmissionWorkWriteContext, write: ALOutboundStateWrite): Promise<void> {
+        if (write.value === undefined) {
+            await tx.remove(write.key);
+        }
+        else {
+            await tx.set(write.key, write.value, write.expireAtTimestamp);
+        }
     }
 
     private toVersionKey(senderId: string): string {

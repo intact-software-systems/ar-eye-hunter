@@ -137,9 +137,12 @@ missing. Pure policy/validation returns this as an `Either` value; an exception-
 boundary may translate it to `NotReadyException`. Release as `RETRY` with a future `nextTs`, without
 consuming the processing failure-attempt budget or recording a circuit-breaker failure. Prefer
 skipping known ineligible work before reservation. Recheck after reservation to handle readiness
-changes, preserving the original message deadline and exact reservation ownership. QueueBox currently
-increments attempts when reserving, so this needs an explicit canonical deferral operation and
-cross-backend tests; throwing a differently named exception alone does not establish those semantics.
+changes, preserving the original message deadline and existing database reservation checks. The
+database row remains authoritative: `RESERVED` is claimed work, and `RETRY` is available when
+`nextTs` is reached. Do not add ownership fencing, reservation tokens or generations, or controller
+ownership state for not-ready deferral. QueueBox currently increments attempts when reserving, so
+this needs an explicit canonical deferral operation and cross-backend tests; throwing a differently
+named exception alone does not establish those semantics.
 Use bounded readiness backoff and existing engine wakes, without another scheduler or a tight retry loop.
 
 Lifecycle subscriptions, transport callbacks, and existing QueueBox transaction callbacks belong

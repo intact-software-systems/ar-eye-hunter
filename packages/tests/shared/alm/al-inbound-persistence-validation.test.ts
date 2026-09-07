@@ -15,7 +15,7 @@ import {
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 const message: ALMessage = {

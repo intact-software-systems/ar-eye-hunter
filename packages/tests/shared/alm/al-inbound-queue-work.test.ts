@@ -15,7 +15,7 @@ import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/crea
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 interface ReadMessageWorkInput {
     readonly namespace: string;

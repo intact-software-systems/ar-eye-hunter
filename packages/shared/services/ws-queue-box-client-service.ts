@@ -30,9 +30,11 @@ import {
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
     type ALOutboundRetryTrackingPlan,
+    type ALOutboundSettledSendResult,
     type ALOutboundSupersedenceTrackingPlan
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundRuntimeResources } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
 import { NonRetryableException, type ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
@@ -46,8 +48,8 @@ import {
 } from '../resilience/TryWith.ts';
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
 import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnMessageCallback, OnOutboxWebSocketMessageCallback } from './queue-message-callbacks.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -182,14 +184,14 @@ export class WsQueueBoxClientService {
                 beforeDequeueDispatch: undefined,
                 planRepairMessage: undefined,
                 onFallbackDequeue: undefined,
-                sendPreparedMessage: async (msg, _phase) => {
-                    await this.dispatchOutboxEntry(
+                sendPreparedMessage: async (msg, _phase, lifecycle) => {
+                    return await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(
                             msg,
                             WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
-                        )
+                        ),
+                        lifecycle
                     );
-                    return { status: 'sent' };
                 }
             }
         );
@@ -225,9 +227,11 @@ export class WsQueueBoxClientService {
             this.dependencies.qosProvider
         );
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
+        const message = toALOutboundMessage(msg, normalized.effective);
         return {
+            msg: message,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
-            preparedMessages: [msg],
+            preparedMessages: [message],
             ackTracking: this.toAckTrackingPlan(normalized.effective, msg),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),
             repairTracking: {
@@ -617,15 +621,39 @@ export class WsQueueBoxClientService {
         }
     }
 
-    private async dispatchOutboxEntry(entry: ResourceEntry): Promise<void> {
+    private async dispatchOutboxEntry(
+        entry: ResourceEntry,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
+    ): Promise<ALOutboundSettledSendResult> {
+        const stopped = this.readSendIneligibility(lifecycle);
+        if (stopped) {
+            return stopped;
+        }
         if (this.onOutboxMessageCallbacks.size === 0) {
             this.socket.sendAsJsonString(entry.resource);
-            return;
+            return { status: 'sent' };
         }
 
         for (const callback of this.onOutboxMessageCallbacks.values()) {
-            await callback.onMessage(entry, this.socket);
+            const stopped = this.readSendIneligibility(lifecycle);
+            if (stopped) {
+                return stopped;
+            }
+            await callback.onMessage(entry, this.socket, lifecycle);
         }
+        return { status: 'sent' };
+    }
+
+    private readSendIneligibility(
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
+    ): ALOutboundSettledSendResult | undefined {
+        if (this.closed || lifecycle.signal.aborted) {
+            return { status: 'cancelled' };
+        }
+        if (lifecycle.expiresAtMs !== undefined && Date.now() >= lifecycle.expiresAtMs) {
+            return { status: 'expired' };
+        }
+        return this.isSocketOpen() ? undefined : { status: 'not-ready' };
     }
 
     private isSocketOpen(): boolean {

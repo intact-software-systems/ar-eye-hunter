@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { RetryableConflictError, RetryPolicies, tryWithPolicy } from '../../resilience/TryWith.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPreparedMessageDecoder
@@ -49,19 +49,6 @@ export namespace ALOutboundDispatchAdmission {
 
 /** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
 export class ALOutboundDispatchAdmission<TPrepared> {
-    private static readonly MAX_COMMIT_ATTEMPTS = 10;
-    private static readonly COMMIT_RETRY_INTERVAL_MSECS = 10;
-    private static readonly COMMIT_MAX_RETRY_INTERVAL_MSECS = 50;
-    private static readonly COMMIT_MAX_ELAPSED_MSECS = 500;
-    static readonly COMMIT_RETRY_POLICY = RetryPolicies
-        .optimisticCommit('al-outbound-commit')
-        .maxAttempts(ALOutboundDispatchAdmission.MAX_COMMIT_ATTEMPTS)
-        .retryIntervalMsecs(ALOutboundDispatchAdmission.COMMIT_RETRY_INTERVAL_MSECS)
-        .maxRetryIntervalMsecs(
-            ALOutboundDispatchAdmission.COMMIT_MAX_RETRY_INTERVAL_MSECS
-        )
-        .maxElapsedMsecs(ALOutboundDispatchAdmission.COMMIT_MAX_ELAPSED_MSECS);
-
     private readonly admissionStore: ALOutboundAdmissionStore;
     private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
     private disposed = false;
@@ -79,29 +66,20 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     async commit(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
-        return await this.withSenderCommitQueue(
-            dispatch.msg.id.senderId,
-            () => this.commitDispatchPlanWithRetryNow(dispatch)
-        );
-    }
-
-    private async commitDispatchPlanWithRetryNow(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
-    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         try {
-            return await tryWithPolicy<ALOutboundDispatchAdmission.Result<TPrepared>>(
-                () => this.commitDispatchOnce(dispatch),
-                ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
+            return await this.withSenderCommitQueue(
+                dispatch.msg.id.senderId,
+                () => this.commitDispatchOnce(dispatch)
             );
         }
         catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
+            if (!(error instanceof NonRetryableException) || dispatch.intent !== 'enqueue') {
                 throw error;
             }
-            throw new Error(
-                `Failed to commit outbound message after retries: ${dispatch.msg.id.msgId}`,
-                { cause: error }
-            );
+            return {
+                computed: { msg: dispatch.msg, status: 'failed', reason: error.message, entries: [] },
+                committed: false
+            };
         }
     }
 
@@ -120,8 +98,11 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const computed = computeALOutboundDispatch(input);
         const validated = validateALOutboundDispatch(input.read, computed);
         if (validated.left) {
+            if (dispatch.intent !== 'enqueue') {
+                throw new NonRetryableException(validated.left.message);
+            }
             return {
-                computed: { status: 'failed', reason: validated.left.message, entries: [] },
+                computed: { msg: input.read.msg, status: 'failed', reason: validated.left.message, entries: [] },
                 committed: false
             };
         }
@@ -137,7 +118,29 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             computed.bundle,
             this.dependencies.decodePreparedMessage
         );
+        if (status === 'expired') {
+            return {
+                computed: {
+                    msg: input.read.msg,
+                    status: 'expired',
+                    reason: 'Message expired before commit',
+                    entries: []
+                },
+                committed: false
+            };
+        }
         if (status === 'conflict') {
+            if (dispatch.intent === 'enqueue') {
+                return {
+                    computed: {
+                        msg: input.read.msg,
+                        status: 'failed',
+                        reason: 'Outbound commit conflict',
+                        entries: []
+                    },
+                    committed: false
+                };
+            }
             throw new RetryableConflictError('Outbound commit conflict');
         }
 
@@ -176,7 +179,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return {
             read,
             outboxEntry: needsEntry
-                ? dispatch.options.fallbackEntry ?? this.dependencies.toOutboxEntry(dispatch.msg)
+                ? dispatch.options.fallbackEntry ?? this.dependencies.toOutboxEntry(read.msg)
                 : undefined,
             canFallback: this.dependencies.canFallback,
             dispatchAtMs: this.readNowMs(),

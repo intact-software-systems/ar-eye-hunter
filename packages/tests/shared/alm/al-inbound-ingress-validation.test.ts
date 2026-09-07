@@ -11,7 +11,7 @@ import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-ad
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 describe('AL inbound canonical validation', () => {
     it('bounds retained ordered message bytes and admits the rejected identity when capacity becomes available', async () => {

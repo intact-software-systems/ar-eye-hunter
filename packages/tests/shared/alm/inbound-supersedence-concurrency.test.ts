@@ -19,7 +19,7 @@ import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@sha
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 

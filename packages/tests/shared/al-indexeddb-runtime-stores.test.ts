@@ -61,7 +61,9 @@ describe('IndexedDB AL runtime stores', () => {
         const inboundStores = createDefaultIndexedDbALInboundRuntimeStores();
         const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores();
 
-        const original = newALUnicastMessage('peer-default-schema', { topicId: 'chat', resourceId: 'schema', contextId: 'self' }, 'self', 'chat', {});
+        const original = newALUnicastMessage('peer-default-schema', { topicId: 'chat', resourceId: 'schema', contextId: 'self' }, 'self', 'chat', {}, {
+            ttlMs: 30_000
+        });
         const message = { ...original, id: { ...original.id, msgId: 'message-default-schema' } };
         await expect(
             inboundStores.admissionStore.commitMutations({
@@ -100,6 +102,7 @@ describe('IndexedDB AL runtime stores', () => {
                 text: 'hello'
             },
             {
+                ttlMs: 30_000,
                 qos: {
                     durability: {
                         algo: 'volatile'
@@ -178,7 +181,8 @@ describe('IndexedDB AL runtime stores', () => {
             'chat.private-text.v1',
             {
                 text: 'persist me'
-            }
+            },
+            { ttlMs: 30_000 }
         );
 
         await inbox.getAllKeys();
@@ -216,6 +220,7 @@ describe('IndexedDB AL runtime stores', () => {
                 text: 'persist me later'
             },
             {
+                ttlMs: 30_000,
                 qos: {
                     durability: {
                         algo: 'local-inbox'
@@ -281,7 +286,8 @@ describe('IndexedDB AL runtime stores', () => {
             'chat.private-text.v1',
             {
                 text: 'retained briefly'
-            }
+            },
+            { ttlMs: 30_000 }
         );
         const planner = createInboundPlanner();
 
@@ -382,7 +388,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(afterExpiry.acks).toEqual([]);
     });
 
-    it('expires outbound sent snapshots without explicit message expiry using repository defaults', async () => {
+    it('expires outbound sent snapshots at their captured message deadline', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -400,7 +406,7 @@ describe('IndexedDB AL runtime stores', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         expect(await admissionStore.getSentMessage(msg.id.msgId)).toBeDefined();
 
-        await vi.advanceTimersByTimeAsync(60 * 60_000 + 1);
+        await vi.advanceTimersByTimeAsync(30_000);
 
         expect(await admissionStore.getSentMessage(msg.id.msgId)).toBeUndefined();
         runtime.dispose();
@@ -498,7 +504,8 @@ describe('IndexedDB AL runtime stores', () => {
                 'chat.private-text.v1',
                 {
                     text: 'one'
-                }
+                },
+                { ttlMs: 30_000 }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
@@ -518,7 +525,8 @@ describe('IndexedDB AL runtime stores', () => {
                 'chat.private-text.v1',
                 {
                     text: 'two'
-                }
+                },
+                { ttlMs: 30_000 }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
@@ -687,6 +695,7 @@ describe('IndexedDB AL runtime stores', () => {
                 })
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -702,6 +711,7 @@ describe('IndexedDB AL runtime stores', () => {
                 }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -793,6 +803,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
         decodePreparedMessage: decodeOutboundTestPayload,
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
+            msg: msg,
             persist: false,
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
             repairTracking: {
@@ -802,6 +813,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             }
         })),
         planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
+            msg: msg,
             persist: false,
             preparedMessages: [
                 {
@@ -823,6 +835,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
 
 function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
     return (msg) => ({
+        msg: msg,
         persist: false,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         repairTracking: {
@@ -845,7 +858,8 @@ function createOutboundUnicastMessage(resourceId: string) {
         'chat.private-text.v1',
         {
             text: resourceId
-        }
+        },
+        { ttlMs: 30_000 }
     );
 }
 
@@ -863,6 +877,7 @@ function createOrderedMulticastMessage(seq: number, text: string) {
             text
         },
         {
+            ttlMs: 30_000,
             seq,
             reliability: 'at-least-once',
             ack: 'none',
