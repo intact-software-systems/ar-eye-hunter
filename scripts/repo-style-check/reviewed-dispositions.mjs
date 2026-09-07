@@ -681,6 +681,131 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // These reviewed AL/control/snapshot/queue decoders keep raw values inside
+    // their validation boundary. Generic JSON sockets deliberately preserve
+    // opaque application values until their protocol consumer decodes them.
+    // Module-owner entries reflect the checker-owned scope, not approval for
+    // future unknown propagation; every touched owner still needs full review.
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readControlArrayEntries'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeAckStatus'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeNackReason'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeRepairReason'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseControlPayload'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeALMessageEnvelope'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateALMessageResourceLimits'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'boundary.unknown',
+        symbol: 'computeALMessageEnvelopeSize'
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-work-entry.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/validate-al-outbound-dispatch.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateALOutboundPlannedMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared/api/state-snapshot-page.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeStateSnapshotPage'
+    }),
+    Object.freeze({
+        path: 'packages/shared/api/state-snapshot-page.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSnapshotPage'
+    }),
+    Object.freeze({
+        path: 'packages/shared/api/state-snapshot-page.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validSnapshotScope'
+    }),
+    Object.freeze({
+        path: 'packages/shared/api/state-snapshot-page.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validPageInteger'
+    }),
+    Object.freeze({
+        path: 'packages/shared/api/state-snapshot-page.ts',
+        rule: 'boundary.unknown',
+        symbol: 'matchesPageMessageId'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/rtc-topology-work-entry-contract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcTopologyWorkMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared/websocket/json-web-socket-client.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/websocket/json-web-socket-server.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The bounded untrusted-value traversal and the snapshot page wire codec
+    // each keep one coherent algorithm together. These caps cover the reviewed
+    // warning magnitudes only and do not authorize exception-tier growth.
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 85
+    }),
+    Object.freeze({
+        path: 'packages/shared/api/state-snapshot-page.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 80
+    }),
     // Cohesion review kept these lifecycle/decoder owners and their directory
     // together. Bounds describe only the reviewed signal and never change the
     // global thresholds or authorize a refactor-or-register tier exception.
