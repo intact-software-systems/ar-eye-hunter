@@ -78,20 +78,20 @@ class RtcRttTrafficWebSocket extends EventTarget implements WebSocket {
     }
 }
 
-function parseArgs(): RtcRttTrafficArgs {
-    const sessions = Number(readArgValue('sessions', '10'));
+function parseArgs(args: readonly string[]): RtcRttTrafficArgs {
+    const sessions = Number(findArgValue(args, 'sessions') ?? '10');
     if (!Number.isSafeInteger(sessions) || sessions < 2) {
         throw new TypeError('--sessions must be a safe integer of at least 2');
     }
     return {
         sessions,
-        out: readArgValue('out', 'tmp/perf/results/rtc-rtt-traffic-metrics.json')
+        out: findArgValue(args, 'out') ?? 'tmp/perf/results/rtc-rtt-traffic-metrics.json'
     };
 }
 
-function readArgValue(name: string, fallback: string): string {
+function findArgValue(args: readonly string[], name: string): string | undefined {
     const prefix = `--${name}=`;
-    return Deno.args.find((argument) => argument.startsWith(prefix))?.slice(prefix.length) ?? fallback;
+    return args.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
 }
 
 function createCentralRttMeasurements(
@@ -119,16 +119,13 @@ function createCentralRttMeasurements(
 }
 
 function createArtifact(
-    sessionCount: number,
-    submittedRttCount: number,
+    createdAt: string,
+    input: RtcRttTrafficInput,
     enqueuedMeasurements: readonly RttMeasurementInfo[]
 ): RtcRttTrafficMetricsArtifact {
     return {
-        createdAt: new Date().toISOString(),
-        input: {
-            sessionCount,
-            submittedRttCount
-        },
+        createdAt,
+        input,
         measurements: {
             durableEnqueueCount: enqueuedMeasurements.length,
             enqueuedVersions: enqueuedMeasurements
@@ -138,7 +135,7 @@ function createArtifact(
     };
 }
 
-const args = parseArgs();
+const args = parseArgs(Deno.args);
 
 const sessionIds = Array.from(
     { length: args.sessions },
@@ -153,7 +150,6 @@ const sockets = new Map(sessionIds.map((id) => {
 }));
 
 const service = createDefaultWsQueueBoxServerService({
-    inbox: new InMemoryQueueBox(new Map()),
     outbox: new InMemoryQueueBox(new Map()),
     socket: server,
     name: 'rtc-rtt-traffic-diagnostic'
@@ -182,7 +178,11 @@ await Deno.writeTextFile(
     args.out,
     `${
         JSON.stringify(
-            createArtifact(args.sessions, measurements.length, enqueuedMeasurements),
+            createArtifact(
+                new Date().toISOString(),
+                { sessionCount: args.sessions, submittedRttCount: measurements.length },
+                enqueuedMeasurements
+            ),
             null,
             2
         )

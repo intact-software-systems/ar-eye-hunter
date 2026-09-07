@@ -6,9 +6,10 @@ Reviewed source: `02d65ac4a458b98b92ebda22cf3ff84041027eb9`
 ## Summary and agreed decisions
 
 This roadmap accompanies the reconciled [static audit](alm-static-audit.md) and
-[complete product description](alm-complete-product-description.md). The planning
-deliverable is these three documents. Saving them does not start ALM implementation;
-execution begins in a subsequent task.
+[complete product description](alm-complete-product-description.md). These three documents
+were the planning deliverable. Implementation is now authorized and follows the release
+boundaries below. The reviewed source above identifies the original audit baseline; current
+release evidence belongs in the pull request.
 
 The agreed direction is:
 
@@ -797,10 +798,10 @@ implementation retains no affected unused code or legacy and introduces no migra
 QueueBox and existing libraries means extending their canonical owners where necessary, not
 copying an old implementation or preserving a redundant ALM worker for convenience.
 
-Planning is complete when the audit and product description reflect the reconciled baseline,
-this roadmap is saved beside them, links resolve, and every finding/completion criterion is
-represented in the evidence matrix. No GitHub issues or publication actions are needed for this
-planning deliverable. ALM implementation requires the subsequent execution task.
+Planning completion required the reconciled audit and product description, this adjacent roadmap,
+valid links, and every finding/completion criterion represented in the evidence matrix. The
+subsequent execution task authorized implementation and regular pull request publication.
+Complete each release at its stated boundary, preserving the remaining roadmap outcomes.
 
 ### Commands executed and what they taught us
 
