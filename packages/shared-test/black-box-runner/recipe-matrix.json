@@ -2957,6 +2957,41 @@
         ]
       },
       "description": "No-browser API-v1 group event cursor paging across three nodes. The corpus requests /events/page twice and asserts only its status: no limit, no cursor, and hasMore is read nowhere. A bounded page is opened on the primary and continued on the secondary and again on the tertiary, because the cursor is three durable event columns rather than node-local state; the pages must not overlap and the remainder must end. Two silent fallbacks are pinned as well: a partial cursor is dropped rather than rejected, so a caller sending only the event id re-reads page one forever, and a zero or non-numeric limit falls back to the default 100 instead of answering 400."
+    },
+    {
+      "id": "api-v1-group-governance-fencing",
+      "recipe": "tests/api-v1/api-v1-group-governance-fencing.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-governance-fencing",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group governance fencing across three nodes. Ban, unban, removal and the two admission decisions are each written on one node and enforced or read back on the nodes that never saw the write; group snapshots are served through a node-local cache, so a fence that is only correct on the writing node is the regression this catches, and no existing recipe crosses a node with any of these. Every denial names its code rather than its status: member-banned on both non-writing nodes, member-removed after a removal written elsewhere, and an unban that lets the rejoin through on a third node. The admission half parks a request on one node, decides it on another, and requires the decision visible on the node that parked it."
     }
   ]
 }
