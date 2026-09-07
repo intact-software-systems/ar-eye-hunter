@@ -14,13 +14,17 @@ import {
     encodeALAdmissionResourceEntry
 } from '../al-admission-resource-entry-validation.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
+import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
 import { computeALInboundBufferedRelease, type ALInboundBufferedRelease } from './compute-al-inbound-admission.ts';
-import { prepareALInboundCommitBundle, readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
+import {
+    prepareALInboundCommitBundle,
+    readALInboundEffectFacts
+} from './prepare-al-inbound-commit-bundle.ts';
 import { validateALInboundCommitBundle } from './validate-al-inbound-commit-bundle.ts';
 
 export namespace ALInboundOrderedDelivery {
@@ -238,8 +242,14 @@ function validateALInboundBufferedRelease(
             const entry = decodeALAdmissionResourceEntry(encodeALAdmissionResourceEntry(delivery.entry));
             const msg = decodePersistedALMessage(entry.resource);
             const owner = candidate.mutations.find((mutation) => mutation.kind === 'set-msg-owner');
+            const admitted = candidate.observations.buffered?.msg;
+            const expected = admitted === undefined || msg.constraints?.expiresAtMs === undefined
+                ? admitted
+                : toALInboundMessageWithDeadline(admitted, msg.constraints.expiresAtMs);
             if (
-                !isKeysEqual(entry.key, msg.route) || !jsonEquals(msg, candidate.observations.buffered?.msg) ||
+                !isKeysEqual(entry.key, msg.route) || admitted === undefined ||
+                entry.audit.expiryTs.epochMilliseconds > (msg.constraints?.expiresAtMs ?? Number.POSITIVE_INFINITY) ||
+                !jsonEquals(msg, expected) ||
                 owner === undefined || owner.expireAtTimestamp < entry.audit.expiryTs.epochMilliseconds
             ) {
                 return Either.ofLeft({

@@ -24,12 +24,15 @@ import {
     type ALInboundEffectIntent
 } from './al-inbound-effect-intent.ts';
 import {
+    toALInboundDispatchEntry,
+    toALInboundMessageWithDeadline
+} from './al-inbound-message-deadline.ts';
+import {
     computeALInboundBufferedReleaseSupersedenceAcceptance,
     computeALInboundOrderingAcceptance
 } from './al-inbound-planner-snapshot.ts';
 import {
     prepareALInboundCommitBundle,
-    toALInboundDispatchEntry,
     type ALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
 import {
@@ -67,6 +70,7 @@ function computeALInboundMessageRead(
     read: ALInboundAdmissionRead,
     plan: ALMessageHandlingPlan
 ): ALInboundMessageReadDto {
+    const expiresAtMs = resolveALMessageExpireAtMs(read.msg, plan.effective);
     const supersedence = plan.supersedence.enabled && plan.supersedence.key
         ? {
             key: plan.supersedence.key,
@@ -80,7 +84,7 @@ function computeALInboundMessageRead(
         kind: 'incoming',
         orderingTrackTtlMs: read.orderingTrackTtlMs,
         namespace: read.namespace,
-        msg: read.msg,
+        msg: expiresAtMs === undefined ? read.msg : toALInboundMessageWithDeadline(read.msg, expiresAtMs),
         fromPeerId: read.fromPeerId,
         source: read.source,
         nowMs: read.nowMs,
@@ -186,10 +190,13 @@ export function computeALInboundBufferedRelease(
     const intent = deliverable
         ? toALInboundLocalDeliveryEffects({ msg: read.snapshot.msg, plan })[0]?.payload
         : undefined;
-    const expireAtTimestamp = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective) ??
-        read.nowMs + read.retention.durableEffectTtlMs;
+    const expiresAtMs = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective);
+    const msg = expiresAtMs === undefined
+        ? read.snapshot.msg
+        : toALInboundMessageWithDeadline(read.snapshot.msg, expiresAtMs);
+    const expireAtTimestamp = expiresAtMs ?? read.nowMs + read.retention.durableEffectTtlMs;
     const localDelivery = intent?.kind === 'dispatch-local'
-        ? { kind: intent.kind, entry: toALInboundDispatchEntry(facts.inboxEntry, expireAtTimestamp) }
+        ? { kind: intent.kind, entry: toALInboundDispatchEntry(facts.inboxEntry, msg, expireAtTimestamp) }
         : undefined;
     const bundle = prepareALInboundCommitBundle({
         read,

@@ -1,7 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodeALMessageValue, decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
     type ALMessageHandlingPlan,
@@ -21,6 +22,7 @@ import {
     type ALInboundEffectFacts,
     type ALInboundEffectPreparationDependencies
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import { validateALInboundCommitBundle } from '@shared/alm/inbound/validate-al-inbound-commit-bundle.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -106,6 +108,148 @@ describe('inbound admission preparation boundary', () => {
 
         expect(second).toEqual(first);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
+    });
+
+    it.each([undefined, 500, 2_000])('carries the admitted freshness deadline into every message when caller TTL is %s', async (callerTtlMs) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const admittedAtMs = 1_800_000_000_000;
+        vi.setSystemTime(admittedAtMs);
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message: ALMessage = Object.freeze({
+            ...createMessage(1),
+            constraints: Object.freeze({
+                ttlHops: 5,
+                ...(callerTtlMs === undefined ? {} : { expiresAtMs: admittedAtMs + callerTtlMs })
+            })
+        });
+        const original = JSON.stringify(message);
+        const prepared = await readAdmission({ store: stores.admissionStore, message });
+        const plan: ALMessageHandlingPlan = {
+            ...prepared.plan,
+            effective: {
+                ...prepared.plan.effective,
+                expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } }
+            },
+            forwarding: { ...prepared.plan.forwarding, enabled: true, nextHopPeerIds: ['peer-b'] }
+        };
+        const deadline = admittedAtMs + Math.min(callerTtlMs ?? 1_000, 1_000);
+        const bundle = computeALInboundAdmission({ ...prepared, plan, canForward: true });
+        const dispatch = bundle.durableEffects.find((effect) => effect.payload.kind === 'dispatch-local');
+        const forward = bundle.durableEffects.find((effect) => effect.payload.kind === 'forward-message');
+        const buffered = bundle.mutations.find((mutation) => mutation.kind === 'set-buffered');
+        if (dispatch?.payload.kind !== 'dispatch-local' || forward?.payload.kind !== 'forward-message' || !buffered) {
+            throw new Error('This admitted message must own dispatch, forwarding and ordered replay');
+        }
+        for (const admitted of [decodePersistedALMessage(dispatch.payload.entry.resource), forward.payload.msg, buffered.snapshot.msg]) {
+            expect(admitted).toEqual({ ...message, constraints: { ttlHops: 5, expiresAtMs: deadline } });
+        }
+        expect(dispatch.expireAtTimestamp).toBe(deadline);
+        expect(forward.expireAtTimestamp).toBe(deadline);
+        expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+        expect(JSON.stringify(message)).toBe(original);
+
+        vi.setSystemTime(admittedAtMs + 100);
+        const read = await stores.admissionStore.readBufferedRelease({
+            trackKey: buffered.snapshot.trackKey,
+            seq: buffered.snapshot.seq,
+            nowMs: Date.now()
+        });
+        if (!read) {
+            throw new Error('The admitted message must survive for ordered replay');
+        }
+        // Removing the old topic freshness policy must not renew the admitted message.
+        const replayPlan = planIncomingMessage(read.snapshot.msg, read.source, { nowMs: Date.now() });
+        const replay = computeALInboundBufferedRelease({
+            read,
+            plan: replayPlan,
+            facts: readALInboundEffectFacts(read.snapshot.msg, Date.now(), createPreparationDependencies())
+        });
+        expect(replay.localDelivery?.entry.audit.expiryTs.epochMilliseconds).toBe(deadline);
+        expect(decodePersistedALMessage(replay.localDelivery!.entry.resource).constraints?.expiresAtMs).toBe(deadline);
+    });
+
+    it('uses the buffered message deadline for release work created by a later predecessor', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const admittedAtMs = 1_800_000_000_000;
+        vi.setSystemTime(admittedAtMs);
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = { ...createMessage(2), constraints: { expiresAtMs: admittedAtMs + 1_000 } };
+        const waiting = await readAdmission({ store: stores.admissionStore, message });
+        expect(await stores.admissionStore.commitBundle(computeALInboundAdmission({ ...waiting, canForward: false })))
+            .toBe('committed');
+
+        vi.setSystemTime(admittedAtMs + 500);
+        const predecessor = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
+        const bundle = computeALInboundAdmission({ ...predecessor, canForward: false });
+        const release = bundle.durableEffects.find((effect) => effect.payload.kind === 'release-buffered');
+
+        expect(release).toBeDefined();
+        expect(release?.expireAtTimestamp).toBe(admittedAtMs + 1_000);
+    });
+
+    it('rejects a deadline-expanded envelope before it can poison buffered admission', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_800_000_000_000);
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = toMessageWithEnvelopeSize(createMessage(2), AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes);
+        expect(decodeALMessageValue(message).right).toBeDefined();
+        const prepared = await readAdmission({ store: stores.admissionStore, message });
+        const plan = withFreshnessPolicy(prepared.plan);
+        const candidate = computeALInboundAdmission({ ...prepared, plan, canForward: false });
+        expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
+
+        const runtime = new ALInboundMessageRuntime({
+            ...createRuntimeDependencies(stores.admissionStore),
+            planIncomingMessage: (message, source, observations) => withFreshnessPolicy(planIncomingMessage(message, source, observations))
+        });
+        try {
+            const result = await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            expect(result.left?.code).toBe('oversized');
+            const untouched = await readAdmission({ store: stores.admissionStore, message });
+            expect(untouched.read.observations.messageOwner).toBeUndefined();
+            expect(untouched.read.bufferedSnapshots).toEqual([]);
+            expect(await stores.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        }
+        finally {
+            runtime.dispose();
+        }
+    });
+
+    it('counts the deadline-bearing message before deciding whether an ordered buffer has room', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_800_000_000_000);
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        let freshnessEnabled = false;
+        const runtime = new ALInboundMessageRuntime({
+            ...createRuntimeDependencies(stores.admissionStore),
+            planIncomingMessage: (message, source, observations) => {
+                const plan = planIncomingMessage(message, source, observations);
+                return freshnessEnabled ? withFreshnessPolicy(plan) : plan;
+            }
+        });
+        try {
+            for (let seq = 2; seq <= 9; seq++) {
+                const message = toMessageWithEnvelopeSize(createMessage(seq), 130_000);
+                expect((await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' })).right?.kind)
+                    .toBe('admitted');
+            }
+            const message = toMessageWithEnvelopeSize(createMessage(10), AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes - 8 * 130_000);
+            const prepared = await readAdmission({ store: stores.admissionStore, message });
+            const candidate = computeALInboundAdmission({ ...prepared, plan: withFreshnessPolicy(prepared.plan), canForward: false });
+            expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
+
+            freshnessEnabled = true;
+            const result = await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            expect(result.right?.kind).toBe('resync-required');
+            const remaining = await readAdmission({ store: stores.admissionStore, message });
+            expect(remaining.read.observations.messageOwner).toBeUndefined();
+            expect(remaining.read.bufferedSnapshots).toHaveLength(8);
+            expect(remaining.read.bufferedSnapshots.reduce((bytes, snapshot) => bytes + new TextEncoder().encode(JSON.stringify(snapshot.msg)).length, 0))
+                .toBe(8 * 130_000);
+        }
+        finally {
+            runtime.dispose();
+        }
     });
 
     it('retains authenticated source and frozen audience for the full owned-work lifetime', async () => {
@@ -240,6 +384,21 @@ interface PreparedAdmission {
     readonly read: ALInboundAdmissionRead;
     readonly plan: ALMessageHandlingPlan;
     readonly facts: ALInboundEffectFacts;
+}
+
+function withFreshnessPolicy(plan: ALMessageHandlingPlan): ALMessageHandlingPlan {
+    return {
+        ...plan,
+        effective: { ...plan.effective, expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } }
+    };
+}
+
+function toMessageWithEnvelopeSize(message: ALMessage, bytes: number): ALMessage {
+    const empty = { ...message, id: { ...message.id, traceId: '' } };
+    return {
+        ...empty,
+        id: { ...empty.id, traceId: 'x'.repeat(bytes - new TextEncoder().encode(JSON.stringify(empty)).length) }
+    };
 }
 
 interface AdmissionReadInput {

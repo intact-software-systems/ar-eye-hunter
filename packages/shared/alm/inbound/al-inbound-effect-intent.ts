@@ -75,11 +75,17 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
     if (read.plan.localDelivery.deferred || !trackKey) {
         return [];
     }
-    return read.orderingAcceptance.observation.releasableSeqs.map((seq) => ({
-        effectId: toEffectId(['release', trackKey, seq]),
-        expireAtTimestamp: undefined,
-        payload: { kind: 'release-buffered', trackKey, seq }
-    }));
+    const bufferedBySequence = new Map(read.bufferedSnapshots.map((snapshot) => [snapshot.seq, snapshot]));
+    return read.orderingAcceptance.observation.releasableSeqs.map((seq) => {
+        const buffered = bufferedBySequence.get(seq);
+        return {
+            effectId: toEffectId(['release', trackKey, seq]),
+            expireAtTimestamp: buffered === undefined
+                ? undefined
+                : resolveALMessageExpireAtMs(buffered.msg, buffered.plan.effective),
+            payload: { kind: 'release-buffered', trackKey, seq }
+        };
+    });
 }
 
 export function toALInboundLocalDeliveryEffects(

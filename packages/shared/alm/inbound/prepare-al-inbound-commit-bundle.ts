@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
@@ -18,6 +17,7 @@ import type {
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
+import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
 import { computeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 
@@ -129,7 +129,10 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
     };
     switch (payload.kind) {
         case 'dispatch-local':
-            return { kind: payload.kind, entry: toALInboundDispatchEntry(facts.inboxEntry, input.expireAtTimestamp) };
+            return {
+                kind: payload.kind,
+                entry: toALInboundDispatchEntry(facts.inboxEntry, payload.msg, input.expireAtTimestamp)
+            };
         case 'send-ack':
             return {
                 kind: 'send-control',
@@ -169,13 +172,6 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
         case 'release-buffered':
             return payload;
     }
-}
-
-export function toALInboundDispatchEntry(entry: ResourceEntry, expireAtTimestamp: number): ResourceEntry {
-    return {
-        ...entry,
-        audit: { ...entry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expireAtTimestamp) }
-    };
 }
 
 function toControlOrdering(ordering: ALOrderingObservation | undefined): ALInboundControlOrdering {

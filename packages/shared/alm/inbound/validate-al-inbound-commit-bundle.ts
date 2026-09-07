@@ -6,7 +6,10 @@ import type {
     ALInboundAdmissionObservations,
     ALInboundCommitBundle
 } from './al-inbound-admission-store.ts';
-import { decodeALInboundDeliveryProgress } from './al-inbound-ordering-validation.ts';
+import {
+    decodeALInboundDeliveryProgress,
+    validateALInboundBufferedMessages
+} from './al-inbound-ordering-validation.ts';
 import { decodeALInboundControlOwnerIndex, decodeALInboundSource } from './al-inbound-source-validation.ts';
 import { validateALInboundWorkWrites } from './al-inbound-work-entry.ts';
 
@@ -47,6 +50,10 @@ export function validateALInboundCommitBundle(
     }
     if (ownerExpireAtTimestamp !== undefined && ownerExpireAtTimestamp < ownedWorkExpireAtTimestamp) {
         return invalidBundle('Inbound admission candidate provenance expires before its owned work');
+    }
+    const bufferedIssues = validateALInboundBufferedMessages(bundle);
+    if (bufferedIssues.length > 0) {
+        return Either.ofLeft(bufferedIssues[0]);
     }
     return Either.ofRight(bundle);
 }

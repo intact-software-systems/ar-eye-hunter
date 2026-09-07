@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
-import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
@@ -11,6 +11,7 @@ import type {
     ALInboundPlanner
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
+import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
 import { ALInboundWorkHandler } from './al-inbound-work-handler.ts';
 import { computeALInboundAdmission } from './compute-al-inbound-admission.ts';
@@ -159,14 +160,20 @@ export class ALInboundMessageRuntime {
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         const nowMs = this.dependencies.clock.nowMs();
         const prePlan = planIncomingMessage(msg, source, { nowMs });
-        const facts = readALInboundEffectFacts(msg, nowMs, this.dependencies.effectPreparation);
-        const read = await this.admissionStore.readIncomingMessage({ msg, source, nowMs, prePlan });
+        const expiresAtMs = resolveALMessageExpireAtMs(msg, prePlan.effective);
+        const admitted = expiresAtMs === undefined ? msg : toALInboundMessageWithDeadline(msg, expiresAtMs);
+        const decoded = decodeALMessageValue(admitted);
+        if (decoded.left) {
+            return Either.ofLeft(decoded.left);
+        }
+        const facts = readALInboundEffectFacts(admitted, nowMs, this.dependencies.effectPreparation);
+        const read = await this.admissionStore.readIncomingMessage({ msg: admitted, source, nowMs, prePlan });
         if (this.disposed) {
             return Either.ofRight({ kind: 'disposed' });
         }
-        const plan = planIncomingMessage(msg, source, computeALInboundPlanningObservations(read));
+        const plan = planIncomingMessage(admitted, source, computeALInboundPlanningObservations(read));
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
-            (this.dependencies.canForwardMessage?.(msg) ?? true);
+            (this.dependencies.canForwardMessage?.(admitted) ?? true);
         const computed = computeALInboundAdmission({ read, plan, canForward, facts });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {

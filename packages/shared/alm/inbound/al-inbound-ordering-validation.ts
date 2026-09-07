@@ -1,7 +1,10 @@
 import {
+    decodeALMessageValue,
     decodePersistedALMessage,
-    decodePersistedALMessageValue
+    decodePersistedALMessageValue,
+    type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey, type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
 import {
     decodeALAdmissionArray,
@@ -10,7 +13,11 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
-import type { ALInboundDeliveryProgress, ALInboundDurableEffect } from './al-inbound-admission-store.ts';
+import type {
+    ALInboundCommitBundle,
+    ALInboundDeliveryProgress,
+    ALInboundDurableEffect
+} from './al-inbound-admission-store.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
@@ -73,6 +80,44 @@ export function decodeALInboundBufferedSnapshot(
         decodeALAdmissionString(delivery.effectId);
     }
     return value as ALInboundOrderedDeliverySnapshot;
+}
+
+export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {
+    const mutations = bundle.mutations.filter((mutation) =>
+        mutation.kind === 'set-buffered' || mutation.kind === 'delete-buffered'
+    );
+    if (mutations.length === 0) {
+        return [];
+    }
+    const observed = bundle.observations.ordering?.buffered ??
+        (bundle.observations.buffered === undefined ? [] : [bundle.observations.buffered]);
+    const buffered = new Map(observed.map((snapshot) => [snapshot.seq, snapshot.msg]));
+    const issues: ALMessageRejection[] = [];
+    for (const mutation of mutations) {
+        if (mutation.kind === 'delete-buffered') {
+            buffered.delete(mutation.seq);
+            continue;
+        }
+        const decoded = decodeALMessageValue(mutation.snapshot.msg);
+        if (decoded.left) {
+            issues.push(decoded.left);
+        }
+        buffered.set(mutation.snapshot.seq, mutation.snapshot.msg);
+    }
+    if (issues.length > 0) {
+        return issues;
+    }
+    const encoder = new TextEncoder();
+    let bytes = 0;
+    for (const msg of buffered.values()) {
+        bytes += encoder.encode(JSON.stringify(msg)).length;
+    }
+    if (
+        buffered.size > AL_MESSAGE_RESOURCE_LIMITS.bufferedMessages || bytes > AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes
+    ) {
+        issues.push({ code: 'oversized', message: 'Inbound admission candidate exceeds the ordered buffer budget' });
+    }
+    return issues;
 }
 
 /** A durable ordering fence must name the work that actually owns this buffered delivery. */
