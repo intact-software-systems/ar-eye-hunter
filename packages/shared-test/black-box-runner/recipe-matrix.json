@@ -2922,6 +2922,41 @@
         ]
       },
       "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease bounds and never the expiry: disconnectReason appears in no recipe and the internal expired reason has never been observed. One member takes a lease that lapses seconds later, the group is driven to connecting, and the 60s reconciliation sweep is allowed to fire. The sweep deletes the expired row rather than marking it disconnected, so exactly one session must survive and it must be the other member; membership and lifecycleState must be untouched, and the expired member must be able to take a fresh lease without rejoining. Waits out one full sweep interval."
+    },
+    {
+      "id": "api-v1-group-event-cursor-paging",
+      "recipe": "tests/api-v1/api-v1-group-event-cursor-paging.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-event-cursor-paging",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group event cursor paging across three nodes. The corpus requests /events/page twice and asserts only its status: no limit, no cursor, and hasMore is read nowhere. A bounded page is opened on the primary and continued on the secondary and again on the tertiary, because the cursor is three durable event columns rather than node-local state; the pages must not overlap and the remainder must end. Two silent fallbacks are pinned as well: a partial cursor is dropped rather than rejected, so a caller sending only the event id re-reads page one forever, and a zero or non-numeric limit falls back to the default 100 instead of answering 400."
     }
   ]
 }
