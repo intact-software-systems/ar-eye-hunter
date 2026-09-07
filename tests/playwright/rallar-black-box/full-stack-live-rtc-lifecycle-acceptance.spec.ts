@@ -3,7 +3,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
 import {
-    agentCredentials,
     apiBaseUrl,
     applicationId,
     CONTROL_BASE_URL,
@@ -21,7 +20,8 @@ import { createLiveRtcDeliveryOperations } from './live-rtc-delivery-operations.
 import { jsonRecord } from './live-rtc-evidence-json.ts';
 import {
     createLiveRtcFormationOperations,
-    type FormationDiagnosticEvent
+    type FormationDiagnosticEvent,
+    type FormationHealth
 } from './live-rtc-formation-operations.ts';
 
 /**
@@ -83,9 +83,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     );
 
-    // L7: a page reopened with a restored session reports itself unconnected, so it never holds
-    // the room whose progress this reads. The plan records the evidence.
-    test.fixme(
+    test(
         'reports a monotonic readiness fraction to a member that reopens',
         async ({ browser, request }) => {
             test.setTimeout(300_000);
@@ -118,8 +116,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     );
 
-    // L7: same reopen defect; the returning member never reaches a state its own barrier can read.
-    test.fixme('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
+    test('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'barrier');
         try {
@@ -156,9 +153,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     });
 
-    // L8: after a reset the facade-level peer lists still name both peers a minute later. The
-    // assertion is left claiming what the scenario claims rather than relaxed to match that.
-    test.fixme(
+    test(
         'drops every lane on reset and dials again on the next series',
         async ({ browser, request }) => {
             test.setTimeout(300_000);
@@ -227,8 +222,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     );
 
-    // L7: the hydration this reads happens on a reopened page, which never connects.
-    test.fixme('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
+    test('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'hydration');
         try {
@@ -314,13 +308,14 @@ async function connectPresence(
     scenario: AcceptanceScenario,
     agent: LiveRtcControlClient.Agent
 ): Promise<void> {
+    const commandId = formationOperations.createCommandId(agentInput(scenario, agent), 'presence');
     await scenario.control.executeOk({
         runId: scenario.runId,
         agentId: agent.agentId,
-        commandId: `presence-${agent.prefix}-${scenario.suffix}`,
+        commandId,
         command: {
             kind: 'rtc.connect',
-            commandId: `presence-${agent.prefix}-${scenario.suffix}`,
+            commandId,
             connection: agent.connection,
             actor: agent.actor,
             roomId: scenario.groupId,
@@ -330,15 +325,16 @@ async function connectPresence(
             transport: 'realtime',
             rallar: {
                 apiBaseUrl: apiBaseUrl ?? '',
-                restoreSession: true,
-                // A page opened by restoring a session never logged in, so the runtime has no
-                // credentials of its own; a fresh page got them from its sign-in. Without these the
-                // reopened runtime stays unauthenticated and reports itself unconnected while this
-                // command still succeeds.
-                ...(agentCredentials(agent.prefix) ?? {}),
-                // Closing a page for a reopen must not end the session it is about to restore, nor
-                // drop its membership: without these the returning page holds a token the server has
-                // already logged out, and reports itself unconnected while its command reports ok.
+                // Credentials are deliberately absent, and that absence is what selects the runtime's
+                // restore branch: it logs in only when it is handed a username and password, and a
+                // login mints a second session. The page already holds one — its sign-in wrote it to
+                // browser storage, and a reopened page is seeded with the session it left with — so
+                // restoring is both sufficient and required. It is required because the accepted
+                // layout names sessions as its peers: a returning member that logs in afresh rejoins
+                // under an identity the group has never heard of.
+                //
+                // `leaveRoomOnClose` defaults to true, so it is pinned off here to keep a page that
+                // closes for a reopen from dropping the membership it is about to return to.
                 logoutOnClose: false,
                 leaveRoomOnClose: false
             },
@@ -390,14 +386,11 @@ async function retire(scenario: AcceptanceScenario): Promise<void> {
     }
 }
 
-function expectDormantAndEmpty(
-    health: { formation: { stage: string; }; rtcStatus: { readyPeerIds: readonly string[]; }; }
-): void {
-    const formation = health.formation as unknown as Record<string, unknown>;
-    expect(formation.stage).toBe('dormant');
-    expect(formation.planned).toBeUndefined();
-    expect(formation.accepted).toBeUndefined();
-    expect(formation.coverageRate).toBeUndefined();
+function expectDormantAndEmpty(health: FormationHealth): void {
+    expect(health.formation.stage).toBe('dormant');
+    expect(health.formation.planned).toBeUndefined();
+    expect(health.formation.accepted).toBeUndefined();
+    expect(health.formation.coverageRate).toBeUndefined();
     expect(health.rtcStatus.readyPeerIds).toEqual([]);
 }
 
