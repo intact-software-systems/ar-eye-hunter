@@ -126,6 +126,7 @@ test.describe('live RTC lifecycle acceptance', () => {
             scenario.agents = [scenario.agents[0], reopened, scenario.agents[2]];
             await connectPresence(scenario, reopened);
             await settleSurvivors(scenario, reopened);
+            await expectRoomHeld(scenario, reopened);
 
             const readiness = await formationOperations.readiness(agentInput(scenario, reopened));
             const changes = await formationOperations.readFormationDiagnostics({
@@ -171,10 +172,20 @@ test.describe('live RTC lifecycle acceptance', () => {
                     timeoutMs: STAGE_WAIT_MS,
                     sinceEpochMs: resetAt
                 });
+                // The stage reaches `dormant` before the lanes finish closing, so the teardown is
+                // awaited rather than sampled: what the pin claims is that they end empty, not that
+                // they are empty the instant the stage changes.
+                await expect
+                    .poll(async () => {
+                        const sampled = await formationOperations.health(agentInput(scenario, agent));
+                        return [
+                            ...sampled.rtcStatus.activePeerIds,
+                            ...sampled.rtcStatus.knownPeerIds,
+                            ...sampled.rtcStatus.readyPeerIds
+                        ].length;
+                    }, { timeout: 60_000, intervals: [1_000] })
+                    .toBe(0);
                 const health = await formationOperations.health(agentInput(scenario, agent));
-                expect(health.rtcStatus.activePeerIds).toEqual([]);
-                expect(health.rtcStatus.knownPeerIds).toEqual([]);
-                expect(health.rtcStatus.readyPeerIds).toEqual([]);
                 expect(health.formation.dialing).toBe('none');
                 expect(health.formation.accepted).toBeUndefined();
                 expect(health.formation.planned).toBeUndefined();
@@ -298,14 +309,18 @@ async function connectPresence(
             roomId: scenario.groupId,
             applicationId,
             workspaceId,
+            roomRef: { applicationId, workspaceId, groupId: scenario.groupId },
             transport: 'realtime',
             rallar: {
                 apiBaseUrl: apiBaseUrl ?? '',
-                applicationId,
-                workspaceId,
-                roomId: scenario.groupId,
-                restoreSession: true
-            }
+                restoreSession: true,
+                // Closing a page for a reopen must not end the session it is about to restore, nor
+                // drop its membership: without these the returning page holds a token the server has
+                // already logged out, and reports itself unconnected while its command reports ok.
+                logoutOnClose: false,
+                leaveRoomOnClose: false
+            },
+            timeoutMs: 45_000
         },
         timeoutMs: 90_000
     });
@@ -372,6 +387,29 @@ function agentInput(scenario: AcceptanceScenario, agent: LiveRtcControlClient.Ag
         groupId: scenario.groupId,
         suffix: scenario.suffix
     };
+}
+
+/**
+ * A reopened page must hold the room before anything it reports means anything. The health decoder
+ * fails with the whole block when the formation summary is missing, so a page that connected but
+ * never took the room says so here rather than inside a readiness timeout.
+ */
+async function expectRoomHeld(
+    scenario: AcceptanceScenario,
+    agent: LiveRtcControlClient.Agent
+): Promise<void> {
+    let lastFailure = 'the room was never read';
+    for (let attempt = 0; attempt < 15; attempt++) {
+        try {
+            await formationOperations.health(agentInput(scenario, agent));
+            return;
+        }
+        catch (error) {
+            lastFailure = error instanceof Error ? error.message : String(error);
+        }
+        await agent.page.waitForTimeout(2_000);
+    }
+    throw new Error(`Agent ${agent.prefix} reopened without taking the room. ${lastFailure}`);
 }
 
 /**

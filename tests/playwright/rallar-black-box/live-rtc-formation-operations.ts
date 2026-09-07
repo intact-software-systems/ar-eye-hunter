@@ -161,7 +161,12 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
             const rallar = record(value.rallar);
             const rtcStatus = record(rallar.rtcStatus);
             return {
-                formation: requireSummary(rallar.formation ?? value.formation, 'health'),
+                // The whole block travels in the failure: a page that connected to the wrong scope
+                // and one that never connected are indistinguishable from the missing field alone.
+                formation: requireSummary(
+                    rallar.formation ?? value.formation,
+                    `health ${JSON.stringify(value)}`
+                ),
                 rtcStatus: {
                     knownPeerIds: stringArray(rtcStatus.knownPeerIds),
                     activePeerIds: stringArray(rtcStatus.activePeerIds),
@@ -205,7 +210,7 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
         async reopen(input) {
             const session = await readRestoredSession(input.agent);
             await input.agent.context.close();
-            return await openLiveRtcBrowserAgent(input.browser, {
+            const reopened = await openLiveRtcBrowserAgent(input.browser, {
                 config: input.config,
                 prefix: input.agent.prefix,
                 auth: { kind: 'restore', session },
@@ -215,6 +220,15 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
                 connection: input.agent.connection,
                 groupId: input.groupId
             });
+            // The accepted layout names sessions as its peers, so a reopen that mints a new session
+            // moves the returning member's identity out of the layout and every pin downstream reads
+            // a member the group has never heard of.
+            const restored = await readRestoredSession(reopened);
+            expect(
+                restored.sessionId,
+                `Agent ${input.agent.prefix} reopened with a new session instead of the restored one`
+            ).toBe(session.sessionId);
+            return reopened;
         }
     };
 }
