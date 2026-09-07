@@ -193,14 +193,10 @@
           "x-client-id": "{adminClientId}"
         },
         "body": {
-          "document": {
-            "applicationId": "crdtadminwrite-{runId}",
-            "workspaceId": "workspace-crdtw-{runId}",
-            "scope": "principal",
-            "documentType": "checklist",
-            "documentId": "crdtadminwrite-doc-{runId}",
-            "principalId": "{adminClientId}"
-          }
+          "applicationId": "crdtadminwrite-{runId}",
+          "workspaceId": "workspace-crdtw-{runId}",
+          "scope": "principal",
+          "documentType": "checklist"
         }
       },
       "expect": {

@@ -486,8 +486,7 @@
             "measured": {
               "groupRef": {
                 "groupId": "{groupId}"
-              },
-              "coreNodes": "array"
+              }
             }
           },
           "cache": {

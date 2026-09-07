@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease BOUNDS (api-v1-presence-lease-bound rejects future timestamps) and never the expiry itself: `disconnectReason` appears in no recipe and the internal `expired` reason has never been observed. Bob connects with a lease that lapses seconds later while Alice takes the default 24h one, the group is driven to connecting, and the 60s reconciliation sweep is then allowed to fire. The sweep DELETES the expired row rather than marking it disconnected, so the assertion is that exactly one session survives and it is Alice's; membership and lifecycleState must be untouched, because a lapsed lease is a presence fact and not a roster or stage change; and Bob must be able to take a fresh lease without rejoining. The sweep has no HTTP surface, so this is settle-sequenced rather than raced (D7).",
+  "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease BOUNDS (api-v1-presence-lease-bound rejects future timestamps) and never the expiry itself: `disconnectReason` appears in no recipe and the internal `expired` reason has never been observed. Bob connects with a lease that lapses seconds later while Alice takes the default 24h one, the group is driven to connecting, and the 60s reconciliation sweep is then allowed to fire. The sweep DELETES the expired row rather than marking it disconnected, so the assertion is that exactly one session survives and it is Alice's; membership and lifecycleState must be untouched, because a lapsed lease is a presence fact and not a roster or stage change; and Bob must be able to take a fresh lease without rejoining. The sweep has no HTTP surface, so this is settle-sequenced rather than raced (D7). The expiry also does NOT move causalRevision.presenceRevision, which the floored reads are keyed on: that divergence is pinned twice, once at the sweep and once after the events settle, so a merely late presence summary would fail it rather than hide behind it. See open finding 15.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -487,21 +487,15 @@
       "type": "assert",
       "actual": {
         "lifecycleBefore": "{lifecycleStateBeforeSweep}",
-        "lifecycleAfter": "{lifecycleStateAfterSweep}",
-        "presenceRevisionAfter": "{presenceRevisionAfterSweep}"
+        "lifecycleAfter": "{lifecycleStateAfterSweep}"
       },
       "expect": {
         "missingActualValue": "MISSING",
+        "comparison": "exact",
         "body": {
           "lifecycleBefore": "connecting",
           "lifecycleAfter": "connecting"
-        },
-        "comparators": [
-          {
-            "path": "presenceRevisionAfter",
-            "gt": "{presenceRevisionBeforeSweep}"
-          }
-        ]
+        }
       }
     },
     {
@@ -538,6 +532,55 @@
           "reason": "expired",
           "eventType": "session-disconnected"
         }
+      }
+    },
+    {
+      "name": "theRosterIsStillShortOneSessionAfterTheEventsSettle",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "presenceRevisionSettled": "body.causalRevision.presenceRevision",
+          "sessionsSettled": "body.activeSessions"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "onlineMemberCount": 1
+        }
+      }
+    },
+    {
+      "name": "theExpiryNeverMovedThePresenceRevision",
+      "type": "assert",
+      "actual": {
+        "afterSweep": "{presenceRevisionAfterSweep}",
+        "settled": "{presenceRevisionSettled}",
+        "sessions": "{sessionsSettled}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "afterSweep",
+            "equals": "{presenceRevisionBeforeSweep}"
+          },
+          {
+            "path": "settled",
+            "equals": "{presenceRevisionBeforeSweep}"
+          },
+          {
+            "path": "sessions",
+            "length": 1
+          }
+        ]
       }
     },
     {
