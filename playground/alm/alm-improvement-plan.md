@@ -344,6 +344,11 @@ may grant itself authority or reserve its claimed deduplication identity.
    State/topology bootstrap uses its explicit authenticated server authority, avoiding a circular
    requirement to already possess the snapshot being received. Room IDs, diagnostics, and empty
    member sets cannot authorize delivery or relay.
+   Keep recipient freshness separate from origin authority: `targets.minSnapshotVersion` gates
+   receiver acceptance and relay forwarding. An origin with valid current room and routing
+   authority preserves that floor on the message without requiring its own snapshot to meet it.
+   Prove this through the real outbound entry and an actual receiver NACK; an origin rejection
+   or a test that bypasses outbound planning is not equivalent evidence.
 6. Validate ACK/NACK/repair identities against the control envelope, local destination, tracked
    message, and expected peer/audience before mutation. Unknown controls must not create histories,
    repairs, or acknowledgements. Control rejection must not poison later valid deduplication.
