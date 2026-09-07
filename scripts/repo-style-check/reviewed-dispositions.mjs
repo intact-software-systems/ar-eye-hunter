@@ -3,6 +3,39 @@ import path from 'node:path';
 import { findingMagnitude } from './finding-magnitude.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // API state files expose separate mutation, event-cursor, point-read and
+    // paged-dissemination contracts. Their direct consumers and README recover
+    // each owner without another folder or forwarding module.
+    Object.freeze({
+        path: 'packages/shared/api',
+        rule: 'layout.directory-density',
+        symbol: 'api',
+        maximumMagnitude: 23
+    }),
+    Object.freeze({
+        path: 'packages/shared/api',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:state',
+        maximumMagnitude: 4
+    }),
+    // These tests own deliberate malformed signaling/graph inputs and raw
+    // decoded WebSocket captures. Values go straight to the production
+    // boundary or an assertion; they do not supply unvalidated domain state.
+    Object.freeze({
+        path: 'packages/tests/shared-server/rallar-system/communication/decode-rtc-signaling-route.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createSignal'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared/al-message-resource-limits.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared/websocket/json-message-limits.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // This caught-value boundary immediately normalizes arbitrary thrown values
     // to Error, exactly as required by the code standard. No unknown value
     // propagates to callers; the textual checker cannot distinguish that case.

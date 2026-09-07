@@ -11,7 +11,10 @@ import {
     decodePersistedALMessage,
     decodePersistedALMessageValue
 } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { validateALMessageResourceLimits, validateSerializedALMessageSize } from '@shared/al-contracts/al-message-resource-limits.ts';
+import {
+    validateALMessageResourceLimits,
+    validateSerializedALMessageSize
+} from '@shared/al-contracts/al-message-resource-limits.ts';
 
 describe('AL envelope resource limits', () => {
     it('reports malformed, oversized, and unsupported envelopes as typed rejections', () => {

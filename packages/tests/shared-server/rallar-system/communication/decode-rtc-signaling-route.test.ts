@@ -1,6 +1,17 @@
-import { decodeRtcSignalingRoute, validateRtcSignalingMessage } from '@shared-server/rallar-system/communication/decode-rtc-signaling-route.ts';
-import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    decodeRtcSignalingRoute,
+    validateRtcSignalingMessage
+} from '@shared-server/rallar-system/communication/decode-rtc-signaling-route.ts';
+import {
+    newALEventRoute,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('RTC signaling route authority', () => {
     it('routes an offer from its authenticated origin to its bound recipient', () => {
