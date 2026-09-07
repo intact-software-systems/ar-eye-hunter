@@ -12,7 +12,12 @@ import {
 } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { toAppQueueKey } from './AppQueueIdentity.ts';
-import { EntityStatus, isKeysEqual, NEVER_EXPIRE_TS, type ResourceEntry } from './ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from './ResourceEntry.ts';
 
 export const RTC_TOPOLOGY_OUTBOX_TOPIC = 'app-outbox.rtc-topology';
 export const RTC_TOPOLOGY_OUTBOX_TYPE = 'RTC_TOPOLOGY_RECOMPUTE';

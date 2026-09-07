@@ -1,5 +1,9 @@
 import { Reservator } from '../dequeue/dequeue-controller.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '../ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '../ResourceEntry.ts';
 
 export interface ResourceInboxAttemptTelemetry {
     readonly selectedLane: Reservator;

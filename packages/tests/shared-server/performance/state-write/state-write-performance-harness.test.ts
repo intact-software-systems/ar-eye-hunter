@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -34,7 +39,11 @@ import {
     type StateWritePerformanceArtifact,
     type StateWritePerformanceSample
 } from './test-support/state-write-performance-artifact-fixture.ts';
-import { binding, type StateWritePresenceDurableResult, type StateWriteTopologyDurableResult } from './test-support/state-write-performance-result-fixture.ts';
+import {
+    binding,
+    type StateWritePresenceDurableResult,
+    type StateWriteTopologyDurableResult
+} from './test-support/state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
     it('reads a scoped group command only from its exact actor, workspace, group, topic, and context', async () => {

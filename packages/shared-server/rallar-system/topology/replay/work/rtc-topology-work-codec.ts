@@ -5,14 +5,22 @@ import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-st
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { readRtcTopologyWorkMessage } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
 } from '../../../app-outbox/coalesced-app-outbox-work.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../../protocol/json-wire-identity.ts';
 import {
     readRtcRttTopologyOutboxIdentity,
     toRtcRttMutationReceiptId,

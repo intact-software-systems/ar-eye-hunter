@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { toWaitCountBound } from '../../shared-test/black-box-runner/expectations/wait-count-bound.ts';
 

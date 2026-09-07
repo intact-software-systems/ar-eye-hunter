@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 

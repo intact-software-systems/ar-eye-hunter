@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { JsonValue } from '@shared-test/json-compare/compare-json-values.ts';
 import { CompareJson } from '@shared-test/json-compare/json-compare.ts';

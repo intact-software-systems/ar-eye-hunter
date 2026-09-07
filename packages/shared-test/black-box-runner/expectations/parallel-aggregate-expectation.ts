@@ -1,5 +1,9 @@
 // deno-lint-ignore-file no-explicit-any
-import { compareJson, COMPARISON, toConfig } from '../../json-compare/compare-json-values.ts';
+import {
+    compareJson,
+    COMPARISON,
+    toConfig
+} from '../../json-compare/compare-json-values.ts';
 import { validateAssertValueComparators } from './assert-value-comparators.ts';
 
 export interface ParallelAggregateFailure {

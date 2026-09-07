@@ -14,7 +14,13 @@ import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/c
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface GroupSnapshotFixtureScope {

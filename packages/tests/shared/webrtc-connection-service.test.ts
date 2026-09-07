@@ -7,7 +7,11 @@ import {
     vi
 } from 'vitest';
 
-import { isPeerSetupStarted, QRtcPeerDto, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import {
+    isPeerSetupStarted,
+    QRtcPeerDto,
+    WebRtcConnectionService
+} from '@shared/services/web-rtc-connection-service.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMessage,

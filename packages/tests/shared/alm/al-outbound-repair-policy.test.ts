@@ -1,9 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRepairTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
-import { createDefaultOutboundTestRuntime, createOutboundMessage, enqueueOutboundOrThrow } from './outbound-runtime-test-fixture.ts';
+import {
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage,
+    enqueueOutboundOrThrow
+} from './outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from './outbound-test-payload.ts';
 
 interface RepairPolicyCase {

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
 

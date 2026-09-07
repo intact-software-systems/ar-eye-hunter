@@ -1,7 +1,17 @@
 import { AppTopics } from '@shared/api/api-config.ts';
-import { computeStateSnapshotPages, STATE_SNAPSHOT_LIMITS, type StateSnapshotPublication } from '@shared/api/state-snapshot-page.ts';
+import {
+    computeStateSnapshotPages,
+    STATE_SNAPSHOT_LIMITS,
+    type StateSnapshotPublication
+} from '@shared/api/state-snapshot-page.ts';
 import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
 

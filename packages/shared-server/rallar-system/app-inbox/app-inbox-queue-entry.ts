@@ -1,5 +1,9 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { toAppQueueCreatedBy, toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    toAppQueueCreatedBy,
+    toAppQueueKey,
+    toStrictAppInboxQueueKey
+} from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { AppInboxEnqueueInput } from './app-inbox-contracts.ts';

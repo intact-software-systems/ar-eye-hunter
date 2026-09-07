@@ -2,7 +2,11 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { materializeRtcOverlayTopologyMessages } from '../planning/materialize-rtc-overlay-topology-messages.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';

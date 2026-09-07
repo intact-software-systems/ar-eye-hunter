@@ -1,4 +1,8 @@
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 

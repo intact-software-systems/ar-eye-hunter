@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import { createAuthorityHarness, createResilience, SCOPE, waitForQueueEntry } from './group-state-inbox-test-runtime.ts';
+import {
+    createAuthorityHarness,
+    createResilience,
+    SCOPE,
+    waitForQueueEntry
+} from './group-state-inbox-test-runtime.ts';
 
 describe('GroupStateInboxService authority capture and retry', () => {
     it('keeps captured facts and finishes on redelivery after a conditional write conflicts', async () => {

@@ -1,5 +1,9 @@
 import { DequeueController, Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('resource inbox fairness precedence', () => {
     it('lets the fairness selector claim an overdue retry before the ordinary retry lane', async () => {

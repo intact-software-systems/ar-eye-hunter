@@ -1,7 +1,11 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOrderingTrackSnapshot } from '@shared/al-contracts/al-runtime.ts';
 import { computeALOrderingObservation } from '@shared/alm/compute-al-ordering-observation.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('AL ordering repair window', () => {
     it('requests resynchronization for a maximum-safe-integer initial sequence without expanding its gap', () => {

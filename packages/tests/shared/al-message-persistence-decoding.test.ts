@@ -3,7 +3,11 @@ import {
     decodePersistedALMessage,
     decodePersistedALMessageValue
 } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 interface MutablePersistedALMessageFixture {
     id: {

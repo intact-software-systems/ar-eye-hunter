@@ -4,7 +4,12 @@ import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
 
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';

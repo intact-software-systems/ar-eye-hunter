@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { parseScenarioCliOptions } from '../../shared-test/black-box-runner/parse-scenario-cli-options.ts';
 
 describe('scenario CLI options', () => {

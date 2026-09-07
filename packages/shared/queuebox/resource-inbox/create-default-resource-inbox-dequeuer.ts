@@ -10,7 +10,11 @@ import {
 } from '../queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../resource-entry-observations.ts';
 import * as Resource from '../ResourceEntry.ts';
-import { EntityStatus, isKeysEqual, ResourceEntry } from '../ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    ResourceEntry
+} from '../ResourceEntry.ts';
 import {
     ResourceInboxFairnessTelemetry,
     ResourceInboxRetryPolicy,

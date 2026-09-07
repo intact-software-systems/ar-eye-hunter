@@ -4,8 +4,19 @@ import {
     computeResourceInboxObservedReplacement,
     ResourceInboxInvariantCorruptionError
 } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+import {
+    afterEach,
+    beforeAll,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import {
     createResourceInboxQueryCapture,

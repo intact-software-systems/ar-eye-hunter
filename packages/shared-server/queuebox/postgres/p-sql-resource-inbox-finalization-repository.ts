@@ -1,5 +1,9 @@
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { StartProcessingEntitySkipped } from './p-sql-resource-inbox-reservation-repository.ts';
@@ -7,7 +11,11 @@ import {
     writeResourceInboxReservationFinish,
     type ResourceInboxReservationFinish
 } from './resource-inbox-reservation-write.ts';
-import { rowsToMap, toDomain, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
+import {
+    rowsToMap,
+    toDomain,
+    type ResourceInboxRow
+} from './resource-inbox-row-codec.ts';
 
 export class PSqlResourceInboxFinalizationRepository {
     private readonly sql: PSqlSql;

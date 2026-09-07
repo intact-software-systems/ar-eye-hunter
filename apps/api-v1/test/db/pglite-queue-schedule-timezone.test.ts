@@ -6,7 +6,11 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import assert from 'node:assert/strict';
-import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+    createResourceEntry,
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from './pglite-auth-test-harness.ts';
 
 // The naive timestamp columns hold UTC wall clocks, but the session time zone
 // follows the host, so `next_ts <= now()` used to promote the column through a

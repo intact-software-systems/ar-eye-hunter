@@ -3,7 +3,11 @@ import { RALLAR_CRDT_UPDATE_TYPE_ID } from '@shared/crdt/mod.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { isClientSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import type {
     RallarCrdtPrincipalSnapshotRef,
     WsServerTargetResolutionOptions

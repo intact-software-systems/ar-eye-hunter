@@ -7,7 +7,11 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import {
     createRegisteredHandlerHarness,
     createResilience,

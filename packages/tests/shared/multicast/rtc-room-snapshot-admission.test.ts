@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';

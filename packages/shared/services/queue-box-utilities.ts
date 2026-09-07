@@ -10,7 +10,12 @@ import {
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type Key,
+    type ResourceEntry
+} from '../queuebox/ResourceEntry.ts';
 
 export namespace QueueBoxUtilities {
     export interface DequeueInput {

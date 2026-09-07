@@ -1,7 +1,11 @@
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import assert from 'node:assert/strict';
-import { createDisabledQueuePubSubBridge, createLocalQueuePubSubBridge, createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
+import {
+    createDisabledQueuePubSubBridge,
+    createLocalQueuePubSubBridge,
+    createLocalQueuePubSubBus
+} from '../../src/db/local-queue-pubsub-bridge.ts';
 
 interface CreateQueueBoxPubSubMessageOptions {
     readonly publisherId: string;

@@ -1,5 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    Key,
+    NEVER_EXPIRE_TS,
+    ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 /**
  * Repository for table `resource_inbox`.

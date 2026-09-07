@@ -2,7 +2,12 @@ import type { Temporal } from '@js-temporal/polyfill';
 
 import { Either } from '../resilience/Either.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
-import { EntityStatus, isKeysEqual, type Key, type ResourceEntry } from './ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    type Key,
+    type ResourceEntry
+} from './ResourceEntry.ts';
 
 export function captureResourceEntryObservations(
     entries: readonly ResourceEntry[] | undefined

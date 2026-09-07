@@ -2,7 +2,11 @@
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
-import { containsValue, sameJsonValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
+import {
+    containsValue,
+    sameJsonValue,
+    type PayloadPathLookup
+} from '../wait/wait-event-match.ts';
 
 export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
     'equals',

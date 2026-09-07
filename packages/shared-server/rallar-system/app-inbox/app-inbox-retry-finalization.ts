@@ -7,7 +7,11 @@ import type {
     ResourceInboxRetryExhaustionRecovery
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../observability/timing.ts';
+import {
+    timeRallarAsync,
+    type RallarTimingDetails,
+    type RallarTimingSink
+} from '../observability/timing.ts';
 import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
 import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
 import type { AppInboxFailure } from './app-inbox-failure.ts';

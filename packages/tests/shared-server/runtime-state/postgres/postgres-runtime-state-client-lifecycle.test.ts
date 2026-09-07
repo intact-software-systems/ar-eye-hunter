@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createLifecycleSql, withPostgresClients } from './postgres-runtime-state-client-fixtures.ts';
 

@@ -1,7 +1,12 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { EffectiveGroupTopologyConfig, StoredGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
@@ -20,7 +25,11 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
-import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import {
     computeRtcTopologyOutboxInsert,

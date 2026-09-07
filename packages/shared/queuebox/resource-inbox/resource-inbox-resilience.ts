@@ -1,5 +1,9 @@
 import { CircuitBreaker, type CircuitBreakerPolicy } from '../../resilience/circuit-breaker.ts';
-import { RateAdjuster, RateAdjusterPolicy, RateLimiter } from '../../resilience/Resilience.ts';
+import {
+    RateAdjuster,
+    RateAdjusterPolicy,
+    RateLimiter
+} from '../../resilience/Resilience.ts';
 import type { ResourceInboxWorkAdvertisementOptions } from '../queue-box-types.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '../ResourceInboxRetryPolicy.ts';
 

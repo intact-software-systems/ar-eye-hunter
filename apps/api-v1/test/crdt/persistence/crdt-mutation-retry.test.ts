@@ -18,7 +18,11 @@ import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilien
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
-import { queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
+import {
+    queueNow,
+    update,
+    withCompetingWrite
+} from '../crdt-api-test-fixtures.ts';
 
 interface RetryMutationCountsRow {
     readonly updates: string;

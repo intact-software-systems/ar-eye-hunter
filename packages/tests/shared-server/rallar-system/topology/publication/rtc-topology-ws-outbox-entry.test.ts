@@ -4,7 +4,11 @@ import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-syste
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { assembleStateSnapshotMessages } from '../../../../shared/state-snapshot-test-fixture.ts';
 
 describe('RTC topology publication WS outbox pages', () => {

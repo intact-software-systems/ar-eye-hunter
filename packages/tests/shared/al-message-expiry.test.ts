@@ -4,7 +4,11 @@ import {
     planALMessageHandling,
     resolveALMessageExpireAtMs
 } from '@shared/al-contracts/al-policy.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const message: ALMessage = Object.freeze({
     id: Object.freeze({ v: 2, msgId: 'deadline-message', senderId: 'sender', ts: 1_000 }),

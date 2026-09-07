@@ -4,7 +4,13 @@ import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache
 import type * as AuthModule from '@shared/api/auth.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
 const mocks = await vi.hoisted(async () => {

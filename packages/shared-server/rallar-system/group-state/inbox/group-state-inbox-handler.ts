@@ -1,4 +1,8 @@
-import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupEvent,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';

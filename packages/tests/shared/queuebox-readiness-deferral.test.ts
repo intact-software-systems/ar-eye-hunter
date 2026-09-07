@@ -6,7 +6,13 @@ import { Temporal } from '@js-temporal/polyfill';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 afterEach(() => vi.useRealTimers());
 

@@ -1,6 +1,11 @@
 import type { ProofSession } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { ApiV1RtcTopologyProofSocket } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-websocket.mts';
-import { afterEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
 
 const session: ProofSession = {

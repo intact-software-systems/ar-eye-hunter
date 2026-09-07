@@ -5,7 +5,12 @@ import '../setup-browser-indexeddb.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('Expiring persistence providers', () => {
     it('lazy-evicts expired entries from InMemoryPersistenceProvider', async () => {

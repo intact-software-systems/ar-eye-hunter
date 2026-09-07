@@ -3,7 +3,14 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 describe('WS outbound callback deadline', () => {

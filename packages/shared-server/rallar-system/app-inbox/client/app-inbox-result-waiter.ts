@@ -1,6 +1,14 @@
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
+import {
+    TryWithExhaustedError,
+    TryWithPolicy,
+    tryWithPolicy
+} from '@shared/resilience/TryWith.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -10,7 +18,11 @@ import {
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import { decodePersistedAppInboxFailure } from '../app-inbox-failure-decoding.ts';
-import { toTerminalAppInboxFailure, toUnavailableAppInboxFailure, type AppInboxFailure } from '../app-inbox-failure.ts';
+import {
+    toTerminalAppInboxFailure,
+    toUnavailableAppInboxFailure,
+    type AppInboxFailure
+} from '../app-inbox-failure.ts';
 import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { toAppInboxTimingDetails } from '../handler/app-inbox-attempt-timing.ts';
 import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';

@@ -1,5 +1,9 @@
 import { hasSameResourceEntryValue } from '@shared/queuebox/resource-entry-observations.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';

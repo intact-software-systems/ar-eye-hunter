@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { ApiV1RtcTopologyProofApi } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
 import {

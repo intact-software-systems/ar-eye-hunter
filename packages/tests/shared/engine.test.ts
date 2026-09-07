@@ -1,5 +1,11 @@
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 afterEach(() => {
     vi.useRealTimers();

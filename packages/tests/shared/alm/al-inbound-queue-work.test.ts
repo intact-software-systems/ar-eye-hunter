@@ -1,5 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import {
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';

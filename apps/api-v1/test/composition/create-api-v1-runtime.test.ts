@@ -7,7 +7,11 @@ import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/creat
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
-import { constructApiV1Runtime, type ApiV1RuntimeConstructionOperations, type CreateApiV1RuntimeInput } from '../../src/composition/create-api-v1-runtime.ts';
+import {
+    constructApiV1Runtime,
+    type ApiV1RuntimeConstructionOperations,
+    type CreateApiV1RuntimeInput
+} from '../../src/composition/create-api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';

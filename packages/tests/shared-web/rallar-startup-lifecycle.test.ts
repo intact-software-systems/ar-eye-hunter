@@ -1,6 +1,12 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');

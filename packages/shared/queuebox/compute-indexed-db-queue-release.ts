@@ -13,7 +13,12 @@ import {
     type ResourceInboxReleaseDisposition
 } from './queue-box-types.ts';
 import { hasSameResourceEntryValue } from './resource-entry-observations.ts';
-import { EntityStatus, toKeyAsString, type Key, type ResourceEntry } from './ResourceEntry.ts';
+import {
+    EntityStatus,
+    toKeyAsString,
+    type Key,
+    type ResourceEntry
+} from './ResourceEntry.ts';
 
 interface ComputeIndexedDbQueueReleaseInput {
     readonly currentEntries: ReadonlyMap<string, ResourceEntry>;

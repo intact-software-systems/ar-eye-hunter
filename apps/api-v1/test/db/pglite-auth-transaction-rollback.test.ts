@@ -6,7 +6,11 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import assert from 'node:assert/strict';
-import { FUTURE_MS, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+    FUTURE_MS,
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from './pglite-auth-test-harness.ts';
 
 Deno.test('PGlite auth and AL production writers roll back sibling conditional mutations', async () => {
     await withPGliteSql(async (sql) => {

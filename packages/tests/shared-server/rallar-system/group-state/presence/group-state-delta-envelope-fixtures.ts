@@ -1,5 +1,9 @@
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupEvent,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 

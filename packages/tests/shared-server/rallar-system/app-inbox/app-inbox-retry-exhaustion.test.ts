@@ -5,8 +5,16 @@ import {
     createDefaultResourceInboxDequeuer,
     type ResourceInboxRetryExhaustion
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { EntityStatus, toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    EntityStatus,
+    toKeyAsString,
+    type Key
+} from '@shared/queuebox/ResourceEntry.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 

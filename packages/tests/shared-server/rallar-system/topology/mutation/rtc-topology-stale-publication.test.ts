@@ -3,7 +3,11 @@ import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('stale RTC topology publication', () => {
     it('persists an immutable older publication without regressing the latest snapshot', () => {

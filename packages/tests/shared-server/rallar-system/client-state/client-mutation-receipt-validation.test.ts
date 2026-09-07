@@ -1,7 +1,11 @@
 import { validateClientMutationReceipt } from '@shared-server/rallar-system/client-state/client-mutation-receipt-validation.ts';
 import type { ClientMutationReceipt } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('client mutation receipt outbox identities', () => {
     it.each([2, 3, 600])('accepts %i immutable event and snapshot carrier identities', (count) => {

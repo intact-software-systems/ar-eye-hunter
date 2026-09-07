@@ -1,4 +1,9 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type {
