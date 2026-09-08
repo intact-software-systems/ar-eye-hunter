@@ -15,6 +15,7 @@ import { captureALOutboundCreationExpiry, toALOutboundMessageReference } from '@
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
     computeOutboundTestAdmission,
     createOutboundCanonicalEntry,
@@ -34,7 +35,8 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
             });
             const store = createALOutboundAdmissionStore({
                 namespace: 'outbound',

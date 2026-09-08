@@ -22,6 +22,7 @@ import {
     onTestFinished
 } from 'vitest';
 
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox reservation', (storage) => {
@@ -203,7 +204,11 @@ it('reads only selected IndexedDB rows, leaving unrelated malformed storage outs
         [toIndexedDbQueueStoreDefinition('entries')]
     );
     onTestFinished(() => db.close());
-    const queue = new IndexedDbQueueBox({ connection: new IndexedDbConnection(async () => db), storeName: 'entries' });
+    const queue = new IndexedDbQueueBox({
+        connection: new IndexedDbConnection(async () => db),
+        storeName: 'entries',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
     const entry = createEntry('selected');
     await queue.enqueue(entry);
     const observed = (await queue.getItem(entry.key))!;
@@ -237,7 +242,7 @@ async function createQueue(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
             );
             const db = await connection.open();
             onTestFinished(() => db.close());
-            return new IndexedDbQueueBox({ connection, storeName: 'entries' });
+            return new IndexedDbQueueBox({ connection, storeName: 'entries', observer: createPassThroughIndexedDbOperationObserver() });
         }
         case 'pglite': {
             const { sql } = await createPSqlAdmissionTestStorage();

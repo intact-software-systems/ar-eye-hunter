@@ -26,6 +26,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supersedence in %s', (storage) => {
@@ -190,7 +191,13 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : storage === 'indexeddb'
-        ? new IndexedDbAdmissionBackend({ dbName: namespace, storeName: 'admission', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) })
+        ? new IndexedDbAdmissionBackend({
+            dbName: namespace,
+            storeName: 'admission',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        })
         : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace);
     return createALInboundAdmissionStore({
         namespace,

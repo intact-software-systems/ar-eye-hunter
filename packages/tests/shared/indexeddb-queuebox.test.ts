@@ -4,6 +4,7 @@ import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { encodeStoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
@@ -45,14 +46,14 @@ describe('IndexedDbQueueBox', () => {
         finally {
             database.close();
         }
-        await expect(new IndexedDbQueueBox({ dbName }).getItem(original.key)).rejects.toThrow(
+        await expect(new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() }).getItem(original.key)).rejects.toThrow(
             'IndexedDB queue row fields are invalid'
         );
     });
 
     it('rejects a persisted row with no expiry instead of inventing one', async () => {
         const dbName = `indexeddb-corrupt-row-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const entry = createEntry('corrupt.type', 'missing-expiry');
         await queue.enqueue(entry);
         const database = await openQueueDatabase(dbName);
@@ -77,7 +78,7 @@ describe('IndexedDbQueueBox', () => {
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 1 })
         });
@@ -97,8 +98,8 @@ describe('IndexedDbQueueBox', () => {
 
     it('returns one durable winner from concurrent enqueueIfAbsent calls', async () => {
         const dbName = `indexeddb-queue-concurrent-insert-${crypto.randomUUID()}`;
-        const firstQueue = new IndexedDbQueueBox({ dbName });
-        const secondQueue = new IndexedDbQueueBox({ dbName });
+        const firstQueue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
+        const secondQueue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const first = createEntry('presence.state.v1', 'concurrent-resource', {
             resource: JSON.stringify({ version: 1 })
         });
@@ -122,7 +123,7 @@ describe('IndexedDbQueueBox', () => {
     it('replaces an entry only while its complete observed value is current', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 1 })
         });
@@ -148,7 +149,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('computes a compare-and-replace mutation before opening its write transaction', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry('presence.state.v1', 'prepared-write', {
             resource: JSON.stringify({ version: 1 })
         });
@@ -178,7 +179,7 @@ describe('IndexedDbQueueBox', () => {
     it('does not replace an expired observation', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const expired = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 1 }),
             expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
@@ -198,8 +199,8 @@ describe('IndexedDbQueueBox', () => {
         const typeId = 'chat.message.v1';
         const entry = createEntry(typeId, 'msg-1');
 
-        const writer = new IndexedDbQueueBox({ dbName });
-        const reader = new IndexedDbQueueBox({ dbName });
+        const writer = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
+        const reader = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
 
         await writer.enqueueIfAbsent(entry);
 
@@ -229,7 +230,7 @@ describe('IndexedDbQueueBox', () => {
     it('returns the previous entry from enqueue and overwrites the stored value', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.message.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry(typeId, 'msg-overwrite', {
             resource: JSON.stringify({ version: 1 }),
             status: EntityStatus.NEW,
@@ -255,7 +256,8 @@ describe('IndexedDbQueueBox', () => {
 
     it('reclaims a stale exhausted AppInbox reservation as a new finalization generation', async () => {
         const queue = new IndexedDbQueueBox({
-            dbName: `indexeddb-finalization-${crypto.randomUUID()}`
+            dbName: `indexeddb-finalization-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const exhausted = createEntry(EnqueuedType.APP_INBOX, 'recover-exhaustion', {
             status: EntityStatus.RESERVED,
@@ -286,7 +288,8 @@ describe('IndexedDbQueueBox', () => {
 
     it('skips poison finalization generations and reserves the valid cursor sibling', async () => {
         const queue = new IndexedDbQueueBox({
-            dbName: `indexeddb-finalization-poison-${crypto.randomUUID()}`
+            dbName: `indexeddb-finalization-poison-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const staleStart = Temporal.Now.instant().subtract({ minutes: 6 });
         const poison = createEntry(EnqueuedType.APP_INBOX, '000-overflow', {
@@ -321,7 +324,8 @@ describe('IndexedDbQueueBox', () => {
 
     it('does not advertise IndexedDB finalization work for poison generations alone', async () => {
         const queue = new IndexedDbQueueBox({
-            dbName: `indexeddb-finalization-advertisement-${crypto.randomUUID()}`
+            dbName: `indexeddb-finalization-advertisement-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, 'overflow-only', {
             status: EntityStatus.RESERVED,
@@ -344,7 +348,7 @@ describe('IndexedDbQueueBox', () => {
     it('does not reserve retry entries before nextTs', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
 
         await queue.enqueueIfAbsent(createEntry(typeId, 'msg-2'));
 
@@ -375,7 +379,7 @@ describe('IndexedDbQueueBox', () => {
     it('rejects a stale release without overwriting a newer IndexedDB reservation', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const current = createEntry(typeId, 'stale-release', {
             status: EntityStatus.RESERVED,
             startTs: Temporal.Now.instant(),
@@ -398,7 +402,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('treats the exact already-completed AppInbox reservation as an idempotent IndexedDB success release', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const reserved = createEntry(EnqueuedType.APP_INBOX, 'atomic-success', {
             status: EntityStatus.RESERVED,
             startTs: Temporal.Now.instant(),
@@ -428,7 +432,7 @@ describe('IndexedDbQueueBox', () => {
     it('rolls back the whole IndexedDB release transaction when one reservation is stale', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const first = createEntry(typeId, 'batch-current', {
             status: EntityStatus.RESERVED,
             startTs: Temporal.Now.instant(),
@@ -470,7 +474,7 @@ describe('IndexedDbQueueBox', () => {
     ) => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const first = createEntry(typeId, `invalid-first-${_scenario}`, {
             status: EntityStatus.RESERVED,
             startTs: Temporal.Now.instant(),
@@ -494,7 +498,7 @@ describe('IndexedDbQueueBox', () => {
     it('removes completed entries during cleanup while keeping active work', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.message.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
 
         await queue.enqueue(
             createEntry(typeId, 'completed-1', {
@@ -505,7 +509,7 @@ describe('IndexedDbQueueBox', () => {
 
         expect(await queue.cleanupAsync()).toBe(true);
 
-        const queueAfterCleanup = new IndexedDbQueueBox({ dbName });
+        const queueAfterCleanup = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         expect(await queueAfterCleanup.cleanupAsync()).toBe(false);
 
         const completed = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.COMPLETED]), reservationInput: 10 });
@@ -518,7 +522,7 @@ describe('IndexedDbQueueBox', () => {
     it('lazy-evicts expired entries from reads and cleanup', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.message.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
 
         await queue.enqueue(
             createEntry(typeId, 'expired-1', {
@@ -540,7 +544,7 @@ describe('IndexedDbQueueBox', () => {
     it('reclaims timed out reserved entries', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const oldStartTs = Temporal.Now.instant().subtract({ seconds: 30 });
 
         await queue.enqueue(
@@ -571,7 +575,7 @@ describe('IndexedDbQueueBox', () => {
     it('does not report failed entries as automatic queue work', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
 
         await queue.enqueue(
             createEntry(typeId, 'msg-failed', {
@@ -591,7 +595,7 @@ describe('IndexedDbQueueBox', () => {
     it('uses a custom two-attempt IndexedDB reservation budget', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const exhausted = createEntry(typeId, 'attempt-3', {
             status: EntityStatus.RETRY,
             attempts: 2,
@@ -623,7 +627,7 @@ describe('IndexedDbQueueBox', () => {
     )('does not advertise exhausted IndexedDB %s work', async (_lane, entryOptions) => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const exhausted = createEntry(typeId, `advertise-${_lane}`, {
             ...entryOptions,
             attempts: 2
@@ -659,7 +663,7 @@ describe('IndexedDbQueueBox', () => {
     it('does not reclaim an IndexedDB timeout beyond a custom attempt budget', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         await queue.enqueue(createEntry(typeId, 'timeout-attempt-3', {
             status: EntityStatus.RESERVED,
             startTs: Temporal.Now.instant().subtract({ minutes: 10 }),
@@ -678,7 +682,7 @@ describe('IndexedDbQueueBox', () => {
     it('orders IndexedDB fairness by oldest due timestamp before applying the batch limit', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const newer = createEntry(typeId, 'a-newer', {
             status: EntityStatus.RETRY,
@@ -710,7 +714,7 @@ describe('IndexedDbQueueBox', () => {
     it('breaks equal IndexedDB fairness due timestamps by canonical key', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const dueTs = now.subtract({ seconds: 60 });
         const laterKey = createEntry(typeId, 'z-later-key', {
@@ -739,7 +743,8 @@ describe('IndexedDbQueueBox', () => {
 
     it('validates an empty fairness scan budget before opening IndexedDB cursors', async () => {
         const queue = new IndexedDbQueueBox({
-            dbName: `indexeddb-queue-${crypto.randomUUID()}`
+            dbName: `indexeddb-queue-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         let cursorOpened = false;
         const openCursorImplementation = IDBIndex.prototype.openCursor;
@@ -762,7 +767,8 @@ describe('IndexedDbQueueBox', () => {
 
     it('requires enough fairness scan budget for every requested type head', async () => {
         const queue = new IndexedDbQueueBox({
-            dbName: `indexeddb-queue-${crypto.randomUUID()}`
+            dbName: `indexeddb-queue-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
 
         await expect(queue.reserveOverdueRetryEntries(
@@ -774,7 +780,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('expands a numeric fairness budget to cover every requested type', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const types = new Set(Array.from({ length: 9 }, (_, index) => `type-${index}`));
         const entry = createEntry('type-8', 'numeric-budget-entry', {
@@ -797,7 +803,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('charges each requested type head against the global fairness scan budget', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const exhausted = createEntry('type-a', 'exhausted-head', {
             status: EntityStatus.RETRY,
@@ -838,7 +844,7 @@ describe('IndexedDbQueueBox', () => {
     it('bounds fairness cursor work while ignoring unrelated indexed ranges', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const requestedType = 'chat.private-text.v1';
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         await Promise.all(
             Array.from({ length: 200 }, (_, index) =>
@@ -888,7 +894,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('bounds requested fairness rows by the global scan budget across types', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const typeIds = ['type-a', 'type-b', 'type-c', 'type-d', 'type-e'];
         for (const [typeOffset, typeId] of typeIds.entries()) {
@@ -917,7 +923,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('merges ordered fairness cursors across requested types', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const newer = createEntry('type-a', 'newer', {
             status: EntityStatus.RETRY,
@@ -945,7 +951,7 @@ describe('IndexedDbQueueBox', () => {
 
     it('uses IndexedDB key ordering for mixed equal-due keys across types', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const queue = new IndexedDbQueueBox({ dbName });
+        const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const now = Temporal.Now.instant();
         const dueTs = now.subtract({ minutes: 1 });
         const entries = ['A', 'a', 'é', '!', '_', '~'].map((typeId) =>

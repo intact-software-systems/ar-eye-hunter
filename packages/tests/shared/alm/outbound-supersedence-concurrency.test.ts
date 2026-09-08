@@ -14,6 +14,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createOutboundMessage } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -90,7 +91,8 @@ function createStore(storage: 'memory' | 'indexeddb') {
             dbName: `supersedence-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
     return createALOutboundAdmissionStore({
         namespace: 'outbound',

@@ -22,6 +22,7 @@ import {
     writeIndexedDbAdmissionMutations,
     type WriteIndexedDbAdmissionMutationsInput
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
 import { computeIndexedDbQueuePut } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
@@ -281,7 +282,8 @@ function createWorkBackend(storage: 'memory' | 'indexeddb'): ALAdmissionWorkBack
             dbName: `backend-work-${crypto.randomUUID()}`,
             storeName: admissionStore,
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
 }
 
@@ -290,7 +292,8 @@ async function createStorage(): Promise<AdmissionQueueStorage> {
     onTestFinished(() => db.close());
     const queue = new IndexedDbQueueBox({
         connection: new IndexedDbConnection(async () => db),
-        storeName: AL_ADMISSION_WORK_STORE_NAME
+        storeName: AL_ADMISSION_WORK_STORE_NAME,
+        observer: createPassThroughIndexedDbOperationObserver()
     });
     return { db, queue };
 }

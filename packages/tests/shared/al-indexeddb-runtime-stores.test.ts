@@ -41,6 +41,7 @@ import {
 } from '@shared/mod.ts';
 
 import '../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createFlakyOutboundAdmissionStore, enqueueOutboundOrThrow } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
@@ -146,7 +147,8 @@ describe('IndexedDB AL runtime stores', () => {
         onTestFinished(() => deleteTestDatabase(`${dbName}:${inboxStoreName}`));
         const inbox = new IndexedDbQueueBox({
             dbName: `${dbName}:${inboxStoreName}`,
-            storeName: inboxStoreName
+            storeName: inboxStoreName,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({

@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
+import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
@@ -88,6 +89,7 @@ export type IndexedDbQueueBoxOptions =
         connection?: never;
         completedRetention?: QueueBoxCompletedRetention;
         now?: () => Temporal.Instant;
+        observer: IndexedDbOperationObserver;
     }>
     | Readonly<{
         connection: IndexedDbConnection;
@@ -95,6 +97,7 @@ export type IndexedDbQueueBoxOptions =
         dbName?: never;
         completedRetention?: QueueBoxCompletedRetention;
         now?: () => Temporal.Instant;
+        observer: IndexedDbOperationObserver;
     }>;
 
 export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
@@ -105,13 +108,15 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     readonly #now: () => Temporal.Instant;
     readonly #storeName: string;
     readonly #completedRetention: QueueBoxCompletedRetention;
+    readonly #observer: IndexedDbOperationObserver;
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
         ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
     );
 
-    constructor(options: IndexedDbQueueBoxOptions = {}) {
+    constructor(options: IndexedDbQueueBoxOptions) {
+        this.#observer = options.observer;
         this.#now = options.now ?? Temporal.Now.instant;
         this.#completedRetention = {
             typeIds: [...options.completedRetention?.typeIds ?? []],
@@ -132,6 +137,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
         const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
         const validated = validateResourceInboxWorkPageRequest(request);
         if (validated.left) {
@@ -154,6 +160,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async cleanupAsync(): Promise<boolean> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
         return await RateLimiter.tryToExecuteOrDefault(
             this.#cleanupRateLimiter,
             async () => {
@@ -180,6 +187,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
         const db = await this.#connection.open();
         const keyString = toKeyAsString(resourceEntry.key);
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
@@ -190,6 +198,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
         const db = await this.#connection.open();
         const stored = await readStoredQueueEntry(
             db,
@@ -222,6 +231,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         expected: ResourceEntry,
         replacement: ResourceEntry
     ): Promise<ResourceEntry | null> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
         if (toKeyAsString(expected.key) !== toKeyAsString(replacement.key)) {
             throw new TypeError('Queue replacement key differs from its observation');
         }
@@ -255,6 +265,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         resources: ResourceEntry[],
         releaseInput: ResourceInboxReleaseDisposition
     ): Promise<Map<Key, ResourceEntry>> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
         const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
             (error) => {
                 throw error;
@@ -288,6 +299,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -338,6 +350,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -393,6 +406,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const options = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -434,6 +448,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const options = toResourceInboxFinalizationReservationOptions(input);
         if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
@@ -478,6 +493,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
         const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
             toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
@@ -540,6 +556,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async getItem(key: Key): Promise<ResourceEntry | undefined> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
         const db = await this.#connection.open();
         const keyString = toKeyAsString(key);
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
@@ -558,6 +575,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         value: ResourceEntry,
         _options: PersistenceSetItemOptions
     ): Promise<void> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
         const db = await this.#connection.open();
         const entry: ResourceEntry = {
             ...value,
@@ -572,6 +590,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async removeItem(key: Key): Promise<void> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
         const db = await this.#connection.open();
         await writeComputedIndexedDbQueueMutations({
             db: db,
@@ -583,6 +602,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async getAllKeys(): Promise<Key[]> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
         const db = await this.#connection.open();
         const entries = await readAllStoredQueueEntries(db, this.#storeName);
         const now = this.#now();
@@ -600,6 +620,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async deleteExpired(): Promise<number> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
         const db = await this.#connection.open();
         const now = this.#now();
         const entries = await readAllStoredQueueEntries(db, this.#storeName);

@@ -29,6 +29,7 @@ import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts'
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -48,7 +49,8 @@ const backends: readonly BackendCase[] = [
                 dbName: `admission-decode-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: Date.now,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
             })
     }
 ];
@@ -147,7 +149,8 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
@@ -183,7 +186,8 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         await expect(backend.read('version:missing-token', decodeVersion)).rejects.toMatchObject({
             name: 'ALAdmissionCorruptionError',
@@ -200,7 +204,8 @@ describe('admission storage envelopes', () => {
                 dbName: `admission-clock-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: clock,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
             })
         ];
         for (const backend of stores) {
@@ -248,7 +253,8 @@ describe('admission storage envelopes', () => {
             dbName: `admission-async-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         await backend.write((tx) => tx.set('version:bad', false));
         await expect(backend.write(async (tx) => {
@@ -265,7 +271,8 @@ describe('admission storage envelopes', () => {
             dbName: `admission-async-success-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const result = await backend.write(async (tx) => {
             await tx.set('version:new', '8');
@@ -281,7 +288,8 @@ describe('admission storage envelopes', () => {
             dbName: `admission-expired-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         await backend.write((tx) => tx.set('version:bad', false, 1));
         const corruption = { name: 'ALAdmissionCorruptionError', key: 'version:bad' };
@@ -297,7 +305,8 @@ describe('admission storage envelopes', () => {
                 dbName: databaseName,
                 storeName: 'entries',
                 nowMs: () => 10,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
             });
             await backend.write((transaction) => transaction.set('version:refreshed', '7', 1));
             const transactionImplementation = IDBDatabase.prototype.transaction;
@@ -353,7 +362,8 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
@@ -461,7 +471,8 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const key = `version:\ufffftail`;
         await backend.write((transaction) => transaction.set(key, '7'));
@@ -477,7 +488,8 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
