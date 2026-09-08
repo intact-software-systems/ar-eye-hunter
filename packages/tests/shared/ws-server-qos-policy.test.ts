@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
@@ -6,27 +14,73 @@ import * as shared from '@shared/mod.ts';
 import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
     ConnectionContext,
-    JsonWebSocketServer,
-    type EncodedJsonWebSocketMessage
-} from '@shared/websocket/JsonWebSocketServer.ts';
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+    JsonWebSocketServer
+} from '@shared/websocket/json-web-socket-server.ts';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
+    it.each([
+        { boundary: 'before-send', offsetMs: -1 },
+        { boundary: 'before-send', offsetMs: 0 },
+        { boundary: 'before-send', offsetMs: 1 },
+        { boundary: 'encoding', offsetMs: -1 },
+        { boundary: 'encoding', offsetMs: 0 },
+        { boundary: 'encoding', offsetMs: 1 }
+    ])('enforces live expiry at $boundary at deadline $offsetMs ms', ({ boundary, offsetMs }) => {
+        let nowMs = 10_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const socket = createRecordingWsServer();
+        const service = shared.createDefaultWsQueueBoxServerService({
+            name: 'server-1',
+            socket,
+            outbox: new shared.InMemoryQueueBox(),
+            targetResolver: createTargetResolver()
+        });
+        onTestFinished(() => service.dispose());
+        const expiresAtMs = nowMs + 1_000;
+        const msg = shared.newALUnicastMessage(
+            'server-1',
+            {
+                topicId: 'chat',
+                resourceId: 'expiring',
+                contextId: 'room-1'
+            },
+            'peer-2',
+            'chat.message.v1',
+            {},
+            { ttlMs: 1_000 }
+        );
+        if (boundary === 'encoding') {
+            const encode = socket.encode.bind(socket);
+            vi.spyOn(socket, 'encode').mockImplementation((message) => {
+                const encoded = encode(message);
+                nowMs = expiresAtMs + offsetMs;
+                return encoded;
+            });
+        }
+        else {
+            nowMs = expiresAtMs + offsetMs;
+        }
+
+        const result = service.sendToTargetsWithResult(msg);
+
+        expect(result.status).toBe(offsetMs < 0 ? 'sent-live' : 'expired');
+        expect(result.sentCount).toBe(offsetMs < 0 ? 1 : 0);
+        expect(socket.sent).toHaveLength(offsetMs < 0 ? 1 : 0);
+    });
+
     it('sends volatile targeted unicast messages directly from the server outbox', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALUnicastMessage(
             'server-1',
@@ -44,20 +98,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
-        expect(result.entries).toEqual([]);
+        expect(result.status).toBe('accepted');
+        expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
-        expect(await outbox.getAllKeys()).toEqual([]);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
     it('broadcasts volatile targeted broadcast messages directly from the server outbox', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         let providerEvaluationCount = 0;
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -76,6 +129,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             },
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALBroadcastMessage(
             'server-1',
@@ -97,28 +151,28 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
-        expect(result.entries).toEqual([]);
+        expect(result.status).toBe('accepted');
+        expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
         expect(socket.sent.every((entry) => entry.data.id.msgId === msg.id.msgId)).toBe(true);
-        expect(await outbox.getAllKeys()).toEqual([]);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
         expect(providerEvaluationCount).toBe(1);
     });
 
     it('reports partial live-send failures with recipient and failure counts', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         try {
-            const socket = createFakeWsServer({
+            const socket = createRecordingWsServer({
                 failingConnectionIds: ['conn-2']
             });
             const service = shared.createDefaultWsQueueBoxServerService({
-                inbox: new shared.InMemoryQueueBox(new Map()),
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket,
                 name: 'server-1',
                 targetResolver: createTargetResolver()
             });
+            onTestFinished(() => service.dispose());
             const msg = shared.newALBroadcastMessage(
                 'server-1',
                 {
@@ -158,10 +212,9 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('treats targeted broadcast messages with no recipients as a successful no-op', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -170,6 +223,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 resolveBroadcastRecipients: () => []
             }
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALBroadcastMessage(
             'server-1',
@@ -196,15 +250,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('routes targeted multicast messages to resolved group recipients', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -230,19 +284,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await service.enqueueOutboxIfAbsent(msg);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-2']);
-        expect(await outbox.getAllKeys()).toEqual([]);
+        expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
     it('persists server outbox entries with the message expiry timestamp', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
         const expiresAtMs = Date.UTC(2027, 0, 1, 0, 5, 0);
         const msg = {
             ...shared.newALUnicastMessage(
@@ -300,15 +354,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('returns no-route for untargeted outbound messages', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALUntargetedMessage(
             'server-1',
@@ -332,15 +386,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('drops unresolved queued outbound messages', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -373,22 +427,22 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await service.dequeueOutbox(
             shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto()
+            createResourceInboxResilience()
         );
 
         expect(socket.sent).toHaveLength(0);
     });
 
     it('targets server repair retransmits to the requesting recipient', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -416,32 +470,36 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await service.enqueueOutboxIfAbsent(msg);
         await service.dequeueOutbox(
             shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto()
+            createResourceInboxResilience()
         );
         await socket.receive(
             shared.newALRepairControlMessage(
-                'peer-2',
-                'server-1',
-                msg.id.msgId,
-                'retransmit'
+                { v: 2, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'server-1',
+                    reason: 'retransmit',
+                    observedAtEpochMs: 1
+                }
             ),
             'conn-2'
         );
 
-        expect(socket.sent).toHaveLength(3);
+        await expect.poll(() => socket.sent.length).toBe(3);
         expect(socket.sent[2].connectionId).toBe('conn-2');
         expect(socket.sent[2].data.id.msgId).toBe(msg.id.msgId);
     });
 
     it('forwards inbound client unicast messages to the targeted peer', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         let localDeliveries = 0;
         service.onInboxMessageDo(
@@ -476,13 +534,16 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('forwards inbound room broadcasts to resolved group recipients', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
+        });
+        onTestFinished(() => service.dispose());
+        service.authorizeInboundMessagesWith({
+            authorize: async () => ({ authorized: true })
         });
         const msg = shared.newALBroadcastMessage(
             'peer-1',
@@ -512,15 +573,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     // behind its room authorizer, so it opts the ALM relay out — forwarding
     // here would deliver messages the authorizer rejects.
     it('does not forward room application data when the production relay disowns room fanout', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver(),
             forwardsRoomScopedMessages: false
         });
+        onTestFinished(() => service.dispose());
         const msg = shared.newALBroadcastMessage(
             'peer-1',
             {
@@ -540,14 +601,14 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('suppresses duplicate inbound delivery on the server wrapper', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const received: string[] = [];
         service.onInboxMessageDo(
@@ -579,14 +640,14 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 
     it('emits nack and repair controls for ordered gaps on inbound server messages', async () => {
-        const socket = createFakeWsServer();
+        const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
-            inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
         });
+        onTestFinished(() => service.dispose());
 
         const deliveredTexts: string[] = [];
         service.onInboxMessageDo(
@@ -658,15 +719,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await socket.receive(seq1, 'conn-1');
 
-        expect(deliveredTexts).toEqual(['one', 'two']);
+        await expect.poll(() => deliveredTexts).toEqual(['one', 'two']);
     });
 });
 
-function createFakeWsServer(
-    options: Readonly<{
-        failingConnectionIds?: readonly string[];
-    }> = {}
-): RecordingJsonWebSocketServer {
+interface RecordingWsServerInput {
+    readonly failingConnectionIds?: readonly string[];
+}
+
+function createRecordingWsServer(options: RecordingWsServerInput = {}): RecordingJsonWebSocketServer {
     return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? []);
 }
 
@@ -679,30 +740,25 @@ namespace RecordingJsonWebSocketServer {
 
 class RecordingJsonWebSocketServer extends JsonWebSocketServer {
     readonly sent: RecordingJsonWebSocketServer.RecordedSend[] = [];
-    private readonly failingConnectionIds: ReadonlySet<string>;
     private readonly sockets = new Map<string, ReceivingWebSocket>();
 
     constructor(failingConnectionIds: readonly string[]) {
         super();
-        this.failingConnectionIds = new Set(failingConnectionIds);
+        const failing = new Set(failingConnectionIds);
         for (const connectionId of ['conn-1', 'conn-2', 'conn-3']) {
             const socket = new ReceivingWebSocket();
+            socket.send = (data) => {
+                if (failing.has(connectionId)) {
+                    throw new Error('send failed');
+                }
+                if (typeof data !== 'string') {
+                    throw new TypeError('Expected serialized AL message');
+                }
+                this.sent.push({ connectionId, data: decodePersistedALMessage(data) });
+            };
             this.sockets.set(connectionId, socket);
-            this.addConnection(new ConnectionContext(connectionId, socket));
+            this.addConnection(new ConnectionContext({ id: connectionId, socket }));
         }
-    }
-
-    override sendEncoded(
-        connectionId: string,
-        encoded: EncodedJsonWebSocketMessage
-    ): void {
-        if (this.failingConnectionIds.has(connectionId)) {
-            throw new Error('send failed');
-        }
-        if (!this.connections.get(connectionId)?.isOpen) {
-            throw new Error(`Connection is not open: ${connectionId}`);
-        }
-        this.sent.push({ connectionId, data: decodePersistedALMessage(encoded.text) });
     }
 
     async receive(message: ALMessage, connectionId: string): Promise<void> {
@@ -744,7 +800,7 @@ class ReceivingWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {}
 
     async receive(message: ALMessage): Promise<void> {
         const event = new MessageEvent('message', { data: JSON.stringify(message) });
@@ -816,17 +872,17 @@ function groupRef(groupId: string) {
     };
 }
 
-function createResilienceDto() {
-    return shared.ResilienceDto.toResilienceDto(
-        new shared.CircuitBreakerPolicy(
+function createResourceInboxResilience() {
+    return shared.ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
             10,
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 })
         ),
-        1,
-        10,
-        1,
-        1
-    );
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

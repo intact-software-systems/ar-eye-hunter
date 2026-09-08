@@ -1,4 +1,4 @@
-import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
 export interface PersistedAppInboxAttempt {
     readonly resourceId: string;

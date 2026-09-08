@@ -1,9 +1,9 @@
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 
-import { toResilienceDto as toConfiguredResilienceDto } from '../src/middleware-resilience.ts';
+import { createApiV1QueueResilience } from '../src/middleware-resilience.ts';
 
-export function toResilienceDto(): ResilienceDto {
-    return toConfiguredResilienceDto({
+export function createApiV1TestQueueResilience(): ResourceInboxResilience {
+    return createApiV1QueueResilience({
         failureThreshold: 10,
         openDurationMs: 10_000,
         resetDurationMs: 10_000,

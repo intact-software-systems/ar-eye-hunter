@@ -25,7 +25,7 @@ export default defineConfig({
         exclude: [
             'packages/tests/shared-server/integration/**',
             'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',
-            'packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts'
+            'packages/tests/shared-test/rtc-client-provider/**'
         ],
         environment: 'node',
         globals: true,

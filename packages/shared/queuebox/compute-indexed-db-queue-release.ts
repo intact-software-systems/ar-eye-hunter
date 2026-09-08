@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { Either } from '../resilience/Either.ts';
+import { computeResourceInboxRelease } from './compute-resource-inbox-release.ts';
 import type { StoredResourceEntry } from './indexed-db-queue-box-entry-codec.ts';
 import {
     computeIndexedDbQueuePut,
@@ -10,24 +12,30 @@ import {
     ResourceInboxLostReservationError,
     type ResourceInboxReleaseDisposition
 } from './queue-box-types.ts';
-import { EntityStatus, toKeyAsString, type Key, type ResourceEntry } from './ResourceEntry.ts';
+import { hasSameResourceEntryValue } from './resource-entry-observations.ts';
+import {
+    EntityStatus,
+    toKeyAsString,
+    type Key,
+    type ResourceEntry
+} from './ResourceEntry.ts';
 
-type ComputeIndexedDbQueueReleaseInput = Readonly<{
-    currentEntries: ReadonlyMap<string, ResourceEntry>;
-    disposition: ResourceInboxReleaseDisposition;
-    releasedAt: Temporal.Instant;
-    resources: readonly ResourceEntry[];
-    storedEntries: ReadonlyMap<string, StoredResourceEntry>;
-}>;
+interface ComputeIndexedDbQueueReleaseInput {
+    readonly currentEntries: ReadonlyMap<string, ResourceEntry>;
+    readonly disposition: ResourceInboxReleaseDisposition;
+    readonly releasedAt: Temporal.Instant;
+    readonly resources: readonly ResourceEntry[];
+    readonly storedEntries: ReadonlyMap<string, StoredResourceEntry>;
+}
 
-type ComputedIndexedDbQueueRelease = Readonly<{
-    mutations: readonly ComputedIndexedDbQueueMutation[];
-    result: Map<Key, ResourceEntry>;
-}>;
+interface ComputedIndexedDbQueueRelease {
+    readonly mutations: readonly ComputedIndexedDbQueueMutation[];
+    readonly result: Map<Key, ResourceEntry>;
+}
 
 export function computeIndexedDbQueueRelease(
     input: ComputeIndexedDbQueueReleaseInput
-): ComputedIndexedDbQueueRelease {
+): Either<ResourceInboxLostReservationError, ComputedIndexedDbQueueRelease> {
     const result = new Map<Key, ResourceEntry>();
     const mutations: ComputedIndexedDbQueueMutation[] = [];
     for (const resource of input.resources) {
@@ -40,34 +48,30 @@ export function computeIndexedDbQueueRelease(
                 (
                     isStoredQueueEntryExpired(stored, input.releasedAt) ||
                     stored.status !== EntityStatus.RESERVED ||
-                    stored.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                    !hasSameResourceEntryValue(current, resource)
                 ) &&
-                !isIdempotentHandlerFinalizedRelease(current, resource, input.disposition)
+                !isIdempotentHandlerFinalizedRelease({
+                    current,
+                    reserved: resource,
+                    disposition: input.disposition,
+                    observedAt: input.releasedAt
+                })
             )
         ) {
-            throw new ResourceInboxLostReservationError(
-                resource.key,
-                resource.dequeueAudit.attempts
+            return Either.ofLeft(
+                new ResourceInboxLostReservationError(
+                    resource.key,
+                    resource.dequeueAudit.attempts
+                )
             );
         }
         if (current.status !== EntityStatus.RESERVED) {
             result.set(current.key, current);
             continue;
         }
-        const updated: ResourceEntry = {
-            ...current,
-            status: input.disposition.status,
-            dequeueAudit: {
-                startTs: current.dequeueAudit.startTs,
-                endTs: input.releasedAt,
-                nextTs: input.disposition.delayMs !== null
-                    ? input.releasedAt.add({ milliseconds: input.disposition.delayMs })
-                    : undefined,
-                attempts: current.dequeueAudit.attempts
-            }
-        };
+        const updated = computeResourceInboxRelease(current, input.disposition, input.releasedAt);
         result.set(updated.key, updated);
         mutations.push(computeIndexedDbQueuePut(stored, updated));
     }
-    return { mutations, result };
+    return Either.ofRight({ mutations, result });
 }

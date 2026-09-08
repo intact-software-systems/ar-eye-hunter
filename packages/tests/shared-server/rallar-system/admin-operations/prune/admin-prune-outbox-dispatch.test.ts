@@ -6,8 +6,8 @@ import {
     type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -88,13 +88,13 @@ describe('admin prune application outbox dispatch', () => {
     });
 });
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

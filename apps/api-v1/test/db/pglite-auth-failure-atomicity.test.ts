@@ -12,7 +12,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import assert from 'node:assert/strict';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -85,7 +85,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const failed = await pending;
             assert.equal(failed.left?.code, 'resource-inbox-invariant-corruption');
@@ -179,7 +179,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             assert.equal(
                 await runtime.findEntry('auth-users:by-username', 'username=fence-user'),

@@ -1,10 +1,21 @@
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { StartProcessingEntitySkipped } from './p-sql-resource-inbox-reservation-repository.ts';
-import { writeResourceInboxReservationFinish } from './resource-inbox-reservation-write.ts';
-import { rowsToMap, toDomain, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
+import {
+    writeResourceInboxReservationFinish,
+    type ResourceInboxReservationFinish
+} from './resource-inbox-reservation-write.ts';
+import {
+    rowsToMap,
+    toDomain,
+    type ResourceInboxRow
+} from './resource-inbox-row-codec.ts';
 
 export class PSqlResourceInboxFinalizationRepository {
     private readonly sql: PSqlSql;
@@ -27,14 +38,14 @@ export class PSqlResourceInboxFinalizationRepository {
         if (!Number.isSafeInteger(options.maxToReserve) || options.maxToReserve < 0) {
             throw new Error('Finalization reservation limit must be a non-negative safe integer');
         }
-        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
+        if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
 
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
-            where ri_type_id = ${EnqueuedType.APP_INBOX}
+            where ri_type_id = any(${[...typeIds]})
               and ri_status = ${EntityStatus.RESERVED}
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts >= ${options.processingAttempts}
@@ -87,7 +98,7 @@ export class PSqlResourceInboxFinalizationRepository {
             where ri_topic_id = ${entry.key.topicId}
               and ri_resource_id = ${entry.key.resourceId}
               and fk_ext_bank_id = ${entry.key.contextId}
-              and ri_type_id = ${EnqueuedType.APP_INBOX}
+              and ri_type_id = ${entry.typeId}
               and ri_status = ${EntityStatus.RESERVED}
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts = ${entry.dequeueAudit.attempts}
@@ -103,12 +114,14 @@ export class PSqlResourceInboxFinalizationRepository {
     async finishReserved(
         key: Key,
         expectedAttempts: number,
-        status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
+        status: ResourceInboxReservationFinish['status'],
         completedAt: Date
     ): Promise<boolean> {
-        if (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED) {
+        if (
+            status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED && status !== EntityStatus.NON_RETRYABLE
+        ) {
             throw new Error(
-                'Resource inbox reservation finish status must be COMPLETED or FAILED'
+                'Resource inbox reservation finish status must be COMPLETED, FAILED or NON_RETRYABLE'
             );
         }
 

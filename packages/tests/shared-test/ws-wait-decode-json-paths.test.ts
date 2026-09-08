@@ -1,17 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-interface WireFrame {
-    readonly payload: { readonly resource: string; };
-}
-
-import { waitForWsMessage } from '../../shared-test/black-box-runner/ws/ws-wait-expectations.ts';
+import {
+    waitForWsMessage,
+    waitForWsMessageAbsence,
+    waitForWsMessageCount,
+    waitForWsMessages,
+    type WsInteractionResponse,
+    type WsWaitContext
+} from '../../shared-test/black-box-runner/ws/ws-wait-expectations.ts';
 
 const connection = 'wsAlice';
 
-function toContext(payloads: readonly ApiJsonValue[]): ApiJsonObject {
-    return { wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
+function toContext(payloads: readonly ApiJsonValue[]): WsWaitContext {
+    return { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
 }
 
 function toFrame(eventType: string): ApiJsonValue {
@@ -24,23 +31,48 @@ function toFrame(eventType: string): ApiJsonValue {
     };
 }
 
-async function runWait(expectFields: ApiJsonObject, payloads: readonly ApiJsonValue[]) {
+async function runWait(expectFields: WsInteractionResponse, payloads: readonly ApiJsonValue[]) {
     const interaction = {
         request: { action: 'wait', connection, scenarioExecutionNumber: 1, interactionExecutionNumber: 1 },
         response: { connection, withinMs: 40, ...expectFields }
     };
-    const status = await waitForWsMessage(
+    return await waitForWsMessage({
         interaction,
-        { interactionName: 'waitForEvent', interaction },
-        toContext(payloads)
-    );
-    return { status: status.status, matched: status.actual?.matchedMessage?.data };
+        config: { interactionName: 'waitForEvent', interaction },
+        context: toContext(payloads)
+    });
 }
 
 const membersChanged = toFrame('group-members-changed');
 const activation = toFrame('group-activation-status-changed');
 
 describe('ws wait with expect.decodeJsonPaths', () => {
+    it('uses the decoded shape for ordered, count and absence waits while retaining wire evidence', async () => {
+        const expected = { payload: { resource: { event: { eventType: 'group-activation-status-changed' } } } };
+        const interaction = {
+            request: { connection },
+            response: {
+                messages: [expected],
+                message: expected,
+                absent: expected,
+                count: 1,
+                decodeJsonPaths: ['payload.resource'],
+                ordered: true,
+                withinMs: 40
+            }
+        };
+        const input = { interaction, config: { interaction }, context: toContext([membersChanged, activation]) };
+        const [ordered, count, absence] = await Promise.all([
+            waitForWsMessages(input),
+            waitForWsMessageCount(input),
+            waitForWsMessageAbsence(input)
+        ]);
+        expect(ordered).toMatchObject({ status: 'SUCCESS', actual: { matchedMessages: [{ matchedMessage: { data: activation } }] } });
+        expect(count).toMatchObject({ status: 'SUCCESS', actual: { matchedCount: 1 } });
+        expect(absence).toMatchObject({ status: 'FAILURE', actual: { matchedMessage: { data: activation } } });
+        expect(input.context.wsMessages[connection]?.[1]).toEqual({ data: activation });
+    });
+
     // Without the decode, eventType is unreachable: it lives inside a JSON
     // string and the comparator has no decode step.
     it('cannot select on eventType without the declaration', async () => {
@@ -76,8 +108,7 @@ describe('ws wait with expect.decodeJsonPaths', () => {
         );
 
         expect(result.status).toBe('SUCCESS');
-        expect(JSON.parse((result.matched as never as WireFrame).payload.resource))
-            .toMatchObject({ event: { eventType: 'group-activation-status-changed' } });
+        expect(result.actual.matchedMessage).toEqual({ data: activation });
     });
 
     it('still fails when no frame carries the named eventType', async () => {
@@ -98,6 +129,6 @@ describe('ws wait with expect.decodeJsonPaths', () => {
             [activation]
         );
 
-        expect(typeof (result.matched as never as WireFrame).payload.resource).toBe('string');
+        expect(result.actual.matchedMessage).toEqual({ data: activation });
     });
 });

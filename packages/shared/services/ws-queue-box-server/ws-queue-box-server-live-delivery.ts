@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/JsonWebSocketServer.ts';
+import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import type {
     WsServerLiveSendFailure,
     WsServerLiveSendResult,
@@ -24,6 +25,7 @@ export namespace WsQueueBoxServerLiveDelivery {
     export interface SendAttempt {
         readonly sentCount: number;
         readonly failures: readonly WsServerLiveSendFailure[];
+        readonly expired: boolean;
     }
 }
 
@@ -42,14 +44,26 @@ export class WsQueueBoxServerLiveDelivery {
         return this.sendToTargetsWithResult(message).sentCount;
     }
 
-    sendToTargetsWithResult(message: ALMessage, recipientSessionIds?: readonly string[]): WsServerLiveSendResult {
+    sendToTargetsWithResult(
+        message: ALMessage,
+        recipientSessionIds?: readonly string[],
+        admittedPeerIds?: readonly string[]
+    ): WsServerLiveSendResult {
+        const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
+        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+            return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
+        }
         // Explicit authority, including an empty audience, replaces cache-based
         // target resolution; local socket liveness remains a send-time decision.
-        const recipients = recipientSessionIds === undefined
+        const currentRecipients = recipientSessionIds === undefined
             ? this.#targetResolution.resolveOutboundRecipients(message)
             : [...new Set(recipientSessionIds)]
                 .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
                 .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+        const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
+        const recipients = admitted === undefined
+            ? currentRecipients
+            : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',
@@ -63,7 +77,7 @@ export class WsQueueBoxServerLiveDelivery {
             return encodingFailureResult(message, recipients, encodedAttempt.failureReason!);
         }
 
-        const sendAttempt = this.sendEncodedToRecipients(encodedAttempt.encoded, recipients);
+        const sendAttempt = this.sendEncodedToRecipients(encodedAttempt.encoded, recipients, expiresAtMs);
         this.#deliveryReporting.recordDiagnostics({
             kind: 'live-send',
             topicId: message.route.topicId,
@@ -79,12 +93,16 @@ export class WsQueueBoxServerLiveDelivery {
         message: ALMessage,
         encoded?: EncodedJsonWebSocketMessage
     ): number {
+        const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
+        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+            return 0;
+        }
         const recipients = this.#targetResolution.resolveRepairRecipients(message, [peerId]);
         const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
         if (!encodedMessage) {
             return 0;
         }
-        return this.sendEncodedToRecipients(encodedMessage, recipients).sentCount;
+        return this.sendEncodedToRecipients(encodedMessage, recipients, expiresAtMs).sentCount;
     }
 
     tryEncodeDirectMessage(message: ALMessage): EncodedJsonWebSocketMessage | undefined {
@@ -105,11 +123,15 @@ export class WsQueueBoxServerLiveDelivery {
 
     private sendEncodedToRecipients(
         encoded: EncodedJsonWebSocketMessage,
-        recipients: readonly WsServerResolvedRecipient[]
+        recipients: readonly WsServerResolvedRecipient[],
+        expiresAtMs: number | undefined
     ): WsQueueBoxServerLiveDelivery.SendAttempt {
         let sentCount = 0;
         const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
+            if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+                return { sentCount, failures, expired: true };
+            }
             try {
                 this.#socket.sendEncoded(recipient.connectionId, encoded);
                 sentCount += 1;
@@ -127,7 +149,7 @@ export class WsQueueBoxServerLiveDelivery {
                 );
             }
         }
-        return { sentCount, failures };
+        return { sentCount, failures, expired: false };
     }
 }
 
@@ -169,7 +191,9 @@ function toLiveSendResult(
     attempt: WsQueueBoxServerLiveDelivery.SendAttempt
 ): WsServerLiveSendResult {
     return {
-        status: toLiveSendStatus(recipients.length, attempt.sentCount, attempt.failures.length),
+        status: attempt.expired
+            ? 'expired'
+            : toLiveSendStatus(recipients.length, attempt.sentCount, attempt.failures.length),
         message,
         recipients,
         recipientCount: recipients.length,

@@ -28,6 +28,10 @@ export class AppInboxHandlerRegistry {
         this.inboxQueueReader = dependencies.inboxQueueReader;
         this.handlerExecutor = dependencies.handlerExecutor;
         this.serviceId = config.serviceId;
+        this.inboxQueueReader.onRejectedInboxMessageDo({
+            onRejectedMessage: async (entry, attemptTelemetry) =>
+                await this.handlerExecutor.rejectMalformedMessage({ entry, telemetry: attemptTelemetry })
+        });
     }
 
     registerHandler<Command, Result>(
@@ -39,8 +43,8 @@ export class AppInboxHandlerRegistry {
             );
         }
         this.inboxQueueReader.onInboxMessageDo(registration.type, {
-            onMessage: async (message, entry) => {
-                await this.handlerExecutor.execute(registration, message, entry);
+            onMessage: async (message, entry, attemptTelemetry) => {
+                await this.handlerExecutor.execute({ registration, message, entry, attemptTelemetry });
             }
         });
         this.registeredTypes.add(registration.type);

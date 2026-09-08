@@ -2,6 +2,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -507,22 +508,20 @@ describe('installRallarCrdtWsTopics', () => {
 
 function createRouter(options?: ConstructorParameters<typeof RallarServerWsRouter>[1]) {
     const socket = new RecordingJsonWebSocketServer();
-    const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
-        inbox: inbox,
         outbox: outbox,
         socket: socket,
         name: 'server-1',
         targetResolver: createTargetResolver()
     });
+    onTestFinished(() => service.dispose());
     const router = new RallarServerWsRouter(service, options);
 
     return {
         router,
         service,
         socket,
-        inbox,
         outbox
     };
 }

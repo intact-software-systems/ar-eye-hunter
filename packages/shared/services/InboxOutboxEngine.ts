@@ -28,19 +28,42 @@ export class InboxOutboxEngine {
 
     private running = false;
     private timer: ReturnType<typeof setTimeout> | typeof NOT_SET = NOT_SET;
-    private executing = false;
+    private execution: Promise<boolean> | undefined;
+    private generation = 0;
     private wakeAfterExecution = false;
     private successiveIdleExecutions = 0;
+    private scheduledAtMs: number | undefined;
 
-    private tasks: Map<string, ComputeAsyncTask.LoopsTaskDto> = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
+    private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
+    private readonly readyAtByTask = new Map<string, number>();
 
     includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
-        this.tasks.set(id, task);
+        this.readyAtByTask.delete(id);
+        this.tasks.set(id, { ...task, name: id, ongoingTasks: [...task.ongoingTasks] });
         return this;
     }
 
     excludeTask(id: string): boolean {
+        this.readyAtByTask.delete(id);
         return this.tasks.delete(id);
+    }
+
+    wakeAt(taskId: string, readyAtMs: number | undefined): void {
+        if (!this.tasks.has(taskId)) {
+            return;
+        }
+        if (readyAtMs === undefined) {
+            this.readyAtByTask.delete(taskId);
+            return;
+        }
+        if (!Number.isSafeInteger(readyAtMs) || readyAtMs < 0) {
+            throw new RangeError('Queue task readiness must be a non-negative safe timestamp');
+        }
+        this.readyAtByTask.set(taskId, readyAtMs);
+        if (this.running && this.execution === undefined) {
+            const earliest = Math.min(this.scheduledAtMs ?? readyAtMs, readyAtMs);
+            this.scheduleEngine(Math.max(0, earliest - Date.now()));
+        }
     }
 
     start(): void {
@@ -49,16 +72,18 @@ export class InboxOutboxEngine {
         }
 
         this.running = true;
-        this.scheduleEngine(0);
+        this.wake();
     }
 
     stop(): void {
+        this.generation += 1;
         this.running = false;
         this.wakeAfterExecution = false;
         if (this.timer !== NOT_SET) {
             clearTimeout(this.timer);
         }
         this.timer = NOT_SET;
+        this.scheduledAtMs = undefined;
     }
 
     wake(): void {
@@ -73,7 +98,7 @@ export class InboxOutboxEngine {
             this.timer = NOT_SET;
         }
 
-        if (this.executing) {
+        if (this.execution) {
             this.wakeAfterExecution = true;
             return;
         }
@@ -81,61 +106,75 @@ export class InboxOutboxEngine {
         this.scheduleEngine(0);
     }
 
-    async executeOnce() {
-        return await this.executeTaskEngine();
+    executeOnce(): Promise<boolean> {
+        if (this.execution) {
+            return this.execution;
+        }
+        if (this.timer !== NOT_SET) {
+            clearTimeout(this.timer);
+            this.timer = NOT_SET;
+        }
+        this.scheduledAtMs = undefined;
+        const nowMs = Date.now();
+        for (const [taskId, readyAtMs] of this.readyAtByTask) {
+            if (readyAtMs <= nowMs) {
+                this.readyAtByTask.delete(taskId);
+            }
+        }
+        let taskCreated = false;
+        this.execution = this.executeTaskEngine()
+            .then((result) => {
+                taskCreated = result;
+                return result;
+            })
+            .finally(() => {
+                this.execution = undefined;
+                if (this.running) {
+                    const delayMs = this.wakeAfterExecution ? 0 : this.nextScheduleDelayMs(taskCreated);
+                    this.wakeAfterExecution = false;
+                    this.scheduleEngine(delayMs);
+                }
+            });
+        return this.execution;
     }
 
     private scheduleEngine(delayMs: number): void {
         if (!this.running) {
             return;
         }
-
         if (this.timer !== NOT_SET) {
             clearTimeout(this.timer);
         }
-        this.timer = setTimeout(() => void this.selfSchedulingTaskEngine(), delayMs);
+        const nowMs = Date.now();
+        let scheduledAtMs = nowMs + delayMs;
+        for (const readyAtMs of this.readyAtByTask.values()) {
+            scheduledAtMs = Math.min(scheduledAtMs, readyAtMs);
+        }
+        this.scheduledAtMs = Math.max(nowMs, scheduledAtMs);
+        this.timer = setTimeout(() => {
+            this.timer = NOT_SET;
+            this.scheduledAtMs = undefined;
+            void this.executeOnce();
+        }, this.scheduledAtMs - nowMs);
     }
 
-    private async selfSchedulingTaskEngine(): Promise<void> {
-        if (this.executing) {
-            this.wakeAfterExecution = true;
-            return;
-        }
-
-        this.timer = NOT_SET;
-        this.executing = true;
-        let taskCreated = false;
-        try {
-            taskCreated = await this.executeTaskEngine();
-        }
-        finally {
-            this.executing = false;
-            if (this.running) {
-                const delayMs = this.wakeAfterExecution
-                    ? 0
-                    : this.nextScheduleDelayMs(taskCreated);
-                this.wakeAfterExecution = false;
-                this.scheduleEngine(delayMs);
-            }
-        }
-    }
-
-    private async executeTaskEngine() {
+    private async executeTaskEngine(): Promise<boolean> {
         const result = await CircuitBreaker.tryToExecute(
             this.circuitBreaker,
             async () => {
+                const registrations = new Map(this.tasks);
+                const generation = this.generation;
                 const computedDto = await ComputeAsyncTask.runLoopsWhileWork(
-                    InboxOutboxEngine.toAsyncTaskInput([...this.tasks.values()])
+                    InboxOutboxEngine.toAsyncTaskInput(
+                        [...registrations.values()].map((task) => this.toTaskPass(task, generation))
+                    )
                 );
 
                 for (const task of computedDto.tasks) {
-                    this.tasks.set(
-                        task.inputTask.name,
-                        {
-                            ...task.inputTask,
-                            ongoingTasks: task.tasksInFlight
-                        }
-                    );
+                    const registration = registrations.get(task.inputTask.name);
+                    if (registration && this.tasks.get(task.inputTask.name) === registration) {
+                        registration.ongoingTasks = task.tasksInFlight;
+                    }
                 }
 
                 return computedDto.totalNumTasksCreated > 0;
@@ -152,6 +191,29 @@ export class InboxOutboxEngine {
             },
             (taskCreated) => taskCreated
         );
+    }
+
+    private toTaskPass(task: ComputeAsyncTask.LoopsTaskDto, generation: number): ComputeAsyncTask.LoopsTaskDto {
+        return {
+            ...task,
+            maxConcurrency: async () => this.isCurrentTask(task, generation) ? await task.maxConcurrency() : 0,
+            isWork: async () => {
+                if (!this.isCurrentTask(task, generation)) {
+                    return false;
+                }
+                const isWork = await task.isWork();
+                return isWork && this.isCurrentTask(task, generation);
+            },
+            runnable: async () => {
+                if (this.isCurrentTask(task, generation)) {
+                    await task.runnable();
+                }
+            }
+        };
+    }
+
+    private isCurrentTask(task: ComputeAsyncTask.LoopsTaskDto, generation: number): boolean {
+        return generation === this.generation && this.tasks.get(task.name) === task;
     }
 
     private nextScheduleDelayMs(taskCreated: boolean): number {

@@ -1,7 +1,32 @@
 import assert from 'node:assert/strict';
 
-import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
+import type { CrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import {
+    newALBroadcastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import type {
+    AuditStamp,
+    ClientInstance,
+    ClientPrincipal,
+    ClientSession
+} from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     RALLAR_CRDT_APP_TOPIC_ID,
@@ -16,35 +41,13 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
-import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-
-import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
-
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import type { CrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
-
 import { createApiCrdtDocumentAuthorizer } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-service.ts';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../db/pglite-app-inbox-test-runtime.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from '../db/pglite-auth-test-harness.ts';
+import { PGliteTestSocket } from '../db/pglite-test-socket.ts';
 
 const NOW = Date.now();
 const CLIENT_ID = 'client-42';
@@ -89,50 +92,55 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const fixture = await createCrdtWebSocketAuthorityFixture(sql);
-            await fixture.addCurrentSession(SESSION_A);
-            await fixture.addCurrentSession(SESSION_B);
+            try {
+                await fixture.addCurrentSession(SESSION_A);
+                await fixture.addCurrentSession(SESSION_B);
 
-            await fixture.send(
-                SESSION_B,
-                message(SESSION_A, 'forged-transport', update('forged-update'))
-            );
-            assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
+                await fixture.send(
+                    SESSION_B,
+                    message(SESSION_A, 'forged-transport', update('forged-update'))
+                );
+                assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
 
-            await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
-            await drain(fixture, sql, 1);
+                await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
+                await drain(fixture, sql, 1);
 
-            const [persisted] = await sql<PersistedActorRow[]>`
+                const [persisted] = await sql<PersistedActorRow[]>`
             select actor_id, principal_id, session_id from crdt_updates
         `;
-            assert.deepEqual(persisted, {
-                actor_id: CLIENT_ID,
-                principal_id: USERNAME,
-                session_id: SESSION_A
-            });
+                assert.deepEqual(persisted, {
+                    actor_id: CLIENT_ID,
+                    principal_id: USERNAME,
+                    session_id: SESSION_A
+                });
 
-            await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
-            await drain(fixture, sql, 2);
-            const replayResults = await readResults(sql);
-            assert.deepEqual(
-                replayResults.map((result) => ({
-                    commandId: result.commandId,
-                    status: result.status
-                })),
-                [
-                    { commandId: 'update-1', status: 'accepted' },
-                    { commandId: 'update-1', status: 'replay' }
-                ]
-            );
+                await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
+                await drain(fixture, sql, 2);
+                const replayResults = await readResults(sql);
+                assert.deepEqual(
+                    replayResults.map((result) => ({
+                        commandId: result.commandId,
+                        status: result.status
+                    })),
+                    [
+                        { commandId: 'update-1', status: 'accepted' },
+                        { commandId: 'update-1', status: 'replay' }
+                    ]
+                );
 
-            await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
-            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-            await fixture.revokeAuthSession(SESSION_B);
-            await drain(fixture, sql, 3);
-            const revoked = (await readResults(sql)).at(-1);
-            assert.equal(revoked?.status, 'rejected');
-            assert.match(String(revoked?.code), /authentication|authorization/);
-            const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
-            assert.equal(Number(count?.count), 1);
+                await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
+                await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+                await fixture.revokeAuthSession(SESSION_B);
+                await drain(fixture, sql, 3);
+                const revoked = (await readResults(sql)).at(-1);
+                assert.equal(revoked?.status, 'rejected');
+                assert.match(String(revoked?.code), /authentication|authorization/);
+                const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
+                assert.equal(Number(count?.count), 1);
+            }
+            finally {
+                fixture.dispose();
+            }
         });
     }
 );
@@ -140,29 +148,35 @@ Deno.test(
 Deno.test('production app-scope authorization rejects a foreign application context', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createCrdtWebSocketAuthorityFixture(sql);
-        await fixture.addCurrentSession(SESSION_A);
-        const foreign = {
-            ...DOCUMENT,
-            applicationId: 'foreign-app',
-            documentId: 'foreign-document'
-        };
+        try {
+            await fixture.addCurrentSession(SESSION_A);
+            const foreign = {
+                ...DOCUMENT,
+                applicationId: 'foreign-app',
+                documentId: 'foreign-document'
+            };
 
-        await fixture.send(
-            SESSION_A,
-            message(SESSION_A, 'foreign-transport', update('foreign-update', foreign))
-        );
-        await drain(fixture, sql, 1);
+            await fixture.send(
+                SESSION_A,
+                message(SESSION_A, 'foreign-transport', update('foreign-update', foreign))
+            );
+            await drain(fixture, sql, 1);
 
-        const [result] = await readResults(sql);
-        assert.equal(result?.status, 'rejected');
-        assert.match(String(result?.code), /scope|authorization/);
-        const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
-        assert.equal(Number(count?.count), 0);
+            const [result] = await readResults(sql);
+            assert.equal(result?.status, 'rejected');
+            assert.match(String(result?.code), /scope|authorization/);
+            const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
+            assert.equal(Number(count?.count), 0);
+        }
+        finally {
+            fixture.dispose();
+        }
     });
 });
 
 interface CrdtWebSocketAuthorityFixture {
     readonly inboxQueueReader: InboxQueueReader;
+    dispose(): void;
     send(connectionId: string, message: ALMessage): Promise<void>;
     addCurrentSession(sessionId: string): Promise<void>;
     revokeAuthSession(sessionId: string): Promise<void>;
@@ -217,9 +231,8 @@ async function createCrdtWebSocketAuthorityFixture(
     const service = createCrdtAuthorityInbox({ sql, auth, clients, resourceInbox, inboxQueueReader });
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();
-    const sockets = new Map<string, FakeSocket>();
+    const sockets = new Map<string, PGliteTestSocket>();
     const wsService = createDefaultWsQueueBoxServerService({
-        inbox: queue,
         outbox: queue,
         socket: socketServer,
         name: 'server-1'
@@ -236,6 +249,7 @@ async function createCrdtWebSocketAuthorityFixture(
     });
     return {
         inboxQueueReader,
+        dispose: () => wsService.dispose(),
         send: async (connectionId: string, value: ALMessage) => {
             const socket = sockets.get(connectionId);
             assert.ok(socket);
@@ -253,9 +267,9 @@ async function createCrdtWebSocketAuthorityFixture(
                 })
             );
             await clients.insertSession(clientSession(sessionId));
-            const socket = new FakeSocket();
+            const socket = new PGliteTestSocket();
             sockets.set(sessionId, socket);
-            socketServer.addConnection(new ConnectionContext(sessionId, socket));
+            socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
         },
         revokeAuthSession: async (sessionId: string) => {
             const stored = await auth.findSessionBySessionIdEntry(sessionId);
@@ -273,7 +287,7 @@ async function drain(
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await fixture.inboxQueueReader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        toResilienceDto()
+        createApiV1TestQueueResilience()
     );
     for (let attempt = 0; attempt < 50; attempt += 1) {
         if ((await readResults(sql)).length >= expectedResults) {
@@ -422,31 +436,4 @@ function audit(): AuditStamp {
         traceId: null,
         requestId: null
     };
-}
-
-class FakeSocket extends EventTarget implements WebSocket {
-    readonly CONNECTING = WebSocket.CONNECTING;
-    readonly OPEN = WebSocket.OPEN;
-    readonly CLOSING = WebSocket.CLOSING;
-    readonly CLOSED = WebSocket.CLOSED;
-    readonly bufferedAmount = 0;
-    readonly extensions = '';
-    readonly protocol = '';
-    readonly readyState = WebSocket.OPEN;
-    readonly url = 'ws://test.invalid';
-    binaryType: BinaryType = 'blob';
-    onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
-    onerror: ((this: WebSocket, event: Event) => void) | null = null;
-    onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
-    onopen: ((this: WebSocket, event: Event) => void) | null = null;
-
-    close(): void {}
-
-    send(_data: string): void {
-    }
-
-    async dispatchMessage(value: ALMessage): Promise<void> {
-        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(value) }));
-        await Promise.resolve();
-    }
 }

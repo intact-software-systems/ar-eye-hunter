@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import postgres from 'postgres';
 
@@ -9,7 +10,6 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -17,7 +17,7 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
         throw new Error('DATABASE_URL is required');
     }
     const input = readInput();
-    const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+    const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1, types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() } });
     const [{ pid }] = await sql<{ pid: number; }[]>`select pg_backend_pid()::int as pid`;
     const trace: WorkerTrace = { backendPid: pid, barrierWaitCount: 0 };
     try {
@@ -139,15 +139,15 @@ async function runTopologyAppOutboxUntilCompletion(
     throw new Error(`Topology APP_OUTBOX did not complete: ${input.targetKey.resourceId}`);
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(100, duration, duration, duration),
-        1,
-        1,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 1,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 async function waitAtBarrier(barrier: WorkerBarrier, participantId: string): Promise<void> {

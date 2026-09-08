@@ -1,4 +1,3 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeOverlayTopologySnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
@@ -8,6 +7,7 @@ import {
     type GroupLayoutRole
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toOverlayInfoForSession, type RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
     findGroupStateSnapshotByRef,
@@ -27,7 +27,7 @@ export interface AdoptOverlayTopologyInput {
 }
 
 export interface DispatchOverlayTopologyMessageInput {
-    readonly message: ALMessage;
+    readonly snapshot: CompletedStateSnapshot;
     readonly scope: StateScope;
     readonly sessionId: string;
     readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
@@ -42,19 +42,27 @@ export interface AdoptOverlayTopologyResult {
 export async function dispatchOverlayTopologyMessage(
     input: DispatchOverlayTopologyMessageInput
 ): Promise<boolean> {
-    if (input.message.payload.typeId !== AppTopics.overlayTopology) {
+    if (input.snapshot.page.typeId !== AppTopics.overlayTopology) {
         return false;
     }
     const topology = parseAuthoritativeOverlayTopologySnapshot(
-        input.message.payload.resource,
+        input.snapshot.resource,
         input.scope
     );
+    const page = input.snapshot.page;
+    const revision = topology.sourceGroupStateCausalRevision;
+    if (
+        page.scope.kind !== 'group' || page.scope.resourceId !== topology.groupRef.groupId ||
+        page.revision !== JSON.stringify([revision.groupRevision, revision.presenceRevision, topology.version])
+    ) {
+        throw new TypeError('Completed topology differs from its page identity');
+    }
     await adoptOverlayTopology({
         topology,
         sessionId: input.sessionId,
         webRtcGroupManager: input.webRtcGroupManager,
         adoption: isRtcTopologyCurrentStateMessage(
-                input.message,
+                input.snapshot,
                 topology,
                 input.sessionId
             )

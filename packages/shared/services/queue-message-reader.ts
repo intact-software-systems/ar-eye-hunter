@@ -1,11 +1,19 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
-import type { DequeueResourceEntryOptions, ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
+import { EnqueuedType } from '../api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import {
+    NonRetryableException,
+    ResourceInboxHandlerEntryError,
+    type DequeueResourceEntryOptions
+} from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';
 
-import type { OnMessageCallback } from './queue-message-callbacks.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from './queue-box-utilities.ts';
+import type { OnQueuedMessageCallback, OnRejectedQueuedMessageCallback } from './queue-message-callbacks.ts';
 
 export namespace QueueMessageReader {
     export interface Config {
@@ -15,7 +23,8 @@ export namespace QueueMessageReader {
 }
 
 export class QueueMessageReader {
-    private readonly callbacks = new Map<string, OnMessageCallback>();
+    private readonly callbacks = new Map<string, OnQueuedMessageCallback>();
+    private rejectedMessageCallback: OnRejectedQueuedMessageCallback | undefined;
     private readonly repository: QueueBoxResourceEntryRepository;
     private readonly config: QueueMessageReader.Config;
 
@@ -24,12 +33,16 @@ export class QueueMessageReader {
         this.config = config;
     }
 
-    onMessageDo(type: string, callback: OnMessageCallback): void {
+    onMessageDo(type: string, callback: OnQueuedMessageCallback): void {
         this.callbacks.set(type, callback);
     }
 
     removeMessageCallback(type: string): boolean {
         return this.callbacks.delete(type);
+    }
+
+    onRejectedMessageDo(callback: OnRejectedQueuedMessageCallback): void {
+        this.rejectedMessageCallback = callback;
     }
 
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
@@ -38,22 +51,40 @@ export class QueueMessageReader {
         );
     }
 
-    async dequeue(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
+    async dequeue(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<void> {
         await QueueBoxUtilities.defaultDequeue(
-            this.repository,
-            typesToDequeue,
-            resilience,
-            (entry) => this.dispatchQueuedMessage(entry),
-            this.config.dequeueOptions
+            {
+                qbox: this.repository,
+                typesToDequeue: typesToDequeue,
+                resilience: resilience,
+                onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
+                options: this.config.dequeueOptions
+            }
         );
     }
 
-    private async dispatchQueuedMessage(entry: ResourceEntry): Promise<void> {
-        const message = decodePersistedALMessage(entry.resource);
+    private async dispatchQueuedMessage(
+        entry: ResourceEntry,
+        attemptTelemetry: ResourceInboxAttemptTelemetry
+    ): Promise<void> {
+        let message: ALMessage;
+        try {
+            message = entry.typeId === EnqueuedType.APP_OUTBOX && entry.key.topicId === RTC_TOPOLOGY_OUTBOX_TOPIC
+                ? readRtcTopologyWorkEntry(entry)
+                : decodePersistedALMessage(entry.resource);
+        }
+        catch {
+            const error = new NonRetryableException('Persisted queue message is malformed or unsupported');
+            if (this.rejectedMessageCallback) {
+                const finalized = await this.rejectedMessageCallback.onRejectedMessage(entry, attemptTelemetry, error);
+                throw new ResourceInboxHandlerEntryError(finalized, error);
+            }
+            throw error;
+        }
         const callback = this.callbacks.get(message.payload.typeId);
         if (!callback) {
             throw new Error(`No ${this.config.enqueueType} callback registered for type ${message.payload.typeId}`);
         }
-        await callback.onMessage(message, entry);
+        await callback.onMessage(message, entry, attemptTelemetry);
     }
 }

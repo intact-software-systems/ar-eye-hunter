@@ -1,7 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { requiresClientWrite } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { requiresClientWrite, type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
     toClientMutationIssuedSessionAuthority,
@@ -17,25 +17,28 @@ import { toConnectClientSessionMutationInput } from '@shared-server/rallar-syste
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import {
-    ClientMutationIdempotencyConflictError,
-    validateClientMutation
-} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+    assertClientMutation,
+    ClientMutationIdempotencyConflictError
+} from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 
-export type PostgresClientPhaseDriver = Readonly<{
-    connectSession(
-        scope: StateScope,
-        principalId: string,
-        clientInstanceId: string,
-        sessionId: string,
-        request: ConnectClientSessionRequest
-    ): Promise<ClientMutationComputed>;
+export interface PostgresClientSessionInput {
+    readonly scope: StateScope;
+    readonly principalId: string;
+    readonly clientInstanceId: string;
+    readonly sessionId: string;
+    readonly request: ConnectClientSessionRequest;
+}
+
+export interface PostgresClientPhaseDriver {
+    connectSession(input: PostgresClientSessionInput): Promise<ClientMutationComputed>;
     expireExpiredSessions(atEpochMs: number): Promise<readonly ClientMutationComputed[]>;
-}>;
+}
 
 export interface PostgresClientPhaseDriverOptions {
     readonly sql: PSqlSql;
@@ -51,14 +54,9 @@ type PostgresClientMutationExecutor = (
     authority: IssuedAuthSession | null
 ) => Promise<ClientMutationComputed>;
 
-interface ConnectPostgresClientSessionInput {
+interface ConnectPostgresClientSessionInput extends PostgresClientSessionInput {
     readonly options: PostgresClientPhaseDriverOptions;
     readonly execute: PostgresClientMutationExecutor;
-    readonly scope: StateScope;
-    readonly principalId: string;
-    readonly clientInstanceId: string;
-    readonly sessionId: string;
-    readonly request: ConnectClientSessionRequest;
 }
 
 export function createPostgresClientPhaseDriver(
@@ -71,15 +69,11 @@ export function createPostgresClientPhaseDriver(
     });
     const execute = createPostgresClientMutationExecutor(options, service);
     return {
-        connectSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
+        connectSession: async (input) =>
             await connectPostgresClientSession({
                 options,
                 execute,
-                scope,
-                principalId,
-                clientInstanceId,
-                sessionId,
-                request
+                ...input
             }),
         expireExpiredSessions: async (atEpochMs) => {
             const written: ClientMutationComputed[] = [];
@@ -100,7 +94,7 @@ export function createPostgresClientPhaseDriver(
 
 function createPostgresClientMutationExecutor(
     options: PostgresClientPhaseDriverOptions,
-    service: ReturnType<typeof createClientStateService>
+    service: ClientStateService
 ): PostgresClientMutationExecutor {
     const attemptsByCommandId = new Map<string, number>();
     return async (commandInput, authority) => {
@@ -128,7 +122,8 @@ function createPostgresClientMutationExecutor(
             );
             const read = await service.read(command);
             const computed = computeClientMutation({ command, read });
-            const issue = validateClientMutation({ command, read, computed })[0];
+            assertClientMutation({ command, read, computed });
+            const issue = validateClientMutationAuthorityPolicy(command, read)[0];
             if (issue !== undefined) {
                 throw issue.cause;
             }
@@ -154,7 +149,7 @@ function createPostgresClientMutationExecutor(
 
 async function writePostgresClientMutation(
     options: PostgresClientPhaseDriverOptions,
-    service: ReturnType<typeof createClientStateService>,
+    service: ClientStateService,
     computed: ClientMutationComputed
 ): Promise<void> {
     if (!requiresClientWrite(computed)) {

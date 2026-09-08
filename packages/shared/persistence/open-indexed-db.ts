@@ -1,10 +1,13 @@
+import { Either } from '../resilience/Either.ts';
+import { toError } from '../resilience/to-error.ts';
+
 interface IndexedDbIndexDefinition {
     readonly name: string;
     readonly keyPath: string | readonly string[];
     readonly unique?: boolean;
 }
 
-interface IndexedDbStoreDefinition<InitialRecord extends object> {
+export interface IndexedDbStoreDefinition<InitialRecord extends object> {
     readonly name: string;
     readonly keyPath: string;
     readonly indexes?: readonly IndexedDbIndexDefinition[];
@@ -32,7 +35,7 @@ export class IndexedDbConnection {
         this.openDatabase = openDatabase;
     }
 
-    async get(): Promise<IDBDatabase> {
+    async open(): Promise<IDBDatabase> {
         if (!this.opening) {
             this.opening = this.openDatabase().then((db) => {
                 db.onversionchange = () => {
@@ -56,18 +59,22 @@ export class IndexedDbConnection {
     }
 }
 
-export async function openIndexedDbWithStore<InitialRecord extends object>(
+export async function openIndexedDbWithStores<InitialRecord extends object>(
     dbName: string,
-    definition: IndexedDbStoreDefinition<InitialRecord>
+    definitions: readonly IndexedDbStoreDefinition<InitialRecord>[]
 ): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') {
         throw new Error('IndexedDB is not supported in this environment');
     }
-    const store = toIndexedDbStoreSchema(definition);
-    const database = await openIndexedDb(dbName, store);
+    const stores = definitions.map(toIndexedDbStoreSchema);
+    const validated = validateIndexedDbStoreNames(stores);
+    if (validated.left) {
+        throw validated.left;
+    }
+    const database = await openIndexedDb(dbName, stores);
     database.onversionchange = () => database.close();
     try {
-        assertIndexedDbStoreSchema(database, store);
+        assertIndexedDbDatabaseSchema(database, stores);
         return database;
     }
     catch (error) {
@@ -93,14 +100,34 @@ function toIndexedDbStoreSchema<InitialRecord extends object>(
     };
 }
 
+function validateIndexedDbStoreNames(
+    stores: readonly IndexedDbStoreSchema<object>[]
+): Either<Error, readonly IndexedDbStoreSchema<object>[]> {
+    const names = new Set(stores.map((store) => store.name));
+    return stores.length === 0 || names.size !== stores.length
+        ? Either.ofLeft(new Error('IndexedDB schema requires distinct store names'))
+        : Either.ofRight(stores);
+}
+
+function assertIndexedDbDatabaseSchema(
+    db: IDBDatabase,
+    stores: readonly IndexedDbStoreSchema<object>[]
+): void {
+    if (
+        db.objectStoreNames.length !== stores.length ||
+        stores.some((store) => !db.objectStoreNames.contains(store.name))
+    ) {
+        throw new Error('IndexedDB database stores do not match the required schema');
+    }
+    for (const store of stores) {
+        assertIndexedDbStoreSchema(db, store);
+    }
+}
+
 function assertIndexedDbStoreSchema(
     db: IDBDatabase,
     store: IndexedDbStoreSchema<object>
 ): void {
-    const actualStoreNames = [...db.objectStoreNames];
-    if (actualStoreNames.length !== 1 || actualStoreNames[0] !== store.name) {
-        throw new Error('IndexedDB database stores do not match the required schema');
-    }
     const objectStore = db.transaction(store.name).objectStore(store.name);
     if (!isEqualKeyPath(objectStore.keyPath, store.keyPath)) {
         throw new Error(
@@ -130,16 +157,24 @@ function formatKeyPath(keyPath: string | string[] | null): string {
 
 async function openIndexedDb<InitialRecord extends object>(
     dbName: string,
-    store: IndexedDbStoreSchema<InitialRecord>
+    stores: readonly IndexedDbStoreSchema<InitialRecord>[]
 ): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(dbName);
-
+        let schemaWriteError: Error | undefined;
         request.onupgradeneeded = () => {
-            createIndexedDbStore(request.result, store);
+            try {
+                for (const store of stores) {
+                    createIndexedDbStore(request.result, store);
+                }
+            }
+            catch (error) {
+                schemaWriteError = toError(error);
+                request.transaction!.abort();
+            }
         };
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+        request.onerror = () => reject(schemaWriteError ?? request.error ?? new Error('IndexedDB open failed'));
     });
 }
 

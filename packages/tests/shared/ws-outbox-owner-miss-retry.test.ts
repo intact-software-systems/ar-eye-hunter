@@ -1,4 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi,
+    type MockInstance
+} from 'vitest';
+
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
@@ -10,26 +20,18 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     ConnectionContext,
     JsonWebSocketServer,
     type EncodedJsonWebSocketMessage
-} from '@shared/websocket/JsonWebSocketServer.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi,
-    type MockInstance
-} from 'vitest';
+} from '@shared/websocket/json-web-socket-server.ts';
 
 import { createFlakyOutboundAdmissionStore } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
@@ -66,15 +68,14 @@ describe('durable WS outbox owner misses', () => {
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
         const nonOwner = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: createSocket().socket,
             name: 'server-without-target',
             targetResolver: { resolvePeerRecipients: () => [] },
             outboundDeliveryOutcome: (outcome) => misses.push(outcome)
         });
+        onTestFinished(() => nonOwner.dispose());
         const owner = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
@@ -82,6 +83,7 @@ describe('durable WS outbox owner misses', () => {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             }
         });
+        onTestFinished(() => owner.dispose());
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
@@ -111,7 +113,7 @@ describe('durable WS outbox owner misses', () => {
         const base = createALOutboundAdmissionStore({
             namespace: 'ws-owner-claim-conflict',
             supersedenceTrackTtlMs: 60_000,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
             retention: normalizeALRuntimeStoreRetention()
         });
         let claimCalls = 0;
@@ -125,7 +127,6 @@ describe('durable WS outbox owner misses', () => {
             }
         });
         const owner = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
@@ -134,12 +135,13 @@ describe('durable WS outbox owner misses', () => {
             },
             outboundStores: { admissionStore }
         });
+        onTestFinished(() => owner.dispose());
 
         await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        expect(claimCalls).toBeGreaterThanOrEqual(3);
-        expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
+        await vi.waitFor(() => {
+            expect(claimCalls).toBeGreaterThanOrEqual(3);
+            expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
+        });
     });
 
     it('publishes a wrong-claimant outbox key so the socket owner delivers it', async () => {
@@ -168,15 +170,13 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: nonOwner,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'non-owner',
-            delivery: 'key'
+            publisherId: 'non-owner'
         });
         installQueueBoxPubSubBridge({
             wsQBoxServerService: owner,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'owner',
-            delivery: 'key'
+            publisherId: 'owner'
         });
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
@@ -214,7 +214,7 @@ describe('durable WS outbox owner misses', () => {
             bridge: bus,
             channel: 'ws',
             publisherId: 'claimant',
-            delivery: 'key',
+
             timing: (event) => timing.push(event)
         });
         installQueueBoxPubSubBridge({
@@ -222,7 +222,7 @@ describe('durable WS outbox owner misses', () => {
             bridge: bus,
             channel: 'ws',
             publisherId: 'remote',
-            delivery: 'key',
+
             timing: (event) => timing.push(event)
         });
 
@@ -262,16 +262,14 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: claimant,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'claimant',
-            delivery: 'key'
+            publisherId: 'claimant'
         });
         await claimantReadiness;
         const remoteReadiness = installQueueBoxPubSubBridge({
             wsQBoxServerService: remote,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'remote',
-            delivery: 'key'
+            publisherId: 'remote'
         });
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
             createUnicastMessage('published-before-readiness', 'reply-before-readiness'),
@@ -320,8 +318,7 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: service,
             bridge: createBridgeBus(),
             channel: 'ws',
-            publisherId: 'claimant',
-            delivery: 'key'
+            publisherId: 'claimant'
         });
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
@@ -356,8 +353,7 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: service,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'claimant',
-            delivery: 'key'
+            publisherId: 'claimant'
         });
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
@@ -368,13 +364,14 @@ describe('durable WS outbox owner misses', () => {
     it.each(['before', 'after'] as const)(
         'durably retries a remote owner send failure %s claimant completion',
         async (race) => {
+            vi.useFakeTimers({ toFake: ['Date'] });
             const outbox = new InMemoryQueueBox();
             const original = QueueBoxUtilities.toResourceEntryFromMsg(
                 createUnicastMessage(),
                 EnqueuedType.WS_OUTBOX
             );
             await outbox.enqueue(original);
-            const bus: QueueBoxPubSubBridge & { drain?(): Promise<void>; } = race === 'before'
+            const bus: DrainableBridgeBus = race === 'before'
                 ? createBridgeBus()
                 : createFireAndForgetBridgeBus();
             const claimant = createService({
@@ -404,15 +401,14 @@ describe('durable WS outbox owner misses', () => {
                 wsQBoxServerService: claimant,
                 bridge: bus,
                 channel: 'ws',
-                publisherId: 'claimant',
-                delivery: 'key'
+                publisherId: 'claimant'
             });
             installQueueBoxPubSubBridge({
                 wsQBoxServerService: remote,
                 bridge: bus,
                 channel: 'ws',
                 publisherId: 'remote',
-                delivery: 'key',
+
                 retryPolicy: remoteRetryPolicy,
                 jitterUnit: () => 0
             });
@@ -434,7 +430,7 @@ describe('durable WS outbox owner misses', () => {
                 { retryPolicy: remoteRetryPolicy, jitterUnit: () => 0 }
             )).resolves.toBeUndefined();
 
-            await new Promise((resolve) => setTimeout(resolve, 55));
+            vi.advanceTimersByTime(55);
             await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
             await bus.drain?.();
 
@@ -464,15 +460,16 @@ function createUnicastMessage(
 
 function createSocket(): WsOutboxTestSocket {
     const socket = new JsonWebSocketServer();
-    const connection = new TestWebSocket('ws://test.invalid');
-    connection.open();
-    socket.connections.set(
-        'writer-session',
-        new ConnectionContext('writer-session', connection)
-    );
+    for (const id of ['writer-session', 'local-session', 'remote-session']) {
+        const connection = new TestWebSocket(`ws://${id}.invalid`);
+        connection.open();
+        socket.addConnection(new ConnectionContext({ id, socket: connection }));
+    }
     const encodedSends: Array<[string, EncodedJsonWebSocketMessage]> = [];
+    const send = socket.sendEncoded.bind(socket);
     const sendEncoded = vi.spyOn(socket, 'sendEncoded').mockImplementation(
         (connectionId: string, encoded: EncodedJsonWebSocketMessage) => {
+            send(connectionId, encoded);
             encodedSends.push([connectionId, encoded]);
         }
     );
@@ -480,8 +477,7 @@ function createSocket(): WsOutboxTestSocket {
 }
 
 function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerService {
-    return createDefaultWsQueueBoxServerService({
-        inbox: new InMemoryQueueBox(),
+    const service = createDefaultWsQueueBoxServerService({
         outbox: input.outbox,
         socket: input.socket.socket,
         name: input.name,
@@ -490,6 +486,8 @@ function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerServi
             resolveBroadcastRecipients: input.resolveRecipients
         }
     });
+    onTestFinished(() => service.dispose());
+    return service;
 }
 
 function createBridgeBus(): QueueBoxPubSubBridge {
@@ -504,7 +502,11 @@ function createBridgeBus(): QueueBoxPubSubBridge {
     };
 }
 
-function createFireAndForgetBridgeBus(): QueueBoxPubSubBridge & { drain(): Promise<void>; } {
+interface DrainableBridgeBus extends QueueBoxPubSubBridge {
+    drain?(): Promise<void>;
+}
+
+function createFireAndForgetBridgeBus(): DrainableBridgeBus {
     const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
     let published: QueueBoxPubSubMessage[] = [];
     return {
@@ -522,23 +524,20 @@ function createFireAndForgetBridgeBus(): QueueBoxPubSubBridge & { drain(): Promi
     };
 }
 
-function createDelayedSecondSubscriberBridgeBus():
-    & QueueBoxPubSubBridge
-    & Readonly<{
-        releaseSecondSubscription(): void;
-    }> {
+interface DelayedBridgeBus extends QueueBoxPubSubBridge {
+    releaseSecondSubscription(): void;
+}
+
+function createDelayedSecondSubscriberBridgeBus(): DelayedBridgeBus {
     const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
     let subscriptionCount = 0;
-    let releaseSecondSubscription: () => void = () => undefined;
-    const secondSubscription = new Promise<void>((resolve) => {
-        releaseSecondSubscription = resolve;
-    });
+    const secondSubscription = Promise.withResolvers<void>();
 
     return {
         subscribe: async (_channel, subscriber) => {
             subscriptionCount += 1;
             if (subscriptionCount === 2) {
-                await secondSubscription;
+                await secondSubscription.promise;
             }
             subscribers.push(subscriber);
         },
@@ -547,21 +546,21 @@ function createDelayedSecondSubscriberBridgeBus():
                 subscribers.map(async (subscriber) => await subscriber(message))
             );
         },
-        releaseSecondSubscription
+        releaseSecondSubscription: () => secondSubscription.resolve()
     };
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1,
-        10,
-        { maxAttempts: 3, delaysAfterAttemptMs: [1, 1], maxDelayMs: 1, jitterRatio: 0, staleDueThresholdMs: 1 }
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1,
+        maxFairnessSelectionsInWindow: 10,
+        retryPolicy: { maxAttempts: 3, delaysAfterAttemptMs: [1, 1], maxDelayMs: 1, jitterRatio: 0, staleDueThresholdMs: 1 }
+    });
 }
 
 async function readEntry(queue: InMemoryQueueBox): Promise<ResourceEntry> {

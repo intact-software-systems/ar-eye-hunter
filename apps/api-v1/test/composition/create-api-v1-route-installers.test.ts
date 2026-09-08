@@ -6,7 +6,7 @@ import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/cr
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 import {

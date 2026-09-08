@@ -1,13 +1,19 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { EffectiveGroupTopologyConfig, StoredGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 
@@ -19,7 +25,11 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
-import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import {
     computeRtcTopologyOutboxInsert,
@@ -382,6 +392,7 @@ function createMessageContext(
     return {
         enqueue: wireEnqueue,
         message,
+        attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 7, selectedDueAtEpochMs: 0 },
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,

@@ -1,3 +1,4 @@
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -13,7 +14,7 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
@@ -30,7 +31,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -306,7 +307,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const result = await pending;
             assert.equal(result.right !== undefined, true);
@@ -331,7 +332,7 @@ Deno.test(
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 assert.equal((await join).left, undefined);
             }
@@ -354,7 +355,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const duplicateJoinResult = await duplicateJoin;
             assert.equal(duplicateJoinResult.left, undefined);
@@ -398,7 +399,7 @@ Deno.test(
 
             await outboxReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const afterSummary = await sql<ResourceInboxLifecycleRow[]>`
       select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
@@ -496,7 +497,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             assert.equal((await pending).right !== undefined, true);
 
@@ -715,7 +716,8 @@ Deno.test(
                 );
                 const read = await service.read(command);
                 const computed = computeClientMutation({ command, read });
-                validateClientMutation({ command, read, computed });
+                assertClientMutation({ command, read, computed });
+                assert.deepEqual(validateClientMutationAuthorityPolicy(command, read), []);
                 assert.equal(computed.outcome, 'write');
                 if (computed.outcome !== 'write') {
                     throw new Error('Expected applied client write');

@@ -1,51 +1,183 @@
-// deno-lint-ignore-file no-explicit-any
+import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
+import type {
+    RallarBlackBoxTestWsCloseCommand,
+    RallarBlackBoxTestWsOpenCommand,
+    RallarBlackBoxTestWsSendCommand
+} from '../../rallar-bb-test/types.ts';
+import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
 import {
     executeRallarRemoteBrowserCommand,
-    resolveRallarRemoteBrowserConfig,
+    readRallarRemoteBrowserConfig,
+    RemoteBrowserObservationSync,
     syncRallarRemoteBrowserEvents,
-    toRallarRemoteBrowserCommandId,
     type RallarRemoteBrowserConfig,
     type RallarRemoteBrowserControlFetch
 } from '../rallar-remote-browser-provider.ts';
+import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
+import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import {
     toWsConnectionName,
     toWsExpectedConnectionName,
     toWsFailureStatus,
-    toWsSuccessStatus,
+    toWsSuccessStatus
+} from '../ws/ws-interaction-statuses.ts';
+import {
     waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
     waitForWsMessageCount,
-    waitForWsMessages
+    waitForWsMessages,
+    type WsInteraction,
+    type WsInteractionRequest,
+    type WsInteractionResult,
+    type WsWaitContext
 } from '../ws/ws-wait-expectations.ts';
 import {
+    assertRemoteDestinationAllowed,
+    assertRemotePayloadWithinLimit,
     isRallarRemoteBrowserRequest,
     remoteBrowserFetch,
     remoteBrowserOptions,
     remoteResultValue
 } from './remote-browser-execution.ts';
-import {
-    toRemoteWsCloseCommand,
-    toRemoteWsOpenCommand,
-    toRemoteWsPayload,
-    toRemoteWsSendCommand,
-    toWsUrl
-} from './remote-websocket-commands.ts';
 
-function toRemoteWsConfig(interaction: any, config: any, context: any): RallarRemoteBrowserConfig {
-    return resolveRallarRemoteBrowserConfig(
-        interaction.request,
-        config,
-        context,
-        remoteBrowserOptions(context)
-    );
+namespace RemoteWsConnection {
+    export interface Input {
+        readonly url: string;
+        readonly commandId: string;
+        readonly remote: RallarRemoteBrowserConfig;
+        readonly fetchFn: RallarRemoteBrowserControlFetch;
+        readonly context: RemoteWsContext;
+        readonly interaction: WsInteraction;
+    }
 }
 
-function isRemoteWsConnection(context: any, connectionName: string): boolean {
-    return context.wsConnections?.[connectionName]?.remote === true;
+class RemoteWsConnection {
+    readonly remote = true;
+    readonly readyState = 1;
+    readonly url: string;
+    readonly #input: RemoteWsConnection.Input;
+
+    constructor(input: RemoteWsConnection.Input) {
+        this.#input = input;
+        this.url = input.url;
+    }
+
+    async close(code?: number, reason?: string): Promise<void> {
+        const { remote, fetchFn, context, interaction, commandId } = this.#input;
+        invalidateRemoteWsObservations(toWsConnectionName(interaction.request), context);
+        const result = await executeRallarRemoteBrowserCommand({
+            remote: remote,
+            fetchFn: fetchFn,
+            context: context,
+            command: {
+                ...toRemoteWsCloseCommand(`${commandId}-auto-close`, interaction),
+                code,
+                reason
+            }
+        });
+        if (!result.ok) {
+            throw new Error(result.error?.message ?? 'Remote WebSocket close failed');
+        }
+    }
 }
 
-export function shouldExecuteRemoteWsInteraction(interaction: any, context: any): boolean {
+interface RemoteWsContext extends WsWaitContext {
+    readonly wsConnections: Record<string, RemoteWsConnection | WebSocket | undefined>;
+    readonly wsCloseEvents: Record<string, unknown[] | undefined>;
+}
+
+function toWsUrl(request: WsInteractionRequest): string | undefined {
+    return request.url || request.path;
+}
+
+function toRemoteWsPayload(request: WsInteractionRequest): unknown {
+    return request.send !== undefined
+        ? request.send
+        : request.message !== undefined
+        ? request.message
+        : request.body;
+}
+
+function toRemoteWsOpenCommand(
+    commandId: string,
+    interaction: WsInteraction,
+    context: RemoteWsContext
+): RallarBlackBoxTestWsOpenCommand {
+    const request = interaction.request;
+    const url = toWsUrl(request);
+    assertRemoteDestinationAllowed({ request, context, url, label: 'WebSocket' });
+    return {
+        kind: 'ws.open',
+        commandId,
+        connection: toWsConnectionName(request),
+        url,
+        protocols: request.protocols,
+        headers: request.headers,
+        timeoutMs: request.timeoutMs === undefined ? undefined : Number(request.timeoutMs),
+        metadata: {
+            blackBoxRunner: request
+        }
+    };
+}
+
+function toRemoteWsSendCommand(
+    commandId: string,
+    interaction: WsInteraction,
+    context: RemoteWsContext
+): RallarBlackBoxTestWsSendCommand {
+    const request = interaction.request;
+    const data = toRemoteWsPayload(request);
+    assertRemotePayloadWithinLimit({ request, context, value: data, label: 'WebSocket send' });
+    return {
+        kind: 'ws.send',
+        commandId,
+        connection: toWsConnectionName(request),
+        data,
+        timeoutMs: request.timeoutMs === undefined ? undefined : Number(request.timeoutMs),
+        metadata: {
+            blackBoxRunner: request
+        }
+    };
+}
+
+function toRemoteWsCloseCommand(
+    commandId: string,
+    interaction: WsInteraction
+): RallarBlackBoxTestWsCloseCommand {
+    const request = interaction.request;
+    return {
+        kind: 'ws.close',
+        commandId,
+        connection: toWsConnectionName(request),
+        code: request.closeCode !== undefined ? request.closeCode : request.code,
+        reason: request.closeReason !== undefined ? request.closeReason : request.reason,
+        timeoutMs: request.timeoutMs === undefined ? undefined : Number(request.timeoutMs),
+        metadata: {
+            blackBoxRunner: request
+        }
+    };
+}
+
+function readRemoteWsConfig(
+    interaction: WsInteraction,
+    config: WsInteractionConfig,
+    context: RemoteWsContext
+): RallarRemoteBrowserConfig {
+    return readRallarRemoteBrowserConfig({
+        request: interaction.request,
+        config: config,
+        context: context,
+        options: remoteBrowserOptions(context)
+    });
+}
+
+function isRemoteWsConnection(context: RemoteWsContext, connectionName: string): boolean {
+    const connection = context.wsConnections[connectionName];
+    return connection !== undefined && 'remote' in connection && connection.remote;
+}
+
+export function shouldExecuteRemoteWsInteraction(interaction: WsInteraction, context: RemoteWsContext): boolean {
     const action = interaction.request.action || 'send';
     const connectionName = action === 'wait' || action === 'expect'
         ? toWsExpectedConnectionName(interaction)
@@ -54,117 +186,85 @@ export function shouldExecuteRemoteWsInteraction(interaction: any, context: any)
         isRemoteWsConnection(context, connectionName);
 }
 
-function startRemoteWsEventSync(
-    remote: RallarRemoteBrowserConfig,
-    fetchFn: RallarRemoteBrowserControlFetch,
-    context: any
-): number {
-    let syncing = false;
-    return setInterval(() => {
-        if (syncing) {
-            return;
-        }
-        syncing = true;
-        void syncRallarRemoteBrowserEvents(remote, fetchFn, context)
-            .catch(() => {
-                // Wait helpers surface missing events through their normal timeout diagnostics.
-            })
-            .finally(() => {
-                syncing = false;
-            });
-    }, remote.pollIntervalMs) as any as number;
+function invalidateRemoteWsObservations(connectionName: string, context: RemoteWsContext): void {
+    const losses = context.wsObservationLoss ??= {};
+    losses[connectionName] = (losses[connectionName] ?? 0) + 1;
+    context.wsMessages[connectionName] = [];
 }
 
 interface WaitWithRemoteWsEventSyncInput {
+    readonly observations?: WaitObservationSource;
     readonly remote: RallarRemoteBrowserConfig;
     readonly fetchFn: RallarRemoteBrowserControlFetch;
-    readonly context: any;
-    readonly wait: () => Promise<any>;
+    readonly context: RemoteWsContext;
+    readonly interaction: WsInteraction;
+    readonly config: WsInteractionConfig;
+    readonly details?: Readonly<Record<string, unknown>>;
 }
 
-async function waitWithRemoteWsEventSync(input: WaitWithRemoteWsEventSyncInput): Promise<any> {
-    const { remote, fetchFn, context, wait } = input;
+async function waitWithRemoteWsEventSync(input: WaitWithRemoteWsEventSyncInput): Promise<WsInteractionResult> {
+    const { remote, fetchFn, context } = input;
     await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
-    const interval = startRemoteWsEventSync(remote, fetchFn, context);
+    const observations = new RemoteBrowserObservationSync({ kind: 'events', remote, fetchFn, context });
+    observations.start();
     try {
-        return await wait();
+        try {
+            return await waitForRemoteWsExpectation({ ...input, observations });
+        }
+        finally {
+            await observations.stop();
+        }
     }
-    finally {
-        clearInterval(interval);
+    catch (error) {
+        const connections = new Set([
+            ...Object.keys(context.wsConnections),
+            toWsExpectedConnectionName(input.interaction)
+        ]);
+        const losses = context.wsObservationLoss ??= {};
+        for (const connection of connections) {
+            losses[connection] = (losses[connection] ?? 0) + 1;
+        }
+        return toWsFailureStatus({
+            config: input.config,
+            interaction: input.interaction,
+            result: 'WebSocket observations were discarded because remote polling failed',
+            details: { ...input.details, exception: error instanceof Error ? error.message : String(error) }
+        });
     }
 }
 
-interface ToRemoteWsFailureInput {
-    readonly config: any;
-    readonly interaction: any;
-    readonly result: string;
-    readonly details?: any;
-}
-
-function toRemoteWsFailure(input: ToRemoteWsFailureInput): any {
-    const { config, interaction, result, details = {} } = input;
-    return toWsFailureStatus(config, interaction, result, details);
-}
-
-async function openRemoteWs(interaction: any, config: any, context: any): Promise<any> {
+async function openRemoteWs(
+    interaction: WsInteraction,
+    config: WsInteractionConfig,
+    context: RemoteWsContext
+): Promise<WsInteractionResult> {
     const connectionName = toWsConnectionName(interaction.request);
     const url = toWsUrl(interaction.request);
 
     if (!url) {
-        return toRemoteWsFailure({ config, interaction, result: 'WebSocket URL is missing' });
+        return toWsFailureStatus({ config, interaction, result: 'WebSocket URL is missing', details: {} });
     }
 
-    const remote = toRemoteWsConfig(interaction, config, context);
+    const remote = readRemoteWsConfig(interaction, config, context);
     const fetchFn = remoteBrowserFetch(context);
-    const commandId = toRallarRemoteBrowserCommandId('ws-open', interaction);
+    const identity = toRallarRemoteBrowserCommandId('ws-open', interaction);
+    if (identity.right === undefined) {
+        return toWsFailureStatus({
+            config,
+            interaction,
+            result: 'Remote WebSocket connect failed',
+            details: { exception: identity.left?.message }
+        });
+    }
+    const commandId = identity.right;
 
     try {
         const command = toRemoteWsOpenCommand(commandId, interaction, context);
-        const result = await executeRallarRemoteBrowserCommand(remote, fetchFn, context, command);
-        if (!result.ok) {
-            return toRemoteWsFailure({
-                config,
-                interaction,
-                result: 'Remote WebSocket connect failed',
-                details: {
-                    connection: connectionName,
-                    remote,
-                    result
-                }
-            });
-        }
-
-        context.wsConnections[connectionName] = {
-            remote: true,
-            readyState: 1,
-            url,
-            close: (code?: number, reason?: string) => {
-                void executeRallarRemoteBrowserCommand(
-                    remote,
-                    fetchFn,
-                    context,
-                    {
-                        ...toRemoteWsCloseCommand(`${commandId}-auto-close`, interaction),
-                        code,
-                        reason
-                    }
-                );
-            }
-        };
-        context.wsMessages[connectionName] = context.wsMessages[connectionName] || [];
-        context.wsCloseEvents[connectionName] = context.wsCloseEvents[connectionName] || [];
-
-        return toWsSuccessStatus(config, interaction, {
-            connection: connectionName,
-            url,
-            readyState: 1,
-            remote,
-            commandId,
-            result: remoteResultValue(result)
-        });
+        const result = await executeRallarRemoteBrowserCommand({ remote, fetchFn, context, command });
+        return completeRemoteWsOpen({ interaction, config, context, remote, fetchFn, commandId, url, result });
     }
     catch (error) {
-        return toRemoteWsFailure({
+        return toWsFailureStatus({
             config,
             interaction,
             result: 'Remote WebSocket connect failed',
@@ -177,11 +277,125 @@ async function openRemoteWs(interaction: any, config: any, context: any): Promis
     }
 }
 
-async function sendRemoteWs(interaction: any, config: any, context: any): Promise<any> {
-    const connectionName = toWsConnectionName(interaction.request);
+interface RemoteWsOpenCompletion extends RemoteWsConnection.Input {
+    readonly config: WsInteractionConfig;
+    readonly result: ControlResultEnvelope;
+}
 
+function completeRemoteWsOpen(input: RemoteWsOpenCompletion): WsInteractionResult {
+    const { interaction, config, context, remote, fetchFn, commandId, url, result } = input;
+    const connectionName = toWsConnectionName(interaction.request);
+    if (!result.ok) {
+        return toWsFailureStatus({
+            config,
+            interaction,
+            result: 'Remote WebSocket connect failed',
+            details: {
+                connection: connectionName,
+                remote,
+                result
+            }
+        });
+    }
+
+    invalidateRemoteWsObservations(connectionName, context);
+    context.wsConnections[connectionName] = new RemoteWsConnection({
+        url,
+        commandId,
+        remote,
+        fetchFn,
+        context,
+        interaction
+    });
+    context.wsCloseEvents[connectionName] ??= [];
+
+    return toWsSuccessStatus(config, interaction, {
+        connection: connectionName,
+        url,
+        readyState: 1,
+        remote,
+        commandId,
+        result: remoteResultValue(result)
+    });
+}
+
+interface RemoteWsSendObservation {
+    readonly remote: RallarRemoteBrowserConfig;
+    readonly commandId: string;
+    readonly connection: string;
+    readonly sent: unknown;
+    readonly result: ControlResultEnvelope;
+    readonly sendStartedAtEpochMs: number;
+    readonly sendEndedAtEpochMs: number;
+}
+
+interface RemoteWsSendDetails {
+    readonly sentConnection: string;
+    readonly sent: unknown;
+    readonly remote: RallarRemoteBrowserConfig;
+    readonly commandId: string;
+    readonly result: unknown;
+    readonly sendResult: {
+        readonly status: 'sent' | 'failed';
+        readonly connection: string;
+        readonly remoteResult: unknown;
+    };
+    readonly sendStartedAtEpochMs: number;
+    readonly sendEndedAtEpochMs: number;
+    readonly sendLatencyMs: number;
+}
+
+interface RemoteWsSendSubmission extends WaitWithRemoteWsEventSyncInput {
+    readonly commandId: string;
+}
+
+async function sendRemoteWsCommand(input: RemoteWsSendSubmission): Promise<RemoteWsSendObservation> {
+    const { interaction, remote, fetchFn, context, commandId } = input;
+    const command = toRemoteWsSendCommand(commandId, interaction, context);
+    const sendStartedAtEpochMs = context.dependencies.now();
+    const result = await executeRallarRemoteBrowserCommand({
+        remote: remote,
+        fetchFn: fetchFn,
+        context: context,
+        command: command
+    });
+    return {
+        remote,
+        commandId,
+        connection: toWsConnectionName(interaction.request),
+        sent: command.data,
+        result,
+        sendStartedAtEpochMs,
+        sendEndedAtEpochMs: context.dependencies.now()
+    };
+}
+
+function computeRemoteWsSendDetails(observation: RemoteWsSendObservation): RemoteWsSendDetails {
+    return {
+        sentConnection: observation.connection,
+        sent: observation.sent,
+        remote: observation.remote,
+        commandId: observation.commandId,
+        result: remoteResultValue(observation.result),
+        sendResult: {
+            status: observation.result.ok ? 'sent' : 'failed',
+            connection: observation.connection,
+            remoteResult: remoteResultValue(observation.result)
+        },
+        sendStartedAtEpochMs: observation.sendStartedAtEpochMs,
+        sendEndedAtEpochMs: observation.sendEndedAtEpochMs,
+        sendLatencyMs: observation.sendEndedAtEpochMs - observation.sendStartedAtEpochMs
+    };
+}
+
+async function sendRemoteWs(
+    interaction: WsInteraction,
+    config: WsInteractionConfig,
+    context: RemoteWsContext
+): Promise<WsInteractionResult> {
+    const connectionName = toWsConnectionName(interaction.request);
     if (!context.wsConnections[connectionName]) {
-        return toRemoteWsFailure({
+        return toWsFailureStatus({
             config,
             interaction,
             result: 'WebSocket connection is not open',
@@ -190,195 +404,151 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
             }
         });
     }
-
-    const remote = toRemoteWsConfig(interaction, config, context);
+    const remote = readRemoteWsConfig(interaction, config, context);
     const fetchFn = remoteBrowserFetch(context);
-    const commandId = toRallarRemoteBrowserCommandId('ws-send', interaction);
-    const sentPayload = toRemoteWsPayload(interaction.request);
-
+    const identity = toRallarRemoteBrowserCommandId('ws-send', interaction);
+    if (identity.right === undefined) {
+        return toRemoteWsSendException({ interaction, config, remote, connectionName, error: identity.left });
+    }
+    const commandId = identity.right;
     try {
-        const command = toRemoteWsSendCommand(commandId, interaction, context);
-        const sendStartedAtEpochMs = Date.now();
-        const result = await executeRallarRemoteBrowserCommand(remote, fetchFn, context, command);
-        const sendEndedAtEpochMs = Date.now();
-        if (!result.ok) {
-            return toRemoteWsFailure({
+        const observation = await sendRemoteWsCommand({ interaction, config, context, remote, fetchFn, commandId });
+        const details = computeRemoteWsSendDetails(observation);
+        if (!observation.result.ok) {
+            return toWsFailureStatus({
                 config,
                 interaction,
                 result: 'Remote WebSocket send failed',
                 details: {
+                    ...details,
                     connection: connectionName,
-                    remote,
-                    result,
-                    sent: sentPayload,
-                    sendResult: {
-                        status: 'failed',
-                        connection: connectionName,
-                        remoteResult: remoteResultValue(result)
-                    },
-                    sendStartedAtEpochMs,
-                    sendEndedAtEpochMs,
-                    sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
+                    result: observation.result
                 }
             });
         }
-
-        const details = {
-            sentConnection: connectionName,
-            sent: sentPayload,
-            remote,
-            commandId,
-            result: remoteResultValue(result),
-            sendResult: {
-                status: 'sent',
-                connection: connectionName,
-                remoteResult: remoteResultValue(result)
-            },
-            sendStartedAtEpochMs,
-            sendEndedAtEpochMs,
-            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
-        };
-
-        if (interaction.response?.count !== undefined) {
+        if (
+            interaction.response?.count !== undefined || interaction.response?.messages || interaction.response?.message
+        ) {
             return waitWithRemoteWsEventSync({
                 remote,
                 fetchFn,
                 context,
-                wait: () => waitForWsMessageCount({ interaction, config, context, details })
+                interaction,
+                config,
+                details: { ...details }
             });
         }
-
-        if (interaction.response?.messages) {
-            return waitWithRemoteWsEventSync({
-                remote,
-                fetchFn,
-                context,
-                wait: () => waitForWsMessages(interaction, config, context, details)
-            });
-        }
-
-        if (interaction.response?.message) {
-            return waitWithRemoteWsEventSync({
-                remote,
-                fetchFn,
-                context,
-                wait: () => waitForWsMessage(interaction, config, context, details)
-            });
-        }
-
         await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
-        return toWsSuccessStatus(config, interaction, {
-            connection: connectionName,
-            sent: sentPayload,
-            remote,
-            commandId,
-            result: remoteResultValue(result),
-            sendResult: details.sendResult,
-            sendStartedAtEpochMs,
-            sendEndedAtEpochMs,
-            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
-        });
+        return toWsSuccessStatus(config, interaction, { ...details, connection: connectionName });
     }
     catch (error) {
-        return toRemoteWsFailure({
-            config,
-            interaction,
-            result: 'Remote WebSocket send failed',
-            details: {
-                connection: connectionName,
-                remote,
-                sent: sentPayload,
-                sendResult: {
-                    status: 'failed',
-                    connection: connectionName,
-                    exception: error instanceof Error ? error.message : String(error)
-                },
-                exception: error instanceof Error ? error.message : String(error)
-            }
-        });
+        return toRemoteWsSendException({ interaction, config, remote, connectionName, error });
     }
 }
 
-async function waitRemoteWs(interaction: any, config: any, context: any): Promise<any> {
-    const remote = toRemoteWsConfig(interaction, config, context);
-    const fetchFn = remoteBrowserFetch(context);
-    return waitWithRemoteWsEventSync({
-        remote,
-        fetchFn,
-        context,
-        wait: () => {
-            if (interaction.response?.absent !== undefined) {
-                return waitForWsMessageAbsence({
-                    interaction,
-                    config,
-                    context,
-                    details: { remote }
-                });
-            }
+interface RemoteWsSendException {
+    readonly interaction: WsInteraction;
+    readonly config: WsInteractionConfig;
+    readonly remote: RallarRemoteBrowserConfig;
+    readonly connectionName: string;
+    readonly error: unknown;
+}
 
-            // Before `message`, which resolves on its first match and so cannot
-            // tell "exactly one" from "at least one".
-            if (interaction.response?.count !== undefined) {
-                return waitForWsMessageCount({
-                    interaction,
-                    config,
-                    context,
-                    details: { remote }
-                });
-            }
-
-            if (interaction.response?.close !== undefined) {
-                return waitForWsClose(interaction, config, context, {
-                    remote
-                });
-            }
-
-            if (interaction.response?.messages) {
-                return waitForWsMessages(interaction, config, context, {
-                    remote
-                });
-            }
-
-            if (interaction.response?.message) {
-                return waitForWsMessage(interaction, config, context, {
-                    remote
-                });
-            }
-
-            return Promise.resolve(toRemoteWsFailure({
-                config,
-                interaction,
-                result: 'WebSocket wait expects expect.message, expect.messages, expect.count, ' +
-                    'expect.absent, or expect.close'
-            }));
+function toRemoteWsSendException(input: RemoteWsSendException): WsInteractionResult {
+    const { interaction, config, remote, connectionName, error } = input;
+    const exception = error instanceof Error ? error.message : String(error);
+    return toWsFailureStatus({
+        config,
+        interaction,
+        result: 'Remote WebSocket send failed',
+        details: {
+            connection: connectionName,
+            remote,
+            sent: toRemoteWsPayload(interaction.request),
+            sendResult: { status: 'failed', connection: connectionName, exception },
+            exception
         }
     });
 }
 
-async function closeRemoteWs(interaction: any, config: any, context: any): Promise<any> {
-    const connectionName = toWsConnectionName(interaction.request);
-    const remote = toRemoteWsConfig(interaction, config, context);
+function waitForRemoteWsExpectation(input: WaitWithRemoteWsEventSyncInput): Promise<WsInteractionResult> {
+    const { interaction, config, context, observations, details = { remote: input.remote } } = input;
+    if (interaction.response?.absent !== undefined) {
+        return waitForWsMessageAbsence({
+            interaction,
+            config,
+            context,
+            details,
+            observations,
+            observeCloseEvents: true
+        });
+    }
+    if (interaction.response?.count !== undefined) {
+        return waitForWsMessageCount({ interaction, config, context, details, observations, observeCloseEvents: true });
+    }
+    if (interaction.response?.close !== undefined) {
+        return waitForWsClose({ interaction, config, context, details });
+    }
+    if (interaction.response?.messages) {
+        return waitForWsMessages({ interaction, config, context, details });
+    }
+    if (interaction.response?.message) {
+        return waitForWsMessage({ interaction, config, context, details });
+    }
+    return Promise.resolve(
+        toWsFailureStatus({
+            config,
+            interaction,
+            result:
+                'WebSocket wait expects expect.message, expect.messages, expect.count, expect.absent, or expect.close'
+        })
+    );
+}
+
+async function waitRemoteWs(
+    interaction: WsInteraction,
+    config: WsInteractionConfig,
+    context: RemoteWsContext
+): Promise<WsInteractionResult> {
+    const remote = readRemoteWsConfig(interaction, config, context);
     const fetchFn = remoteBrowserFetch(context);
-    const commandId = toRallarRemoteBrowserCommandId('ws-close', interaction);
+    return await waitWithRemoteWsEventSync({ remote, fetchFn, context, interaction, config });
+}
+
+async function closeRemoteWs(
+    interaction: WsInteraction,
+    config: WsInteractionConfig,
+    context: RemoteWsContext
+): Promise<WsInteractionResult> {
+    const connectionName = toWsConnectionName(interaction.request);
+    const remote = readRemoteWsConfig(interaction, config, context);
+    const fetchFn = remoteBrowserFetch(context);
+    const identity = toRallarRemoteBrowserCommandId('ws-close', interaction);
+    if (identity.right === undefined) {
+        return toWsFailureStatus({
+            config,
+            interaction,
+            result: 'Remote WebSocket close failed',
+            details: { exception: identity.left?.message }
+        });
+    }
+    const commandId = identity.right;
     const command = toRemoteWsCloseCommand(commandId, interaction);
 
     try {
-        const result = await executeRallarRemoteBrowserCommand(remote, fetchFn, context, command);
+        const result = await executeRallarRemoteBrowserCommand({ remote, fetchFn, context, command });
         await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
-        delete context.wsConnections[connectionName];
-
         if (!result.ok) {
-            return toRemoteWsFailure({
+            return toWsFailureStatus({
                 config,
                 interaction,
                 result: 'Remote WebSocket close failed',
-                details: {
-                    connection: connectionName,
-                    remote,
-                    result
-                }
+                details: { connection: connectionName, remote, result }
             });
         }
+
+        invalidateRemoteWsObservations(connectionName, context);
+        delete context.wsConnections[connectionName];
 
         return toWsSuccessStatus(config, interaction, {
             connection: connectionName,
@@ -390,7 +560,7 @@ async function closeRemoteWs(interaction: any, config: any, context: any): Promi
         });
     }
     catch (error) {
-        return toRemoteWsFailure({
+        return toWsFailureStatus({
             config,
             interaction,
             result: 'Remote WebSocket close failed',
@@ -403,7 +573,11 @@ async function closeRemoteWs(interaction: any, config: any, context: any): Promi
     }
 }
 
-export function executeRemoteWsInteraction(interaction: any, config: any, context: any): Promise<any> {
+export function executeRemoteWsInteraction(
+    interaction: WsInteraction,
+    config: WsInteractionConfig,
+    context: RemoteWsContext
+): Promise<WsInteractionResult> {
     const action = interaction.request.action || 'send';
 
     if (action === 'connect' || action === 'open') {
@@ -422,9 +596,7 @@ export function executeRemoteWsInteraction(interaction: any, config: any, contex
         return closeRemoteWs(interaction, config, context);
     }
 
-    return Promise.resolve(toRemoteWsFailure({
-        config,
-        interaction,
-        result: 'Unsupported WebSocket action: ' + action
-    }));
+    return Promise.resolve(
+        toWsFailureStatus({ config, interaction, result: 'Unsupported WebSocket action: ' + action, details: {} })
+    );
 }

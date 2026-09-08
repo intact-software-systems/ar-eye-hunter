@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import type { OverlayMulticasterContext } from '@shared/multicast/OverlayMulticastContracts.ts';
+import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -383,6 +383,7 @@ function createOverlayContext(peerIds: readonly string[]): OverlayMulticasterCon
         group: { ...snapshot.group, displayName: 'Group 1', metadataVersion: 1, presenceVersion: 1 }
     };
     return {
+        nowMs: 1_000,
         overlayId: groupId,
         room,
         overlay: {

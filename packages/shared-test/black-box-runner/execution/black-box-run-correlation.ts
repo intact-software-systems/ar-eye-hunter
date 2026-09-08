@@ -11,19 +11,6 @@ export interface RunnerCorrelationConfig {
     payloadField: string;
 }
 
-export function randomUuid(): string {
-    const cryptoApi = globalThis.crypto as Crypto | undefined;
-    if (cryptoApi?.randomUUID) {
-        return cryptoApi.randomUUID();
-    }
-
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
-        const random = Math.floor(Math.random() * 16);
-        const value = character === 'x' ? random : (random & 0x3) | 0x8;
-        return value.toString(16);
-    });
-}
-
 export function stringOption(...values: any[]): string | undefined {
     for (const value of values) {
         if (typeof value === 'string' && value.length > 0) {
@@ -38,7 +25,13 @@ function booleanOption(...values: any[]): boolean {
     return values.some((value) => value === true);
 }
 
-export function toRunnerCorrelationConfig(options: any = {}): RunnerCorrelationConfig {
+export interface RunnerCorrelationConfigInput {
+    readonly options: any;
+    readonly createUuid: () => string;
+}
+
+export function toRunnerCorrelationConfig(input: RunnerCorrelationConfigInput): RunnerCorrelationConfig {
+    const { options, createUuid } = input;
     const rawCorrelation = isRecord(options.correlation)
         ? options.correlation
         : {};
@@ -50,7 +43,7 @@ export function toRunnerCorrelationConfig(options: any = {}): RunnerCorrelationC
             rawCorrelation.runId,
             options.runnerRunId,
             options.runId
-        ) || 'bb-run-' + randomUuid(),
+        ) || 'bb-run-' + createUuid(),
         enabled,
         injectHeaders: enabled && booleanOption(
             rawCorrelation.injectHeaders,

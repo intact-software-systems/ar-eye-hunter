@@ -173,7 +173,7 @@ export interface RallarServerWsProxyContext {
         fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult>;
     toRoom(
-        roomId: string,
+        roomRef: GroupRef,
         message: ALMessage,
         options?: RallarServerWsBroadcastOptions
     ): Promise<RallarServerWsPublishResult>;

@@ -6,7 +6,7 @@ import {
     vi
 } from 'vitest';
 
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from './test-web-socket.ts';
 

@@ -1,3 +1,4 @@
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import {
     describe,
     expect,
@@ -19,7 +20,7 @@ import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-sy
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -29,7 +30,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
-    CLIENT_STATE_TEST_SCOPE as SCOPE,
+    CLIENT_STATE_TEST_SCOPE,
     createResilience,
     issuedSession,
     processAuthenticatedClientMutation,
@@ -46,14 +47,14 @@ describe('AppClientInbox authentication', () => {
             topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'explicit-validation-time',
             contextId: toAuthenticatedClientMutationContextId({
-                scope: SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 callerClientId: authority.clientId,
                 callerSessionId: authority.sessionId
             }),
             senderId: authority.clientId,
             data: {
-                scope: SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 request: {
                     requestId: 'explicit-validation-time',
@@ -89,7 +90,7 @@ describe('AppClientInbox authentication', () => {
             contextId: 'wrong-context',
             senderId: 'mallory',
             data: {
-                scope: SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'mallory',
                 clientInstanceId: 'browser',
                 sessionId: 'mallory-session',
@@ -165,14 +166,14 @@ describe('AppClientInbox authentication', () => {
                 topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                 resourceId: 'malformed-client-result',
                 contextId: toAuthenticatedClientMutationContextId({
-                    scope: SCOPE,
+                    scope: CLIENT_STATE_TEST_SCOPE,
                     principalId: 'alice',
                     callerClientId: authority.clientId,
                     callerSessionId: authority.sessionId
                 }),
                 senderId: authority.clientId,
                 data: {
-                    scope: SCOPE,
+                    scope: CLIENT_STATE_TEST_SCOPE,
                     principalId: 'alice',
                     request: {
                         username: 'alice',
@@ -231,7 +232,7 @@ describe('AppClientInbox authentication', () => {
             contextId: 'application=wrong:workspace=wrong:principal=alice:caller=alice:session=alice-session',
             senderId: 'alice',
             data: {
-                scope: SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 request: {
                     username: 'alice',
@@ -259,7 +260,7 @@ describe('AppClientInbox authentication', () => {
         });
         const command = await toClientMutationCommand(
             toUpsertClientPrincipalMutationInput({
-                scope: SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 request: {
                     username: 'alice',
@@ -277,13 +278,14 @@ describe('AppClientInbox authentication', () => {
                 attemptCount: 1,
                 expireAtEpochMs: Date.now() + 60_000
             },
-            toClientMutationIssuedSessionAuthority(mallory, SCOPE, 'upsertPrincipal')
+            toClientMutationIssuedSessionAuthority(mallory, CLIENT_STATE_TEST_SCOPE, 'upsertPrincipal')
         );
         const read = await service.read(command);
         const computed = computeClientMutation({ command, read });
 
+        assertClientMutation({ command, read, computed });
         expect(
-            validateClientMutation({ command, read, computed }).map(({ path }) => path)
+            validateClientMutationAuthorityPolicy(command, read).map(({ path }) => path)
         ).toContain('command.authority.principalId');
     });
 
@@ -321,10 +323,10 @@ describe('AppClientInbox authentication', () => {
                 {
                     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                     resourceId: 'mallory-targets-alice',
-                    contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+                    contextId: `${CLIENT_STATE_TEST_SCOPE.applicationId}:${CLIENT_STATE_TEST_SCOPE.workspaceId}:alice`,
                     senderId: 'mallory',
                     data: {
-                        scope: SCOPE,
+                        scope: CLIENT_STATE_TEST_SCOPE,
                         principalId: 'alice',
                         request: {
                             username: 'alice',
@@ -340,7 +342,7 @@ describe('AppClientInbox authentication', () => {
 
         expect(
             await createTestClientStateRepository(runtimeRepository).readSnapshot({
-                ...SCOPE,
+                ...CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice'
             })
         ).toBeUndefined();
@@ -348,7 +350,7 @@ describe('AppClientInbox authentication', () => {
     });
 
     it('rereads revoked durable authority after an outer AppInbox CAS retry', async () => {
-        const harness = await createRevokedAuthorityRetryHarness();
+        const harness = await createRevokedAuthorityRetryHarness(Date.now);
         const pending = startRevokedAuthorityMutation(harness);
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -360,7 +362,7 @@ describe('AppClientInbox authentication', () => {
         expect(harness.wasRevoked()).toBe(true);
         expect(
             await createTestClientStateRepository(harness.runtimeRepository).readSnapshot({
-                ...SCOPE,
+                ...CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice'
             })
         ).toBeUndefined();
@@ -380,7 +382,7 @@ interface RevokedAuthorityRetryHarness {
     wasRevoked(): boolean;
 }
 
-async function createRevokedAuthorityRetryHarness(): Promise<RevokedAuthorityRetryHarness> {
+async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Promise<RevokedAuthorityRetryHarness> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
@@ -400,7 +402,7 @@ async function createRevokedAuthorityRetryHarness(): Promise<RevokedAuthorityRet
                 key,
                 value: JSON.stringify({ competing: true }),
                 expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                updatedTimestamp: new Date().toISOString(),
+                updatedTimestamp: new Date(nowEpochMs()).toISOString(),
                 revision: 0
             });
         }
@@ -446,10 +448,10 @@ function startRevokedAuthorityMutation(harness: RevokedAuthorityRetryHarness) {
         {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'alice-revoked-after-conflict',
-            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+            contextId: `${CLIENT_STATE_TEST_SCOPE.applicationId}:${CLIENT_STATE_TEST_SCOPE.workspaceId}:alice`,
             senderId: 'alice',
             data: {
-                scope: SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 request: {
                     username: 'alice',

@@ -1,3 +1,5 @@
+import { Either } from '@shared/resilience/Either.ts';
+
 export interface WsOpenCloseEvent {
     readonly code?: number;
     readonly reason?: string;
@@ -25,6 +27,28 @@ export interface ResolveWsOpenExpectationInput {
 export interface WsOpenExpectationResult {
     readonly satisfied: boolean;
     readonly message?: string;
+}
+
+export function validateWsOpenExpectation(value: unknown): Either<Error, WsOpenExpectation> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return Either.ofLeft(new TypeError('WebSocket open expectation must be a record'));
+    }
+    if ('rejected' in value && value.rejected !== undefined && typeof value.rejected !== 'boolean') {
+        return Either.ofLeft(new TypeError('WebSocket rejected expectation must be a boolean'));
+    }
+    const close = 'close' in value ? value.close : undefined;
+    if (
+        close !== undefined && (
+            typeof close !== 'object' || close === null || Array.isArray(close) ||
+            ('code' in close && close.code !== undefined && !Number.isSafeInteger(close.code)) ||
+            ('reason' in close && close.reason !== undefined && typeof close.reason !== 'string')
+        )
+    ) {
+        return Either.ofLeft(
+            new TypeError('WebSocket open close expectation requires an integer code and string reason')
+        );
+    }
+    return Either.ofRight(value as WsOpenExpectation);
 }
 
 function toCloseMismatch(

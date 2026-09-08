@@ -1,7 +1,6 @@
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import assert from 'node:assert/strict';
-import { queuePubSubDeliveryForMode } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
 import { createPostgresQueuePubSubBridge } from '../../src/db/create-postgres-queue-pub-sub-bridge.ts';
 
 interface RecordedPostgresNotification {
@@ -12,15 +11,7 @@ interface RecordedPostgresNotification {
 interface CreateQueueBoxPubSubMessageOptions {
     readonly channel?: string;
     readonly publisherId: string;
-    readonly delivery?: 'entry' | 'key';
-    readonly payload?: string;
 }
-
-Deno.test('api-v1 queue pub/sub config uses key delivery only for postgres', () => {
-    assert.equal(queuePubSubDeliveryForMode('postgres'), 'key');
-    assert.equal(queuePubSubDeliveryForMode('local'), 'entry');
-    assert.equal(queuePubSubDeliveryForMode('disabled'), 'entry');
-});
 
 Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async () => {
     const notifications: RecordedPostgresNotification[] = [];
@@ -36,8 +27,7 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
     await bridge.publish(
         'ws-channel',
         createMessage({
-            publisherId: 'publisher-local',
-            payload: 'x'.repeat(16_000)
+            publisherId: 'publisher-local'
         })
     );
 
@@ -51,8 +41,9 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
         },
         channel: 'ws-channel',
         publisherId: 'publisher-local',
-        typeId: 'WS_INBOX',
-        delivery: 'key'
+        typeId: 'WS_OUTBOX',
+        delivery: 'key',
+        expiresAtMs: 1_800_000_000_000
     });
     assert.equal('payload' in notifications[0].message, false);
 });
@@ -61,8 +52,7 @@ Deno.test('postgres queue pub/sub bridge forwards JSON wire values and rejects i
     const received: JsonWireValue[] = [];
     const accepted = createMessage({
         channel: 'ws-channel',
-        publisherId: 'publisher-remote',
-        delivery: 'key'
+        publisherId: 'publisher-remote'
     });
     const unexpected = { ...accepted, unexpected: true };
     const bridge = createPostgresQueuePubSubBridge({
@@ -85,7 +75,7 @@ Deno.test('postgres queue pub/sub bridge forwards JSON wire values and rejects i
 function createMessage(
     options: CreateQueueBoxPubSubMessageOptions
 ): QueueBoxPubSubMessage {
-    const base = {
+    return {
         key: {
             topicId: 'topic',
             resourceId: 'resource-1',
@@ -93,19 +83,20 @@ function createMessage(
         },
         channel: options.channel ?? 'ws-channel',
         publisherId: options.publisherId,
-        typeId: 'WS_INBOX'
-    };
-
-    if (options.delivery === 'key') {
-        return {
-            ...base,
-            delivery: 'key'
-        };
-    }
-
-    return {
-        ...base,
-        delivery: 'entry',
-        payload: options.payload ?? JSON.stringify({ ok: true })
+        typeId: 'WS_OUTBOX',
+        delivery: 'key',
+        expiresAtMs: 1_800_000_000_000
     };
 }
+
+Deno.test('postgres queue pub/sub bridge rejects notices outside the wire budget before notify', async () => {
+    let notified = false;
+    const bridge = createPostgresQueuePubSubBridge({
+        notify: async () => {
+            notified = true;
+        },
+        listen: async () => {}
+    });
+    await assert.rejects(() => bridge.publish('ws-channel', createMessage({ publisherId: 'p'.repeat(8_000) })));
+    assert.equal(notified, false);
+});

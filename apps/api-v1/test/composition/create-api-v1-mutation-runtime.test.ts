@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
     const databaseProbe = createDatabaseProbe();
@@ -19,9 +19,9 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         adminClientIds: ['admin-1'],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {
-            inbox: toResilienceDto(),
-            outbox: toResilienceDto(),
-            appOutbox: toResilienceDto()
+            inbox: createApiV1TestQueueResilience(),
+            outbox: createApiV1TestQueueResilience(),
+            appOutbox: createApiV1TestQueueResilience()
         }
     });
 

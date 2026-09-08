@@ -8,6 +8,7 @@
     "strict": true,
     "allowImportingTsExtensions": true,
     "types": [
+      "node",
       "vite/client"
     ],
     "lib": [

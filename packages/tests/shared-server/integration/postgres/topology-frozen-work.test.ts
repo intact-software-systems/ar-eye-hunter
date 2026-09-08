@@ -21,7 +21,7 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -177,15 +177,15 @@ async function runUntilCompleted(harness: FrozenWorkHarness, key: Key): Promise<
     throw new Error(`Topology work did not complete: ${key.resourceId}`);
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(100, duration, duration, duration),
-        1,
-        1,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 1,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 function connectingSnapshot(base: GroupSnapshot, groupRevision: number): GroupSnapshot {

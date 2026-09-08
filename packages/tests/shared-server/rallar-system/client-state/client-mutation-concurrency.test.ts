@@ -1,23 +1,26 @@
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 import {
-    CLIENT_MUTATION_BASE_EPOCH_MS as BASE_EPOCH_MS,
+    CLIENT_MUTATION_BASE_EPOCH_MS,
     connect,
     PrincipalChangeAfterFirstReadRepository
 } from './client-mutation-concurrency-test-runtime.ts';
-import { clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
+import { clientMutationPrincipalRef } from './client-mutation-validation-test-fixtures.ts';
 
 describe('client mutation pure retry compute', () => {
     it('is deterministic and does not mutate a frozen command or read', async () => {
@@ -26,8 +29,8 @@ describe('client mutation pure retry compute', () => {
 
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        expect(validateClientMutation({ command, read, computed: first })).toEqual([]);
-        expect(validateClientMutation({ command, read, computed: second })).toEqual([]);
+        assertClientMutation({ command, read, computed: first });
+        assertClientMutation({ command, read, computed: second });
 
         expect(second).toEqual(first);
         expect(command).toEqual(structuredClone(command));
@@ -49,10 +52,10 @@ function deepFreeze<T>(value: T): T {
 describe('client mutation stable-read concurrency', () => {
     it('reads the principal guard and snapshot from one stable aggregate observation', async () => {
         const runtime = new PrincipalChangeAfterFirstReadRepository();
-        await connect({ runtime, sessionId: 'session-a', generationId: 'generation-a', nowEpochMs: BASE_EPOCH_MS });
+        await connect({ runtime, sessionId: 'session-a', generationId: 'generation-a', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
         const repository = createTestClientStateRepository(runtime);
         const session = await repository.findSession({
-            ...principalRef('alice'),
+            ...clientMutationPrincipalRef('alice'),
             clientInstanceId: 'browser',
             sessionId: 'session-a'
         });
@@ -72,7 +75,7 @@ describe('client mutation stable-read concurrency', () => {
         );
 
         runtime.armPrincipalChangeAfterRead();
-        const read = await createClientMutationService({
+        const read = await createClientStateService({
             runtimeRepository: runtime,
             clientStateEventStore: new InMemoryClientStateEventStore(),
             serviceId: 'client-service'

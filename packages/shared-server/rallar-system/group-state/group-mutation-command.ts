@@ -19,7 +19,7 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';

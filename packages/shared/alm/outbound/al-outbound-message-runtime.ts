@@ -1,32 +1,42 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
-import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
-import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '../../services/QueueBoxUtilities.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
+import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '../../services/queue-box-utilities.ts';
 import type {
     ALOutboundAdmissionStore,
-    ALOutboundPreparedMessageDecoder,
-    ALPersistedOutboundEffect
+    ALOutboundDurableEffect,
+    ALOutboundEffectSnapshot,
+    ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
-import {
-    ALOutboundEffectDrain,
-    computeALOutboundEffectRetryDelayMs,
-    type ALOutboundEffectRunResult
-} from './al-outbound-effect-drain.ts';
 import { ALOutboundRepairAdmission } from './al-outbound-repair-admission.ts';
+import {
+    ALOutboundWorkHandler,
+    type ALOutboundWorkAttemptResult,
+    type ALOutboundWorkDisposition
+} from './al-outbound-work-handler.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
+import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
-export type ALOutboundPreparedSendStatus = 'sent' | 'no-targets' | 'not-ready';
-
-export interface ALOutboundPreparedSendResult {
-    readonly status: ALOutboundPreparedSendStatus;
+export interface ALOutboundSettledSendResult {
+    readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
     readonly reason?: string;
     readonly retryAfterMs?: number;
 }
+
+export type ALOutboundPreparedSendResult =
+    | ALOutboundSettledSendResult
+    | Readonly<{
+        status: 'queued';
+        /** The transport retains this attempt until exactly one local terminal outcome. */
+        settled: Promise<ALOutboundSettledSendResult>;
+    }>;
 
 export interface ALOutboundAckTrackingPlan {
     readonly enabled: boolean;
@@ -67,6 +77,7 @@ export interface ALOutboundRepairRequest {
 }
 
 export interface ALOutboundDispatchPlan<TPrepared> {
+    readonly msg: ALMessage;
     readonly dropReason?: string;
     readonly persist: boolean;
     readonly preparedMessages: readonly TPrepared[];
@@ -115,8 +126,9 @@ export type ALOutboundRuntimeDiagnosticsSink = (
 ) => void;
 
 export type ALOutboundEnqueueStatus =
+    | 'pending-admission'
     | 'enqueued'
-    | 'sent-immediate'
+    | 'accepted'
     | 'skipped'
     | 'duplicate'
     | 'superseded'
@@ -135,13 +147,20 @@ export interface ALOutboundEnqueueResult {
 }
 
 export namespace ALOutboundMessageRuntime {
-    export interface Clock {
-        nowMs(): number;
+    export type PendingAdmissionAuthority =
+        | Readonly<{ status: 'authorized'; }>
+        | Readonly<{ status: 'rejected'; reason: string; }>
+        | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
+    export interface SendLifecycle {
+        readonly canonicalMessage: ALMessage;
+        /** The runtime owns this cancellation signal; disposal stops remaining local transport work. */
+        readonly signal: AbortSignal;
+        readonly expiresAtMs: number | undefined;
+        readonly leaseUntilMs: number | undefined;
     }
 
-    export interface Scheduler {
-        /** Runs the callback once after the delay; cancellation prevents a pending invocation. */
-        schedule(callback: () => void, delayMs: number): () => void;
+    export interface Clock {
+        nowMs(): number;
     }
 
     export interface BrowserLocks {
@@ -153,40 +172,46 @@ export namespace ALOutboundMessageRuntime {
         readonly admissionStore: ALOutboundAdmissionStore;
         readonly effectWorkerId: string;
         readonly clock: Clock;
-        readonly scheduler: Scheduler;
+        readonly random: () => number;
+        readonly queueEngine: InboxOutboxEngine;
+        readonly ownsQueueEngine: boolean;
         readonly browserLocks: BrowserLocks | undefined;
     }
 
     export interface Dependencies<TPrepared> extends Resources {
-        readonly outbox: QueueBoxResourceEntryRepository;
+        readonly readPendingAdmissionAuthority?: (
+            msg: ALMessage,
+            preparedMessages: readonly TPrepared[]
+        ) => Promise<PendingAdmissionAuthority>;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
         readonly planDequeuedMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
-        readonly beforeDequeueDispatch:
-            | ((msg: ALMessage, entry: ResourceEntry) => boolean | Promise<boolean>)
+        readonly afterDequeueAdmission:
+            | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly sendPreparedMessage: (
             prepared: TPrepared,
-            phase: ALOutboundDispatchPhase
-        ) => Promise<void | ALOutboundPreparedSendResult>;
+            phase: ALOutboundDispatchPhase,
+            lifecycle: SendLifecycle
+        ) => Promise<ALOutboundPreparedSendResult>;
         readonly planRepairMessage:
             | ((
                 msg: ALMessage,
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
-        readonly onFallbackDequeue: ((msg: ALMessage, entry: ResourceEntry) => Promise<void>) | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     }
 }
 
 export class ALOutboundMessageRuntime<TPrepared> {
+    private readonly sendAbortController = new AbortController();
     private readonly readyPromise: Promise<void>;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
-    private readonly effectDrain: ALOutboundEffectDrain<TPrepared>;
+    private readonly workHandler: ALOutboundWorkHandler<TPrepared>;
     private disposed = false;
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
@@ -196,7 +221,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.dispatchAdmission = new ALOutboundDispatchAdmission({
             admissionStore: dependencies.admissionStore,
             toOutboxEntry: dependencies.toOutboxEntry,
-            canFallback: dependencies.onFallbackDequeue !== undefined,
             decodePreparedMessage: dependencies.decodePreparedMessage,
             clock: dependencies.clock,
             browserLocks: dependencies.browserLocks,
@@ -210,11 +234,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
             planOutgoingMessage: dependencies.planOutgoingMessage,
             planRepairMessage: dependencies.planRepairMessage
         });
-        this.effectDrain = new ALOutboundEffectDrain({
+        this.workHandler = new ALOutboundWorkHandler({
             admissionStore: dependencies.admissionStore,
             effectWorkerId: dependencies.effectWorkerId,
             clock: dependencies.clock,
-            scheduler: dependencies.scheduler,
+            queueEngine: dependencies.queueEngine,
+            ownsQueueEngine: dependencies.ownsQueueEngine,
             decodePreparedMessage: dependencies.decodePreparedMessage,
             diagnostics: dependencies.diagnostics,
             runEffect: (effect) => this.runDurableEffect(effect)
@@ -228,13 +253,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return;
         }
 
-        await this.effectDrain.ready();
+        await this.workHandler.ready();
     }
 
     dispose(): void {
         this.disposed = true;
-        this.effectDrain.dispose();
+        this.workHandler.dispose();
         this.dispatchAdmission.dispose();
+        this.sendAbortController.abort();
+    }
+
+    get sendSignal(): AbortSignal {
+        return this.sendAbortController.signal;
     }
 
     async enqueueIfAbsent(
@@ -250,18 +280,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
 
-        const computed = await this.commitDispatchPlanWithRetry({
+        const computed = await this.commitDispatchPlan({
             msg,
             planner: dispatchPlan === undefined
                 ? this.dependencies.planOutgoingMessage
                 : () => dispatchPlan,
             intent: 'enqueue',
             phase: 'immediate',
-            options: {}
+            options: { explicitPlan: dispatchPlan !== undefined }
         });
         return {
             status: computed.status,
-            message: msg,
+            message: computed.msg ?? msg,
             entry: computed.entries[0],
             entries: computed.entries,
             reason: computed.reason
@@ -270,7 +300,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     async dequeue(
         typesToDequeue: Set<string>,
-        resilience: ResilienceDto
+        resilience: ResourceInboxResilience
     ): Promise<void> {
         if (this.disposed) {
             return;
@@ -280,29 +310,58 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return;
         }
         await QueueBoxUtilities.defaultDequeue(
-            this.dependencies.outbox,
-            typesToDequeue,
-            resilience,
-            async (entry) => {
-                const msg = this.dependencies.readMessageFromEntry(entry);
-                const clusterDispatch = this.dependencies.beforeDequeueDispatch?.(msg, entry);
-                const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
-                    ? clusterDispatch ?? false
-                    : await clusterDispatch;
-                const computed = await this.commitDispatchPlanWithRetry({
-                    msg,
-                    planner: this.dependencies.planDequeuedMessage,
-                    intent: 'dequeue',
-                    phase: 'dequeue',
-                    options: {
-                        fallbackEntry: entry
+            {
+                qbox: this.dependencies.admissionStore.workQueue,
+                typesToDequeue: typesToDequeue,
+                resilience: resilience,
+                onDequeuedDo: async (entry) => {
+                    const msg = this.readQueuedMessage(entry);
+                    if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
+                        return;
                     }
-                });
-                if (computed.status === 'no-route' && !clusterPublished) {
-                    throw new Error(computed.reason);
-                }
+                    const computed = await this.commitDispatchPlan({
+                        msg,
+                        planner: this.dependencies.planDequeuedMessage,
+                        intent: 'dequeue',
+                        phase: 'dequeue',
+                        options: {
+                            observedOutboxEntry: entry,
+                            attemptIdentity: JSON.stringify([
+                                'queue',
+                                entry.dequeueAudit.attempts,
+                                entry.dequeueAudit.startTs?.toString() ?? null
+                            ])
+                        }
+                    });
+                    if (
+                        computed.status === 'expired' || computed.status === 'superseded' ||
+                        computed.status === 'skipped'
+                    ) {
+                        return;
+                    }
+                    if (computed.status === 'failed') {
+                        throw new NonRetryableException(computed.reason);
+                    }
+                    if (computed.status === 'no-route') {
+                        throw new Error(computed.reason);
+                    }
+                    await this.dependencies.afterDequeueAdmission?.(msg, entry);
+                },
+                options: {}
             }
         );
+    }
+
+    private readQueuedMessage(entry: ResourceEntry): ALMessage {
+        try {
+            return this.dependencies.readMessageFromEntry(entry);
+        }
+        catch (error) {
+            if (error instanceof TypeError) {
+                throw new NonRetryableException(error.message);
+            }
+            throw error;
+        }
     }
 
     async acceptControlMessage(msg: ALMessage): Promise<boolean> {
@@ -312,24 +371,21 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
 
         const acceptance = await this.repairAdmission.acceptControlMessage(msg);
-        if (!acceptance.handled) {
+        if (!acceptance) {
             return false;
         }
 
-        if (acceptance.retryAtMs !== undefined) {
-            this.effectDrain.scheduleAt(acceptance.retryAtMs);
-        }
-        await this.effectDrain.requestCommittedDrain();
+        await this.workHandler.requestCommitted();
         return true;
     }
 
-    private async commitDispatchPlanWithRetry(
+    private async commitDispatchPlan(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);
 
-        if (result.committed) {
-            await this.effectDrain.drainCommitted();
+        if (result.committed || result.computed.status === 'pending-admission') {
+            await this.workHandler.processCommitted();
         }
 
         return result.computed;
@@ -345,62 +401,144 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async runDurableEffect(
-        effect: ALPersistedOutboundEffect<TPrepared>
-    ): Promise<ALOutboundEffectRunResult> {
+        effect: ALOutboundEffectSnapshot<TPrepared>
+    ): Promise<ALOutboundWorkAttemptResult> {
         if (effect.expireAtTimestamp <= this.readNowMs()) {
             return { status: 'completed' };
         }
 
         switch (effect.payload.kind) {
-            case 'send-prepared': {
-                const sendResult =
-                    await this.dependencies.sendPreparedMessage(effect.payload.prepared, effect.payload.phase) ??
-                        { status: 'sent' };
-                if (sendResult.status === 'not-ready') {
-                    return {
-                        status: 'reschedule',
-                        readyAtMs: this.readNowMs() +
-                            Math.max(
-                                0,
-                                sendResult.retryAfterMs ?? computeALOutboundEffectRetryDelayMs(effect.attempts)
-                            ),
-                        reason: sendResult.reason ?? 'Prepared outbound transport is not ready.'
-                    };
+            case 'admit-message':
+                return await this.admitPendingMessage(effect);
+            case 'send-prepared':
+                if (!effect.canonicalMessage) {
+                    throw new NonRetryableException('Prepared work has no canonical message');
                 }
-
-                return { status: 'completed' };
-            }
-            case 'enqueue-outbox':
-                if (effect.payload.replaceExisting) {
-                    await this.dependencies.outbox.enqueue(effect.payload.entry);
-                    return { status: 'completed' };
-                }
-
-                await this.dependencies.outbox.enqueueIfAbsent(effect.payload.entry);
-                return { status: 'completed' };
-            case 'fallback-dispatch':
-                if (this.dependencies.onFallbackDequeue) {
-                    await this.dependencies.onFallbackDequeue(effect.payload.msg, effect.payload.entry);
-                }
-                return { status: 'completed' };
+                return await this.writePreparedMessage(effect.payload, {
+                    canonicalMessage: effect.canonicalMessage,
+                    signal: this.sendSignal,
+                    expiresAtMs: effect.expireAtTimestamp,
+                    leaseUntilMs: effect.leaseUntilMs
+                }, effect.attempts);
             case 'ack-timeout':
                 await this.repairAdmission.handlePendingAckTimeout(effect.payload.msgId);
                 return { status: 'completed' };
             case 'repair-hint':
                 await this.repairAdmission.executeRepairFromHint(
                     effect.payload.msgId,
-                    effect.payload.request
+                    effect.payload.request,
+                    effect.effectId
                 );
                 return { status: 'completed' };
             case 'nack-retry':
                 await this.repairAdmission.retransmitByMsgId(effect.payload.msgId, {
-                    replaceExistingOutbox: true
+                    attemptIdentity: effect.effectId
                 });
                 return { status: 'completed' };
         }
     }
 
+    private async admitPendingMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALOutboundWorkDisposition> {
+        const pending = effect.payload;
+        const msg = effect.canonicalMessage;
+        if (pending.kind !== 'admit-message' || !msg) {
+            throw new NonRetryableException('Pending work has no canonical admission');
+        }
+        const authority = await this.dependencies.readPendingAdmissionAuthority?.(msg, pending.preparedMessages) ??
+            { status: 'authorized' };
+        if (this.disposed || pending.message.expiresAtMs <= this.readNowMs() || authority.status === 'rejected') {
+            return { status: 'completed' };
+        }
+        if (authority.status === 'not-ready') {
+            return { status: 'not-ready', readyAtMs: this.readNowMs() + authority.retryAfterMs };
+        }
+        await this.dispatchAdmission.commit({
+            msg,
+            planner: () => ({
+                msg,
+                persist: pending.policy.persist,
+                preparedMessages: pending.preparedMessages,
+                ackTracking: pending.policy.ackTracking ?? undefined,
+                retryTracking: pending.policy.retryTracking ?? undefined,
+                repairTracking: pending.policy.repairTracking ?? undefined,
+                supersedenceTracking: pending.policy.supersedenceTracking ?? undefined
+            }),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: { pendingAdmission: effect.entry }
+        });
+        return { status: 'completed' };
+    }
+
+    private async writePreparedMessage(
+        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }>,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle,
+        attempts: number
+    ): Promise<ALOutboundWorkAttemptResult> {
+        if (await this.dependencies.admissionStore.isMessageSuperseded(lifecycle.canonicalMessage)) {
+            return { status: 'completed' };
+        }
+        const receipts = await this.dependencies.admissionStore.readReceiptState(payload.message.msgId);
+        if (receipts && isALOutboundReceiptComplete(receipts)) {
+            return { status: 'completed' };
+        }
+        if (
+            (lifecycle.expiresAtMs !== undefined && lifecycle.expiresAtMs <= this.readNowMs()) ||
+            lifecycle.signal.aborted
+        ) {
+            return { status: 'completed' };
+        }
+        const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, attempts, this.dependencies.random());
+        const sendResult = await this.dependencies.sendPreparedMessage(
+            payload.prepared,
+            payload.phase,
+            lifecycle
+        );
+        if (sendResult.status === 'queued') {
+            return {
+                status: 'retained',
+                settled: sendResult.settled.then((settled) =>
+                    computeALOutboundSendDisposition(settled, {
+                        observedAtMs: this.readNowMs(),
+                        retryDelayMs: retry.delayMs ?? 0,
+                        expiresAtMs: lifecycle.expiresAtMs
+                    })
+                )
+            };
+        }
+        return computeALOutboundSendDisposition(sendResult, {
+            observedAtMs: this.readNowMs(),
+            retryDelayMs: retry.delayMs ?? 0,
+            expiresAtMs: lifecycle.expiresAtMs
+        });
+    }
+
     private readNowMs(): number {
         return this.dependencies.clock.nowMs();
     }
+}
+
+interface ALOutboundSettlementTiming {
+    readonly observedAtMs: number;
+    readonly retryDelayMs: number;
+    readonly expiresAtMs: number | undefined;
+}
+
+function computeALOutboundSendDisposition(
+    result: ALOutboundSettledSendResult,
+    timing: ALOutboundSettlementTiming
+): ALOutboundWorkDisposition {
+    if (timing.expiresAtMs !== undefined && timing.observedAtMs >= timing.expiresAtMs) {
+        return { status: 'completed' };
+    }
+    if (result.status !== 'not-ready' && result.status !== 'failed') {
+        return { status: 'completed' };
+    }
+    const retryAtMs = timing.observedAtMs + Math.max(1, result.retryAfterMs ?? timing.retryDelayMs);
+    return {
+        status: result.status === 'not-ready' ? 'not-ready' : 'reschedule',
+        readyAtMs: result.status === 'not-ready' && timing.expiresAtMs !== undefined
+            ? Math.min(retryAtMs, timing.expiresAtMs)
+            : retryAtMs
+    };
 }

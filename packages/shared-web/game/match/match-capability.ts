@@ -75,7 +75,7 @@ export async function publishRallarGameHostCapability<TInput, TIntent, TSnapshot
 
 function isSuccessfulMessageStatus(status: ALOutboundEnqueueStatus): boolean {
     return status === 'enqueued' ||
-        status === 'sent-immediate' ||
+        status === 'accepted' ||
         status === 'skipped' ||
         status === 'duplicate';
 }

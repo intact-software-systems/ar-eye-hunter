@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
 
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { isSameGroupRef, toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -25,7 +27,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         operationLog,
         groupSnapshots,
         observedRoomKeys: new Set<string>(),
-        cacheListeners: new Set<Parameters<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>[0]>(),
+        cacheListeners: new Set<StateCacheChangeListener>(),
         session: ctx.session,
         ctx,
         initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
@@ -80,7 +82,8 @@ vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts
     browserStateCacheLifecycle: {
         hydrate: roomWorkflowMocks.hydrateStateCache,
         onChange: roomWorkflowMocks.onCacheChange,
-        initialise: vi.fn()
+        initialise: vi.fn(),
+        cancelSnapshotAssemblies: vi.fn(() => undefined)
     }
 }));
 
@@ -101,12 +104,12 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
         (sessionId: string) =>
             roomWorkflowMocks.groupSnapshots.find((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === sessionId))?.group
     ),
-    findGroupStateSnapshotByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.groupSnapshots.find((snapshot) => isSameRoomRef(snapshot.group, roomRef))),
-    wasGroupStateSnapshotObservedByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.observedRoomKeys.has(toRoomKey(roomRef))),
+    findGroupStateSnapshotByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.groupSnapshots.find((snapshot) => isSameGroupRef(snapshot.group, roomRef))),
+    wasGroupStateSnapshotObservedByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.observedRoomKeys.has(toScopedRoomKey(roomRef))),
     getAllGroupStateSnapshots: vi.fn(() => [...roomWorkflowMocks.groupSnapshots]),
     removeGroupStateSnapshotIfUnchanged: vi.fn((roomRef: GroupRef, expected: GroupSnapshot) => {
         const index = roomWorkflowMocks.groupSnapshots.findIndex(
-            (snapshot) => snapshot === expected && isSameRoomRef(snapshot.group, roomRef)
+            (snapshot) => snapshot === expected && isSameGroupRef(snapshot.group, roomRef)
         );
         if (index < 0) {
             return false;
@@ -251,7 +254,7 @@ export function createRoomSnapshot(
 export function seedRoomSnapshots(snapshots: readonly GroupSnapshot[]): void {
     roomWorkflowMocks.groupSnapshots.splice(0, Infinity, ...snapshots);
     for (const snapshot of snapshots) {
-        roomWorkflowMocks.observedRoomKeys.add(toRoomKey(snapshot.group));
+        roomWorkflowMocks.observedRoomKeys.add(toScopedRoomKey(snapshot.group));
     }
 }
 
@@ -304,8 +307,8 @@ export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]):
 
 function upsertGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     for (const snapshot of snapshots) {
-        roomWorkflowMocks.observedRoomKeys.add(toRoomKey(snapshot.group));
-        const index = roomWorkflowMocks.groupSnapshots.findIndex((candidate) => isSameRoomRef(candidate.group, snapshot.group));
+        roomWorkflowMocks.observedRoomKeys.add(toScopedRoomKey(snapshot.group));
+        const index = roomWorkflowMocks.groupSnapshots.findIndex((candidate) => isSameGroupRef(candidate.group, snapshot.group));
         if (index < 0) {
             roomWorkflowMocks.groupSnapshots.push(snapshot);
         }
@@ -323,17 +326,5 @@ async function notifyCacheListeners(groups: readonly GroupSnapshot[]): Promise<v
                 groups
             })
         )
-    );
-}
-
-function toRoomKey(roomRef: GroupRef): string {
-    return `${roomRef.applicationId}/${roomRef.workspaceId}/${roomRef.groupId}`;
-}
-
-function isSameRoomRef(left: GroupRef, right: GroupRef): boolean {
-    return (
-        left.applicationId === right.applicationId &&
-        (left.workspaceId ?? '') === (right.workspaceId ?? '') &&
-        left.groupId === right.groupId
     );
 }

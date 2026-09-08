@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { JsonWebSocketServer } from '../../websocket/JsonWebSocketServer.ts';
+import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import type { WsServerResolvedRecipient, WsServerTargetResolver } from './ws-queue-box-server-contracts.ts';
 
 export namespace WsQueueBoxServerTargetResolution {
@@ -18,9 +18,10 @@ export class WsQueueBoxServerTargetResolution {
         this.#targetResolver = dependencies.targetResolver;
     }
 
-    resolvePeerIdForConnection(connectionId: string, message: ALMessage): string {
-        return this.#targetResolver.resolvePeerIdForConnection?.(connectionId, message) ??
-            connectionId;
+    resolvePeerIdForConnection(connectionId: string, message: ALMessage): string | undefined {
+        return this.#targetResolver.resolvePeerIdForConnection
+            ? this.#targetResolver.resolvePeerIdForConnection(connectionId, message)
+            : connectionId;
     }
 
     resolveOutboundRecipients(message: ALMessage): readonly WsServerResolvedRecipient[] {
@@ -94,9 +95,8 @@ export class WsQueueBoxServerTargetResolution {
             return [];
         }
 
-        return deduplicateRecipients(
-            peerIds.flatMap((peerId) => this.resolvePeerRecipients(peerId, message))
-        );
+        const requested = new Set(peerIds);
+        return this.resolveOutboundRecipients(message).filter((recipient) => requested.has(recipient.peerId));
     }
 
     private resolvePeerRecipients(

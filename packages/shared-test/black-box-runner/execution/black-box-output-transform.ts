@@ -4,9 +4,14 @@ import {
     evaluateSafeOutputTransform,
     SafeOutputTransformError
 } from '../scenario-transform/safe-output-transform.ts';
-import { addRedaction, isRecord } from './black-box-redaction.ts';
-import { randomUuid } from './black-box-run-correlation.ts';
-import { toResolverRoot, tryResolvePath } from './black-box-value-resolution.ts';
+import {
+    addRedaction,
+    isRecord
+} from './black-box-redaction.ts';
+import {
+    toResolverRoot,
+    tryResolvePath
+} from './black-box-value-resolution.ts';
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
@@ -56,8 +61,8 @@ export function evaluateScenarioTransform(input: EvaluateScenarioTransformInput)
         resolverRoot: toResolverRoot(input.context),
         result: input.result,
         operatorPath: input.operatorPath,
-        createUuid: randomUuid,
-        readTimestamp: Date.now
+        createUuid: input.context.dependencies.createUuid,
+        readTimestamp: input.context.dependencies.now
     });
 }
 

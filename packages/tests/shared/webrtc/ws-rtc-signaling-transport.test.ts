@@ -14,6 +14,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import {
@@ -25,8 +26,7 @@ import {
     type QRtcSignalingTransportCallbacks
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
-import { WsRtcSignalingTransport } from '@shared/webrtc/WsRtcSignalingTransport.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
@@ -41,46 +41,6 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     TestWebSocket.instances.length = 0;
-});
-
-describe('WsRtcSignalingTransport', () => {
-    it('reports socket lifecycle and forwards only matching decoded messages', async () => {
-        const client = new JsonWebSocketClient('ws://test');
-        onTestFinished(() => client.close());
-        const observations = createSignalingObservations();
-        const transport = new WsRtcSignalingTransport(client, 'rtc');
-        const socket = await openSignalingConnection(transport, observations.callbacks);
-        const matching = createEnvelope('rtc', { hello: true });
-
-        socket.receive(JSON.stringify(createEnvelope('other', { ignored: true })));
-        socket.receive(JSON.stringify(matching));
-        socket.dispatchEvent(new Event('error'));
-        socket.disconnect(1006, 'network-lost');
-
-        await vi.waitFor(() => expect(observations.messages).toEqual([matching]));
-        expect(observations.lifecycle).toEqual([
-            'open:session-1:token-1',
-            'error:[object Event]',
-            'close:session-1:token-1'
-        ]);
-    });
-
-    it('sends a signaling payload inside an addressed AL envelope', async () => {
-        const client = new JsonWebSocketClient('ws://test');
-        onTestFinished(() => client.close());
-        const transport = new WsRtcSignalingTransport(client, 'rtc');
-        const socket = await openSignalingConnection(transport, createSignalingObservations().callbacks);
-        const payload = createSignalingPayload();
-
-        await transport.send(payload);
-
-        expect(socket.sent).toHaveLength(1);
-        const sent = decodePersistedALMessage(socket.sent[0]);
-        expect(sent.payload.typeId).toBe('rtc');
-        expect(sent.id.senderId).toBe(payload.fromId);
-        expect(sent.targets).toEqual({ mode: 'unicast', toPeerId: payload.toId });
-        expect(JSON.parse(sent.payload.resource)).toEqual(payload);
-    });
 });
 
 describe('WsRtcSignalingTransportUsingWsQBox', () => {
@@ -99,9 +59,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         const ignored = createEnvelope('other', { ignored: true });
 
         socket.receive(JSON.stringify(ignored));
+        await vi.waitFor(() => expect(ignoredMessages).toEqual([ignored]));
         socket.receive(JSON.stringify(matching));
         await vi.waitFor(() => expect(observations.messages).toEqual([matching]));
-        expect(ignoredMessages).toEqual([ignored]);
 
         socket.dispatchEvent(new Event('error'));
         socket.disconnect(1006, 'network-lost');
@@ -128,7 +88,10 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(sent.payload.typeId).toBe('rtc');
         expect(sent.id.senderId).toBe(payload.fromId);
         expect(JSON.parse(sent.payload.resource)).toEqual(payload);
-        expect(await service.outbox.getAllKeys()).toEqual([]);
+        const rows = await Promise.all((await service.outbox.getAllKeys()).map((key) => service.outbox.getItem(key)));
+        expect(rows.some((row) => row && isPendingALOutboundWork(row))).toBe(false);
+        const canonical = rows.find((row) => row?.key.topicId === 'AL_OUTBOUND_MESSAGE');
+        expect(canonical?.resource).toBe(socket.sent[0]);
         expect(wakes).toBe(0);
     });
 
@@ -144,8 +107,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
         expect(wakes).toBe(1);
         const keys = await service.outbox.getAllKeys();
-        expect(keys).toHaveLength(1);
-        const entry = await service.outbox.getItem(keys[0]);
+        const rows = await Promise.all(keys.map((key) => service.outbox.getItem(key)));
+        const entry = rows.find((row) => row?.key.topicId === 'AL_OUTBOUND_MESSAGE');
+        expect(rows.some((row) => row?.key.topicId === 'AL_OUTBOUND' && isPendingALOutboundWork(row))).toBe(true);
         if (!entry) {
             throw new Error('Accepted signaling must be present in the outbox');
         }
@@ -155,7 +119,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(JSON.parse(sent.payload.resource)).toEqual(payload);
 
         service.close(1000, 'test-disconnect');
-        await transport.send(payload);
+        await expect(transport.send(payload)).rejects.toThrow();
         expect(wakes).toBe(1);
         expect(await service.outbox.getAllKeys()).toEqual(keys);
     });
@@ -164,7 +128,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 function createSignalingQueueBox(): WsQueueBoxClientService {
     const service = createDefaultWsQueueBoxClientService({
         socket: new JsonWebSocketClient('ws://test'),
-        inbox: new InMemoryQueueBox(new Map()),
+
         outbox: new InMemoryQueueBox(new Map()),
         sessionId: 'session-1'
     }).enableDefaultCallbacks();

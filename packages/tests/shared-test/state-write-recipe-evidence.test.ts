@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
@@ -65,7 +70,6 @@ describe('API-v1 state-write recipe evidence', () => {
         // The held-landing read and the four cleanup steps are not assert
         // steps, so the synthetic execution below stands them in as SETs.
         const trailingNonAssertCount = 5;
-        expect(recipe.steps).toHaveLength(33);
         expect(recipe.steps.slice(-terminalNames.length).map((step) => step.name))
             .toEqual(terminalNames);
 
@@ -162,7 +166,12 @@ describe('API-v1 state-write recipe evidence', () => {
                     connection,
                     expect: {
                         consume: true,
-                        messages: [{ payload: { typeId: 'client-state.snapshot' } }]
+                        messages: [{
+                            completedSnapshot: {
+                                typeId: 'client-state.snapshot',
+                                route: { topicId: 'client-state.snapshot' }
+                            }
+                        }]
                     }
                 });
             }

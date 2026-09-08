@@ -1,3 +1,4 @@
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import {
     describe,
     expect,
@@ -36,7 +37,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { authSession } from '../../group-state/group-state-test-runtime.ts';
 import {
@@ -412,6 +413,7 @@ describe('topology AppInbox transaction and idempotency', () => {
                         status: EntityStatus.RESERVED,
                         dequeueAudit: { ...entry.dequeueAudit, attempts: 1 }
                     },
+                    attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 0 },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
                 management.mutationOwners

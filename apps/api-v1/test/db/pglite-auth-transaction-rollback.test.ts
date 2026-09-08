@@ -6,7 +6,11 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import assert from 'node:assert/strict';
-import { FUTURE_MS, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+    FUTURE_MS,
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from './pglite-auth-test-harness.ts';
 
 Deno.test('PGlite auth and AL production writers roll back sibling conditional mutations', async () => {
     await withPGliteSql(async (sql) => {
@@ -149,6 +153,9 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             'al-admission-rollback',
             () => nowEpochMs
         );
+        await admission.set('sibling-a', { value: 'a' }, FUTURE_MS);
+        await admission.set('sibling-b', { value: 'b' }, FUTURE_MS);
+        const mutations = admission.mutations();
         await runtime.insertIfAbsent(
             'al-admission-rollback',
             'sibling-b',
@@ -156,23 +163,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             FUTURE_MS
         );
         await assert.rejects(
-            () =>
-                admission.apply([
-                    {
-                        kind: 'insert',
-                        key: 'sibling-a',
-                        expected: 'absent',
-                        value: JSON.stringify({ value: 'a' }),
-                        expireAtEpochMs: FUTURE_MS
-                    },
-                    {
-                        kind: 'insert',
-                        key: 'sibling-b',
-                        expected: 'absent',
-                        value: JSON.stringify({ value: 'b' }),
-                        expireAtEpochMs: FUTURE_MS
-                    }
-                ]),
+            () => runtime.begin((transaction) => admission.writeMutations(transaction, mutations)),
             RuntimeStateWriteConflictError
         );
         assert.equal(

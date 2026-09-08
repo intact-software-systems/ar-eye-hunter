@@ -146,15 +146,15 @@ export function workerBarrier(tmpDirPath: string, name: string): WorkerInput['ba
     };
 }
 
+interface BarrierWorkerPairResult {
+    readonly outputs: readonly WorkerOutput[];
+    readonly traces: readonly WorkerTrace[];
+}
+
 export async function runBarrierWorkerPair(
     databaseUrl: string,
     inputs: readonly WorkerInput[]
-): Promise<
-    Readonly<{
-        outputs: readonly WorkerOutput[];
-        traces: readonly WorkerTrace[];
-    }>
-> {
+): Promise<BarrierWorkerPairResult> {
     expect(inputs).toHaveLength(2);
     expect(new Set(inputs.map((input) => input.barrier.readyDirectoryPath)).size).toBe(1);
     expect(new Set(inputs.map((input) => input.barrier.releaseFilePath)).size).toBe(1);
@@ -208,7 +208,9 @@ export function expectCompactWorkerOutput(output: WorkerOutput): void {
     expect(output.attemptCount).toBeGreaterThanOrEqual(1);
     expect(output.attemptCount).toBeLessThanOrEqual(3);
     if (output.domainStatus === 'applied') {
-        expect(output.outboxIds).toHaveLength(output.operation.startsWith('client-') ? 2 : 1);
+        expect(output.outboxIds).toHaveLength(
+            expectedSingleSessionWorkerEffects(output.operation).length
+        );
         output.outboxIds.forEach((outboxId) => expect(outboxId).toMatch(/\S/u));
     }
     else if (output.domainStatus === 'no-op') {
@@ -232,12 +234,18 @@ export async function expectPendingWorkerOutboxes(
     input: ExpectPendingWorkerOutboxesInput
 ): Promise<void> {
     const outboxIds = input.outputs.flatMap((output) => output.outboxIds);
-    assertWorkerOutboxLifecycle({
-        entries: await readDirectResourceOutboxEntries(input.sql, outboxIds),
-        outputs: input.outputs,
-        kind: input.kind,
-        effects: input.effects
-    });
+    expect(new Set(outboxIds).size).toBe(outboxIds.length);
+    const entries = await readDirectResourceOutboxEntries(input.sql, outboxIds);
+    for (const output of input.outputs) {
+        const effects = expectedSingleSessionWorkerEffects(output.operation);
+        expect([...new Set(effects)]).toEqual(input.effects);
+        assertWorkerOutboxLifecycle({
+            entries: entries.filter((entry) => output.outboxIds.includes(entry.resourceId)),
+            outputs: [output],
+            kind: input.kind,
+            effects
+        });
+    }
 }
 
 export async function assertOneWorkerRebased(input: AssertOneWorkerRebasedInput): Promise<void> {
@@ -391,4 +399,15 @@ function requireClassification(
         throw new TypeError('Worker trace classification is invalid');
     }
     return value;
+}
+
+function expectedSingleSessionWorkerEffects(operation: WorkerInput['command']): readonly WorkerOutboxEffect[] {
+    if (operation === 'client-heartbeat' || operation === 'client-reconnect') {
+        // These fixtures have one live session: the snapshot's principal broadcast
+        // and live-session unicast precede the event. Disconnect has no live recipient.
+        return ['principal-state:snapshot', 'principal-state:snapshot', 'principal-state:event'];
+    }
+    return operation === 'client-disconnect'
+        ? ['principal-state:snapshot', 'principal-state:event']
+        : ['group-presence-summary'];
 }

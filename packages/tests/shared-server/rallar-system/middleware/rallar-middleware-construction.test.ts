@@ -14,12 +14,12 @@ import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pu
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import {
-    InMemoryQueueBox,
     newALRoute,
     newALUntargetedMessage,
     type ALMessage
-} from '@shared/mod.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+} from '@shared/al-contracts/al-contract.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -50,7 +50,6 @@ describe('createRallarMiddleware', () => {
         const constructionTimeline = [...constructionEvents, 'worker-exposed'];
 
         expect(runtime.wsQBoxServerService).toBeInstanceOf(WsQueueBoxServerService);
-        expect(runtime.wsQBoxServerService.inbox).toBe(testRuntime.inbox);
         expect(runtime.wsQBoxServerService.outbox).toBe(outbox);
         expect(runtime.wsQBoxServerService.name).toBe('server-1');
         expect(runtime.inboxQueueReader).toBeInstanceOf(InboxQueueReader);
@@ -239,13 +238,13 @@ describe('createRallarMiddleware', () => {
         const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
             'api-v1',
-            newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
-            'RTC_TOPOLOGY_RECOMPUTE',
-            { groupId: 'group-1' }
+            newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
+            'worker-test.message.v1',
+            { message: 'outbox work' }
         );
 
         runtime.outboxQueueReader.onOutboxMessageDo(
-            'RTC_TOPOLOGY_RECOMPUTE',
+            'worker-test.message.v1',
             {
                 onMessage: async (receivedMessage) => {
                     receivedMessages.push(receivedMessage);
@@ -267,7 +266,7 @@ describe('createRallarMiddleware', () => {
             }
         });
         const runtime = createRallarMiddleware(testRuntime.options);
-        const queue = testRuntime.inbox;
+        const queue = testRuntime.outbox;
         const outboxBlocked = Promise.withResolvers<void>();
         const receivedInboxMessages: ALMessage[] = [];
         const receivedOutboxMessages: ALMessage[] = [];
@@ -277,7 +276,7 @@ describe('createRallarMiddleware', () => {
             }
         });
         runtime.outboxQueueReader.onOutboxMessageDo(
-            'RTC_TOPOLOGY_RECOMPUTE',
+            'worker-test.message.v1',
             {
                 onMessage: async (receivedMessage) => {
                     receivedOutboxMessages.push(receivedMessage);
@@ -288,25 +287,29 @@ describe('createRallarMiddleware', () => {
         const outboxEntry = await runtime.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
                 'api-v1',
-                newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
-                'RTC_TOPOLOGY_RECOMPUTE',
-                { groupId: 'group-1' }
+                newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
+                'worker-test.message.v1',
+                { message: 'outbox work' }
             )
         );
-        await runtime.qboxEngine.executeOnce();
-        await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
-        await runtime.inboxQueueReader.enqueueIfAbsent(
-            newALUntargetedMessage(
-                'api-v1',
-                newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
-                'group-state.create.v1',
-                { requestId: 'request-1' }
-            )
-        );
-        await runtime.qboxEngine.executeOnce();
+        try {
+            await runtime.qboxEngine.executeOnce();
+            await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
+            await runtime.inboxQueueReader.enqueueIfAbsent(
+                newALUntargetedMessage(
+                    'api-v1',
+                    newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
+                    'group-state.create.v1',
+                    { requestId: 'request-1' }
+                )
+            );
+            await runtime.qboxEngine.executeOnce();
 
-        await vi.waitFor(() => expect(receivedInboxMessages).toHaveLength(1));
-        outboxBlocked.resolve();
+            await vi.waitFor(() => expect(receivedInboxMessages).toHaveLength(1));
+        }
+        finally {
+            outboxBlocked.resolve();
+        }
         await vi.waitFor(async () => {
             expect((await queue.getItem(outboxEntry.key))?.status).toBe(EntityStatus.COMPLETED);
         });
@@ -315,17 +318,17 @@ describe('createRallarMiddleware', () => {
 
 function createResilience(
     retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-): ResilienceDto {
+): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1,
-        ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
-        retryPolicy
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1,
+        maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
+        retryPolicy: retryPolicy
+    });
 }
 
 function createReadinessMiddlewareOptions(

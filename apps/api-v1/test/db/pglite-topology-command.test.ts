@@ -29,7 +29,7 @@ import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-type
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
@@ -374,7 +374,7 @@ Deno.test(
 
             await outboxReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
 
             const [work] = await sql<ResourceInboxAttemptStatusRow[]>`

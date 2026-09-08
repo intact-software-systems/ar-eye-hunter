@@ -1415,15 +1415,15 @@ moved or changed test.
       "id": "rtc-topology-replay-single-live-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "A replayable delivery-log entry produces exactly one live WebSocket send of the immutable outbox message. Executable assertion: “delivers the exact immutable outbox message when the publication is current”.",
+      "summary": "One handler invocation for the current single-page publication sends its immutable durable outbox message once. Executable assertion: “delivers the exact immutable outbox message when the publication is current”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current",
-      "coverageRelation": "The named assertion executes the replay entry handler against a current publication and observes its owned live-send port; the single-send count is the exactly-once delivery constraint of the replay protocol.",
+      "coverageRelation": "The named assertion invokes the real replay handler once with a current single-page publication and observes its owned live-send port. The count requires delivery without duplicate submission within this handler attempt; it does not constrain multi-page publications or later retry attempts.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "WS queue-box live sender (sendToTargetsWithResult)",
-        "observableEffect": "One handled replay entry emits one live send carrying the durable outbox message bytes.",
-        "requiredConstraint": "Replay emits exactly one live send per handled entry — never zero, never a duplicate.",
-        "failureRationale": "A duplicate send would double-deliver topology to members and a missing send would silently drop replayed history, both breaking the at-most-once live half of the replay protocol."
+        "observableEffect": "The single-page fixture produces one live sender invocation carrying the immutable durable outbox message during this handler attempt.",
+        "requiredConstraint": "Exactly one live send in this invocation for this single-page publication. Multi-page publications send their required pages, and later handler retries may resend.",
+        "failureRationale": "Zero sends would silently omit the current page while reporting delivery; duplicate submission within the same successful handler attempt would emit redundant live traffic. This assertion makes no exactly-once or at-most-once delivery claim across retries."
       }
     },
     {
@@ -1553,6 +1553,321 @@ moved or changed test.
       "summary": "Input rejection guards and statically unreachable throws preserve a reachable authenticated AppInbox command translator; unconditional throws do not.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch",
       "coverageRelation": "The named test executes the actual route inventory analyzer on the shipped translator and a source mutation adding a false throwing branch. Both must retain the operation connection. Its neighboring parameterized negative executes unconditional throwing guards and requires loss of that connection. Source reads and mutation non-vacuity are inputs to these executable security assertions, not private-name or statement-order requirements."
+    },
+    {
+      "id": "queue-pubsub-expired-identity-no-effects",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "Crossing the original claimed deadline during identity lookup emits neither a topology wake nor a live send. Executable assertion: “does not wake topology or send when loading the identity fact crosses the claimed deadline”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not wake topology or send when loading the identity fact crosses the claimed deadline",
+      "coverageRelation": "This exact wake assertion observes one independently outward-facing port after the held identity lookup advances the owned clock to the deadline. Both assertions share this same executable test, not a broad expiry registry contract.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Validated outbox-key wake callback and QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "Crossing the original claimed deadline during identity lookup emits neither a topology wake nor a live send.",
+        "requiredConstraint": "Both outward ports remain unused at or after the claimed deadline.",
+        "failureRationale": "A stale notification must not trigger topology work or deliver an expired message; a void result does not prove either absence."
+      }
+    },
+    {
+      "id": "queue-pubsub-malformed-notice-no-storage",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "Malformed physical keys, oversized publisher identity and fractional deadlines are rejected without canonical storage access. Executable assertion: “rejects malformed and oversized notices before loading canonical storage”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects malformed and oversized notices before loading canonical storage",
+      "coverageRelation": "The real subscription callback receives five invalid wire notices; the owned repository read port proves decoding rejects them before an external storage lookup, rather than merely returning no delivery after I/O.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxResourceEntryRepository.getItem",
+        "observableEffect": "Malformed physical keys, oversized publisher identity and fractional deadlines are rejected without canonical storage access.",
+        "requiredConstraint": "Zero canonical reads for each syntactically invalid advisory notice.",
+        "failureRationale": "Allowing malformed untrusted notices to reach storage creates avoidable I/O amplification and bypasses the bounded advisory input boundary."
+      }
+    },
+    {
+      "id": "queue-pubsub-corrupt-identity-no-effects",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery. Executable assertion: “rejects a %s live identity fact before topology wake or delivery”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery",
+      "coverageRelation": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the wake port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Validated outbox-key wake callback and QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery.",
+        "requiredConstraint": "Both outward ports remain unused for each missing, malformed-JSON or malformed-provenance identity variant.",
+        "failureRationale": "Sending or waking before authoritative identity validation allows advisory data to cause effects despite corruption."
+      }
+    },
+    {
+      "id": "queue-pubsub-missing-canonical-no-send",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "A missing live canonical message raises corruption and never reaches the live sender. Executable assertion: “rejects missing live durable key-only messages with timing details”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects missing live durable key-only messages with timing details",
+      "coverageRelation": "The actual subscribed callback loads an absent canonical record; send absence proves no live effect can precede the reported missing-message error.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "A missing live canonical message raises corruption and never reaches the live sender.",
+        "requiredConstraint": "Zero sends when a valid live advisory key has no durable message.",
+        "failureRationale": "A notification carries no authoritative payload; synthesizing or sending before its durable message exists would violate canonical ownership."
+      }
+    },
+    {
+      "id": "queue-pubsub-key-mismatch-no-send",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "A durable row returned under a mismatched physical identity rejects before delivery. Executable assertion: “drops a durable key load whose identity differs from its envelope”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#drops a durable key load whose identity differs from its envelope",
+      "coverageRelation": "The repository port returns a row with a different resource ID; the real subscriber rejects and the external send port must remain unused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "A durable row returned under a mismatched physical identity rejects before delivery.",
+        "requiredConstraint": "Zero sends when loaded key identity differs from the notice.",
+        "failureRationale": "Delivering a mismatched record would route a different message under the advisory key even if corruption is subsequently reported."
+      }
+    },
+    {
+      "id": "queue-pubsub-malformed-payload-no-send",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "A retained non-AL payload rejects without live delivery. Executable assertion: “rejects durable outbox work whose retained payload is not an AL message”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects durable outbox work whose retained payload is not an AL message",
+      "coverageRelation": "The test persists invalid payload bytes and invokes the valid notice through the subscriber; observing the sender distinguishes fail-before-send from send-then-throw.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "A retained non-AL payload rejects without live delivery.",
+        "requiredConstraint": "Zero sends when the durable message fails canonical AL decoding.",
+        "failureRationale": "Unvalidated retained data must not become a transport payload, and a later rejection cannot retract a send."
+      }
+    },
+    {
+      "id": "rtc-topology-replay-missing-page-no-send",
+      "domain": "Server canonical queue and replay admission",
+      "owner": "Rallar server maintainers",
+      "summary": "A publication missing its final durable page rejects as corruption before any page reaches the sender. Executable assertion: “rejects a missing final durable page before sending any part of the publication”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#rejects a missing final durable page before sending any part of the publication",
+      "coverageRelation": "The test removes the final persisted page from a multi-page publication, calls the real handler and checks the owned send port remained empty. This differs from the existing missing-whole-reference test by catching streaming before complete-page validation.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcTopologyReplayLiveSender.sendToTargetsWithResult",
+        "observableEffect": "A publication missing its final durable page rejects as corruption before any page reaches the sender.",
+        "requiredConstraint": "Zero live sends when any required durable page is missing.",
+        "failureRationale": "Sending a prefix before discovering corruption leaks an incomplete publication to recipients; the later error alone cannot undo it."
+      }
+    },
+    {
+      "id": "rtc-topology-replay-stop-after-page-failure",
+      "domain": "RTC topology replay live delivery",
+      "owner": "Rallar server maintainers",
+      "summary": "A later page failure ends this replay send attempt and returns send-failed without further page sends.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#does not advance the replay predecessor when a later page send fails",
+      "coverageRelation": "The owned sender succeeds once then refuses the next page; exactly two calls together with send-failed proves no subsequent page escaped after refusal.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcTopologyReplayLiveSender.sendToTargetsWithResult",
+        "observableEffect": "The failed second send is the final external send in this attempt.",
+        "requiredConstraint": "Exactly two sender invocations for the first-success/second-failure input, with no third call.",
+        "failureRationale": "Continuing sends after failure would leak additional partial publication traffic despite reporting the attempt failed."
+      }
+    },
+    {
+      "id": "alm-invalid-queue-candidate-no-transaction",
+      "domain": "ALM atomic IndexedDB admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "Malformed computed queue mutations are rejected before opening the joint native persistence transaction.",
+      "semanticCoverage": "packages/tests/shared/alm/al-indexeddb-queue-admission.test.ts#rejects invalid queue values before opening the joint write transaction",
+      "coverageRelation": "The test sends a mismatching keyString and ResourceEntry to the real writer, asserts its validation error, observes the native transaction port, then verifies the queue contains no row.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IDBDatabase.transaction in writeIndexedDbAdmissionMutations",
+        "observableEffect": "Opening the native joint transaction begins the persistence attempt and acquires its database transaction scope.",
+        "requiredConstraint": "A queue candidate whose keyString differs from its ResourceEntry key must cause zero native transaction openings.",
+        "failureRationale": "Rollback or empty storage alone would still allow invalid persistence values to enter a transaction; this assertion protects the independently required validate-before-transaction boundary."
+      }
+    },
+    {
+      "id": "alm-inbound-conflict-one-admission-attempt",
+      "domain": "ALM incoming optimistic admission recovery",
+      "owner": "Rallar shared maintainers",
+      "summary": "An initial incoming delivery makes one admission commit attempt; a lost conditional write retains pending work for fresh worker admission after restart.",
+      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart",
+      "coverageRelation": "The fixture commits an actual competing owner observation through the bound real store method, then lets the original bundle lose CAS. It checks one outer runtime call, pending NEW work and no premature effects, then recreates the runtime and proves ordered delivery, forwarding and duplicate handling.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALInboundAdmissionStore.commitBundle called by ALInboundMessageAdmission.attempt",
+        "observableEffect": "Each runtime call submits a separately computed admission candidate to the authoritative conditional persistence boundary.",
+        "requiredConstraint": "The initial runtime delivery invokes commitBundle exactly once; its conflict must be handed to retained QueueBox work rather than an inner admission retry.",
+        "failureRationale": "Eventual delivery and a pending row do not exclude an extra hidden commit attempt before retention. The count guards the one-attempt-per-delivery retry contract. The competing write performed inside the fixture is not counted as an outer runtime call."
+      }
+    },
+    {
+      "id": "alm-outbound-expiry-during-receipt-read",
+      "domain": "ALM outbound deadline eligibility",
+      "owner": "Rallar shared maintainers",
+      "summary": "A prepared outbound attempt cannot send after its original deadline elapses during an awaited receipt-state read.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#does not send when the deadline passes during the receipt read",
+      "coverageRelation": "The real runtime owns one prepared send. Its receipt read advances the clock exactly to D; the test checks the external send port is untouched and no ready effect remains.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ALOutboundMessageRuntime.Dependencies.sendPreparedMessage",
+        "observableEffect": "The prepared send port starts externally observable carrier delivery.",
+        "requiredConstraint": "No prepared send may start when the post-read clock has reached the admitted deadline.",
+        "failureRationale": "Terminal or absent queue work can also follow an illegal late send, so work-state readback alone cannot prove deadline enforcement at the external send boundary."
+      }
+    },
+    {
+      "id": "queuebox-mixed-outcome-adaptive-feedback",
+      "domain": "QueueBox readiness and adaptive processing feedback",
+      "owner": "Rallar shared maintainers",
+      "summary": "A dequeue batch with readiness deferral, actual failure and completed work emits one failure and one success feedback signal while readiness consumes neither.",
+      "semanticCoverage": "packages/tests/shared/queuebox-utilities.test.ts#retains actual failure accounting alongside neutral readiness and successful work",
+      "coverageRelation": "The real dequeue owner processes a NotReady item, a throwing item and a completed item; spies call the actual resilience methods, and persisted row readback separately verifies attempts 0/1 and COMPLETED.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ResourceInboxResilience.failure and ResourceInboxResilience.success",
+        "observableEffect": "These ports feed the circuit breaker and rate adjuster: failure reduces or resets adaptation while success advances recovery and the success window.",
+        "requiredConstraint": "This mixed result batch emits exactly one failure signal and exactly one completion signal. The waiting item adds no adaptive feedback.",
+        "failureRationale": "Final queue statuses and attempts do not expose duplicate or omitted adaptive signals. A later success can reset prior breaker failure state, so final adaptive state also need not reveal erroneous readiness/failure accounting. This contract concerns the result batch, not a universal per-message callback count."
+      }
+    },
+    {
+      "id": "indexeddb-invalid-schema-no-open",
+      "domain": "IndexedDB schema admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "Duplicate store definitions are rejected before any native database open or version upgrade begins.",
+      "semanticCoverage": "packages/tests/shared/open-indexed-db.test.ts#rejects duplicate store definitions before opening IndexedDB",
+      "coverageRelation": "The test calls openIndexedDbWithStores with duplicate store names using a real fake-indexeddb factory, asserts the schema rejection, and spies on the native open boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IDBFactory.open called by openIndexedDbWithStores",
+        "observableEffect": "The native open operation can create a database, begin a schema upgrade or contend with active connections.",
+        "requiredConstraint": "A schema containing duplicate store names must cause zero IDBFactory.open calls.",
+        "failureRationale": "An eventual validation error does not prove that schema creation, upgrade or lock acquisition was avoided. Opening then aborting would violate the validate-before-native-effect contract."
+      }
+    },
+    {
+      "id": "json-ws-client-before-parse-byte-limit",
+      "domain": "WebSocket client frame resource admission",
+      "owner": "Shared realtime maintainers",
+      "summary": "An oversized frame must be rejected before any JSON parsing for the bounded subscription. Executable assertion: “rejects oversized client frames before parsing and keeps accepting bounded traffic”.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#rejects oversized client frames before parsing and keeps accepting bounded traffic",
+      "coverageRelation": "The test delivers oversized native text through the simulated WebSocket, observes parser absence and rejection, then delivers bounded text successfully.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Native JSON text decoding at JsonWebSocketClient ingress",
+        "observableEffect": "Oversized text causes a typed rejection without parser allocation; later bounded text remains deliverable.",
+        "requiredConstraint": "An oversized frame must be rejected before any JSON parsing for the bounded subscription.",
+        "failureRationale": "Parse-then-reject still spends CPU and memory on an oversized frame and can exhaust the client before admission rejects it."
+      }
+    },
+    {
+      "id": "json-ws-server-subscription-before-parse-limit",
+      "domain": "WebSocket server subscription resource admission",
+      "owner": "Shared realtime maintainers",
+      "summary": "With only a capped subscription, an oversized UTF-8 frame must be rejected without JSON parsing; generic subscriptions retain their existing unbounded behavior. Executable assertion: “limits server ALM subscriptions without limiting generic JSON subscribers”.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#limits server ALM subscriptions without limiting generic JSON subscribers",
+      "coverageRelation": "The same test executes capped-only, mixed capped/generic, and bounded input cases through the native server event path.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Native JSON text decoding for capped JsonWebSocketServer subscriptions",
+        "observableEffect": "The ALM subscription rejects the frame without parser work; a separately installed generic subscription can still accept it.",
+        "requiredConstraint": "With only a capped subscription, an oversized UTF-8 frame must be rejected without JSON parsing; generic subscriptions retain their existing unbounded behavior.",
+        "failureRationale": "A shared parse before the bounded gate defeats its resource limit, while moving the cap globally breaks the generic subscription contract."
+      }
+    },
+    {
+      "id": "json-ws-native-binary-preconversion-limit",
+      "domain": "WebSocket native binary resource admission",
+      "owner": "Shared realtime maintainers",
+      "summary": "Oversized Blob, ArrayBuffer, and typed-array frames must be rejected using native byte size without Blob text conversion or JSON coercion. Executable assertion: “checks native binary sizes without Blob conversion or JSON coercion”.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#checks native binary sizes without Blob conversion or JSON coercion",
+      "coverageRelation": "The test emits all three native binary representations through a bounded server subscription and observes rejection plus untouched conversion ports.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Blob.text conversion and native JSON decoding at server ingress",
+        "observableEffect": "Three typed rejections occur with no delivered message and no binary materialization or JSON parse.",
+        "requiredConstraint": "Oversized Blob, ArrayBuffer, and typed-array frames must be rejected using native byte size without Blob text conversion or JSON coercion.",
+        "failureRationale": "Converting rejected binary data first allocates the payload and may invoke coercion before the size boundary can protect the receiver."
+      }
+    },
+    {
+      "id": "ws-native-failure-one-attempt-accounting",
+      "domain": "WS outbound native attempt accounting",
+      "owner": "Shared realtime maintainers",
+      "summary": "One failed physical dispatch invokes native send exactly once and records one QueueBox processing attempt. Executable assertion: “retains native-send failure accounting when an open socket throws”.",
+      "semanticCoverage": "packages/tests/shared/ws-server-readiness.test.ts#retains native-send failure accounting when an open socket throws",
+      "coverageRelation": "The test enqueues through the real WS AL runtime and checks both the native write port and the resulting public work row.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket.send on an open selected connection",
+        "observableEffect": "The open native socket throws, and the existing work row becomes RETRY with attempts equal to one.",
+        "requiredConstraint": "One failed physical dispatch invokes native send exactly once and records one QueueBox processing attempt.",
+        "failureRationale": "An inner resend may duplicate a message after an uncertain native failure and would misrepresent multiple submissions as one QueueBox attempt."
+      }
+    },
+    {
+      "id": "rtc-error-settlement-attempted-versus-untouched",
+      "domain": "RTC queued send settlement",
+      "owner": "Shared realtime maintainers",
+      "summary": "When the first queued native send synchronously fails the channel and throws, only that item is attempted; the queued sibling is cleared without native submission. Executable assertion: “distinguishes an uncertain attempted send from untouched siblings cleared by its channel error”.",
+      "semanticCoverage": "packages/tests/shared/qrtc-data-channel.test.ts#distinguishes an uncertain attempted send from untouched siblings cleared by its channel error",
+      "coverageRelation": "The test queues two keyed messages under pressure, triggers native failure on the first drain call, and checks both settlement identities and native attempt count.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RTCDataChannel.send during queued drain",
+        "observableEffect": "One native call accompanies an attempted=true failed settlement for the selected key and attempted=false settlement for its untouched sibling.",
+        "requiredConstraint": "When the first queued native send synchronously fails the channel and throws, only that item is attempted; the queued sibling is cleared without native submission.",
+        "failureRationale": "Attempting the sibling while reporting it untouched would incorrectly preserve its retry budget and conceal an uncertain duplicate-capable submission."
+      }
+    },
+    {
+      "id": "local-ws-alm-before-decode-resource-admission",
+      "domain": "Local black-box WS ALM observation",
+      "owner": "Shared Test maintainers",
+      "summary": "Scoped ALM observation rejects oversized text before JSON parsing and rejects binary ALM input without Blob text conversion. Executable assertion: “rejects oversized ALM text before parsing and binary input without converting it”.",
+      "semanticCoverage": "packages/tests/shared-test/local-websocket-session.test.ts#rejects oversized ALM text before parsing and binary input without converting it",
+      "coverageRelation": "The test feeds actual socket frames to LocalWsConnection with snapshot scope and inspects its public retained rejection observations.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Native JSON decoding and Blob.text conversion in LocalWsConnection frame admission",
+        "observableEffect": "Rejected observations remain typed and bounded without allocating decoded oversized data or accepting converted binary ALM.",
+        "requiredConstraint": "Scoped ALM observation rejects oversized text before JSON parsing and rejects binary ALM input without Blob text conversion.",
+        "failureRationale": "Parsing oversized text or materializing unsupported binary before rejection defeats the observation resource boundary even if no accepted message is retained."
+      }
+    },
+    {
+      "id": "json-size-unknown-shape-no-user-hooks",
+      "domain": "Native JSON frame size validation",
+      "owner": "Shared realtime maintainers",
+      "summary": "Unknown object shapes must be rejected without invoking caller-controlled JSON serialization or string conversion hooks. Executable assertion: “rejects unknown shapes without invoking JSON hooks”.",
+      "semanticCoverage": "packages/tests/shared/json-message-validation.test.ts#rejects unknown shapes without invoking JSON hooks",
+      "coverageRelation": "The test passes a raw object containing both hooks through validateJsonMessageSize and checks the typed rejection plus hook absence.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Caller-controlled toJSON and toString conversion hooks",
+        "observableEffect": "The validator returns malformed while neither supplied conversion function executes.",
+        "requiredConstraint": "Unknown object shapes must be rejected without invoking caller-controlled JSON serialization or string conversion hooks.",
+        "failureRationale": "Invoking caller hooks can execute arbitrary side effects or allocate unbounded content before size validation can reject the object."
+      }
+    },
+    {
+      "id": "ws-invalid-application-command-skips-authorization",
+      "domain": "WS server typed ingress admission",
+      "owner": "Shared realtime maintainers",
+      "summary": "An application validator rejection must return the typed failure before invoking authorization or writing admission state. Executable assertion: “runs a typed application validator before authorization or admission”.",
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission",
+      "coverageRelation": "The test installs an application validator that rejects and an authority port, then calls public acceptIncomingMessage against a valid live authenticated connection.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Installed WsServerInboundAuthorizer.authorize capability",
+        "observableEffect": "The malformed command produces no authority-provider call and leaves admission metadata empty.",
+        "requiredConstraint": "An application validator rejection must return the typed failure before invoking authorization or writing admission state.",
+        "failureRationale": "Authorization can perform asynchronous authoritative reads or side effects and must not receive application commands already rejected by the typed ingress validator."
+      }
     }
   ],
   "entries": [
@@ -3577,7 +3892,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar server maintainers",
-      "rationale": "The single-send count directly proves that one handled replay entry emits exactly one live delivery of the immutable outbox message.",
+      "rationale": "This count observes the owned live sender during one handler invocation for the single-page fixture. It excludes omitted or duplicate submission within this successful attempt, without restricting multi-page publications or subsequent retries.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current"
     },
     {
@@ -3733,6 +4048,303 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Adds an unapproved argument at the family/private-owner handoff, catching widened construction that could conceal a second dependency source.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
+    },
+    {
+      "id": "test-structure-coupling-c0d53003a3b0c68a",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-expired-identity-no-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "This exact wake assertion observes one independently outward-facing port after the held identity lookup advances the owned clock to the deadline. Both assertions share this same executable test, not a broad expiry registry contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not wake topology or send when loading the identity fact crosses the claimed deadline"
+    },
+    {
+      "id": "test-structure-coupling-a62cae58abfa7e98",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-expired-identity-no-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "This exact send assertion observes one independently outward-facing port after the held identity lookup advances the owned clock to the deadline. Both assertions share this same executable test, not a broad expiry registry contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not wake topology or send when loading the identity fact crosses the claimed deadline"
+    },
+    {
+      "id": "test-structure-coupling-77c4477ec7d60e0b",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-malformed-notice-no-storage",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The real subscription callback receives five invalid wire notices; the owned repository read port proves decoding rejects them before an external storage lookup, rather than merely returning no delivery after I/O.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects malformed and oversized notices before loading canonical storage"
+    },
+    {
+      "id": "test-structure-coupling-ec46155ae3144e61",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-corrupt-identity-no-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the wake port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery"
+    },
+    {
+      "id": "test-structure-coupling-009dd8ebc09f2356",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-corrupt-identity-no-effects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the send port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery"
+    },
+    {
+      "id": "test-structure-coupling-eb1c72652d962c26",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-missing-canonical-no-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The actual subscribed callback loads an absent canonical record; send absence proves no live effect can precede the reported missing-message error.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects missing live durable key-only messages with timing details"
+    },
+    {
+      "id": "test-structure-coupling-033b239694d0119f",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-key-mismatch-no-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The repository port returns a row with a different resource ID; the real subscriber rejects and the external send port must remain unused.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#drops a durable key load whose identity differs from its envelope"
+    },
+    {
+      "id": "test-structure-coupling-5875f278962ab3b1",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-malformed-payload-no-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The test persists invalid payload bytes and invokes the valid notice through the subscriber; observing the sender distinguishes fail-before-send from send-then-throw.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects durable outbox work whose retained payload is not an AL message"
+    },
+    {
+      "id": "test-structure-coupling-3eb669e36287726d",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-replay-missing-page-no-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The test removes the final persisted page from a multi-page publication, calls the real handler and checks the owned send port remained empty. This differs from the existing missing-whole-reference test by catching streaming before complete-page validation.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#rejects a missing final durable page before sending any part of the publication"
+    },
+    {
+      "id": "test-structure-coupling-dcca6b53e9abe70a",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-replay-stop-after-page-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The owned sender succeeds once then refuses the next page; exactly two calls together with send-failed proves no subsequent page escaped after refusal.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#does not advance the replay predecessor when a later page send fails"
+    },
+    {
+      "id": "test-structure-coupling-275f65246bcd45da",
+      "path": "packages/tests/shared/alm/al-indexeddb-queue-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-invalid-queue-candidate-no-transaction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The native transaction absence is required independently of the final empty queue: invalid computed persistence values must not enter transaction scope.",
+      "semanticCoverage": "packages/tests/shared/alm/al-indexeddb-queue-admission.test.ts#rejects invalid queue values before opening the joint write transaction"
+    },
+    {
+      "id": "test-structure-coupling-3473aa2934492476",
+      "path": "packages/tests/shared/al-inbound-message-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-conflict-one-admission-attempt",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one outer commit invocation forbids an inner optimistic retry. The same test separately proves durable pending ownership, restart replay and final delivery; the bound competing write is fixture input, not another runtime call.",
+      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart"
+    },
+    {
+      "id": "test-structure-coupling-5bd28d16b95e3de6",
+      "path": "packages/tests/shared/al-outbound-durable-effects.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-expiry-during-receipt-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "This is the real prepared-send effect boundary and the fixture contains an eligible prepared attempt before the awaited read crosses D. No-send is the required deadline behavior.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#does not send when the deadline passes during the receipt read"
+    },
+    {
+      "id": "test-structure-coupling-dd069330ee143590",
+      "path": "packages/tests/shared/queuebox-utilities.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queuebox-mixed-outcome-adaptive-feedback",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "Exactly one failure feedback signal must represent the actual failure in this mixed batch; NotReady must not create an extra signal that changes breaker or rate-adapter state.",
+      "semanticCoverage": "packages/tests/shared/queuebox-utilities.test.ts#retains actual failure accounting alongside neutral readiness and successful work"
+    },
+    {
+      "id": "test-structure-coupling-aa4d70f0ba82e2ed",
+      "path": "packages/tests/shared/queuebox-utilities.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queuebox-mixed-outcome-adaptive-feedback",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "Exactly one success feedback signal must represent the completed work in this mixed batch; readiness must neither become success nor suppress completed-work adaptation.",
+      "semanticCoverage": "packages/tests/shared/queuebox-utilities.test.ts#retains actual failure accounting alongside neutral readiness and successful work"
+    },
+    {
+      "id": "test-structure-coupling-edbec05f9e4a5443",
+      "path": "packages/tests/shared/open-indexed-db.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "indexeddb-invalid-schema-no-open",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "Native database open is an observable effect even if a later error leaves no records. This invalid schema must be rejected before that operation.",
+      "semanticCoverage": "packages/tests/shared/open-indexed-db.test.ts#rejects duplicate store definitions before opening IndexedDB"
+    },
+    {
+      "id": "test-structure-coupling-17044d7d640b79a9",
+      "path": "packages/tests/shared/websocket/json-message-limits.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-ws-client-before-parse-byte-limit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "The parser absence assertion distinguishes rejection before costly decoding from equally rejected but fully parsed oversized input.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#rejects oversized client frames before parsing and keeps accepting bounded traffic"
+    },
+    {
+      "id": "test-structure-coupling-c0e8da26bc0a6216",
+      "path": "packages/tests/shared/websocket/json-message-limits.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-ws-server-subscription-before-parse-limit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "The absence assertion is taken before the generic subscriber is added, so it proves the capped-only path rejects before decoding without forbidding legitimate generic parsing.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#limits server ALM subscriptions without limiting generic JSON subscribers"
+    },
+    {
+      "id": "test-structure-coupling-ce68ae67e8245a9d",
+      "path": "packages/tests/shared/websocket/json-message-limits.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-ws-native-binary-preconversion-limit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "Blob.text must remain untouched so rejection cannot materialize oversized Blob contents.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#checks native binary sizes without Blob conversion or JSON coercion"
+    },
+    {
+      "id": "test-structure-coupling-1d54cf58a5074f87",
+      "path": "packages/tests/shared/websocket/json-message-limits.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-ws-native-binary-preconversion-limit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "JSON.parse must remain untouched so binary rejection cannot coerce the oversized native frame.",
+      "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#checks native binary sizes without Blob conversion or JSON coercion"
+    },
+    {
+      "id": "test-structure-coupling-3ceb07724df6bd80",
+      "path": "packages/tests/shared/ws-server-readiness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-native-failure-one-attempt-accounting",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "Exactly one native call binds the persisted attempts=1 evidence to actual transport submission rather than accepting hidden repeated sends.",
+      "semanticCoverage": "packages/tests/shared/ws-server-readiness.test.ts#retains native-send failure accounting when an open socket throws"
+    },
+    {
+      "id": "test-structure-coupling-4d92b01b59887820",
+      "path": "packages/tests/shared/qrtc-data-channel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-error-settlement-attempted-versus-untouched",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "The count independently verifies the truth of submissionAttempted on both keyed settlements; checking settlement values alone could accept incorrect transport accounting.",
+      "semanticCoverage": "packages/tests/shared/qrtc-data-channel.test.ts#distinguishes an uncertain attempted send from untouched siblings cleared by its channel error"
+    },
+    {
+      "id": "test-structure-coupling-88e6a7ca47a24a20",
+      "path": "packages/tests/shared-test/local-websocket-session.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "local-ws-alm-before-decode-resource-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "No parser invocation proves rejection occurs before oversized text decoding, independently of the final rejection record.",
+      "semanticCoverage": "packages/tests/shared-test/local-websocket-session.test.ts#rejects oversized ALM text before parsing and binary input without converting it"
+    },
+    {
+      "id": "test-structure-coupling-ae4b804716187e8f",
+      "path": "packages/tests/shared-test/local-websocket-session.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "local-ws-alm-before-decode-resource-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "No Blob.text invocation preserves the text-only ALM wire boundary without materializing unsupported binary data.",
+      "semanticCoverage": "packages/tests/shared-test/local-websocket-session.test.ts#rejects oversized ALM text before parsing and binary input without converting it"
+    },
+    {
+      "id": "test-structure-coupling-ba353a1cc01e52dc",
+      "path": "packages/tests/shared/json-message-validation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-size-unknown-shape-no-user-hooks",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "The toJSON absence assertion protects the no-serialization-hook raw shape boundary.",
+      "semanticCoverage": "packages/tests/shared/json-message-validation.test.ts#rejects unknown shapes without invoking JSON hooks"
+    },
+    {
+      "id": "test-structure-coupling-fb4002dae3f5e354",
+      "path": "packages/tests/shared/json-message-validation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "json-size-unknown-shape-no-user-hooks",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "The toString absence assertion protects the separate no-coercion-hook raw shape boundary.",
+      "semanticCoverage": "packages/tests/shared/json-message-validation.test.ts#rejects unknown shapes without invoking JSON hooks"
+    },
+    {
+      "id": "test-structure-coupling-e057b89986e7f609",
+      "path": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-invalid-application-command-skips-authorization",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "No authorization call proves validator failure short-circuits the owned external policy capability; empty admission state alone would allow unnecessary authority work.",
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission"
     }
   ]
 }

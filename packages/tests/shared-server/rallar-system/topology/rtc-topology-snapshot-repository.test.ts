@@ -11,7 +11,12 @@ import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/t
 import { validateRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
@@ -359,49 +364,18 @@ describe('RTC topology snapshot repository', () => {
         }
     );
 
-    it('requires the target snapshot version to match the AL target', () => {
+    it('rejects invalid freshness and expiry facts before persistence', () => {
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
-        const base = createPublication(snapshot, 'work-target-version');
-        const publication = {
-            ...base,
-            targetGroupSnapshotVersion: 1
-        };
-
+        const publication = createPublication(snapshot, 'work-facts');
         expect(() => validateRtcTopologyPublication(publication, snapshot.groupRef)).not.toThrow();
-        expect(() =>
-            validateRtcTopologyPublication(
-                {
-                    ...publication,
-                    publicationId: 'work-target-version-mismatch:1:1:1',
-                    workId: 'work-target-version-mismatch',
-                    targetGroupSnapshotVersion: 2
-                },
-                snapshot.groupRef
-            )
-        ).toThrow('snapshot version');
-    });
-
-    it('binds publication message timestamps to explicit publication facts', () => {
-        const snapshot = createTopologySnapshot(createGroupRef(), 1);
-        const publication = createPublication(snapshot, 'work-explicit-time');
-
-        expect(() =>
-            validateRtcTopologyPublication(
-                {
-                    ...publication,
-                    message: {
-                        ...publication.message,
-                        id: { ...publication.message.id, ts: 11 },
-                        audit: { ...publication.message.audit, createdTs: 11 }
-                    }
-                },
-                snapshot.groupRef
-            )
-        ).toThrow('timestamp');
+        expect(() => validateRtcTopologyPublication({ ...publication, targetGroupSnapshotVersion: -1 }, snapshot.groupRef))
+            .toThrow('targetGroupSnapshotVersion');
+        expect(() => validateRtcTopologyPublication({ ...publication, expiresAtEpochMs: publication.createdAtEpochMs }, snapshot.groupRef))
+            .toThrow('expiresAtEpochMs');
     });
 
     it.each(['direct', 'list', 'page'] as const)(
-        'rejects a nondeterministic publication message id on the %s surface',
+        'rejects a nondeterministic publication id on the %s surface',
         async (surface) => {
             const runtimeRepository = new FakeRuntimeStateRepository();
             const repository = new RtcTopologyPublicationRepository(runtimeRepository);
@@ -409,16 +383,7 @@ describe('RTC topology snapshot repository', () => {
                 createTopologySnapshot(createGroupRef(), 1),
                 `work-message-id-${surface}`
             );
-            const tampered = {
-                ...publication,
-                message: {
-                    ...publication.message,
-                    id: {
-                        ...publication.message.id,
-                        msgId: 'random-noncanonical-message-id'
-                    }
-                }
-            };
+            const tampered = { ...publication, publicationId: 'random-noncanonical-publication-id' };
             await runtimeRepository.upsert(
                 RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
                 repository.publicationKey(tampered.groupRef, tampered.publicationId),

@@ -3,7 +3,7 @@ import type {
     WsServerResolvedRecipient,
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { resolveWsClientTargetRecipients } from './resolve-ws-client-target.ts';
 import { resolveWsCrdtPrincipalTargetRecipients } from './resolve-ws-crdt-principal-target.ts';

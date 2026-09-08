@@ -283,40 +283,35 @@ shows a retained reference.
 
 Core browser/shared WebRTC:
 
-- `packages/shared/webrtc/QRtcPeerConnection.ts`
-- `packages/shared/webrtc/QRtcDataChannel.ts`
-- `packages/shared/webrtc/RtcDataChannelSendQueue.ts`
-- `packages/shared/webrtc/QRtcMediaChannel.ts`
-- `packages/shared/webrtc/WsRtcSignalingTransport.ts`
-- `packages/shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts`
+- `packages/shared/webrtc/qrtc-peer-connection.ts`
+- `packages/shared/webrtc/qrtc-data-channel.ts`
+- `packages/shared/webrtc/rtc-data-channel-send-queue.ts`
+- `packages/shared/webrtc/qrtc-media-channel.ts`
+- `packages/shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts`
 - `packages/shared/webrtc/QRtcSignalingContracts.ts`
-- `packages/shared/services/WebRtcConnectionService.ts`
-- `packages/shared/services/WebRtcRxStreamerService.ts`
-- `packages/shared/services/WebRtcHeartbeatService.ts`
-- `packages/shared/services/WebRtcGroupService.ts`
-- `packages/shared/services/WebRtcGroupManager.ts`
-- `packages/shared/services/WsQueueBoxClientService.ts`
+- `packages/shared/services/web-rtc-connection-service.ts`
+- `packages/shared/services/web-rtc-rx-streamer-service.ts`
+- `packages/shared/services/web-rtc-heartbeat-service.ts`
+- `packages/shared/services/web-rtc-group-service.ts`
+- `packages/shared/services/web-rtc-group-manager.ts`
+- `packages/shared/services/ws-queue-box-client-service.ts`
 - `packages/shared/services/InboxOutboxEngine.ts`
-- `packages/shared/websocket/JsonWebSocketClient.ts`
-- `packages/shared/websocket/JsonWebSocketServer.ts`
+- `packages/shared/websocket/json-web-socket-client.ts`
+- `packages/shared/websocket/json-web-socket-server.ts`
 
 Browser facade and runtime:
 
-- `packages/shared-web/browser/middleware.ts`
-- `packages/shared-web/browser/rtc-engine.ts`
-- `packages/shared-web/browser/app-context.ts`
-- `packages/shared-web/browser/rallar-runtime-context.ts`
+- `packages/shared-web/browser/connection/initialise-browser-middleware.ts`
+- `packages/shared-web/browser/connection/browser-transport-runtime.ts`
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rallar-rtc-facade.ts`
 - `packages/shared-web/browser/rallar-media-facade.ts`
 - `packages/shared-web/browser/rallar-media-calls.ts`
 - `packages/shared-web/browser/rallar-realtime-facade.ts`
 - `packages/shared-web/browser/rallar-realtime.ts`
-- `packages/shared-web/browser/ws-engine.ts`
-- `packages/shared-web/browser/ws-message-router.ts`
-- `packages/shared-web/browser/rtc-message-router.ts`
-- `packages/shared-web/browser/browser-queuebox.ts`
-- `packages/shared-web/browser/browser-al-runtime-stores.ts`
+- `packages/shared-web/browser/websocket/browser-websocket-inbox.ts`
+- `packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts`
+- `packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts`
 
 Server/room/signaling/topology:
 
@@ -346,7 +341,7 @@ Apps and browser test surfaces:
 - `apps/relic-hunters-v1/src/game/RelicScene.tsx`
 - `apps/relic-hunters-v1/src/game/RelicSceneNext.tsx`
 - `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts`
-- `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts`
+- `apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts`
 
 Tests and perf harnesses:
 
@@ -355,7 +350,7 @@ Tests and perf harnesses:
 - `packages/tests/shared/webrtc-heartbeat.test.ts`
 - `packages/tests/shared/webrtc-group-service.test.ts`
 - `packages/tests/shared/webrtc-group-manager.test.ts`
-- `packages/tests/shared/websocket-webrtc.test.ts`
+- `packages/tests/shared/websocket/`
 - `packages/tests/shared-web/rtc-diagnostics/browser-rtc-diagnostics-runtime.test.ts`
 - `packages/tests/shared-web/rtc/browser-rtc-recovery-runtime.test.ts`
 - `packages/tests/shared-web/rtc/browser-rtc-wait-runtime.test.ts`
@@ -365,9 +360,8 @@ Tests and perf harnesses:
 - `packages/tests/shared-server/rallar-system/topology/`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/`
 - `scripts/perf/README.md`
-- `scripts/perf/rtc-*.ts`
-- `scripts/perf/webrtc-*.ts`
-- `scripts/perf/rtc-data-channel-browser-soak.mjs`
+- `packages/shared-rtc-bench/workloads/`
+- `packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs`
 
 ## 14. Repo-Specific Commands Discoverable In This Repo
 
@@ -378,7 +372,7 @@ Focused static/unit checks:
 
 ```sh
 npm run test:unit
-vitest run packages/tests/shared/webrtc-connection-service.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-heartbeat.test.ts packages/tests/shared/webrtc-group-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/websocket-webrtc.test.ts
+vitest run packages/tests/shared/webrtc-connection-service.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-heartbeat.test.ts packages/tests/shared/webrtc-group-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/websocket
 vitest run packages/tests/shared-web/rtc-diagnostics/browser-rtc-diagnostics-runtime.test.ts packages/tests/shared-web/rtc/browser-rtc-recovery-runtime.test.ts packages/tests/shared-web/rtc/browser-rtc-wait-runtime.test.ts packages/tests/shared-web/media/browser-media-sources.test.ts
 vitest run packages/tests/shared-server/rallar-system/communication packages/tests/shared-server/rallar-system/websocket packages/tests/shared-server/rallar-system/rtc-rtt
 ```
@@ -397,13 +391,13 @@ npm run test:shared-black-box:browser:live
 Reusable WebRTC perf harness examples from `scripts/perf/README.md`:
 
 ```sh
-deno run --config apps/api-v1/deno.json --allow-read --allow-write scripts/perf/rtc-peer-connection-diagnostics-burst.ts --peers=500 --ice-candidates=5 --offer-collisions=3 --runs=3 --out=tmp/perf/results/rtc-peer-connection-diagnostics-burst-runs3.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write scripts/perf/rtc-ice-candidate-queue-bench.ts --candidates=25000 --runs=5 --out=tmp/perf/results/rtc-ice-candidate-queue.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write scripts/perf/rtc-data-channel-replace-key-bench.ts --queue-size=5000 --replacements=25000 --runs=5 --out=tmp/perf/results/rtc-data-channel-replace-key.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write scripts/perf/webrtc-heartbeat-callback-churn-bench.ts --channels=10000 --runs=5 --out=tmp/perf/results/webrtc-heartbeat-callback-churn.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write scripts/perf/webrtc-group-manager-state-bench.ts --clients=5000 --desired=1000 --lookups=20 --runs=5 --out=tmp/perf/results/webrtc-group-manager-state.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write scripts/perf/rtc-room-graph-rtt-bench.ts --sessions=600 --runs=5 --out=tmp/perf/results/rtc-room-graph-rtt.json
-node scripts/perf/rtc-data-channel-browser-soak.mjs
+deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts --peers=500 --ice-candidates=5 --offer-collisions=3 --runs=3 --out=tmp/perf/results/rtc-peer-connection-diagnostics-burst-runs3.json
+deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/signaling/rtc-ice-candidate-queue-bench.ts --candidates=25000 --runs=5 --out=tmp/perf/results/rtc-ice-candidate-queue.json
+deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-replace-key-bench.ts --queue-size=5000 --replacements=25000 --runs=5 --out=tmp/perf/results/rtc-data-channel-replace-key.json
+deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts --channels=10000 --runs=5 --out=tmp/perf/results/webrtc-heartbeat-callback-churn.json
+deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts --clients=5000 --desired=1000 --lookups=20 --runs=5 --out=tmp/perf/results/webrtc-group-manager-state.json
+deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts --sessions=600 --runs=5 --out=tmp/perf/results/rtc-room-graph-rtt.json
+node packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs
 ```
 
 Diagnostics artifact capture:

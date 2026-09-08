@@ -1,5 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
@@ -20,7 +26,11 @@ import {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { decodeGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -218,116 +228,119 @@ describe('group-state AppInbox transaction result boundary', () => {
             transactionWriter,
             wakeQueue: () => actions.push('wake')
         });
-        const result = await handler.processGroupStateMutation(inactiveConnectContext());
+        const authority: GroupMutationIngress = {
+            authorityProof: {
+                version: 1,
+                principalId: 'owner',
+                sessionId: 'inactive-session',
+                sessionIssuedAtEpochMs: 1_000,
+                sessionExpiresAtEpochMs: 61_000,
+                commandMac: 'a'.repeat(64)
+            },
+            descriptor: {
+                operation: 'connectPresence',
+                scope: {
+                    applicationId: 'ar-eye-hunter',
+                    workspaceId: 'default'
+                },
+                groupId: 'inactive-group',
+                targetPrincipalId: null,
+                sessionId: 'inactive-session',
+                request: {
+                    requestId: 'inactive-request',
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'inactive-session',
+                    principalId: 'owner',
+                    generationId: 'inactive-generation',
+                    connectedAtEpochMs: 1_000,
+                    lastHeartbeatAtEpochMs: 1_000,
+                    expiresAtEpochMs: 61_000
+                }
+            },
+            command: {
+                operation: 'connectPresence',
+                aggregateRef: {
+                    applicationId: 'ar-eye-hunter',
+                    workspaceId: 'default',
+                    groupId: 'inactive-group'
+                },
+                commandId: 'inactive-command',
+                requestId: 'inactive-request',
+                sessionId: 'inactive-session',
+                input: {
+                    principalId: 'owner',
+                    generationId: 'inactive-generation',
+                    connectedAtEpochMs: 1_000,
+                    lastHeartbeatAtEpochMs: 1_000,
+                    expiresAtEpochMs: 61_000,
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'inactive-session',
+                    reason: null,
+                    traceId: null
+                }
+            },
+            facts: {
+                nowEpochMs: 2_000,
+                expireAtEpochMs: 604_802_000,
+                serviceId: 'server-1',
+                eventId: 'event-1',
+                commandHash: `sha256:${'a'.repeat(64)}`,
+                resolvedJoinCode: null,
+                joinCodeVerifier: null,
+                internalAuthority: 'none',
+                capacity: { defaultMaxMembers: null },
+                authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
+            },
+            causalToken: 'causal-token',
+            queueResourceId: 'inactive-queue-resource'
+        };
+        const enqueue = decodeAppInboxEnqueue({
+            type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            resourceId: 'inactive-command',
+            contextId: 'inactive-group',
+            authority,
+            data: { requestId: 'inactive-request' }
+        });
+        const createdAt = Temporal.Instant.fromEpochMilliseconds(1_000);
+        const entry: ResourceEntry = {
+            key: {
+                topicId: 'app-inbox.group-state',
+                resourceId: 'inactive-command',
+                contextId: 'inactive-group'
+            },
+            resource: JSON.stringify(enqueue),
+            typeId: AppInboxType.GROUP_PRESENCE_CONNECT,
+            status: EntityStatus.RESERVED,
+            audit: {
+                date: createdAt.toZonedDateTimeISO('UTC').toPlainTime(),
+                createdBy: 'server-1',
+                createdTs: createdAt.toZonedDateTimeISO('UTC').toPlainDateTime(),
+                expiryTs: Temporal.Instant.fromEpochMilliseconds(604_802_000)
+            },
+            dequeueAudit: { attempts: 1, startTs: createdAt }
+        };
+        const context: AppInboxMessageContext<GroupStateInboxDurableResult> = {
+            enqueue,
+            entry,
+            message: newALUntargetedMessage(
+                'server-1',
+                newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+                entry.typeId,
+                enqueue
+            ),
+            attemptTelemetry: computeResourceInboxAttempt({
+                entry: entry,
+                selectedLane: Reservator.NEW,
+                selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+                selectedDueAtEpochMs: undefined
+            }).telemetry,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Inactive group presence result')
+        };
+        const result = await handler.processGroupStateMutation(context);
         expect(JSON.stringify(result)).toBe('{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}');
         expect(actions).toEqual(['completion', 'inactive-transaction']);
     });
 });
-
-function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurableResult> {
-    const authority: GroupMutationIngress = {
-        authorityProof: {
-            version: 1,
-            principalId: 'owner',
-            sessionId: 'inactive-session',
-            sessionIssuedAtEpochMs: 1_000,
-            sessionExpiresAtEpochMs: 61_000,
-            commandMac: 'a'.repeat(64)
-        },
-        descriptor: {
-            operation: 'connectPresence',
-            scope: {
-                applicationId: 'ar-eye-hunter',
-                workspaceId: 'default'
-            },
-            groupId: 'inactive-group',
-            targetPrincipalId: null,
-            sessionId: 'inactive-session',
-            request: {
-                requestId: 'inactive-request',
-                actorPrincipalId: 'owner',
-                actorSessionId: 'inactive-session',
-                principalId: 'owner',
-                generationId: 'inactive-generation',
-                connectedAtEpochMs: 1_000,
-                lastHeartbeatAtEpochMs: 1_000,
-                expiresAtEpochMs: 61_000
-            }
-        },
-        command: {
-            operation: 'connectPresence',
-            aggregateRef: {
-                applicationId: 'ar-eye-hunter',
-                workspaceId: 'default',
-                groupId: 'inactive-group'
-            },
-            commandId: 'inactive-command',
-            requestId: 'inactive-request',
-            sessionId: 'inactive-session',
-            input: {
-                principalId: 'owner',
-                generationId: 'inactive-generation',
-                connectedAtEpochMs: 1_000,
-                lastHeartbeatAtEpochMs: 1_000,
-                expiresAtEpochMs: 61_000,
-                actorPrincipalId: 'owner',
-                actorSessionId: 'inactive-session',
-                reason: null,
-                traceId: null
-            }
-        },
-        facts: {
-            nowEpochMs: 2_000,
-            expireAtEpochMs: 604_802_000,
-            serviceId: 'server-1',
-            eventId: 'event-1',
-            commandHash: `sha256:${'a'.repeat(64)}`,
-            resolvedJoinCode: null,
-            joinCodeVerifier: null,
-            internalAuthority: 'none',
-            capacity: { defaultMaxMembers: null },
-            authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
-        },
-        causalToken: 'causal-token',
-        queueResourceId: 'inactive-queue-resource'
-    };
-    const enqueue = decodeAppInboxEnqueue({
-        type: AppInboxType.GROUP_PRESENCE_CONNECT,
-        resourceId: 'inactive-command',
-        contextId: 'inactive-group',
-        authority,
-        data: { requestId: 'inactive-request' }
-    });
-    const createdAt = Temporal.Instant.fromEpochMilliseconds(1_000);
-    const entry: ResourceEntry = {
-        key: {
-            topicId: 'app-inbox.group-state',
-            resourceId: 'inactive-command',
-            contextId: 'inactive-group'
-        },
-        resource: JSON.stringify(enqueue),
-        typeId: AppInboxType.GROUP_PRESENCE_CONNECT,
-        status: EntityStatus.RESERVED,
-        audit: {
-            date: createdAt.toZonedDateTimeISO('UTC').toPlainTime(),
-            createdBy: 'server-1',
-            createdTs: createdAt.toZonedDateTimeISO('UTC').toPlainDateTime(),
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(604_802_000)
-        },
-        dequeueAudit: { attempts: 1, startTs: createdAt }
-    };
-    return {
-        enqueue,
-        entry,
-        message: newALUntargetedMessage(
-            'server-1',
-            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
-            entry.typeId,
-            enqueue
-        ),
-        encodeResult: (result) => encodeAppInboxResult(result, 'Inactive group presence result')
-    };
-}
 
 function createUnusedTransaction(): PSqlSql {
     const transaction: PSqlSql = Object.assign(

@@ -1,6 +1,7 @@
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type {
@@ -8,7 +9,7 @@ import type {
     RtcTopologyReplayHydrationOutcome
 } from '../consumer/rtc-topology-replay-diagnostics.ts';
 import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
-import { materializeRtcTopologyHydrationMessage } from './rtc-topology-hydration-message.ts';
+import { materializeRtcTopologyHydrationMessages } from './rtc-topology-hydration-message.ts';
 
 export const RTC_TOPOLOGY_HYDRATION_PAGE_SIZE = 100;
 
@@ -17,12 +18,14 @@ export interface RtcTopologyHydrationIdentity {
 }
 
 export namespace RtcTopologyReconnectHydration {
+    export interface SnapshotPageInput {
+        readonly afterKey?: string;
+        readonly limit: number;
+    }
+
     export interface TopologyReader {
         listSnapshotEntriesPage(
-            input: Readonly<{
-                afterKey?: string;
-                limit: number;
-            }>
+            input: SnapshotPageInput
         ): Promise<readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[]>;
         findSnapshot(groupRef: GroupRef): Promise<RallarOverlayTopologySnapshot | undefined>;
     }
@@ -89,17 +92,22 @@ export class RtcTopologyReconnectHydration {
             retry: new Set<ConnectionContext>(),
             attemptedPairs: new Set<string>()
         };
-        await this.#scanTopologyPages(this.#topologies, input, state);
-        await this.#scanTopologyPages(this.#acceptedTopologies, input, state);
-        this.#recordUnmatched(input.connections, state.matched, state.retry);
-        return state.retry;
+        const planned = await this.#scanTopologyPages(this.#topologies, input, state);
+        const accepted = await this.#scanTopologyPages(this.#acceptedTopologies, input, planned);
+        this.#recordUnmatched(input.connections, accepted.matched, accepted.retry);
+        return accepted.retry;
     }
 
     async #scanTopologyPages(
         reader: RtcTopologyReconnectHydration.TopologyReader,
         input: RtcTopologyReconnectHydration.Input,
-        state: HydrationScanState
-    ): Promise<void> {
+        prior: HydrationScanState
+    ): Promise<HydrationScanState> {
+        const state = {
+            matched: new Set(prior.matched),
+            retry: new Set(prior.retry),
+            attemptedPairs: new Set(prior.attemptedPairs)
+        };
         let afterKey: string | undefined;
         while (true) {
             throwIfAborted(input);
@@ -112,15 +120,22 @@ export class RtcTopologyReconnectHydration {
             }
             catch {
                 throwIfAborted(input);
-                this.#recordScanRetries(input.connections, state.retry);
-                return;
+                return { ...state, retry: new Set([...state.retry, ...this.#recordScanRetries(input.connections)]) };
             }
             for (const entry of page) {
                 throwIfAborted(input);
-                await this.#hydrateScannedTopology(entry.value, input, state);
+                const observations = await this.#hydrateScannedTopology(entry.value, input, state.attemptedPairs);
+                for (const observation of observations) {
+                    state.attemptedPairs.add(observation.pair);
+                    state.matched.add(observation.connection);
+                    this.#diagnostics?.({ kind: 'hydration', outcome: observation.outcome });
+                    if (observation.outcome === 'retry') {
+                        state.retry.add(observation.connection);
+                    }
+                }
             }
             if (page.length < RTC_TOPOLOGY_HYDRATION_PAGE_SIZE) {
-                return;
+                return state;
             }
             afterKey = page.at(-1)!.entry.key;
             await this.#yield();
@@ -130,36 +145,36 @@ export class RtcTopologyReconnectHydration {
     async #hydrateScannedTopology(
         scannedTopology: RallarOverlayTopologySnapshot,
         input: RtcTopologyReconnectHydration.Input,
-        state: HydrationScanState
-    ): Promise<void> {
+        priorAttempts: ReadonlySet<string>
+    ): Promise<readonly HydrationAttempt[]> {
+        const observations: HydrationAttempt[] = [];
+        const attempted = new Set<string>();
         const candidates = input.connections.filter((connection) =>
             scannedTopology.activeSessionIds.includes(connection.id)
         );
         for (const connection of candidates) {
-            const pair = `${scannedTopology.overlayId}\u0000${connection.id}`;
-            if (state.attemptedPairs.has(pair)) {
+            const pair = JSON.stringify([scannedTopology.overlayId, connection.id]);
+            if (priorAttempts.has(pair) || attempted.has(pair)) {
                 continue;
             }
-            state.attemptedPairs.add(pair);
-            state.matched.add(connection);
+            attempted.add(pair);
             const outcome = await this.#hydrateTopology(connection, scannedTopology, input);
-            this.#diagnostics?.({ kind: 'hydration', outcome });
-            if (outcome === 'retry') {
-                state.retry.add(connection);
-            }
+            observations.push({ connection, pair, outcome });
         }
+        return observations;
     }
 
     #recordScanRetries(
-        connections: readonly ConnectionContext[],
-        retry: Set<ConnectionContext>
-    ): void {
+        connections: readonly ConnectionContext[]
+    ): ReadonlySet<ConnectionContext> {
+        const retry = new Set<ConnectionContext>();
         for (const connection of connections) {
             if (this.#isCurrent(connection)) {
                 retry.add(connection);
                 this.#diagnostics?.({ kind: 'hydration', outcome: 'retry' });
             }
         }
+        return retry;
     }
 
     #recordUnmatched(
@@ -217,6 +232,7 @@ export class RtcTopologyReconnectHydration {
             if (
                 !isAuthorized({
                     snapshot: authorizationAfter,
+                    roomRef: scannedTopology.groupRef,
                     sessionId: connection.id,
                     identity,
                     nowEpochMs: this.#nowEpochMs()
@@ -227,22 +243,32 @@ export class RtcTopologyReconnectHydration {
             if (!currentTopology?.activeSessionIds.includes(connection.id)) {
                 return 'no-topology';
             }
-            const message = materializeRtcTopologyHydrationMessage({
-                connection,
-                topology: currentTopology,
-                nowEpochMs: this.#nowEpochMs()
-            });
-            const encoded = this.#socket.encode(message);
-            throwIfAborted(input);
-            if (this.#socket.trySendEncodedToContext(connection, encoded)) {
-                return 'sent';
-            }
-            return this.#isCurrent(connection) ? 'retry' : 'stale-generation';
+            return this.#sendTopology(connection, currentTopology, input);
         }
         catch {
             throwIfAborted(input);
             return this.#isCurrent(connection) ? 'retry' : 'stale-generation';
         }
+    }
+
+    #sendTopology(
+        connection: ConnectionContext,
+        topology: RallarOverlayTopologySnapshot,
+        input: RtcTopologyReconnectHydration.Input
+    ): RtcTopologyReplayHydrationOutcome {
+        const messages = materializeRtcTopologyHydrationMessages({
+            connection,
+            topology,
+            nowEpochMs: this.#nowEpochMs()
+        });
+        for (const message of messages) {
+            const encoded = this.#socket.encode(message);
+            throwIfAborted(input);
+            if (!this.#socket.trySendEncodedToContext(connection, encoded)) {
+                return this.#isCurrent(connection) ? 'retry' : 'stale-generation';
+            }
+        }
+        return 'sent';
     }
 
     #isCurrent(connection: ConnectionContext): boolean {
@@ -251,12 +277,19 @@ export class RtcTopologyReconnectHydration {
 }
 
 interface HydrationScanState {
-    readonly matched: Set<ConnectionContext>;
-    readonly retry: Set<ConnectionContext>;
-    readonly attemptedPairs: Set<string>;
+    readonly matched: ReadonlySet<ConnectionContext>;
+    readonly retry: ReadonlySet<ConnectionContext>;
+    readonly attemptedPairs: ReadonlySet<string>;
+}
+
+interface HydrationAttempt {
+    readonly connection: ConnectionContext;
+    readonly pair: string;
+    readonly outcome: RtcTopologyReplayHydrationOutcome;
 }
 
 interface IsAuthorizedInput {
+    readonly roomRef: GroupRef;
     readonly snapshot: GroupSnapshot | undefined;
     readonly sessionId: string;
     readonly identity: RtcTopologyHydrationIdentity;
@@ -265,18 +298,21 @@ interface IsAuthorizedInput {
 
 function isAuthorized(input: IsAuthorizedInput): boolean {
     const { snapshot, sessionId, identity, nowEpochMs } = input;
-    if (!snapshot || snapshot.group.status !== 'active') {
+    if (
+        !snapshot || snapshot.group.status !== 'active' || !isSameGroupRef(snapshot.group, input.roomRef) ||
+        (snapshot.group.expiresAtEpochMs !== null && snapshot.group.expiresAtEpochMs <= nowEpochMs)
+    ) {
         return false;
     }
     const member = snapshot.members.find(
         (candidate) => candidate.principalId === identity.principalId
     );
-    if (member?.status !== 'active') {
+    if (member?.status !== 'active' || !isSameGroupRef(member, input.roomRef)) {
         return false;
     }
     const session = snapshot.activeSessions.find((candidate) => candidate.sessionId === sessionId);
     return (
-        session?.status === 'active' &&
+        session?.status === 'active' && isSameGroupRef(session, input.roomRef) &&
         session.principalId === identity.principalId &&
         session.expiresAtEpochMs > nowEpochMs
     );

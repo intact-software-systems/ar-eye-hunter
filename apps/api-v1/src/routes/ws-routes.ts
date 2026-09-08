@@ -1,6 +1,5 @@
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { type RegisterAuthorisedWsClientInput } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { type ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import type {
     AppClientInboxService
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
@@ -10,24 +9,24 @@ import {
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { type GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
-import { ConnectionContext, type JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import {
-    hasAuthorisedWsCloseFacts as hasAuthorisedWsCloseFactsFromRegistry,
-    readAuthorisedWsConnection as readAuthorisedWsConnectionFromRegistry,
-    releaseAuthorisedWsCloseFacts as releaseAuthorisedWsCloseFactsFromRegistry,
+    readAuthorisedWsConnection,
     rememberAuthorisedWsConnection
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { toAuthErrorResponse } from '../services/request-auth-service.ts';
+
+export interface WsRouteAuthInput {
+    readonly sessionId: string;
+    readonly ticket?: string;
+}
 
 export interface RegisterWsRoutesInput {
     readonly socketServer: JsonWebSocketServer;
     readonly appClientInboxService: Pick<AppClientInboxService, 'enqueueAuthorisedWsClientConnect'>;
     readonly requireWsAuthSession: (
-        input: Readonly<{
-            sessionId: string;
-            ticket?: string;
-        }>
+        input: WsRouteAuthInput
     ) => Promise<IssuedAuthSession>;
 }
 
@@ -46,7 +45,7 @@ async function handleWebSocketUpgrade(
         return context.text('Expected Upgrade: websocket', 426);
     }
 
-    let upgraded: ReturnType<typeof Deno.upgradeWebSocket> | undefined;
+    let upgraded: Deno.WebSocketUpgrade | undefined;
 
     try {
         const sessionId = context.req.param('sessionId');
@@ -59,8 +58,7 @@ async function handleWebSocketUpgrade(
 
         const socketServer = input.socketServer;
         const connection = socketServer.createConnectionContext(
-            authSession.sessionId,
-            upgraded.socket
+            { id: authSession.sessionId, socket: upgraded.socket }
         );
         const connectInput = {
             authSession,
@@ -98,14 +96,6 @@ async function handleWebSocketUpgrade(
     }
 }
 
-export function createAuthorisedWsConnectionContext(
-    sessionId: string,
-    socket: WebSocket,
-    generationId: string = crypto.randomUUID()
-): ConnectionContext {
-    return new ConnectionContext(sessionId, socket, generationId);
-}
-
 export function toAuthorisedWsClientInput(
     url: URL,
     userAgent?: string,
@@ -140,24 +130,6 @@ export function toGroupPresenceSessionCleanupInput(
         disconnectedAtEpochMs: input.disconnectedAtEpochMs,
         reason: input.reason
     };
-}
-
-export function releaseAuthorisedWsCloseFacts(
-    input: RallarWsLifecycleCloseInput
-): void {
-    releaseAuthorisedWsCloseFactsFromRegistry(input);
-}
-
-export function hasAuthorisedWsCloseFacts(
-    input: RallarWsLifecycleCloseInput
-): boolean {
-    return hasAuthorisedWsCloseFactsFromRegistry(input);
-}
-
-function readAuthorisedWsConnection(
-    input: RallarWsLifecycleCloseInput
-): ClientAuthorisedWsSessionConnectAppInboxPayload {
-    return readAuthorisedWsConnectionFromRegistry(input);
 }
 
 function isWebSocketUpgradeHeader(upgrade?: string): boolean {

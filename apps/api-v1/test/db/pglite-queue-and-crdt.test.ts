@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { computeResourceInboxObservedReplacement } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { computeResourceInboxRelease } from '@shared/queuebox/compute-resource-inbox-release.ts';
 import assert from 'node:assert/strict';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
@@ -176,11 +178,11 @@ Deno.test(
             try {
                 assert.equal(
                     (await inbox.transaction((transactionInbox) =>
-                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked(
-                            new Set([databaseClockTimeout.typeId]),
-                            30_000,
-                            { maxToReserve: 1, maxAttempts: 2 }
-                        )
+                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
+                            typeIds: new Set([databaseClockTimeout.typeId]),
+                            timeSinceStartMs: 30_000,
+                            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+                        })
                     )).size,
                     0
                 );
@@ -193,11 +195,11 @@ Deno.test(
       `;
                 assert.equal(
                     (await inbox.transaction((transactionInbox) =>
-                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked(
-                            new Set([databaseClockTimeout.typeId]),
-                            30_000,
-                            { maxToReserve: 1, maxAttempts: 2 }
-                        )
+                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
+                            typeIds: new Set([databaseClockTimeout.typeId]),
+                            timeSinceStartMs: 30_000,
+                            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+                        })
                     )).size,
                     1
                 );
@@ -299,11 +301,7 @@ Deno.test(
             );
 
             const locked = await inbox.transaction((txInbox) =>
-                txInbox.reservations.findEntriesSkipLocked(
-                    new Set(['TYPE_A']),
-                    new Set([EntityStatus.NEW]),
-                    10
-                )
+                txInbox.reservations.findEntriesSkipLocked({ typeIds: new Set(['TYPE_A']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 })
             );
             assert.equal(locked.size, 1);
             assert.equal([...locked.values()][0].key.resourceId, 'active-1');
@@ -332,19 +330,19 @@ Deno.test(
             const releasedAt = Temporal.Instant.fromEpochMilliseconds(
                 Number(reservedStartTs.epochMilliseconds) + 123
             );
+            assert.ok(reserved.right);
+            const staleReservation = { ...reserved.right, dequeueAudit: { ...reserved.right.dequeueAudit, attempts: 2 } };
             assert.equal(
-                await inbox.reservations.releaseReserved(active.key, {
-                    expectedAttempts: 2,
-                    releasedAt,
-                    disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-                }),
+                await inbox.reservations.releaseReserved(computeResourceInboxObservedReplacement(
+                    staleReservation,
+                    computeResourceInboxRelease(staleReservation, { status: EntityStatus.COMPLETED, delayMs: null }, releasedAt)
+                )),
                 null
             );
-            const released = await inbox.reservations.releaseReserved(active.key, {
-                expectedAttempts: 1,
-                releasedAt,
-                disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-            });
+            const released = await inbox.reservations.releaseReserved(computeResourceInboxObservedReplacement(
+                reserved.right,
+                computeResourceInboxRelease(reserved.right, { status: EntityStatus.COMPLETED, delayMs: null }, releasedAt)
+            ));
             const releaseRows = await sql<EndTimestampRow[]>`
       select end_ts::text as end_ts
       from resource_inbox
@@ -475,11 +473,11 @@ Deno.test(
             await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, updatedWrite));
             assert.equal((await repository.entries.findByKey(first.key))?.resource, second.resource);
 
-            const reserved = await queue.reserveEntries(
-                new Set([first.typeId]),
-                new Set([EntityStatus.NEW]),
-                { maxToReserve: 1, maxAttempts: 20 }
-            );
+            const reserved = await queue.reserveEntries({
+                typeIds: new Set([first.typeId]),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 20 }
+            });
             assert.equal(reserved.size, 1);
             const observedReserved = [...reserved.values()][0];
             assert.ok(observedReserved);
@@ -527,11 +525,11 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
         const firstWrite = createInitialCoalescedTopologyWork('revive-overlay');
         await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
         const first = firstWrite.entryWrite.entry;
-        const reserved = await queue.reserveEntries(
-            new Set([first.typeId]),
-            new Set([EntityStatus.NEW]),
-            { maxToReserve: 1, maxAttempts: 20 }
-        );
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([first.typeId]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 20 }
+        });
         const observedReserved = [...reserved.values()][0];
         assert.ok(observedReserved);
         assert.ok(

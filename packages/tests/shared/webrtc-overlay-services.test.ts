@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -17,17 +18,18 @@ import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/cr
 import { EnqueuedType, type OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import type { OverlayMulticasterContext } from '@shared/multicast/OverlayMulticastContracts.ts';
+import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import {
+    CircuitBreaker,
+    CircuitBreakerPolicy,
+    toCircuitBreaker
+} from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter, toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
@@ -45,42 +47,110 @@ describe('WebRtc overlay services', () => {
         vi.restoreAllMocks();
     });
 
-    it('holds a queued relay until its exact room snapshot catches up again', async () => {
+    it.each([false, true])('retains eligible queue work only when its owner is disposed (disposed=%s)', async (disposed) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        const peer: { channel: CapturedRtcChannel | undefined; } = { channel: undefined };
+        const connectionService = createConnectionService(['peer-1'], { 'peer-1': peer });
+        const resources = createDefaultALOutboundRuntimeResources();
+        const manager = new WebRtcOverlayMulticastManager({
+            connectionService,
+            groupCache: new LatestRepository(),
+            overlayCache: new LatestRepository(),
+            multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundRuntime: resources,
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter()
+        });
+        onTestFinished(() => manager.dispose());
+        const message = newALUnicastMessage(
+            'self',
+            { topicId: 'chat', resourceId: 'dispose-owned-work', contextId: 'conversation-1' },
+            'peer-1',
+            'chat.private-text.v1',
+            { text: 'wait for the channel' },
+            { ttlMs: 120_000, qos: { durability: { algo: 'local-outbox' } } }
+        );
+        await manager.enqueueIfAbsent(message);
+        const key = (await manager.outbox.getAllKeys()).find((candidate) => candidate.topicId === 'AL_OUTBOUND');
+        expect(key).toBeDefined();
+        const waiting = await manager.outbox.getItem(key!);
+        expect(waiting).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+        expect(waiting!.dequeueAudit.nextTs).toBeDefined();
+        const nowMs = Date.now();
+        const readyAtMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
+        expect(readyAtMs).toBeGreaterThan(nowMs);
+        expect(readyAtMs).toBeLessThan(message.constraints!.expiresAtMs!);
+        expect(vi.getTimerCount()).toBeGreaterThan(0);
+        if (disposed) {
+            manager.dispose();
+        }
+        peer.channel = createOpenRtcChannel();
+        await vi.advanceTimersByTimeAsync(readyAtMs - nowMs + 1);
+        await resources.queueEngine.executeOnce();
+        if (disposed) {
+            expect(peer.channel.sendCalls).toEqual([]);
+            expect(await manager.outbox.getItem(key!)).toEqual(waiting);
+        }
+        else {
+            expect(peer.channel.sendCalls).toHaveLength(1);
+            expect(peer.channel.sendCalls[0]?.[0]).toMatchObject({ id: message.id });
+            manager.dispose();
+        }
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each([false, true])('holds admitted forwarding until its exact room snapshot catches up again (durable=%s)', async (durable) => {
         vi.useFakeTimers();
         const channel = createOpenRtcChannel();
         const connection = createConnectionService(['peer-1', 'peer-2'], { 'peer-2': { channel } });
         const context = createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2']);
         const current = { ...context.room, group: { ...context.room.group, snapshotVersion: 5 } };
         const groups = createReadableCache({ 'group-1': current });
+        const resources = createDefaultALOutboundRuntimeResources();
+        const commit = resources.admissionStore.commitBundle.bind(resources.admissionStore);
+        vi.spyOn(resources.admissionStore, 'commitBundle').mockImplementationOnce(async (...args) => {
+            const result = await commit(...args);
+            groups.accept('group-1', { ...current, group: { ...current.group, snapshotVersion: 4 } });
+            return result;
+        });
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: new InMemoryQueueBox(new Map()),
             connectionService: connection,
             groupCache: groups,
             overlayCache: createReadableCache({ 'group-1': context.overlay }),
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const message = newALMulticastMessage(
             'peer-1',
             { topicId: 'chat', contextId: 'group-1', resourceId: 'snapshot-forward' },
             groupRef('group-1'),
             'chat.message.v1',
             { text: 'forward only while current' },
-            { minSnapshotVersion: 5, ack: 'none', reliability: 'at-least-once' }
+            {
+                minSnapshotVersion: 5,
+                ack: 'none',
+                reliability: durable ? 'at-least-once' : 'best-effort',
+                qos: { durability: { algo: durable ? 'local-outbox' : 'volatile' } }
+            }
         );
         try {
-            await manager.forwardIfRequired(message, 'peer-1');
+            expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBeUndefined();
+            expect(await manager.forwardIfRequired(message, 'peer-1')).toHaveLength(1);
             groups.accept('group-1', { ...current, group: { ...current.group, snapshotVersion: 4 } });
-            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
+            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
             expect(channel.sendCalls).toEqual([]);
 
             groups.accept('group-1', current);
             await vi.advanceTimersByTimeAsync(1_000);
-            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
+            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
             expect(channel.sendCalls).toHaveLength(1);
         }
         finally {
@@ -96,7 +166,7 @@ describe('WebRtc overlay services', () => {
         );
         const msg = {
             ...newALMulticastMessage(
-                'sender-1',
+                'self',
                 {
                     topicId: 'chat',
                     resourceId: 'msg-1',
@@ -142,10 +212,8 @@ describe('WebRtc overlay services', () => {
     });
 
     it('skips volatile immediate sends when no rtc channel exists for the planned next hop', async () => {
-        const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -160,6 +228,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
             'sender-2',
@@ -180,21 +249,20 @@ describe('WebRtc overlay services', () => {
             entries: []
         });
 
-        const reserved = await queue.reserveEntries(
-            new Set([EnqueuedType.RTC_OUTBOX]),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await manager.outbox.reserveEntries({
+            typeIds: new Set([EnqueuedType.RTC_OUTBOX]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 10
+        });
 
         expect(reserved.size).toBe(0);
     });
 
     it('skips outbound messages without targets or next hop', async () => {
         const warnings = captureWarnings();
-        const queue = new InMemoryQueueBox(new Map());
+
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -209,6 +277,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUntargetedMessage(
             'sender-no-targets',
             {
@@ -227,15 +296,14 @@ describe('WebRtc overlay services', () => {
             entries: []
         });
         expect(warnings).toEqual([]);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('skips multicast sends when overlay context is missing', async () => {
         const warnings = captureWarnings();
-        const queue = new InMemoryQueueBox(new Map());
+
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -250,6 +318,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'sender-missing-context',
             {
@@ -271,16 +340,15 @@ describe('WebRtc overlay services', () => {
         expect(warnings).toContain(
             'No GroupSnapshot found for overlayId/groupId group-1'
         );
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('skips multicast sends when no next hop is planned', async () => {
         const warnings = captureWarnings();
-        const queue = new InMemoryQueueBox(new Map());
+
         const connectionService = createConnectionService([]);
         const context = createOverlayContext(['self', 'peer-1'], []);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({ 'group-1': context.room }),
             overlayCache: createReadableCache({ 'group-1': context.overlay }),
@@ -295,8 +363,9 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'sender-no-next-hop',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-no-next-hop',
@@ -314,11 +383,10 @@ describe('WebRtc overlay services', () => {
             entries: []
         });
         expect(warnings).toEqual([]);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('resolves multicast room context from target groupRef when group ids collide', async () => {
-        const queue = new InMemoryQueueBox(new Map());
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
@@ -342,7 +410,6 @@ describe('WebRtc overlay services', () => {
             }
         );
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({
                 'shared-room': workspaceA.room,
@@ -362,6 +429,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
             {
@@ -377,16 +445,16 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
-            status: 'sent-immediate',
-            entries: []
+            status: 'accepted',
+            entries: [{ status: EntityStatus.COMPLETED }]
         });
         expect(channel.sendCalls).toHaveLength(1);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('rejects a bare overlay fallback when its groupRef belongs to another workspace', async () => {
         const warnings = captureWarnings();
-        const queue = new InMemoryQueueBox(new Map());
+
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
@@ -410,7 +478,6 @@ describe('WebRtc overlay services', () => {
             }
         );
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({
                 'workspace-a-room': workspaceA.room,
@@ -433,6 +500,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
             {
@@ -457,8 +525,7 @@ describe('WebRtc overlay services', () => {
         );
     });
 
-    it('returns no entries for volatile immediate sends even when channel send succeeds', async () => {
-        const queue = new InMemoryQueueBox(new Map());
+    it('returns a canonical fact for volatile immediate sends after channel submission', async () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
@@ -466,7 +533,6 @@ describe('WebRtc overlay services', () => {
             }
         });
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -481,6 +547,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-immediate',
             {
@@ -496,15 +563,14 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
-            status: 'sent-immediate',
-            entries: []
+            status: 'accepted',
+            entries: [{ status: EntityStatus.COMPLETED }]
         });
         expect(channel.sendCalls).toHaveLength(1);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('rate-limits RTC enqueue attempts before dispatch side effects', async () => {
-        const queue = new InMemoryQueueBox(new Map());
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
@@ -512,7 +578,6 @@ describe('WebRtc overlay services', () => {
             }
         });
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -527,6 +592,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
             rateLimiter: RateLimiter.init(1_000, 2)
         });
+        onTestFinished(() => manager.dispose());
 
         const first = await manager.enqueueIfAbsent(
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-1')
@@ -538,19 +604,18 @@ describe('WebRtc overlay services', () => {
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
-        expect(first.status).toBe('sent-immediate');
-        expect(second.status).toBe('sent-immediate');
+        expect(first.status).toBe('accepted');
+        expect(second.status).toBe('accepted');
         expect(third).toMatchObject({
             status: 'rate-limited',
             entries: [],
             reason: 'RTC enqueue rate limit exceeded'
         });
         expect(channel.sendCalls).toHaveLength(2);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('returns circuit-open without dispatch side effects when the enqueue breaker is open', async () => {
-        const queue = new InMemoryQueueBox(new Map());
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
@@ -560,7 +625,6 @@ describe('WebRtc overlay services', () => {
         const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
         circuitBreaker.failureCount(2);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -575,6 +639,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: circuitBreaker,
             rateLimiter: RateLimiter.init(1_000, 20)
         });
+        onTestFinished(() => manager.dispose());
 
         const result = await manager.enqueueIfAbsent(
             createUnicastRtcMessage('sender-circuit-open', 'msg-circuit-open')
@@ -586,15 +651,13 @@ describe('WebRtc overlay services', () => {
             reason: 'RTC enqueue circuit breaker open'
         });
         expect(channel.sendCalls).toEqual([]);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('does not transmit a malformed persisted AL envelope', async () => {
-        const queue = new InMemoryQueueBox(new Map());
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], { 'peer-1': { channel } });
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService,
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
@@ -605,25 +668,24 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const message = createUnicastRtcMessage('sender-corrupt', 'persisted-corrupt');
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX);
-        await queue.enqueueIfAbsent({
+        await manager.outbox.enqueueIfAbsent({
             ...entry,
             resource: JSON.stringify({ ...message, id: { ...message.id, v: 1 }, forwarding: { nextHopPeerIds: ['peer-1'] } })
         });
 
-        await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
+        await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
 
         expect(channel.sendCalls).toEqual([]);
-        expect((await queue.getItem(message.route))?.status).not.toBe(EntityStatus.COMPLETED);
+        expect((await manager.outbox.getItem(message.route))?.status).not.toBe(EntityStatus.COMPLETED);
         manager.dispose();
     });
 
     it('returns an outbox entry for durable RTC sends', async () => {
-        const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -638,6 +700,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-durable',
             {
@@ -663,16 +726,15 @@ describe('WebRtc overlay services', () => {
 
         expect(result.status).toBe('enqueued');
         expect(result.entries).toHaveLength(1);
-        expect(result.entries[0]?.key.resourceId).toBe('msg-durable');
-        expect(await reserveRtcOutbox(queue)).toHaveLength(1);
+        expect(result.entries[0]?.key.topicId).toBe('AL_OUTBOUND_MESSAGE');
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('returns an existing outbox entry when the same durable RTC message is enqueued twice', async () => {
         vi.spyOn(console, 'log').mockImplementation(() => undefined);
-        const queue = new InMemoryQueueBox(new Map());
+
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -687,6 +749,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-duplicate',
             {
@@ -715,17 +778,16 @@ describe('WebRtc overlay services', () => {
         expect(firstResult.entries).toHaveLength(1);
         expect(secondResult.status).toBe('duplicate');
         expect(secondResult.entries).toHaveLength(1);
-        expect(secondResult.entries[0]?.key.resourceId).toBe('msg-duplicate');
-        expect(await reserveRtcOutbox(queue)).toHaveLength(1);
+        expect(secondResult.entries[0]?.key).toEqual(firstResult.entry?.key);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('skips expired multicast sends without outbox entries', async () => {
         const warnings = captureWarnings();
-        const queue = new InMemoryQueueBox(new Map());
+
         const connectionService = createConnectionService(['peer-1']);
         const context = createOverlayContext(['self', 'peer-1'], ['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({ 'group-1': context.room }),
             overlayCache: createReadableCache({ 'group-1': context.overlay }),
@@ -740,8 +802,9 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'sender-expired',
+            'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-expired',
@@ -762,19 +825,17 @@ describe('WebRtc overlay services', () => {
             entries: []
         });
         expect(warnings).toEqual([]);
-        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+        expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
     it('keeps durable rtc send effects retryable when dequeue cannot find a channel', async () => {
         vi.useFakeTimers();
 
-        const queue = new InMemoryQueueBox(new Map());
         const peer: { channel: ReturnType<typeof createOpenRtcChannel> | undefined; } = { channel: undefined };
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': peer
         });
         const manager = new WebRtcOverlayMulticastManager({
-            outbox: queue,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -789,6 +850,7 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter()
         });
+        onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
             'sender-3',
@@ -829,10 +891,11 @@ describe('WebRtc overlay services', () => {
         await manager.enqueueIfAbsent(msg);
         await manager.dequeue(
             WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto()
+            createResourceInboxResilience()
         );
 
-        const storedEntry = await queue.getItem(msg.route);
+        const keys = await manager.outbox.getAllKeys();
+        const storedEntry = await manager.outbox.getItem(keys.find((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')!);
 
         expect(storedEntry?.status).toBe(EntityStatus.COMPLETED);
 
@@ -843,14 +906,14 @@ describe('WebRtc overlay services', () => {
     });
 });
 
-async function reserveRtcOutbox(queue: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
+async function reserveRtcOutbox(queue: WebRtcOverlayMulticastManager['outbox']): Promise<readonly ResourceEntry[]> {
     return [
         ...(
-            await queue.reserveEntries(
-                WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-                new Set([EntityStatus.NEW]),
-                10
-            )
+            await queue.reserveEntries({
+                typeIds: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 10
+            })
         ).values()
     ];
 }
@@ -895,8 +958,12 @@ function createOpenRtcChannel(): CapturedRtcChannel {
     const health = channel.readHealth();
     const sendCalls: object[][] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        if (typeof message !== 'object' || message === null) {
+            throw new Error('Expected an RTC message object');
+        }
         sendCalls.push([message]);
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return Object.assign(channel, { sendCalls });
 }
@@ -961,8 +1028,9 @@ function createOverlayContext(
     };
 
     return {
+        nowMs: Date.now(),
         overlayId: groupId,
-        room,
+        room: { ...room, activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 })) },
         overlay
     };
 }
@@ -993,12 +1061,12 @@ function createCircuitBreakerPolicy(maxConsecutiveFailures: number = 10) {
     );
 }
 
-function createResilienceDto() {
-    return ResilienceDto.toResilienceDto(
-        createCircuitBreakerPolicy(),
-        1,
-        10,
-        1,
-        1
-    );
+function createResourceInboxResilience() {
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: createCircuitBreakerPolicy(),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

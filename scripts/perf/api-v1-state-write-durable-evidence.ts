@@ -24,16 +24,21 @@ import { parsePersistedResult } from './api-v1-state-write-attempt-evidence.ts';
 import {
     readScopedGroupCommandsByRequestId,
     readValidatedGroupReceiptIdentity,
-    type ScopedGroupCommandExpectation
+    type ScopedGroupCommandExpectation,
+    type ScopedGroupCommandIdentity
 } from './api-v1-state-write-group-receipt-evidence.ts';
+import { countStateWriteAtomicCompletionFailures } from './api-v1-state-write-outbox-contract.mjs';
 import {
     computeProductionOutboxEvidence,
-    computeProductionOutboxExpectations,
-    createProductionOutboxRepository,
     productionCommandIdsForRaw,
-    readReferencedProductionOutboxRecords,
     type StateWriteResourceOutboxEvidence
 } from './api-v1-state-write-outbox-evidence.ts';
+import { computeProductionOutboxExpectations } from './api-v1-state-write-outbox-expectations.ts';
+import {
+    createProductionOutboxRepository,
+    readReferencedProductionOutboxRecords,
+    type ProductionOutboxRepository
+} from './api-v1-state-write-outbox-repository.ts';
 import {
     projectClientReceiptEvidence,
     projectGroupReceiptEvidence,
@@ -97,112 +102,107 @@ export interface QueryStateWriteDurableEvidenceInput {
     readonly timingEvents: readonly RallarTimingEvent[];
 }
 
-export async function queryStateWriteDurableEvidence({
-    sql,
-    scope,
-    commands,
-    groupCount,
-    timingEvents
-}: QueryStateWriteDurableEvidenceInput): Promise<StateWriteDurableEvidence> {
-    const database = toApiV1PostgresClient(sql);
-    const runtime = new PSqlRuntimeStateRepository(database);
-    const clients = new ClientStateRepository(
-        runtime,
-        new PSqlClientStateEventRepository(database)
-    );
-    const groups = new GroupStateRepository(
-        runtime,
-        new PSqlGroupStateEventRepository(database)
-    );
-    const topology = new GroupTopologyConfigRepository(runtime);
-    const outbox = createProductionOutboxRepository(sql);
-    const acceptedCommands = commands.filter((command) => command.status === 'accepted');
-    const appInboxExpectations = toStateWriteAppInboxExpectations(
-        acceptedCommands,
-        scope,
-        groupCount
-    );
-    const scopedGroupCommands = await readScopedGroupCommandsByRequestId({
-        sql,
-        expectations: createScopedGroupCommandExpectations(acceptedCommands, scope, groupCount)
-    });
-    const receiptResults = await mapWithConcurrency(
-        acceptedCommands,
-        25,
-        async (command): Promise<ProductionReceiptEvidence | undefined> => {
-            const clientIndex = readStateWriteBenchmarkClientIndex(command.commandId);
-            const productionCommandIds = productionCommandIdsForRaw(command);
+export async function queryStateWriteDurableEvidence(
+    input: QueryStateWriteDurableEvidenceInput
+): Promise<StateWriteDurableEvidence> {
+    return await new StateWriteDurableEvidenceReader(input).read();
+}
 
-            if (command.kind === 'profile-instance') {
-                const receipts = await Promise.all(
-                    productionCommandIds.map(
-                        async (requestId) =>
-                            await clients.findIdempotentClientMutationReceipt(
-                                { ...scope, principalId: `client-${clientIndex}` },
-                                requestId
-                            )
-                    )
-                );
-                if (
-                    !receipts.every((receipt, index) => isValidProductionReceipt(receipt, productionCommandIds[index]!))
-                ) {
-                    return undefined;
-                }
-                return projectClientReceiptEvidence(command.commandId, receipts);
-            }
-            if (command.kind === 'topology-source') {
-                const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
-                const receipt = readValidatedTopologyMutationReceipt(
-                    await topology.findMutationRecord(groupRef, command.commandId),
-                    groupRef,
-                    command.commandId
-                );
-                return receipt ? projectTopologyReceiptEvidence(command.commandId, receipt) : undefined;
-            }
-            const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
-            const scopedCommand = scopedGroupCommands.get(command.commandId);
-            if (scopedCommand === undefined) {
-                return undefined;
-            }
-            const receipt = await groups.findIdempotentGroupMutationReceipt(
-                groupRef,
-                scopedCommand.commandId
-            );
-            const validatedReceipt = readValidatedGroupReceiptIdentity({
-                value: receipt,
-                ref: groupRef,
-                scopedCommand
-            });
-            return validatedReceipt !== undefined
-                ? projectGroupReceiptEvidence(command.commandId, validatedReceipt)
-                : undefined;
+class StateWriteDurableEvidenceReader {
+    private readonly input: QueryStateWriteDurableEvidenceInput;
+    private readonly clients: ClientStateRepository;
+    private readonly groups: GroupStateRepository;
+    private readonly topology: GroupTopologyConfigRepository;
+    private readonly outbox: ProductionOutboxRepository;
+
+    constructor(input: QueryStateWriteDurableEvidenceInput) {
+        this.input = input;
+        const database = toApiV1PostgresClient(input.sql);
+        const runtime = new PSqlRuntimeStateRepository(database);
+        this.clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(database));
+        this.groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(database));
+        this.topology = new GroupTopologyConfigRepository(runtime);
+        this.outbox = createProductionOutboxRepository(input.sql);
+    }
+
+    async read(): Promise<StateWriteDurableEvidence> {
+        const { sql, scope, commands, groupCount, timingEvents } = this.input;
+        const acceptedCommands = commands.filter((command) => command.status === 'accepted');
+        const appInboxExpectations = toStateWriteAppInboxExpectations(acceptedCommands, scope, groupCount);
+        const scopedGroupCommands = await readScopedGroupCommandsByRequestId({
+            sql,
+            expectations: createScopedGroupCommandExpectations(acceptedCommands, scope, groupCount)
+        });
+        const receiptResults = await mapWithConcurrency(
+            acceptedCommands,
+            25,
+            async (command) => await this.readReceipt(command, scopedGroupCommands)
+        );
+        const receipts = receiptResults.filter((receipt): receipt is ProductionReceiptEvidence =>
+            receipt !== undefined
+        );
+        const records = await readReferencedProductionOutboxRecords(
+            this.outbox,
+            computeProductionOutboxExpectations(commands, receipts)
+        );
+        const appInbox = await readAppInboxEvidence({ sql, expectations: appInboxExpectations, timingEvents });
+        const resourceOutbox = computeProductionOutboxEvidence({ commands, receipts, records });
+        return {
+            appInbox: appInbox.toSorted((left, right) => left.resourceId.localeCompare(right.resourceId)),
+            receipts: receipts.toSorted((left, right) => left.commandId.localeCompare(right.commandId)),
+            resourceOutbox: resourceOutbox.toSorted((left, right) => left.effectId.localeCompare(right.effectId)),
+            intermediateMutationIntents: [],
+            atomicCompletionFailures: countStateWriteAtomicCompletionFailures(commands, {
+                appInbox,
+                receipts,
+                resourceOutbox
+            })
+        };
+    }
+
+    private async readReceipt(
+        command: StateWriteBenchmarkCommand,
+        scopedGroupCommands: ReadonlyMap<string, ScopedGroupCommandIdentity>
+    ): Promise<ProductionReceiptEvidence | undefined> {
+        const { scope, groupCount } = this.input;
+        const clientIndex = readStateWriteBenchmarkClientIndex(command.commandId);
+        if (command.kind === 'profile-instance') {
+            return await this.readClientReceipt(command, clientIndex);
         }
-    );
-    const receipts = receiptResults.filter(
-        (receipt): receipt is ProductionReceiptEvidence => receipt !== undefined
-    );
-    const productionRecords = await readReferencedProductionOutboxRecords(
-        outbox,
-        computeProductionOutboxExpectations(commands, receipts)
-    );
-    const appInbox = await readAppInboxEvidence({
-        sql,
-        expectations: appInboxExpectations,
-        timingEvents
-    });
-    const resourceOutbox = computeProductionOutboxEvidence({
-        commands,
-        receipts,
-        records: productionRecords
-    });
+        const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
+        if (command.kind === 'topology-source') {
+            const receipt = readValidatedTopologyMutationReceipt(
+                await this.topology.findMutationRecord(groupRef, command.commandId),
+                groupRef,
+                command.commandId
+            );
+            return receipt ? projectTopologyReceiptEvidence(command.commandId, receipt) : undefined;
+        }
+        const scopedCommand = scopedGroupCommands.get(command.commandId);
+        if (scopedCommand === undefined) {
+            return undefined;
+        }
+        const receipt = await this.groups.findIdempotentGroupMutationReceipt(groupRef, scopedCommand.commandId);
+        const validatedReceipt = readValidatedGroupReceiptIdentity({ value: receipt, ref: groupRef, scopedCommand });
+        return validatedReceipt === undefined
+            ? undefined
+            : projectGroupReceiptEvidence(command.commandId, validatedReceipt);
+    }
 
-    return {
-        appInbox: appInbox.toSorted((left, right) => left.resourceId.localeCompare(right.resourceId)),
-        receipts: receipts.toSorted((left, right) => left.commandId.localeCompare(right.commandId)),
-        resourceOutbox: resourceOutbox.toSorted((left, right) => left.effectId.localeCompare(right.effectId)),
-        intermediateMutationIntents: [],
-        atomicCompletionFailures: 0
-    };
+    private async readClientReceipt(
+        command: StateWriteBenchmarkCommand,
+        clientIndex: number
+    ): Promise<ProductionReceiptEvidence | undefined> {
+        const productionCommandIds = productionCommandIdsForRaw(command);
+        const ref = { ...this.input.scope, principalId: `client-${clientIndex}` };
+        const receipts = await Promise.all(productionCommandIds.map(
+            async (requestId) => await this.clients.findIdempotentClientMutationReceipt(ref, requestId)
+        ));
+        if (!receipts.every((receipt, index) => isValidProductionReceipt(receipt, productionCommandIds[index]!))) {
+            return undefined;
+        }
+        return projectClientReceiptEvidence(command.commandId, receipts);
+    }
 }
 
 function createScopedGroupCommandExpectations(
@@ -251,20 +251,42 @@ async function readAppInboxEvidence({
     if (expectations.length === 0) {
         return [];
     }
-    const rows = await sql<
-        readonly {
-            ri_resource_id: string;
-            ri_topic_id: string;
-            fk_ext_bank_id: string;
-            ri_resource: string;
-            ri_status: string;
-            ri_attempts: number | string;
-            retry_delay_ms: number | string;
-            due_age_ms: number | string;
-            result_status: string | null;
-            result_resource: string | null;
-        }[]
-    >`
+    const rows = await readAppInboxRows(sql, expectations);
+    const expectationByPhysicalKey = new Map(
+        expectations.map((expectation) => [toPhysicalKey(expectation.physicalKey), expectation])
+    );
+
+    return rows.flatMap((row) => {
+        const expectation = expectationByPhysicalKey.get(toPhysicalKey({
+            resourceId: row.ri_resource_id,
+            topicId: row.ri_topic_id,
+            contextId: row.fk_ext_bank_id
+        }));
+        if (expectation === undefined) {
+            return [];
+        }
+        return [computeAppInboxEvidence(row, expectation, timingEvents)];
+    });
+}
+
+interface PersistedAppInboxEvidenceRow {
+    readonly ri_resource_id: string;
+    readonly ri_topic_id: string;
+    readonly fk_ext_bank_id: string;
+    readonly ri_resource: string;
+    readonly ri_status: string;
+    readonly ri_attempts: number | string;
+    readonly retry_delay_ms: number | string;
+    readonly due_age_ms: number | string;
+    readonly result_status: string | null;
+    readonly result_resource: string | null;
+}
+
+async function readAppInboxRows(
+    sql: Sql,
+    expectations: readonly StateWriteAppInboxExpectation[]
+): Promise<readonly PersistedAppInboxEvidenceRow[]> {
+    return await sql<readonly PersistedAppInboxEvidenceRow[]>`
     select i.ri_resource_id, i.ri_topic_id, i.fk_ext_bank_id, i.ri_resource,
            i.ri_status, i.ri_attempts,
            coalesce(
@@ -284,56 +306,47 @@ async function readAppInboxEvidence({
       and i.ri_topic_id = any(${[...new Set(expectations.map((entry) => entry.physicalKey.topicId))]})
       and i.fk_ext_bank_id = any(${[...new Set(expectations.map((entry) => entry.physicalKey.contextId))]})
   `;
-    const expectationByPhysicalKey = new Map(
-        expectations.map((expectation) => [toPhysicalKey(expectation.physicalKey), expectation])
-    );
+}
 
-    return rows.flatMap((row) => {
-        const expectation = expectationByPhysicalKey.get(toPhysicalKey({
-            resourceId: row.ri_resource_id,
-            topicId: row.ri_topic_id,
-            contextId: row.fk_ext_bank_id
-        }));
-        if (expectation === undefined) {
-            return [];
-        }
-        const identity = readStateWriteAppInboxIdentity(row, expectation);
-        if (identity === undefined) {
-            throw new TypeError(
-                `Benchmark AppInbox row differs from its expected command identity: ${expectation.commandId}`
-            );
-        }
-        const transaction = timingEvents
-            .filter(
-                (event) =>
-                    event.component === 'app-inbox-phase' &&
-                    event.operation === 'transaction' &&
-                    (
-                        event.requestId === row.ri_resource_id ||
-                        event.requestId === expectation.logicalResourceId
-                    )
-            )
-            .at(-1);
-        const dueAgeMs = Number(transaction?.details?.dueAgeMs ?? row.due_age_ms);
-        return [
-            {
-                commandId: identity.commandId,
-                operationId: identity.operationId,
-                resourceId: row.ri_resource_id,
-                topicId: row.ri_topic_id,
-                contextId: row.fk_ext_bank_id,
-                status: row.ri_status,
-                resultStatus: row.result_status ?? 'MISSING',
-                attempts: Number(row.ri_attempts),
-                retryDelayMs: Number(row.retry_delay_ms),
-                dueAgeMs,
-                selectedLane: dueAgeMs >= 30_000 ? ('fairness' as const) : ('fast' as const),
-                transactionDurationMs: transaction?.durationMs ?? 0,
-                commandType: identity.commandType,
-                durableResult: parsePersistedResult(row.result_resource)
-            }
-        ];
-    });
+function computeAppInboxEvidence(
+    row: PersistedAppInboxEvidenceRow,
+    expectation: StateWriteAppInboxExpectation,
+    timingEvents: readonly RallarTimingEvent[]
+): AppInboxAttemptEvidence {
+    const identity = readStateWriteAppInboxIdentity(row, expectation);
+    if (identity === undefined) {
+        throw new TypeError(
+            `Benchmark AppInbox row differs from its expected command identity: ${expectation.commandId}`
+        );
+    }
+    const transaction = timingEvents
+        .filter(
+            (event) =>
+                event.component === 'app-inbox-phase' &&
+                event.operation === 'transaction' &&
+                (
+                    event.requestId === row.ri_resource_id ||
+                    event.requestId === expectation.logicalResourceId
+                )
+        )
+        .at(-1);
+    const dueAgeMs = Number(transaction?.details?.dueAgeMs ?? row.due_age_ms);
+    return {
+        commandId: identity.commandId,
+        operationId: identity.operationId,
+        resourceId: row.ri_resource_id,
+        topicId: row.ri_topic_id,
+        contextId: row.fk_ext_bank_id,
+        status: row.ri_status,
+        resultStatus: row.result_status ?? 'MISSING',
+        attempts: Number(row.ri_attempts),
+        retryDelayMs: Number(row.retry_delay_ms),
+        dueAgeMs,
+        selectedLane: dueAgeMs >= 30_000 ? ('fairness' as const) : ('fast' as const),
+        transactionDurationMs: transaction?.durationMs ?? 0,
+        commandType: identity.commandType,
+        durableResult: parsePersistedResult(row.result_resource)
+    };
 }
 
 function toPhysicalKey(

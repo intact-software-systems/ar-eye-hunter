@@ -6,7 +6,7 @@ import {
     vi
 } from 'vitest';
 
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from './test-web-socket.ts';
 
@@ -39,7 +39,7 @@ describe('JsonWebSocketServer', () => {
         });
 
         const socket = new TestWebSocket('server');
-        const connection = new ConnectionContext('c1', socket);
+        const connection = new ConnectionContext({ id: 'c1', socket });
         server.addConnection(connection);
 
         socket.open();
@@ -68,9 +68,9 @@ describe('JsonWebSocketServer', () => {
         second.readyState = TestWebSocket.OPEN;
         closed.readyState = TestWebSocket.CLOSED;
 
-        server.addConnection(new ConnectionContext('one', first));
-        server.addConnection(new ConnectionContext('two', second));
-        server.addConnection(new ConnectionContext('three', closed));
+        server.addConnection(new ConnectionContext({ id: 'one', socket: first }));
+        server.addConnection(new ConnectionContext({ id: 'two', socket: second }));
+        server.addConnection(new ConnectionContext({ id: 'three', socket: closed }));
 
         server.send('one', { hello: true });
 
@@ -97,8 +97,8 @@ describe('JsonWebSocketServer', () => {
         first.readyState = TestWebSocket.OPEN;
         second.readyState = TestWebSocket.OPEN;
 
-        server.addConnection(new ConnectionContext('one', first));
-        server.addConnection(new ConnectionContext('two', second));
+        server.addConnection(new ConnectionContext({ id: 'one', socket: first }));
+        server.addConnection(new ConnectionContext({ id: 'two', socket: second }));
 
         const encoded = server.encode({ fanout: true });
         server.sendEncoded('one', encoded);
@@ -116,8 +116,8 @@ describe('JsonWebSocketServer', () => {
         const replacement = new TestWebSocket('replacement');
         first.readyState = TestWebSocket.OPEN;
         replacement.readyState = TestWebSocket.OPEN;
-        const captured = new ConnectionContext('session-1', first, 'generation-1');
-        const current = new ConnectionContext('session-1', replacement, 'generation-2');
+        const captured = new ConnectionContext({ id: 'session-1', socket: first, generationId: 'generation-1' });
+        const current = new ConnectionContext({ id: 'session-1', socket: replacement, generationId: 'generation-2' });
         server.addConnection(captured);
         const encoded = server.encode({ topology: true });
 
@@ -139,8 +139,8 @@ describe('JsonWebSocketServer', () => {
 
         first.readyState = TestWebSocket.OPEN;
         second.readyState = TestWebSocket.OPEN;
-        const firstContext = new ConnectionContext('session-1', first);
-        const secondContext = new ConnectionContext('session-1', second);
+        const firstContext = new ConnectionContext({ id: 'session-1', socket: first });
+        const secondContext = new ConnectionContext({ id: 'session-1', socket: second });
         server.onWebsocketCallbacksDo('lifecycle', {
             onClose: (connection) => {
                 lifecycle.push(`close:${connection.id}:${connection.socket === secondContext.socket}`);
@@ -173,7 +173,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('session');
         socket.readyState = TestWebSocket.OPEN;
-        server.addConnection(new ConnectionContext('session-1', socket));
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
 
         expect(server.closeConnection('missing-session')).toBe(false);
         expect(server.closeConnection('session-1', 1000, 'auth-logout')).toBe(true);

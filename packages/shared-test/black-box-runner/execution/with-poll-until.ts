@@ -13,6 +13,7 @@ export interface PollUntilPolicy {
 }
 
 export interface WithPollUntilInput {
+    readonly now: () => number;
     readonly request: any;
     readonly execute: () => Promise<any>;
 }
@@ -111,17 +112,17 @@ export async function withPollUntil(input: WithPollUntilInput): Promise<any> {
         return toUnusablePolicyStatus(await input.execute(), input.request);
     }
 
-    const startedAtEpochMs = Date.now();
+    const startedAtEpochMs = input.now();
     let lastStatus: any;
     let stableSinceEpochMs: number | undefined;
 
     for (let attemptNumber = 1; attemptNumber <= policy.maxAttempts; attemptNumber++) {
         lastStatus = await input.execute();
-        const elapsedMs = Date.now() - startedAtEpochMs;
+        const elapsedMs = input.now() - startedAtEpochMs;
 
         if (lastStatus?.status === SUCCESS) {
-            stableSinceEpochMs = stableSinceEpochMs ?? Date.now();
-            if (Date.now() - stableSinceEpochMs >= policy.stableForMs) {
+            stableSinceEpochMs = stableSinceEpochMs ?? input.now();
+            if (input.now() - stableSinceEpochMs >= policy.stableForMs) {
                 return withPollReportFields(lastStatus, {
                     attempts: attemptNumber,
                     exhausted: false,
@@ -150,7 +151,7 @@ export async function withPollUntil(input: WithPollUntilInput): Promise<any> {
     return withPollReportFields(toExhaustedStatus(lastStatus, policy), {
         attempts: policy.maxAttempts,
         exhausted: true,
-        elapsedMs: Date.now() - startedAtEpochMs,
+        elapsedMs: input.now() - startedAtEpochMs,
         stableForMs: policy.stableForMs
     });
 }

@@ -1,5 +1,11 @@
-import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type {
+    GroupEvent,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
+import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { GroupFormationMutationOutcome } from '@shared/rtc/group-formation-metrics.ts';
 import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import {
@@ -59,7 +65,7 @@ export interface GroupStateInboxHandlerDependencies {
     readonly persistMutationIngress: (
         context: AppInboxMessageContext<GroupStateInboxDurableResult>,
         ingress: GroupMutationIngress
-    ) => Promise<void>;
+    ) => Promise<ResourceEntry>;
 }
 
 interface CommitGroupStateMutationInput {
@@ -69,6 +75,11 @@ interface CommitGroupStateMutationInput {
     readonly durableResult: GroupStateInboxDurableResult;
     readonly completion: AppInboxCompletionComputed<GroupStateInboxDurableResult>;
     readonly lifecycleGuard?: WsSessionGenerationLifecycleComputed;
+}
+
+interface CapturedGroupMutationIngress {
+    readonly ingress: GroupMutationIngress;
+    readonly entry: ResourceEntry;
 }
 
 interface GroupStateInboxResultRead {
@@ -87,7 +98,22 @@ export class GroupStateInboxHandler {
     async processGroupStateMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-        const ingress = await this.loadOrCaptureGroupMutationIngress(context);
+        const { ingress, entry } = await this.loadOrCaptureGroupMutationIngress(context);
+        try {
+            return await this.processCapturedMutation(context, ingress);
+        }
+        catch (error) {
+            if (entry === context.entry) {
+                throw error;
+            }
+            throw new ResourceInboxHandlerEntryError(entry, toError(error));
+        }
+    }
+
+    private async processCapturedMutation(
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        ingress: GroupMutationIngress
+    ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
         const command: GroupStateMutationCommand = {
             authorityProof: ingress.authorityProof,
             descriptor: ingress.descriptor,
@@ -98,51 +124,7 @@ export class GroupStateInboxHandler {
             }
         };
         if (command.command.operation === 'connectPresence') {
-            const outcome = await readAndComputeGroupPresenceConnect({
-                command,
-                mutationService: this.dependencies.mutationService,
-                sessionGenerationLifecycle: this.dependencies.sessionGenerationLifecycle
-            });
-            if (outcome.status === 'inactive') {
-                const completionInput = this.readCompletionInput(context, outcome);
-                const completion = computeAppInboxCompletion(completionInput);
-                this.validateCompletion(completionInput, completion);
-                const durableResult = await this.dependencies.transactionWriter.writeComputedMutation(
-                    context,
-                    completion,
-                    async () => {}
-                );
-                this.recordGroupMutation(command, 'rejected');
-                return durableResult;
-            }
-            if (!isCommittableMutation(outcome.computed)) {
-                this.validateMutation(command, outcome.read, outcome.computed);
-                validateWsSessionConnectGuard(
-                    outcome.lifecycleGuardFacts,
-                    outcome.lifecycleRead,
-                    outcome.lifecycleGuard
-                );
-                throwNonCommittableMutation(command, outcome.computed);
-            }
-            const computed = outcome.computed;
-            const durableResult = computed.receipt;
-            const completionInput = this.readCompletionInput(context, durableResult);
-            const completion = computeAppInboxCompletion(completionInput);
-            this.validateMutation(command, outcome.read, computed);
-            validateWsSessionConnectGuard(
-                outcome.lifecycleGuardFacts,
-                outcome.lifecycleRead,
-                outcome.lifecycleGuard
-            );
-            this.validateCompletion(completionInput, completion);
-            return await this.commitMutation({
-                context,
-                command,
-                computed,
-                durableResult,
-                completion,
-                lifecycleGuard: outcome.lifecycleGuard
-            });
+            return await this.processPresenceConnect(context, command);
         }
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
@@ -173,6 +155,57 @@ export class GroupStateInboxHandler {
         return await this.commitMutation({ context, command, computed, durableResult, completion });
     }
 
+    private async processPresenceConnect(
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        command: GroupStateMutationCommand
+    ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
+        const outcome = await readAndComputeGroupPresenceConnect({
+            command,
+            mutationService: this.dependencies.mutationService,
+            sessionGenerationLifecycle: this.dependencies.sessionGenerationLifecycle
+        });
+        if (outcome.status === 'inactive') {
+            const completionInput = this.readCompletionInput(context, outcome);
+            const completion = computeAppInboxCompletion(completionInput);
+            this.validateCompletion(completionInput, completion);
+            const durableResult = await this.dependencies.transactionWriter.writeComputedMutation(
+                context,
+                completion,
+                async () => {}
+            );
+            this.recordGroupMutation(command, 'rejected');
+            return durableResult;
+        }
+        if (!isCommittableMutation(outcome.computed)) {
+            this.validateMutation(command, outcome.read, outcome.computed);
+            validateWsSessionConnectGuard(
+                outcome.lifecycleGuardFacts,
+                outcome.lifecycleRead,
+                outcome.lifecycleGuard
+            );
+            throwNonCommittableMutation(command, outcome.computed);
+        }
+        const computed = outcome.computed;
+        const durableResult = computed.receipt;
+        const completionInput = this.readCompletionInput(context, durableResult);
+        const completion = computeAppInboxCompletion(completionInput);
+        this.validateMutation(command, outcome.read, computed);
+        validateWsSessionConnectGuard(
+            outcome.lifecycleGuardFacts,
+            outcome.lifecycleRead,
+            outcome.lifecycleGuard
+        );
+        this.validateCompletion(completionInput, completion);
+        return await this.commitMutation({
+            context,
+            command,
+            computed,
+            durableResult,
+            completion,
+            lifecycleGuard: outcome.lifecycleGuard
+        });
+    }
+
     private async readResultFacts(command: GroupStateMutationCommand): Promise<GroupStateInboxResultRead> {
         const readsSnapshot = !isPresenceOperation(command.command.operation);
         const [mutationRead, currentSnapshot] = await Promise.all([
@@ -191,17 +224,17 @@ export class GroupStateInboxHandler {
 
     private async loadOrCaptureGroupMutationIngress(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
-    ): Promise<GroupMutationIngress> {
+    ): Promise<CapturedGroupMutationIngress> {
         const authority = decodeGroupStateInboxAuthority(context.enqueue.authority);
         if (authority.kind === 'ingress') {
-            return authority.mutation;
+            return { ingress: authority.mutation, entry: context.entry };
         }
         const ingress = await this.dependencies.captureAuthenticatedMutationIngress(
             authority.mutation.descriptor,
             authority.mutation.authorityProof
         );
-        await this.dependencies.persistMutationIngress(context, ingress);
-        return ingress;
+        const entry = await this.dependencies.persistMutationIngress(context, ingress);
+        return { ingress, entry };
     }
 
     private async commitMutation(

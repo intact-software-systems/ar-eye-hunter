@@ -314,6 +314,14 @@
             "urlEncode": {
               "path": "outputs.alphaWsTicketFirst"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -364,6 +372,14 @@
             "urlEncode": {
               "path": "outputs.betaWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -374,7 +390,11 @@
       "connection": "wsAlpha1",
       "request": {
         "url": "{alphaWsUrlFirst}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -383,7 +403,11 @@
       "connection": "wsBeta",
       "request": {
         "url": "{betaWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -444,10 +468,10 @@
         "connection": "wsAlpha1",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         },
@@ -463,10 +487,10 @@
         "withinMs": 20000,
         "consume": true,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         }
@@ -476,6 +500,37 @@
       "name": "dropAlphaWs",
       "type": "ws.close",
       "connection": "wsAlpha1"
+    },
+    {
+      "name": "theClosedSocketLeavesOnlyBetaInTheTopology",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "activeSessionIds": [
+              "{betaSessionId}"
+            ]
+          }
+        }
+      }
     },
     {
       "name": "updateGroupWhileAlphaOffline",
@@ -509,10 +564,10 @@
         "connection": "wsBeta",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
             "typeId": "overlay.topology"
           }
         },
@@ -570,6 +625,64 @@
       }
     },
     {
+      "name": "restoreAlphaPresenceBeforeSocketHydration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-second-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "generationId": "generation-reconnect-alpha-second-{runId}",
+          "principalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "onlineMemberCount": 2
+        }
+      }
+    },
+    {
+      "name": "theAuthoritativeTopologyIncludesBothSessionsBeforeReconnect",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "activeSessionIds": [
+              "{alphaSessionId}",
+              "{betaSessionId}"
+            ]
+          }
+        }
+      }
+    },
+    {
       "name": "createAlphaWsTicketSecond",
       "type": "http",
       "connection": "api",
@@ -615,6 +728,14 @@
             "urlEncode": {
               "path": "outputs.alphaWsTicketSecond"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -625,7 +746,11 @@
       "connection": "wsAlpha2",
       "request": {
         "url": "{alphaWsUrlSecond}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -636,15 +761,28 @@
         "connection": "wsAlpha2",
         "withinMs": 20000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
+            "targets": {
+              "mode": "unicast",
+              "toPeerId": "{alphaSessionId}"
+            },
+            "scope": {
+              "kind": "group",
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "resourceId": "{groupId}"
+            },
+            "snapshot": {
+              "groupRef": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{groupId}"
+              }
+            },
             "typeId": "overlay.topology"
-          },
-          "targets": {
-            "mode": "unicast",
-            "toPeerId": "{alphaSessionId}"
           }
         },
         "consume": true
@@ -660,6 +798,10 @@
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "resyncGroupRevision": "body.causalRevision.groupRevision",
+          "resyncPresenceRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -669,9 +811,31 @@
             "displayName": "Reconnect group updated {runId}"
           },
           "causalRevision": {
-            "groupRevision": "{updatedGroupRevision}"
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
           }
         }
+      }
+    },
+    {
+      "name": "theReconnectReadHonorsBothCapturedRevisionFloors",
+      "type": "assert",
+      "actual": {
+        "groupRevision": "{resyncGroupRevision}",
+        "presenceRevision": "{resyncPresenceRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "groupRevision",
+            "gte": "{updatedGroupRevision}"
+          },
+          {
+            "path": "presenceRevision",
+            "gte": "{updatedPresenceRevision}"
+          }
+        ]
       }
     },
     {

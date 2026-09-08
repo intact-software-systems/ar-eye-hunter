@@ -1,4 +1,4 @@
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 /**
  * The cardinality a `count` wait accepts: an exact non-negative integer, or a
@@ -10,10 +10,8 @@ export interface WaitCountBound {
     readonly max: number;
 }
 
-const RANGE_KEYS = ['min', 'max'];
-
-function isNonNegativeInteger(value: unknown): value is number {
-    return Number.isInteger(value) && (value as number) >= 0;
+function isNonNegativeInteger(value: ApiJsonValue | undefined): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
 /**
@@ -32,17 +30,18 @@ export function toWaitCountBound(count: ApiJsonValue | undefined): WaitCountBoun
         return undefined;
     }
 
-    const range = count as { min?: ApiJsonValue; max?: ApiJsonValue; };
-    if (!RANGE_KEYS.some((key) => range[key as 'min' | 'max'] !== undefined)) {
+    const range = count as ApiJsonObject;
+    if (range.min === undefined && range.max === undefined) {
         return undefined;
     }
 
     const min = range.min === undefined ? 0 : range.min;
     const max = range.max === undefined ? Number.POSITIVE_INFINITY : range.max;
-    const isBounded = isNonNegativeInteger(min) &&
-        (max === Number.POSITIVE_INFINITY || isNonNegativeInteger(max));
-
-    return isBounded && (min as number) <= (max as number)
-        ? { min: min as number, max: max as number }
-        : undefined;
+    if (
+        !isNonNegativeInteger(min) ||
+        !(max === Number.POSITIVE_INFINITY || isNonNegativeInteger(max)) || min > max
+    ) {
+        return undefined;
+    }
+    return { min, max };
 }

@@ -12,7 +12,11 @@ import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
-import { createActiveClientSessionFixture, createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import {
+    createActiveClientSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture
+} from '../authoritative-group-fixtures.ts';
 
 export interface PeopleEventFixtureInput {
     readonly principalId: string;
@@ -72,7 +76,8 @@ vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts
     browserStateCacheLifecycle: {
         hydrate: peopleEventMocks.hydrateStateCache,
         onChange: vi.fn(() => vi.fn()),
-        initialise: vi.fn()
+        initialise: vi.fn(),
+        cancelSnapshotAssemblies: vi.fn(() => undefined)
     }
 }));
 

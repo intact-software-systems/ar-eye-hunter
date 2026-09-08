@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import type {
+    ControlEventEnvelope,
+    ControlResultEnvelope
+} from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import {
     compareRallarBlackBoxProviderParityReports,
     createRallarBlackBoxProviderParityRecipe,
@@ -10,33 +18,13 @@ import {
     normalizeRallarBlackBoxRuntimeParityReport,
     toRallarBlackBoxRunnerParityInteractions,
     type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
-type StoredResult = Readonly<{
-    kind: 'result';
-    runId: string;
-    agentId: string;
-    commandId: string;
-    ok: boolean;
-    result: RallarBlackBoxTestResult;
-}>;
-
-type StoredEvent = Readonly<{
-    kind: 'event';
-    runId: string;
-    agentId: string;
-    atEpochMs: number;
-    eventId: string;
-    commandId: string;
-    payload: RallarBlackBoxTestEvent;
-}>;
-
 class FakeRemoteControlServer {
     readonly commands: RallarBlackBoxTestCommand[] = [];
-    readonly results: StoredResult[] = [];
-    readonly events: StoredEvent[] = [];
+    readonly results: ControlResultEnvelope[] = [];
+    readonly events: ControlEventEnvelope[] = [];
 
     fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = new URL(String(input));
@@ -67,9 +55,10 @@ class FakeRemoteControlServer {
         this.commands.push(command);
         const now = 1_000 + this.results.length;
         if (command.kind === 'rtc.send') {
-            this.emitSendEvents(runId, agentId, now, command);
+            this.emitSendEvents({ runId, agentId, now, command });
         }
         this.results.push({
+            protocolVersion: 1,
             kind: 'result',
             runId,
             agentId,
@@ -91,15 +80,17 @@ class FakeRemoteControlServer {
         });
     }
 
-    private emitSendEvents(
-        runId: string,
-        agentId: string,
-        now: number,
-        command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>
-    ): void {
+    private emitSendEvents(input: {
+        readonly runId: string;
+        readonly agentId: string;
+        readonly now: number;
+        readonly command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>;
+    }): void {
+        const { runId, agentId, now, command } = input;
         const targets = expectedConnections(command);
         targets.forEach((connection, index) => {
             this.events.push({
+                protocolVersion: 1,
                 kind: 'event',
                 runId,
                 agentId,

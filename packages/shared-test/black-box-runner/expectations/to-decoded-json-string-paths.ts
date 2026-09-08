@@ -1,5 +1,3 @@
-import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
-
 /**
  * Some frames carry a nested document as a JSON *string* — a group-state delta's
  * `payload.resource` holds the whole envelope that way. The comparator has no
@@ -11,14 +9,14 @@ import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts'
  * before comparison, so the expectation is written against the decoded shape.
  */
 export function toDecodedJsonStringPaths(
-    message: ApiJsonValue,
+    message: unknown,
     paths: readonly string[]
-): ApiJsonValue {
+): unknown {
     if (paths.length <= 0) {
         return message;
     }
 
-    return paths.reduce<ApiJsonValue>(
+    return paths.reduce<unknown>(
         (decoded, path) => toDecodedPath(decoded, path.split('.')),
         message
     );
@@ -29,7 +27,7 @@ export function toDecodedJsonStringPaths(
  * exactly as it was: a frame that does not carry the nested document should fail
  * the expectation on its own terms, not disappear from the candidate set.
  */
-function toDecodedPath(value: ApiJsonValue, segments: readonly string[]): ApiJsonValue {
+function toDecodedPath(value: unknown, segments: readonly string[]): unknown {
     if (!isJsonObject(value)) {
         return value;
     }
@@ -48,19 +46,19 @@ function toDecodedPath(value: ApiJsonValue, segments: readonly string[]): ApiJso
     return decoded === undefined ? value : { ...value, [head]: decoded };
 }
 
-function toParsedJson(value: ApiJsonValue): ApiJsonValue | undefined {
+function toParsedJson(value: unknown): unknown {
     if (typeof value !== 'string') {
         return undefined;
     }
 
     try {
-        return JSON.parse(value) as ApiJsonValue;
+        return JSON.parse(value);
     }
     catch {
         return undefined;
     }
 }
 
-function isJsonObject(value: ApiJsonValue): value is ApiJsonObject {
+function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

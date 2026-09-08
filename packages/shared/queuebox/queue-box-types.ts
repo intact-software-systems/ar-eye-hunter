@@ -16,10 +16,34 @@ import { isCanonicalRtcTopologyWorkEntry } from './rtc-topology-work-entry-contr
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
-export type ResourceInboxReservationOptions = Readonly<{
-    maxToReserve: number;
-    maxAttempts: number;
-}>;
+export namespace ResourceInboxWorkPage {
+    export interface Cursor {
+        readonly typeId: string;
+        readonly status: Resource.EntityStatus;
+        /** Opaque position owned by the repository that returned this cursor. */
+        readonly position: string;
+    }
+
+    export interface Request {
+        readonly typeId: string;
+        readonly status: Resource.EntityStatus;
+        readonly maxToRead: number;
+        /** Restart with null to discover work inserted or moved behind the previous cursor. */
+        readonly cursor: Cursor | null;
+    }
+}
+
+export interface ResourceInboxWorkPage {
+    /** Observations in backend order, including expired entries; reading never claims, releases or removes work. */
+    readonly entries: readonly ResourceEntry[];
+    /** A full page may require one final empty read to discover the end. */
+    readonly nextCursor: ResourceInboxWorkPage.Cursor | null;
+}
+
+export interface ResourceInboxReservationOptions {
+    readonly maxToReserve: number;
+    readonly maxAttempts: number;
+}
 
 export type ResourceInboxReservationInput = number | ResourceInboxReservationOptions;
 
@@ -33,22 +57,22 @@ export type ResourceInboxFairnessReservationInput =
     | number
     | ResourceInboxFairnessReservationOptions;
 
-export type ResourceInboxFinalizationReservationOptions = Readonly<{
-    processingAttempts: number;
-    maxToReserve: number;
-    staleAfterMs: number;
-}>;
+export interface ResourceInboxFinalizationReservationOptions {
+    readonly processingAttempts: number;
+    readonly maxToReserve: number;
+    readonly staleAfterMs: number;
+}
 
 // Exhaustion recovery deliberately excludes expired rows. Queue cleanup owns
 // their terminal deletion; recovery never revives an expired command.
 
-export type ResourceInboxWorkAdvertisementOptions = Readonly<{
-    checkTimeout: RateLimiter;
-    checkFairness: RateLimiter;
-    checkFinalization: RateLimiter;
-    maxAttempts: number;
-    finalizationStaleAfterMs: number;
-}>;
+export interface ResourceInboxWorkAdvertisementOptions {
+    readonly checkTimeout: RateLimiter;
+    readonly checkFairness: RateLimiter;
+    readonly checkFinalization: RateLimiter;
+    readonly maxAttempts: number;
+    readonly finalizationStaleAfterMs: number;
+}
 
 export type ResourceInboxTerminalReleaseStatus =
     | typeof Resource.EntityStatus.COMPLETED
@@ -62,21 +86,23 @@ export type ResourceInboxReleaseDisposition =
     | Readonly<{
         status: typeof Resource.EntityStatus.RETRY;
         delayMs: number;
+        /** Omission means a processing attempt occurred; readiness only refunds this reservation. */
+        reason?: 'not-ready';
     }>
     | Readonly<{
         status: ResourceInboxTerminalReleaseStatus;
         delayMs: null;
     }>;
 
-export type ResourceInboxFairnessSelection = Readonly<{
-    entry: ResourceEntry;
-    selectedDueTs: Temporal.Instant;
-}>;
+export interface ResourceInboxFairnessSelection {
+    readonly entry: ResourceEntry;
+    readonly selectedDueTs: Temporal.Instant;
+}
 
-export type ResourceInboxFinalizationSelection = Readonly<{
-    entry: ResourceEntry;
-    selectedDueTs: Temporal.Instant;
-}>;
+export interface ResourceInboxFinalizationSelection {
+    readonly entry: ResourceEntry;
+    readonly selectedDueTs: Temporal.Instant;
+}
 
 export class ResourceInboxLostReservationError extends Error {
     readonly code = 'resource-inbox-lost-reservation';
@@ -106,11 +132,15 @@ export class ResourceInboxInvalidReleaseDispositionError extends Error {
     }
 }
 
-export function isIdempotentHandlerFinalizedRelease(
-    current: ResourceEntry,
-    reserved: ResourceEntry,
-    disposition: ResourceInboxReleaseDisposition
-): boolean {
+export interface HandlerFinalizedReleaseObservation {
+    readonly current: ResourceEntry;
+    readonly reserved: ResourceEntry;
+    readonly disposition: ResourceInboxReleaseDisposition;
+    readonly observedAt: Temporal.Instant;
+}
+
+export function isIdempotentHandlerFinalizedRelease(input: HandlerFinalizedReleaseObservation): boolean {
+    const { current, reserved, disposition, observedAt } = input;
     try {
         if (isCoalescedRevivalAfterHandlerFinalization(current, reserved, disposition)) {
             return true;
@@ -124,7 +154,7 @@ export function isIdempotentHandlerFinalizedRelease(
             current.resource === reserved.resource &&
             Resource.isKeysEqual(current.key, reserved.key) &&
             current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
-            !Resource.isExpiredResourceEntry(current);
+            !Resource.isExpiredResourceEntry(current, observedAt);
         if (remoteDeliveryRequeue) {
             return true;
         }
@@ -135,7 +165,7 @@ export function isIdempotentHandlerFinalizedRelease(
             current.status === Resource.EntityStatus.COMPLETED &&
             Resource.isKeysEqual(current.key, reserved.key) &&
             current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
-            !Resource.isExpiredResourceEntry(current);
+            !Resource.isExpiredResourceEntry(current, observedAt);
         if (!commonFinalization) {
             return false;
         }
@@ -297,54 +327,19 @@ export function toResourceInboxWorkAdvertisementOptions(
     };
 }
 
-export function toResourceInboxReleaseDisposition(
-    input: unknown
-): ResourceInboxReleaseDisposition {
-    if (typeof input !== 'object' || input === null) {
-        throw new ResourceInboxInvalidReleaseDispositionError();
-    }
-    const status = 'status' in input ? input.status : undefined;
-    const delayMs = 'delayMs' in input ? input.delayMs : undefined;
-    if (
-        status === Resource.EntityStatus.RETRY &&
-        typeof delayMs === 'number' &&
-        Number.isSafeInteger(delayMs) &&
-        delayMs >= 1
-    ) {
-        return { status, delayMs };
-    }
-
-    if (delayMs === null) {
-        switch (status) {
-            case Resource.EntityStatus.COMPLETED:
-            case Resource.EntityStatus.FAILED:
-            case Resource.EntityStatus.ABORTED:
-            case Resource.EntityStatus.NON_RETRYABLE:
-            case Resource.EntityStatus.PARTITIONED:
-            case Resource.EntityStatus.MERGED:
-                return { status, delayMs };
-        }
-    }
-
-    throw new ResourceInboxInvalidReleaseDispositionError();
-}
-
 export interface DequeueResourceEntryRepository {
     isAnyEntryToLock(
         typeIds: Set<string>,
         workOptions: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean>;
 
+    /** If supplied, claim only unchanged observations; [] claims nothing. Skipped work consumes no attempts. */
     reserveEntries(
-        typeIds: Set<string>,
-        statusIds: Set<Resource.EntityStatus>,
-        options: ResourceInboxReservationInput
+        request: ResourceInboxReservationRequest
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     reserveTimeoutEntries(
-        typeIds: Set<string>,
-        options: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration
+        request: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     reserveOverdueRetryEntries(
@@ -362,6 +357,20 @@ export interface DequeueResourceEntryRepository {
         resources: Resource.ResourceEntry[],
         disposition: ResourceInboxReleaseDisposition
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
+}
+
+export interface ResourceInboxReservationRequest {
+    readonly typeIds: Set<string>;
+    readonly statusIds: Set<Resource.EntityStatus>;
+    readonly reservationInput: ResourceInboxReservationInput;
+    readonly observedEntries?: readonly ResourceEntry[];
+}
+
+export interface ResourceInboxTimeoutReservationRequest {
+    readonly typeIds: Set<string>;
+    readonly reservationInput: ResourceInboxReservationInput;
+    readonly timeSinceStartTs: Temporal.Duration;
+    readonly observedEntries?: readonly ResourceEntry[];
 }
 
 export interface EnqueueResourceEntryController {
@@ -386,4 +395,5 @@ export interface QueueBoxResourceEntryRepository
         DequeueResourceEntryRepository,
         EnqueueResourceEntryController,
         PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
+    readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage>;
 }

@@ -5,14 +5,14 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs } from '../../db/pglite-auth-test-harness.ts';
 
 type ApiAdminInboxService = ReturnType<typeof createApiAdminInboxService>;
@@ -45,7 +45,7 @@ export class RealEngineAdminPruneFixture {
         const outbox = new OutboxQueueReader(queue);
         inbox.dequeueInbox = trackDequeue(this.activeDequeues, inbox.dequeueInbox.bind(inbox));
         outbox.dequeueOutbox = trackDequeue(this.activeDequeues, outbox.dequeueOutbox.bind(outbox));
-        const resilience = toResilienceDto();
+        const resilience = createApiV1TestQueueResilience();
         registerApplicationQueueReaderTasks({
             engine: this.engine,
             inboxQueueReader: inbox,
@@ -122,8 +122,8 @@ export class RealEngineAdminPruneFixture {
 
 function trackDequeue(
     active: Set<Promise<void>>,
-    dequeue: (typesToDequeue: Set<string>, resilience: ResilienceDto) => Promise<void>
-): (typesToDequeue: Set<string>, resilience: ResilienceDto) => Promise<void> {
+    dequeue: (typesToDequeue: Set<string>, resilience: ResourceInboxResilience) => Promise<void>
+): (typesToDequeue: Set<string>, resilience: ResourceInboxResilience) => Promise<void> {
     return (typesToDequeue, resilience) => {
         const pending = dequeue(typesToDequeue, resilience);
         active.add(pending);

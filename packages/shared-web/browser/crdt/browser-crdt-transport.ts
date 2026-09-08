@@ -421,7 +421,7 @@ export function isSuccessfulRallarCrdtTransportStatus(status: string): boolean {
         status === 'sent' ||
         status === 'ok' ||
         status === 'enqueued' ||
-        status === 'sent-immediate' ||
+        status === 'accepted' ||
         status === 'duplicate' ||
         status === 'superseded' ||
         status === 'skipped'

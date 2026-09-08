@@ -3,13 +3,13 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
@@ -88,7 +88,6 @@ describe('WebRtcRxStreamerService media lifecycle', () => {
 
 function createMediaFixture(): MediaFixture {
     const multicast = new WebRtcOverlayMulticastManager({
-        outbox: new InMemoryQueueBox(new Map()),
         connectionService: {
             input: { sessionId: 'self' },
             readyPeerIdsForLane: () => [],
@@ -105,7 +104,11 @@ function createMediaFixture(): MediaFixture {
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()
     });
-    const service = createDefaultWebRtcRxStreamerService({ inbox: new InMemoryQueueBox(new Map()), multicast, sessionId: 'self' });
+    const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
+    onTestFinished(() => {
+        service.dispose();
+        multicast.dispose();
+    });
     service.setRttReportingPeerIds([]);
     return { service, ...createMediaPeerFixture() };
 }

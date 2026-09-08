@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
@@ -12,13 +20,13 @@ import {
     newALUnicastMessage,
     QueueBoxUtilities
 } from '@shared/mod.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import {
     createDefaultOutboundTestAdmissionStore,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
     enqueueOutboundOrThrow,
-    firstValue,
     reserveOutbox,
     waitUntil
 } from './alm/outbound-runtime-test-fixture.ts';
@@ -31,32 +39,29 @@ describe('ALOutboundMessageRuntime', () => {
         vi.restoreAllMocks();
     });
 
-    it('replays a deferred send using its supplied store, clock, and scheduler', async () => {
+    it('replays a deferred send using its supplied store, clock, and queue engine', async () => {
         vi.useFakeTimers();
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const sent: string[] = [];
         let nowMs = Date.now() + 1_000;
+        vi.setSystemTime(nowMs);
+        const queueEngine = new InboxOutboxEngine();
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             decodePreparedMessage: decodeOutboundTestPayload,
             admissionStore,
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
-            scheduler: {
-                schedule: (callback, delayMs) => {
-                    const timer = setTimeout(callback, delayMs * 2);
-                    return () => clearTimeout(timer);
-                }
-            },
+            queueEngine,
+            ownsQueueEngine: false,
             browserLocks: undefined,
-            outbox: new InMemoryQueueBox(new Map()),
+            random: () => 0,
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
-            planDequeuedMessage: () => ({ persist: false, preparedMessages: [] }),
-            beforeDequeueDispatch: undefined,
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
+            planDequeuedMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+            afterDequeueAdmission: undefined,
             planRepairMessage: undefined,
-            onFallbackDequeue: undefined,
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared.resourceId);
                 return sent.length === 1 ? { status: 'not-ready', retryAfterMs: 25 } : { status: 'sent' };
@@ -65,20 +70,53 @@ describe('ALOutboundMessageRuntime', () => {
         onTestFinished(() => runtime.dispose());
 
         await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(nowMs + 25);
-        nowMs += 25;
-        await vi.advanceTimersByTimeAsync(25);
+        expect(await admissionStore.peekNextEffectReadyAt()).toBe(nowMs + 25);
+        nowMs += 24;
+        vi.setSystemTime(nowMs);
+        await queueEngine.executeOnce();
+        await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry']);
-        await vi.advanceTimersByTimeAsync(25);
+        nowMs += 1;
+        vi.setSystemTime(nowMs);
+        await queueEngine.executeOnce();
+        await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry', 'injected-retry']);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+    });
+
+    it.each([30_000, 30_001])('expires an asynchronous readiness settlement at %s ms without sending or acknowledging', async (elapsedMs) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const reschedule = vi.spyOn(admissionStore, 'rescheduleEffect');
+        const complete = vi.spyOn(admissionStore, 'completeEffect');
+        const settlement = Promise.withResolvers<{ status: 'not-ready'; retryAfterMs: number; }>();
+        const send = vi.fn(async () => ({ status: 'queued' as const, settled: settlement.promise }));
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore },
+            sendPreparedMessage: send,
+            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
+        });
+        onTestFinished(() => runtime.dispose());
+        const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
+        await runtime.enqueueIfAbsent(message);
+        vi.setSystemTime(1_000 + elapsedMs);
+        settlement.resolve({ status: 'not-ready', retryAfterMs: 60_000 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reschedule).not.toHaveBeenCalled();
+        expect(complete).toHaveBeenCalledTimes(1);
+        expect(complete.mock.calls[0][0].audit.expiryTs.epochMilliseconds).toBe(31_000);
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: () => ({
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            planOutgoingMessage: (msg) => ({
                 dropReason: 'No route for outbound enqueue',
+                msg: msg,
                 persist: false,
                 preparedMessages: []
             })
@@ -99,8 +137,11 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: []
             })
@@ -115,15 +156,18 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('returns sent-immediate with no entries for immediate prepared dispatch', async () => {
+    it('returns accepted with a retained canonical fact for immediate prepared dispatch', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const sent: Array<OutboundTestPayload> = [];
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -132,8 +176,8 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
-        expect(result.entries).toEqual([]);
+        expect(result.status).toBe('accepted');
+        expect(result.entries).toMatchObject([{ status: EntityStatus.COMPLETED }]);
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
@@ -148,10 +192,17 @@ describe('ALOutboundMessageRuntime', () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: () => ({
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
-                preparedMessages: [{ kind: 'send' }]
+                preparedMessages: [{ kind: 'send' }],
+                ackTracking: {
+                    enabled: true,
+                    timeoutMs: 100,
+                    maxAttempts: 1,
+                    expectedPeerIds: ['peer-1']
+                }
             })
         });
         const msg = createOutboundMessage('msg-owner-expiry', { ttlMs: 15_000 });
@@ -159,17 +210,45 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
-        const plan = () => ({ persist: false, preparedMessages: [] });
-        const beforeAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
-        await runtime.acceptControlMessage(newALAckControlMessage('peer-1', 'self', msg.id.msgId));
-        const afterAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
+        const plan = (msg: ALMessage) => ({ msg: msg, persist: false, preparedMessages: [] });
+        const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        await runtime.acceptControlMessage(newALAckControlMessage(
+            { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
+            {
+                ackedMsgId: msg.id.msgId,
+                fromPeerId: 'peer-1',
+                toPeerId: 'self',
+                status: 'accepted',
+                observedAtEpochMs: 1
+            }
+        ));
+        const afterAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(afterAck.clientRecord?.senderId).toBe('self');
         expect(afterAck.clientRecord).not.toEqual(beforeAck.clientRecord);
 
         vi.setSystemTime(new Date('2026-01-01T00:00:15.000Z'));
-        const beforeLateAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
-        await runtime.acceptControlMessage(newALAckControlMessage('peer-1', 'self', msg.id.msgId));
-        const afterLateAck = await admissionStore.readOutgoingMessage(nextMessage, plan);
+        const beforeLateAck = await admissionStore.readOutgoingMessage({
+            msg: nextMessage,
+            planner: plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        await runtime.acceptControlMessage(newALAckControlMessage(
+            { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
+            {
+                ackedMsgId: msg.id.msgId,
+                fromPeerId: 'peer-1',
+                toPeerId: 'self',
+                status: 'accepted',
+                observedAtEpochMs: 2
+            }
+        ));
+        const afterLateAck = await admissionStore.readOutgoingMessage({
+            msg: nextMessage,
+            planner: plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         expect(afterLateAck.clientRecord).toEqual(beforeLateAck.clientRecord);
         runtime.dispose();
     });
@@ -187,6 +266,7 @@ describe('ALOutboundMessageRuntime', () => {
                 retryAfterMs: 25
             }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -194,14 +274,16 @@ describe('ALOutboundMessageRuntime', () => {
         const msg = createOutboundMessage('msg-not-ready');
         const result = await runtime.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(24);
@@ -210,7 +292,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([msg.id.msgId]);
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         restarted.dispose();
     });
 
@@ -224,7 +306,8 @@ describe('ALOutboundMessageRuntime', () => {
                 status: 'no-targets',
                 reason: 'solo room'
             }),
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -232,15 +315,17 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
 
-        expect(result.status).toBe('sent-immediate');
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(result.status).toBe('accepted');
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
             sendPreparedMessage: async () => {
                 sent.push('replayed');
+
+                return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);
@@ -262,8 +347,9 @@ describe('ALOutboundMessageRuntime', () => {
             }
         });
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: () => ({
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -304,8 +390,11 @@ describe('ALOutboundMessageRuntime', () => {
                 events.push('send-start');
                 await sendGate.promise;
                 events.push('send-end');
+
+                return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -345,10 +434,13 @@ describe('ALOutboundMessageRuntime', () => {
                 if (resourceId === 'msg-drain-second') {
                     await secondGate.promise;
                 }
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => {
                 planned.push(msg.route.resourceId);
                 return {
+                    msg: msg,
                     persist: false,
                     preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }]
                 };
@@ -390,8 +482,9 @@ describe('ALOutboundMessageRuntime', () => {
                 nowMs += 5;
                 return nowMs;
             },
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: () => ({
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -420,8 +513,9 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: () => ({
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: []
             })
@@ -432,7 +526,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(result.status).toBe('enqueued');
         expect(result.entries).toHaveLength(1);
-        expect(result.entries[0]?.key.resourceId).toBe('msg-persisted');
+        expect(result.entries[0]?.key.topicId).toBe('AL_OUTBOUND_MESSAGE');
         const stored = await reserveOutbox(outbox);
         expect(stored).toHaveLength(1);
         expect(decodePersistedALMessage(stored[0]?.resource ?? '')).toMatchObject({
@@ -447,8 +541,9 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: () => ({
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: []
             })
@@ -460,7 +555,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(first.status).toBe('enqueued');
         expect(second.status).toBe('duplicate');
-        expect(second.entry?.key.resourceId).toBe('msg-duplicate');
+        expect(second.entry?.key).toEqual(first.entry?.key);
         expect(second.entries).toHaveLength(1);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
         runtime.dispose();
@@ -470,8 +565,9 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -520,8 +616,11 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
@@ -537,6 +636,7 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             }),
             planRepairMessage: async (msg, request) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -555,7 +655,7 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(102);
 
         expect(sent[1]).toMatchObject({
             kind: 'repair',
@@ -564,7 +664,7 @@ describe('ALOutboundMessageRuntime', () => {
             phase: 'immediate'
         });
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(102);
         expect(sent).toHaveLength(2);
 
         runtime.dispose();
@@ -577,8 +677,11 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
@@ -589,6 +692,7 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             }),
             planRepairMessage: async (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
             })
@@ -606,14 +710,17 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
-                    enabled: false,
-                    algo: 'none',
-                    maxAttempts: 0
+                    enabled: true,
+                    algo: 'retransmit',
+                    maxAttempts: 1
                 }
             })
         });
@@ -639,18 +746,22 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, seq2);
 
         await runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', seq2.id.msgId, 'gap', {
-                status: 'gap',
-                trackKey: toALOrderingTrackKey(seq1),
-                seq: 2,
-                expectedSeq: 1,
-                lastContiguousSeq: 0,
-                missingSeqs: [1],
-                releasableSeqs: []
-            })
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: seq2.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1,
+                    orderingKey: toALOrderingTrackKey(seq1),
+                    expectedSeq: 1,
+                    missingSeqs: [1]
+                }
+            )
         );
 
-        expect(sent.map((entry) => entry.msgId)).toEqual([
+        await expect.poll(() => sent.map((entry) => entry.msgId)).toEqual([
             seq1.id.msgId,
             seq2.id.msgId,
             seq1.id.msgId
@@ -664,8 +775,11 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -680,12 +794,13 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                'server-1',
-                'self',
-                msg.id.msgId,
-                'not-yet-in-sync',
-                undefined,
+                { v: 2, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
                 {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'not-yet-in-sync',
+                    observedAtEpochMs: 1,
                     serverSnapshotVersion: 3
                 }
             )
@@ -698,7 +813,7 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(49);
         expect(sent).toHaveLength(1);
 
-        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(3);
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
@@ -706,7 +821,7 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('can re-enter the outbox for a not-yet-in-sync retry when planning requires durability', async () => {
+    it('admits a durable prepared attempt for a not-yet-in-sync retry without reopening the canonical fact', async () => {
         vi.useFakeTimers();
 
         const outbox = new InMemoryQueueBox(new Map());
@@ -717,12 +832,15 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
                 persistRetry = true;
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) =>
                 persistRetry
                     ? {
+                        msg: msg,
                         persist: true,
-                        preparedMessages: [],
+                        preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
                             enabled: true,
                             maxAttempts: 2,
@@ -730,6 +848,7 @@ describe('ALOutboundMessageRuntime', () => {
                         }
                     }
                     : {
+                        msg: msg,
                         persist: false,
                         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
@@ -743,22 +862,25 @@ describe('ALOutboundMessageRuntime', () => {
 
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
-            newALNackControlMessage('server-1', 'self', msg.id.msgId, 'not-yet-in-sync')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'not-yet-in-sync',
+                    observedAtEpochMs: 1
+                }
+            )
         );
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(msg.id.msgId);
+        expect(await reserveOutbox(outbox)).toEqual([]);
         runtime.dispose();
     });
 
@@ -769,8 +891,11 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -784,12 +909,31 @@ describe('ALOutboundMessageRuntime', () => {
 
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
-            newALNackControlMessage('server-1', 'self', msg.id.msgId, 'not-yet-in-sync')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-not-synced-1', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'not-yet-in-sync',
+                    observedAtEpochMs: 1
+                }
+            )
         );
         await runtime.acceptControlMessage(
-            newALNackControlMessage('server-1', 'self', msg.id.msgId, 'not-yet-in-sync')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-not-synced-2', ts: 2, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'not-yet-in-sync',
+                    observedAtEpochMs: 2
+                }
+            )
         );
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
@@ -805,8 +949,11 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -817,12 +964,22 @@ describe('ALOutboundMessageRuntime', () => {
             })
         });
         const msg = createOutboundMessage('msg-duplicate-retry-budget');
-        const nack = () =>
+        const nack = (serverSnapshotVersion = 1) =>
             newALNackControlMessage(
-                'server-1',
-                'self',
-                msg.id.msgId,
-                'not-yet-in-sync'
+                {
+                    v: 2,
+                    msgId: `control-duplicate-not-synced-${serverSnapshotVersion}`,
+                    ts: serverSnapshotVersion,
+                    senderId: 'peer-1'
+                },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'not-yet-in-sync',
+                    observedAtEpochMs: serverSnapshotVersion,
+                    serverSnapshotVersion
+                }
             );
 
         await enqueueOutboundOrThrow(runtime, msg);
@@ -830,9 +987,11 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(nack());
         await runtime.acceptControlMessage(nack());
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
-        await runtime.acceptControlMessage(nack());
+        await runtime.acceptControlMessage(nack(2));
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
@@ -842,12 +1001,13 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('reuses the prior outbox key when supersedence replaces a persisted message', async () => {
+    it('retains immutable message rows while supersedence skips the older physical attempt', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -869,7 +1029,8 @@ describe('ALOutboundMessageRuntime', () => {
             'presence.state.v1',
             {
                 online: true
-            }
+            },
+            { ttlMs: 30_000 }
         );
         const second = newALUnicastMessage(
             'self',
@@ -882,32 +1043,29 @@ describe('ALOutboundMessageRuntime', () => {
             'presence.state.v1',
             {
                 online: false
-            }
+            },
+            { ttlMs: 30_000 }
         );
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, first);
         const [secondEntry] = await enqueueOutboundOrThrow(runtime, second);
 
-        expect(secondEntry.key).toEqual(firstEntry.key);
+        expect(secondEntry.key).not.toEqual(firstEntry.key);
 
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(second.id.msgId);
+        expect(reserved.size).toBe(2);
+        expect([...reserved.values()].map((entry) => decodePersistedALMessage(entry.resource).id.msgId).sort())
+            .toEqual([first.id.msgId, second.id.msgId].sort());
     });
 
     it('serializes concurrent supersedence enqueues through the versioned sender record', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -930,7 +1088,8 @@ describe('ALOutboundMessageRuntime', () => {
                 'presence.state.v1',
                 {
                     online: true
-                }
+                },
+                { ttlMs: 30_000 }
             ),
             ordering: {
                 orderingKey: 'presence',
@@ -950,7 +1109,8 @@ describe('ALOutboundMessageRuntime', () => {
                 'presence.state.v1',
                 {
                     online: false
-                }
+                },
+                { ttlMs: 30_000 }
             ),
             ordering: {
                 orderingKey: 'presence',
@@ -964,15 +1124,10 @@ describe('ALOutboundMessageRuntime', () => {
             enqueueOutboundOrThrow(runtime, second)
         ]);
 
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(second.id.msgId);
+        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
+        expect(reserved.size).toBe(2);
+        expect([...reserved.values()].map((entry) => decodePersistedALMessage(entry.resource).id.msgId).sort())
+            .toEqual([first.id.msgId, second.id.msgId].sort());
     });
 
     it('does not miss acknowledgements that arrive while the send effect is running', async () => {
@@ -987,8 +1142,11 @@ describe('ALOutboundMessageRuntime', () => {
                 sent.push({ ...prepared, phase });
                 sendStarted.resolve();
                 await sendCompleted.promise;
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -1004,6 +1162,7 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
+                msg: plannedMsg,
                 persist: false,
                 preparedMessages: [
                     {
@@ -1017,51 +1176,18 @@ describe('ALOutboundMessageRuntime', () => {
 
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await sendStarted.promise;
-        await runtime.acceptControlMessage(newALAckControlMessage('peer-1', 'self', msg.id.msgId));
+        await runtime.acceptControlMessage(newALAckControlMessage(
+            { v: 2, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
+            {
+                ackedMsgId: msg.id.msgId,
+                fromPeerId: 'peer-1',
+                toPeerId: 'self',
+                status: 'accepted',
+                observedAtEpochMs: 1
+            }
+        ));
         sendCompleted.resolve();
         await enqueue;
-        await vi.advanceTimersByTimeAsync(200);
-
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-        runtime.dispose();
-    });
-
-    it('uses a stored acknowledgement accepted before outbound tracking is created', async () => {
-        vi.useFakeTimers();
-
-        const sent: Array<OutboundTestPayload> = [];
-        const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (msg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                ackTracking: {
-                    enabled: true,
-                    timeoutMs: 100,
-                    maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
-                },
-                repairTracking: {
-                    enabled: true,
-                    algo: 'retransmit',
-                    maxAttempts: 1
-                }
-            }),
-            planRepairMessage: async (msg, request) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId, trigger: request.trigger }]
-            })
-        });
-        const msg = createOutboundMessage('msg-ack-before-send');
-
-        await runtime.acceptControlMessage(
-            newALAckControlMessage('peer-1', 'self', msg.id.msgId)
-        );
-        await enqueueOutboundOrThrow(runtime, msg);
         await vi.advanceTimersByTimeAsync(200);
 
         expect(sent).toEqual([
@@ -1083,8 +1209,11 @@ describe('ALOutboundMessageRuntime', () => {
                 }
 
                 sent.push(String(prepared.peerId));
+
+                return { status: 'sent' as const };
             },
-            planOutgoingMessage: () => ({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [
                     { peerId: 'peer-1' },
@@ -1101,12 +1230,17 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('persists repair dispatches when the repair planner requests outbox durability', async () => {
+    it('dispatches durable prepared repair work while retaining one completed canonical payload', async () => {
         const outbox = new InMemoryQueueBox(new Map());
+        const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.msgId));
+                return { status: 'sent' as const };
+            },
             planOutgoingMessage: (msg) => ({
+                msg: msg,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
@@ -1115,26 +1249,30 @@ describe('ALOutboundMessageRuntime', () => {
                     maxAttempts: 1
                 }
             }),
-            planRepairMessage: async () => ({
+            planRepairMessage: async (msg) => ({
+                msg: msg,
                 persist: true,
-                preparedMessages: []
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
         const msg = createOutboundMessage('msg-persisted-repair');
 
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-persisted-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1
+                }
+            )
         );
 
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
-        expect(reserved.size).toBe(1);
-        const stored = firstValue(reserved);
-        const storedMsg = decodePersistedALMessage(stored.resource);
-        expect(storedMsg.id.msgId).toBe(msg.id.msgId);
+        await expect.poll(() => sent.length).toBe(2);
+        expect(sent).toEqual([msg.id.msgId, msg.id.msgId]);
+        expect(await reserveOutbox(outbox)).toEqual([]);
     });
 });

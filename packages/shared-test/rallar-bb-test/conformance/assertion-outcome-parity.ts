@@ -2,17 +2,20 @@
 import { validateAssertValueComparators } from '../../black-box-runner/expectations/assert-value-comparators.ts';
 import { executeHttpInteraction } from '../../black-box-runner/http/execute-http-interaction.ts';
 import { waitForWsMessageAbsence } from '../../black-box-runner/ws/ws-wait-expectations.ts';
-import type { JsonValue } from '../../json-compare/CompareJson.ts';
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import { assertValueMatches } from '../assert/assert-value-operators.ts';
 import { createRallarBlackBoxTestRuntime } from '../runtime.ts';
-import type { RallarBlackBoxTestAssertOperator, RallarBlackBoxTestCommand } from '../types.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRuntime
+} from '../types.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,
     COMPLETE_ARRAY_FIXTURES,
-    POLLING_FIXTURES
+    POLLING_FIXTURES,
+    type PollingParityFixture
 } from './assertion-outcome-parity-fixtures.ts';
 
 export type AssertionOutcomeParityFamily =
@@ -33,6 +36,18 @@ export interface AssertionOutcomeParityRow {
     readonly matchesExpected: boolean;
 }
 
+export interface EvaluatePollingOutcomeParityInput {
+    readonly fetch: (succeedOnAttempt: number | undefined) => typeof fetch;
+}
+
+interface ToRowInput {
+    readonly fixtureId: string;
+    readonly family: AssertionOutcomeParityFamily;
+    readonly expectedVerdict: AssertionOutcomeVerdict;
+    readonly runnerVerdict: AssertionOutcomeVerdict;
+    readonly runtimeVerdict: AssertionOutcomeVerdict;
+}
+
 // Each dialect evaluates the same evidence value: the runner through its
 // expect.comparators validator, the runtime through the extended assert
 // operators. Divergent verdicts fail the parity suite by contract.
@@ -43,7 +58,7 @@ export function evaluateComparatorOutcomeParityRows(): readonly AssertionOutcome
         ]);
         const runnerVerdict: AssertionOutcomeVerdict = runnerIssues.length === 0 ? 'pass' : 'fail';
         const path = fixture.runnerComparator.path;
-        const record = fixture.value as Record<string, any>;
+        const record = fixture.value;
         const lookup = {
             exists: Object.prototype.hasOwnProperty.call(record, path),
             value: record[path]
@@ -91,6 +106,7 @@ export function evaluateCompleteArrayOutcomeParityRows(): readonly AssertionOutc
 // Both dialects hold the full window, then scan the whole buffer once, so a
 // frame buffered before the wait started violates the claim in both engines.
 export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly AssertionOutcomeParityRow[]> {
+    const dependencies = { now: Date.now, createUuid: () => crypto.randomUUID() };
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of ABSENCE_FIXTURES) {
         const runnerStatus = await waitForWsMessageAbsence({
@@ -103,6 +119,7 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly Asser
             },
             config: { interaction: { request: {} } },
             context: {
+                dependencies,
                 wsMessages: {
                     parityWs: fixture.bufferedTopics.map((topic) => ({ data: { topic } }))
                 }
@@ -142,23 +159,42 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly Asser
     return rows;
 }
 
-export interface EvaluatePollingOutcomeParityInput {
-    readonly fetch: (succeedOnAttempt: number | undefined) => typeof fetch;
-}
-
 // The runner polls a real fetch signature (injected here so no network is
 // needed); the runtime polls its own recorded evidence through an until loop.
 // Success is the attempt expectation passing; exhaustion is a failure.
 export async function evaluatePollingOutcomeParityRows(
     input: EvaluatePollingOutcomeParityInput
 ): Promise<readonly AssertionOutcomeParityRow[]> {
+    const now = Date.now;
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of POLLING_FIXTURES) {
-        const previousFetch = globalThis.fetch;
-        globalThis.fetch = input.fetch(fixture.succeedOnAttempt);
-        let runnerStatus: any;
-        try {
-            runnerStatus = await executeHttpInteraction({
+        const runnerVerdict = await readPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt), now);
+
+        const runtime = createDeterministicRuntime();
+        const runtimeResult = await runtime.execute(toRuntimePollingCommand(fixture));
+        const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
+        rows.push(toRow({
+            fixtureId: fixture.fixtureId,
+            family: 'polling',
+            expectedVerdict: fixture.expectedVerdict,
+            runnerVerdict,
+            runtimeVerdict
+        }));
+    }
+    return rows;
+}
+
+async function readPollingRunnerVerdict(
+    fixture: PollingParityFixture,
+    fetch: typeof globalThis.fetch,
+    now: () => number
+): Promise<AssertionOutcomeVerdict> {
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = fetch;
+    try {
+        const runnerStatus = await executeHttpInteraction({
+            now,
+            interaction: {
                 name: fixture.fixtureId,
                 connection: 'api',
                 request: {
@@ -175,52 +211,35 @@ export async function evaluatePollingOutcomeParityRows(
                 response: {
                     status: 200
                 }
-            }, { interaction: { request: {} } });
-        }
-        finally {
-            globalThis.fetch = previousFetch;
-        }
-        const runnerVerdict: AssertionOutcomeVerdict = isRunnerSuccess(runnerStatus)
-            ? 'pass'
-            : 'fail';
-
-        const runtime = createDeterministicRuntime();
-        const runtimeResult = await runtime.execute({
-            kind: 'loop',
-            commandId: `parity-${fixture.fixtureId}`,
-            until: 'first-success',
-            count: fixture.maxAttempts,
-            intervalMs: 1,
-            commands: [
-                {
-                    kind: 'assert',
-                    commandId: `parity-${fixture.fixtureId}-converged`,
-                    source: 'state.commandHistory.length',
-                    operator: 'gte',
-                    expected: fixture.succeedOnAttempt === undefined
-                        ? Number.MAX_SAFE_INTEGER
-                        : fixture.succeedOnAttempt
-                }
-            ] satisfies readonly RallarBlackBoxTestCommand[]
+            },
+            config: { interaction: { request: {} } }
         });
-        const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
-        rows.push(toRow({
-            fixtureId: fixture.fixtureId,
-            family: 'polling',
-            expectedVerdict: fixture.expectedVerdict,
-            runnerVerdict,
-            runtimeVerdict
-        }));
+        return isRunnerSuccess(runnerStatus) ? 'pass' : 'fail';
     }
-    return rows;
+    finally {
+        globalThis.fetch = previousFetch;
+    }
 }
 
-interface ToRowInput {
-    readonly fixtureId: string;
-    readonly family: AssertionOutcomeParityFamily;
-    readonly expectedVerdict: AssertionOutcomeVerdict;
-    readonly runnerVerdict: AssertionOutcomeVerdict;
-    readonly runtimeVerdict: AssertionOutcomeVerdict;
+function toRuntimePollingCommand(fixture: PollingParityFixture): RallarBlackBoxTestCommand {
+    return {
+        kind: 'loop',
+        commandId: `parity-${fixture.fixtureId}`,
+        until: 'first-success',
+        count: fixture.maxAttempts,
+        intervalMs: 1,
+        commands: [
+            {
+                kind: 'assert',
+                commandId: `parity-${fixture.fixtureId}-converged`,
+                source: 'state.commandHistory.length',
+                operator: 'gte',
+                expected: fixture.succeedOnAttempt === undefined
+                    ? Number.MAX_SAFE_INTEGER
+                    : fixture.succeedOnAttempt
+            }
+        ]
+    };
 }
 
 function toRow(input: ToRowInput): AssertionOutcomeParityRow {
@@ -241,7 +260,7 @@ function isRunnerSuccess(status: any): boolean {
     return text === 'success' || text === 'ok' || text === 'passed';
 }
 
-function createDeterministicRuntime() {
+function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
     let now = 1_000;
     let sequence = 1;
     return createRallarBlackBoxTestRuntime({

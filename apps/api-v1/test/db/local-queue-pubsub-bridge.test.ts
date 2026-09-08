@@ -1,7 +1,11 @@
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import assert from 'node:assert/strict';
-import { createDisabledQueuePubSubBridge, createLocalQueuePubSubBridge, createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
+import {
+    createDisabledQueuePubSubBridge,
+    createLocalQueuePubSubBridge,
+    createLocalQueuePubSubBus
+} from '../../src/db/local-queue-pubsub-bridge.ts';
 
 interface CreateQueueBoxPubSubMessageOptions {
     readonly publisherId: string;
@@ -86,13 +90,13 @@ function createMessage(
     return {
         key: {
             topicId: 'topic',
-            resourceId: crypto.randomUUID(),
+            resourceId: `message-${options.publisherId}`,
             contextId: 'context'
         },
         channel: 'ws-channel',
         publisherId: options.publisherId,
-        typeId: 'WS_INBOX',
-        delivery: 'entry',
-        payload: JSON.stringify({ ok: true })
+        typeId: 'WS_OUTBOX',
+        delivery: 'key',
+        expiresAtMs: 1_800_000_060_000
     };
 }

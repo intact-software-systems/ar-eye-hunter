@@ -10,8 +10,8 @@ test('persists current rows and resolves concurrent writes in real IndexedDB', a
     );
     const result = await page.evaluate<IndexedDbTransactionWriteBrowserProbe, string>(
         async (moduleUrl) => {
-            const fixture = await import(moduleUrl);
-            return await fixture.runIndexedDbTransactionWriteBrowserProbe();
+            const fixture: typeof import('./browser-indexeddb-transaction-writes-fixture.ts') = await import(moduleUrl);
+            return await fixture.runIndexedDbTransactionWriteBrowserProbe(crypto.randomUUID());
         },
         `/@fs${fixturePath}`
     );
@@ -22,7 +22,10 @@ test('persists current rows and resolves concurrent writes in real IndexedDB', a
         storedResource: 'stored-value',
         storedRevision: 0,
         admissionTokenPresent: true,
-        guardedAdmissionBatchRolledBack: true
+        guardedAdmissionBatchRolledBack: true,
+        queuedWorkReplayed: true,
+        queueConflictRolledBackAdmission: true,
+        admissionConflictRolledBackQueue: true
     });
     expect(result.durableWinner).toBeDefined();
     expect(result.concurrentResults).toEqual([

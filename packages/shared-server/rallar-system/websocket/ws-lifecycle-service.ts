@@ -1,4 +1,4 @@
-import type { WebSocketServerCallbacks } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { WebSocketServerCallbacks } from '@shared/websocket/json-web-socket-server.ts';
 
 export interface RallarWsLifecycleCloseInput {
     readonly sessionId: string;
@@ -29,10 +29,12 @@ export interface RallarWsLifecycleRuntime {
 }
 
 export interface RallarWsLifecycleSocketService {
-    readonly socket: {
-        onWebsocketCallbacksDo(id: string, callbacks: WebSocketServerCallbacks): void;
-        removeWebsocketCallbackById(id: string): boolean;
-    };
+    readonly socket: RallarWsLifecycleSocket;
+}
+
+export interface RallarWsLifecycleSocket {
+    onWebsocketCallbacksDo(id: string, callbacks: WebSocketServerCallbacks): void;
+    removeWebsocketCallbackById(id: string): boolean;
 }
 
 interface PendingClose {

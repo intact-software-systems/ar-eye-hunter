@@ -1,7 +1,22 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import {
+    computeResourceInboxObservedReplacement,
+    ResourceInboxInvariantCorruptionError
+} from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+import {
+    afterEach,
+    beforeAll,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import {
     createResourceInboxQueryCapture,
@@ -32,11 +47,11 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
 
-        await repo.reservations.findEntriesSkipLocked(
-            new Set(['APP_INBOX']),
-            new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
-            7
-        );
+        await repo.reservations.findEntriesSkipLocked({
+            typeIds: new Set(['APP_INBOX']),
+            statusIds: new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
+            reservationInput: 7
+        });
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status <>');
@@ -74,11 +89,11 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
 
-        await repo.reservations.findEntriesSkipLocked(
-            new Set(['APP_INBOX']),
-            new Set([EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 2 }
-        );
+        await repo.reservations.findEntriesSkipLocked({
+            typeIds: new Set(['APP_INBOX']),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+        });
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.values).toContain(2);
@@ -125,11 +140,11 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
 
-        await repo.reservations.findTimedOutReservedEntriesSkipLocked(
-            new Set(['APP_INBOX']),
-            30_000,
-            { maxToReserve: 3, maxAttempts: 2 }
-        );
+        await repo.reservations.findTimedOutReservedEntriesSkipLocked({
+            typeIds: new Set(['APP_INBOX']),
+            timeSinceStartMs: 30_000,
+            reservationInput: { maxToReserve: 3, maxAttempts: 2 }
+        });
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
@@ -146,11 +161,13 @@ describe('PostgreSQL resource inbox persistence', () => {
             const capture = createResourceInboxQueryCapture();
             const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
 
-            await expect(repo.reservations.findTimedOutReservedEntriesSkipLocked(
-                new Set(['APP_INBOX']),
-                timeSinceStartMs,
-                1
-            )).rejects.toThrow(/non-negative safe integer/u);
+            await expect(
+                repo.reservations.findTimedOutReservedEntriesSkipLocked({
+                    typeIds: new Set(['APP_INBOX']),
+                    timeSinceStartMs: timeSinceStartMs,
+                    reservationInput: 1
+                })
+            ).rejects.toThrow(/non-negative safe integer/u);
             expect(capture.queries).toHaveLength(0);
         }
     );
@@ -168,32 +185,6 @@ describe('PostgreSQL resource inbox persistence', () => {
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('start_ts = now()');
         expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
-    });
-
-    it('selects only live stale exhausted AppInbox reservations with the database clock', async () => {
-        const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
-
-        await repo.finalization.findRetryExhaustionFinalizationsSkipLocked(
-            new Set(['APP_INBOX', 'APP_OUTBOX']),
-            300_000,
-            { processingAttempts: 20, maxToReserve: 3 }
-        );
-
-        const query = capture.queries[0]!;
-        expect(query.query).toContain('ri_type_id =');
-        expect(query.query).toContain('ri_status =');
-        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
-        expect(query.query).toContain('ri_attempts >=');
-        expect(query.query).toContain('ri_attempts <');
-        expect(query.query).toContain('start_ts <= (now() -');
-        expect(query.query).toContain('interval \'1 millisecond\'');
-        expect(query.query).toContain('for update skip locked');
-        expect(query.values).toContain('APP_INBOX');
-        expect(query.values).not.toContain('APP_OUTBOX');
-        expect(query.values).toContain(20);
-        expect(query.values).toContain(300_000);
-        expect(query.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('advances finalization generation with exact attempt and live reservation fences', async () => {
@@ -731,23 +722,28 @@ describe('PostgreSQL resource inbox persistence', () => {
         stored.ri_status = EntityStatus.RESERVED;
         stored.ri_attempts = 2n;
 
-        await expect(repo.reservations.releaseReserved(entry.key, {
-            expectedAttempts: 1,
-            releasedAt,
-            disposition: { status: EntityStatus.RETRY, delayMs: 37 }
-        })).resolves.toBeNull();
-
-        const released = await repo.reservations.releaseReserved(entry.key, {
-            expectedAttempts: 2,
-            releasedAt,
-            disposition: { status: EntityStatus.RETRY, delayMs: 37 }
-        });
+        const observed = await repo.entries.findByKey(entry.key);
+        if (!observed) {
+            throw new Error('Expected current reservation');
+        }
+        const candidate = {
+            ...observed,
+            status: EntityStatus.RETRY,
+            dequeueAudit: { ...observed.dequeueAudit, endTs: releasedAt, nextTs: releasedAt.add({ milliseconds: 37 }) }
+        };
+        await expect(repo.reservations.releaseReserved(computeResourceInboxObservedReplacement({
+            ...observed,
+            dequeueAudit: { ...observed.dequeueAudit, attempts: 1 }
+        }, candidate))).resolves.toBeNull();
+        const released = await repo.reservations.releaseReserved(computeResourceInboxObservedReplacement(observed, candidate));
 
         expect(released?.dequeueAudit.endTs?.toString()).toBe(releasedAt.toString());
         expect(released?.dequeueAudit.nextTs?.toString())
             .toBe(releasedAt.add({ milliseconds: 37 }).toString());
-        expect(stored.ri_status).toBe(EntityStatus.RETRY);
-        expect(stored.ri_attempts).toBe(2n);
+        expect(await repo.entries.findByKey(entry.key)).toMatchObject({
+            status: EntityStatus.RETRY,
+            dequeueAudit: { attempts: 2 }
+        });
     });
 
     it.each(
@@ -765,11 +761,11 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
 
-        await expect(repo.reservations.releaseReserved(createKey(`invalid-${_scenario}`), {
-            expectedAttempts: 1,
-            releasedAt: Temporal.Instant.from('2026-01-01T00:00:00Z'),
-            disposition
-        } as never)).rejects.toMatchObject({
+        const entry = createEntry(createKey(`invalid-${_scenario}`), {
+            text: 'invalid release',
+            expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
+        });
+        await expect(new PSqlQueueBox(repo).releaseEntries([entry], disposition as never)).rejects.toMatchObject({
             code: 'resource-inbox-invalid-release-disposition'
         });
 
@@ -786,7 +782,7 @@ describe('PostgreSQL resource inbox persistence', () => {
             1,
             EntityStatus.RETRY as typeof EntityStatus.COMPLETED,
             new Date('2026-01-01T00:01:00.000Z')
-        )).rejects.toThrow('COMPLETED or FAILED');
+        )).rejects.toThrow('Resource inbox reservation finish status must be COMPLETED, FAILED or NON_RETRYABLE');
         expect(harness.sqlCalls).toHaveLength(sqlCallsBefore);
     });
 

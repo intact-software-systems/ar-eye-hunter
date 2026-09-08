@@ -7,9 +7,7 @@ import type {
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import { deleteBrowserQueueBoxDatabasesForSession } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
@@ -18,8 +16,11 @@ import type {
     RallarAuthState
 } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { clearSession, readSession, writeSession } from '@shared/api/auth.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import {
+    clearSession,
+    readSession,
+    writeSession
+} from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
 
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
@@ -53,6 +54,8 @@ export interface RallarSessionAuthLifecycle {
 
 export namespace BrowserSessionAuthLifecycle {
     export interface Input {
+        readonly nowMs: () => number;
+        readonly newRequestId: () => string;
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly authRuntime: RallarAuthRuntimePort;
@@ -221,7 +224,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         if (!session) {
             return;
         }
-        const delayMs = Math.max(0, session.expiresAtEpochMs - Date.now());
+        const delayMs = Math.max(0, session.expiresAtEpochMs - this.input.nowMs());
         this.input.authRuntime.setAuthExpiryTimer(
             setTimeout(
                 () =>
@@ -239,7 +242,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             this.scheduleAuthExpiry(currentSession);
             return;
         }
-        if (currentSession && currentSession.expiresAtEpochMs > Date.now()) {
+        if (currentSession && currentSession.expiresAtEpochMs > this.input.nowMs()) {
             this.scheduleAuthExpiry(currentSession);
             return;
         }
@@ -258,7 +261,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         clearSession();
         const disconnectError = await captureError(() => this.disconnect());
         const revokeError = options.revoke && session
-            ? await captureError(() => revokeAuthSession(session, options.operationOptions))
+            ? await captureError(() => revokeAuthSession(session, this.input.newRequestId(), options.operationOptions))
             : undefined;
         const dataCleanupError = session
             ? await this.cleanupEndedSession(session)
@@ -282,12 +285,6 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         catch {
             // Browser-local AL cleanup is best-effort.
         }
-        try {
-            await deleteBrowserQueueBoxDatabasesForSession(session.sessionId);
-        }
-        catch {
-            // Browser-local queue cleanup is best-effort.
-        }
         return dataCleanupError;
     }
 
@@ -310,9 +307,9 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
 
 async function revokeAuthSession(
     session: AuthSession,
+    requestId: string,
     operationOptions: RallarOperationOptions = {}
 ): Promise<void> {
-    const requestId = crypto.randomUUID();
     await new Command(
         (signal) => authApi.logoutFromApi({ requestId, signal, authSession: session }),
         toRallarCommandOptions(operationOptions)

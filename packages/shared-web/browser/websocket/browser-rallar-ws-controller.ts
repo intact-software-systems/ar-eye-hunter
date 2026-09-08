@@ -1,8 +1,7 @@
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarConnectStatus } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ApiMiddleware, RallarConnectStatus } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarWsFacade,
     RallarWsLifecycleKind,
@@ -14,7 +13,7 @@ import type {
 import type { RallarWaitForOpenOptions, RallarWaitForOpenStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';
+import type { WebSocketClientCallbacks } from '@shared/websocket/json-web-socket-client.ts';
 
 const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 
@@ -36,12 +35,6 @@ interface RallarWsLifecycleEventDetails {
     readonly intentional?: boolean;
 }
 
-export interface BrowserRallarWsControllerInput {
-    readMiddleware(): ApiMiddleware | undefined;
-    readSession(): AuthSession | undefined;
-    readConnectState(): RallarConnectStatus;
-}
-
 export interface RallarWsController {
     readonly facade: RallarWsFacade;
     attach(ctx?: ApiMiddleware): void;
@@ -50,13 +43,21 @@ export interface RallarWsController {
     disconnected(): void;
 }
 
+export namespace BrowserRallarWsController {
+    export interface Input {
+        readMiddleware(): ApiMiddleware | undefined;
+        readSession(): AuthSession | undefined;
+        readConnectState(): RallarConnectStatus;
+    }
+}
+
 export class BrowserRallarWsController implements RallarWsController {
     private readonly wsStatusListeners = new Set<RallarWsStatusSubscription>();
     private readonly wsLifecycleListeners = new Set<RallarWsLifecycleSubscription>();
 
-    private readonly options: BrowserRallarWsControllerInput;
+    private readonly options: BrowserRallarWsController.Input;
 
-    constructor(options: BrowserRallarWsControllerInput) {
+    constructor(options: BrowserRallarWsController.Input) {
         this.options = options;
     }
 

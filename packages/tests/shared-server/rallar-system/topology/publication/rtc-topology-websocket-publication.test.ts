@@ -27,14 +27,20 @@ import {
     JsonWebSocketServer,
     newALBroadcastMessage,
     newALEventRoute,
-    ResilienceDto,
+    ResourceInboxResilience,
     WsQueueBoxServerService,
     type ALMessage
 } from '@shared/mod.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -43,24 +49,28 @@ import { createRtcTopologyReplayFixture } from '../replay/consumer/rtc-topology-
 describe('RTC topology websocket publication', () => {
     it('replays a durable topology publication only to its recorded sessions', async () => {
         const fixture = createRtcTopologyReplayFixture();
+        vi.spyOn(Date, 'now').mockReturnValue(fixture.databaseNowEpochMs);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
         const server = new JsonWebSocketServer();
         const recordedSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-1', recordedSocket));
-        server.addConnection(new ConnectionContext('session-2', outsideSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket: recordedSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-2', socket: outsideSocket }));
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1',
             targetResolver: createWsServerTargetResolver(server)
         });
+        onTestFinished(() => service.dispose());
         const replay = new RtcTopologyReplayEntryHandlerService({
             publications: {
                 findPublication: async () => fixture.publication
             },
             outbox: {
-                getItem: async () => fixture.outbox
+                getItem: async (key) => fixture.outbox.find((page) => JSON.stringify(page.key) === JSON.stringify(key))
             },
             snapshots: {
                 findSnapshot: async () => fixture.currentSnapshot
@@ -78,7 +88,7 @@ describe('RTC topology websocket publication', () => {
                 new AbortController().signal
             )
         ).resolves.toEqual({ status: 'delivered' });
-        expect(recordedSocket.sent).toEqual([decodePersistedALMessage(fixture.outbox.resource)]);
+        expect(recordedSocket.sent).toEqual(fixture.outbox.map((page) => decodePersistedALMessage(page.resource)));
         expect(outsideSocket.sent).toEqual([]);
     });
 
@@ -90,16 +100,16 @@ describe('RTC topology websocket publication', () => {
         const peerSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
 
-        server.addConnection(new ConnectionContext('session-a', senderSocket));
-        server.addConnection(new ConnectionContext('session-b', peerSocket));
-        server.addConnection(new ConnectionContext('session-c', outsideSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-b', socket: peerSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-c', socket: outsideSocket }));
 
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         clientStateSnapshotsRepository.setClientStateSnapshots([
             createClientSnapshot('session-a'),
@@ -139,15 +149,15 @@ describe('RTC topology websocket publication', () => {
         ]);
 
         for (const [sessionId, socket] of sockets) {
-            server.addConnection(new ConnectionContext(sessionId, socket));
+            server.addConnection(new ConnectionContext({ id: sessionId, socket }));
         }
 
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const topologyService = new RallarRtcTopologyService();
         const appOutbox = new InMemoryQueueBox(new Map());
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
@@ -239,17 +249,17 @@ describe('RTC topology websocket publication', () => {
 
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', senderSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
 
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         installTestTopologyOutbox(service, {
             topologyPlanning: createTopologyOwners().planning,
             rtcTopologyAppOutbox: {
@@ -285,19 +295,19 @@ describe('RTC topology websocket publication', () => {
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
         const peerSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', senderSocket));
-        server.addConnection(new ConnectionContext('session-b', peerSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-b', socket: peerSocket }));
 
         const wsOutbox = new InMemoryQueueBox(new Map());
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: wsOutbox,
             socket: server,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         installTestTopologyOutbox(service, {
             topologyPlanning: createTopologyOwners().planning,
             rtcTopologyAppOutbox: {
@@ -482,15 +492,15 @@ function createUnusedDatabase(): PSqlSql {
     );
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 function audit(atEpochMs: number): AuditStamp {

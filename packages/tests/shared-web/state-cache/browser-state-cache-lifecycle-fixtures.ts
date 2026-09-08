@@ -1,4 +1,5 @@
 import type { BrowserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALBroadcastMessage,
     newALEventRoute,
@@ -14,6 +15,7 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { computeStateSnapshotPages, isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { vi } from 'vitest';
 import { createTestGroup } from '../../create-test-group.ts';
 
@@ -261,6 +263,9 @@ export function toCurrentTopologyMessageId(
         ])
         : JSON.stringify([
             deliveryKind,
+            topology.groupRef.applicationId,
+            topology.groupRef.workspaceId,
+            topology.groupRef.groupId,
             'session-a',
             'generation-a',
             revision.groupRevision,
@@ -369,4 +374,67 @@ export function auditStamp(atEpochMs: number): AuditStamp {
         traceId: null,
         requestId: null
     };
+}
+
+/** Produces the current page protocol at the fake server's outbound port. */
+export function createPagedSnapshotReceiver(receive: (message: ALMessage) => Promise<void>) {
+    return async (message: ALMessage): Promise<void> => {
+        if (!isStateSnapshotTopic(message.payload.typeId)) {
+            return receive(message);
+        }
+        const payload = readFixtureRecord(JSON.parse(message.payload.resource));
+        const topology = message.payload.typeId === AppTopics.overlayTopology;
+        const principal = message.payload.typeId === AppTopics.clientStateSnapshot;
+        const identity = readFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
+        const scope = {
+            kind: principal ? 'principal' as const : 'group' as const,
+            applicationId: String(identity.applicationId),
+            workspaceId: String(identity.workspaceId),
+            resourceId: String(identity[principal ? 'principalId' : 'groupId'])
+        };
+        const causal = principal ? undefined : readFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
+        const revision = topology
+            ? JSON.stringify([causal!.groupRevision, causal!.presenceRevision, payload.version])
+            : principal
+            ? `revision=${payload.stateRevision}`
+            : `group=${causal!.groupRevision};presence=${causal!.presenceRevision}`;
+        const targets = message.targets?.mode === 'unicast'
+            ? message.targets
+            : principal
+            ? {
+                mode: 'broadcast' as const,
+                scope: 'principal' as const,
+                principalRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, principalId: scope.resourceId }
+            }
+            : {
+                mode: 'broadcast' as const,
+                scope: 'room' as const,
+                groupRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, groupId: scope.resourceId }
+            };
+        const pages = computeStateSnapshotPages({
+            scope,
+            revision,
+            resource: message.payload.resource,
+            envelope: {
+                id: message.id,
+                route: message.route,
+                targets,
+                delivery: { reliability: 'best-effort', ack: 'none' },
+                constraints: { expiresAtMs: message.id.ts + 60_000 },
+                audit: { createdBy: message.id.senderId, createdTs: message.id.ts }
+            }
+        }).fold((issue) => {
+            throw new TypeError(issue.message);
+        }, (messages) => messages);
+        for (const page of pages) {
+            await receive(page);
+        }
+    };
+}
+
+function readFixtureRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('Snapshot fixture requires a record');
+    }
+    return value as Record<string, unknown>;
 }

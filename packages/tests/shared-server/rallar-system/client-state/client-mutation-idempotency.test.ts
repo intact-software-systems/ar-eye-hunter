@@ -8,7 +8,7 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import type { ClientPrincipalUpsertAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -16,7 +16,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
-    CLIENT_STATE_TEST_SCOPE as APP_SCOPE,
+    CLIENT_STATE_TEST_SCOPE,
     createAutoAuthorizingClientStateService,
     processAppInbox,
     requireRightSnapshot,
@@ -35,7 +35,7 @@ import {
     createService,
     outboxFor
 } from './client-mutation-concurrency-test-runtime.ts';
-import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
+import { CLIENT_MUTATION_TEST_SCOPE, clientMutationPrincipalRef } from './client-mutation-validation-test-fixtures.ts';
 import { CLIENT_MUTATION_SERVICE_SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
 import { createClientStateTestDriver } from './client-state-test-runtime.ts';
 
@@ -89,10 +89,10 @@ describe('client mutation AppInbox idempotency', () => {
         const first = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'upsert-client-alice-first',
-            contextId: `${APP_SCOPE.applicationId}:${APP_SCOPE.workspaceId}:alice`,
+            contextId: `${CLIENT_STATE_TEST_SCOPE.applicationId}:${CLIENT_STATE_TEST_SCOPE.workspaceId}:alice`,
             senderId: 'alice',
             data: {
-                scope: APP_SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 request: {
                     username: 'alice',
@@ -106,10 +106,10 @@ describe('client mutation AppInbox idempotency', () => {
         const replay = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'upsert-client-alice-replay',
-            contextId: `${APP_SCOPE.applicationId}:${APP_SCOPE.workspaceId}:alice`,
+            contextId: `${CLIENT_STATE_TEST_SCOPE.applicationId}:${CLIENT_STATE_TEST_SCOPE.workspaceId}:alice`,
             senderId: 'alice',
             data: {
-                scope: APP_SCOPE,
+                scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',
                 request: {
                     username: 'alice',
@@ -192,11 +192,11 @@ describe('client mutation service idempotency', () => {
             now: () => 1_000,
             serviceId: 'client-service'
         });
-        const principalRef = toClientPrincipalRef('alice');
+        const principal = toClientPrincipalRef('alice');
 
         const first = await service.upsertPrincipal(
             CLIENT_MUTATION_SERVICE_SCOPE,
-            principalRef.principalId,
+            principal.principalId,
             {
                 username: 'alice',
                 displayName: 'Alice',
@@ -205,7 +205,7 @@ describe('client mutation service idempotency', () => {
             }
         );
         await expect(
-            service.upsertPrincipal(CLIENT_MUTATION_SERVICE_SCOPE, principalRef.principalId, {
+            service.upsertPrincipal(CLIENT_MUTATION_SERVICE_SCOPE, principal.principalId, {
                 username: 'alice',
                 displayName: 'Alice with changed payload',
                 actorPrincipalId: 'alice',
@@ -215,8 +215,8 @@ describe('client mutation service idempotency', () => {
         expect(first.result?.event?.eventType).toBe('principal-created');
 
         const repository = createTestClientStateRepository(runtimeRepository);
-        expect((await repository.readSnapshot(principalRef))?.principal.displayName).toBe('Alice');
-        expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
+        expect((await repository.readSnapshot(principal))?.principal.displayName).toBe('Alice');
+        expect((await repository.listEvents(principal)).map((event) => event.eventType)).toEqual([
             'principal-created'
         ]);
     });
@@ -234,9 +234,9 @@ describe('client mutation idempotency convergence', () => {
                 requestId: 'same-request'
             } as const;
             runtime.armPrincipalReadBarrier(2);
-            const firstAttempt = () => createService(runtime, 1_000).upsertPrincipal(SCOPE, 'alice', request);
+            const firstAttempt = () => createService(runtime, 1_000).upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', request);
             const secondAttempt = () =>
-                createService(runtime, 9_000).upsertPrincipal(SCOPE, 'alice', {
+                createService(runtime, 9_000).upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', {
                     requestId: 'same-request',
                     metadata: { two: 2, one: 1 },
                     displayName: 'Alice',
@@ -255,7 +255,7 @@ describe('client mutation idempotency convergence', () => {
             expect(second.result?.event).toEqual(first.result?.event);
             const idempotent = await createTestClientStateRepository(
                 runtime
-            ).findIdempotentClientMutationReceipt(principalRef('alice'), 'same-request');
+            ).findIdempotentClientMutationReceipt(clientMutationPrincipalRef('alice'), 'same-request');
             expect(idempotent?.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/);
             expect(idempotent?.receipt.commandHash).toBe(idempotent?.commandHash);
             const records = await outboxFor(runtime, ['same-request']);
@@ -265,13 +265,13 @@ describe('client mutation idempotency convergence', () => {
             const conflictRuntime = new AggregateBarrierRepository();
             conflictRuntime.armPrincipalReadBarrier(2);
             const firstConflictAttempt = () =>
-                createService(conflictRuntime, 1_000).upsertPrincipal(SCOPE, 'bob', {
+                createService(conflictRuntime, 1_000).upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'bob', {
                     username: 'bob',
                     displayName: 'First',
                     requestId: 'different-content'
                 });
             const secondConflictAttempt = () =>
-                createService(conflictRuntime, 1_001).upsertPrincipal(SCOPE, 'bob', {
+                createService(conflictRuntime, 1_001).upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'bob', {
                     username: 'bob',
                     displayName: 'Second',
                     requestId: 'different-content'

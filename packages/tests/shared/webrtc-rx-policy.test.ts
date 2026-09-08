@@ -9,11 +9,14 @@ import {
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage, decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
-import type { OnQRtcMessageCallback } from '@shared/webrtc/QRtcClientCallbacks.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
@@ -21,7 +24,146 @@ import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
 describe('WebRtcRxStreamerService channel receive pipeline', () => {
-    afterEach(() => vi.restoreAllMocks());
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it.each(['specific', 'wildcard'] as const)('marks a message rejected by the %s consumer NON_RETRYABLE', async (consumer) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const fixture = createRtcReceiveFixture();
+        const rejected: string[] = [];
+        const callback = {
+            onMessage: async (message: shared.ALMessage) => {
+                rejected.push(message.id.msgId);
+                throw new NonRetryableException('Malformed application payload');
+            }
+        };
+        if (consumer === 'specific') {
+            fixture.service.onInboxMessageDo('tasks.job.v1', callback);
+        }
+        else {
+            fixture.service.onAllInboxMessagesDo(callback);
+        }
+        const message = createUnicast({ acknowledge: false, exclusive: false });
+
+        await fixture.receive(message, 'peer-1');
+
+        const rejectedPage = await fixture.stores.admissionStore.workQueue.readWorkPage({
+            typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
+            status: EntityStatus.NON_RETRYABLE,
+            maxToRead: 10,
+            cursor: null
+        });
+        expect(rejectedPage.entries).toHaveLength(1);
+        expect(rejectedPage.entries[0]).toMatchObject({ dequeueAudit: { attempts: 1, nextTs: undefined } });
+
+        vi.setSystemTime(Date.now() + 60_000);
+        await fixture.receive(message, 'peer-1');
+
+        expect(rejected).toEqual([message.id.msgId]);
+        expect(await fixture.stores.admissionStore.workQueue.getItem(rejectedPage.entries[0].key)).toMatchObject({
+            status: EntityStatus.NON_RETRYABLE,
+            dequeueAudit: { attempts: 1, nextTs: undefined }
+        });
+    });
+
+    it('keeps accepted channel work unclaimed until a matching consumer registers', async () => {
+        const fixture = createRtcReceiveFixture();
+        const message = createUnicast({ acknowledge: false, exclusive: false });
+        await fixture.receive(message, 'peer-1');
+        const keys = await fixture.stores.admissionStore.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        expect(await fixture.stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+        const delivered: string[] = [];
+        fixture.service.onAllInboxMessagesDo({
+            onMessage: async (incoming) => {
+                delivered.push(incoming.id.msgId);
+            }
+        });
+
+        await expect.poll(() => fixture.stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+        expect(delivered).toEqual([message.id.msgId]);
+    });
+
+    it('restarts owned delivery without requiring new channel ingress', async () => {
+        const fixture = createRtcReceiveFixture();
+        const message = createUnicast({ acknowledge: false, exclusive: false });
+        await fixture.receive(message, 'peer-1');
+        fixture.service.dispose();
+        const resumed = createRtcReceiveFixture(fixture.stores);
+        const delivered: string[] = [];
+        resumed.service.onInboxMessageDo('tasks.job.v1', {
+            onMessage: async (incoming) => {
+                delivered.push(incoming.id.msgId);
+            }
+        });
+
+        await expect.poll(() => delivered).toEqual([message.id.msgId]);
+        const keys = await fixture.stores.admissionStore.workQueue.getAllKeys();
+        expect(await fixture.stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+    });
+
+    it.each([-1, 0, 1])('checks remaining consumer expiry after a handler returns at deadline %+i ms', async (offsetMs) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const fixture = createRtcReceiveFixture();
+        const expiresAtMs = Date.now() + 1_000;
+        const delivered: string[] = [];
+        fixture.service.onInboxMessageDo('tasks.job.v1', {
+            onMessage: async () => {
+                delivered.push('specific');
+                await Promise.resolve();
+                vi.setSystemTime(expiresAtMs + offsetMs);
+            }
+        });
+        fixture.service.onAllInboxMessagesDo({
+            onMessage: async () => {
+                delivered.push('wildcard');
+            }
+        });
+        const message = { ...createUnicast({ acknowledge: false, exclusive: false }), constraints: { expiresAtMs } };
+
+        await fixture.receive(message, 'peer-1');
+
+        expect(delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
+    });
+
+    it('retries an ordinary consumer failure and completes after the consumer succeeds', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const fixture = createRtcReceiveFixture();
+        const attempts: string[] = [];
+        fixture.service.onAllInboxMessagesDo({
+            onMessage: async (message) => {
+                attempts.push(message.id.msgId);
+                if (attempts.length === 1) {
+                    throw new Error('Application dependency temporarily unavailable');
+                }
+            }
+        });
+        const message = createUnicast({ acknowledge: false, exclusive: false });
+
+        await fixture.receive(message, 'peer-1');
+
+        const retryPage = await fixture.stores.admissionStore.workQueue.readWorkPage({
+            typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
+            status: EntityStatus.RETRY,
+            maxToRead: 10,
+            cursor: null
+        });
+        expect(retryPage.entries).toHaveLength(1);
+        const retry = retryPage.entries[0];
+        expect(retry.dequeueAudit.attempts).toBe(1);
+        expect(retry.dequeueAudit.nextTs).toBeDefined();
+
+        vi.setSystemTime(retry.dequeueAudit.nextTs!.epochMilliseconds);
+        await fixture.receive(message, 'peer-1');
+
+        await expect.poll(() => fixture.stores.admissionStore.workQueue.getItem(retry.key)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+            dequeueAudit: { attempts: 2, nextTs: undefined }
+        });
+        expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
+    });
 
     it('does not publish admitted channel work after its owning streamer is disposed', async () => {
         const fixture = createRtcReceiveFixture();
@@ -42,6 +184,33 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         expect(delivered).toEqual([]);
         expect(await fixture.outbound()).toEqual([]);
+    });
+
+    it('stops later consumers when disposed during a handler', async () => {
+        const fixture = createRtcReceiveFixture();
+        const started = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<void>();
+        onTestFinished(() => resume.resolve());
+        const delivered: string[] = [];
+        fixture.service.onInboxMessageDo('tasks.job.v1', {
+            onMessage: async () => {
+                started.resolve();
+                await resume.promise;
+            }
+        });
+        fixture.service.onAllInboxMessagesDo({
+            onMessage: async (message) => {
+                delivered.push(message.id.msgId);
+            }
+        });
+        const receiving = fixture.receive(createUnicast({ acknowledge: false, exclusive: false }), 'peer-1');
+        await started.promise;
+
+        fixture.service.dispose();
+        resume.resolve();
+        await receiving;
+
+        expect(delivered).toEqual([]);
     });
 
     it('delivers a repeated channel message once and acknowledges its message identity', async () => {
@@ -108,8 +277,9 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(first, 'peer-1');
 
-        expect(delivered).toEqual([first.id.msgId, second.id.msgId]);
-        expect((await fixture.outbound()).map((message) => message.id.msgId)).toEqual(expect.arrayContaining([first.id.msgId, second.id.msgId]));
+        await expect.poll(() => delivered).toEqual([first.id.msgId, second.id.msgId]);
+        await expect.poll(async () => (await fixture.outbound()).map((message) => message.id.msgId))
+            .toEqual(expect.arrayContaining([first.id.msgId, second.id.msgId]));
     });
 
     it('keeps child controls out of application delivery and acknowledges upstream after both children', async () => {
@@ -123,10 +293,28 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         const message = createMulticast({ seq: 1, acknowledgeSubtree: true });
 
         await fixture.receive(message, 'peer-1');
-        await fixture.receive(shared.newALAckControlMessage('peer-2', 'self', message.id.msgId, 'delivered'), 'peer-2');
+        await fixture.receive(
+            shared.newALAckControlMessage({ v: 2, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2' }, {
+                fromPeerId: 'peer-2',
+                toPeerId: 'self',
+                ackedMsgId: message.id.msgId,
+                status: 'delivered',
+                observedAtEpochMs: Date.now()
+            }),
+            'peer-2'
+        );
         expect((await fixture.outbound()).filter((outgoing) => shared.parseALControlMessage(outgoing)?.type === 'ack')).toEqual([]);
 
-        await fixture.receive(shared.newALAckControlMessage('peer-3', 'self', message.id.msgId, 'delivered'), 'peer-3');
+        await fixture.receive(
+            shared.newALAckControlMessage({ v: 2, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3' }, {
+                fromPeerId: 'peer-3',
+                toPeerId: 'self',
+                ackedMsgId: message.id.msgId,
+                status: 'delivered',
+                observedAtEpochMs: Date.now()
+            }),
+            'peer-3'
+        );
 
         expect(delivered).toEqual([message.id.msgId]);
         expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
@@ -143,13 +331,10 @@ interface RtcReceiveFixture {
     outbound(): Promise<shared.ALMessage[]>;
 }
 
-function createRtcReceiveFixture(): RtcReceiveFixture {
+function createRtcReceiveFixture(stores = shared.createDefaultInMemoryALInboundRuntimeStores()): RtcReceiveFixture {
     const transport = createRtcReceiveTransport();
-    const outbox = new shared.InMemoryQueueBox(new Map());
-    const multicast = createRtcRoomMulticast(transport.connections, outbox);
-    const stores = shared.createDefaultInMemoryALInboundRuntimeStores();
+    const multicast = createRtcRoomMulticast(transport.connections);
     const service = shared.createDefaultWebRtcRxStreamerService({
-        inbox: new shared.InMemoryQueueBox(new Map()),
         multicast,
         sessionId: 'self',
         inboundStores: stores
@@ -169,14 +354,7 @@ function createRtcReceiveFixture(): RtcReceiveFixture {
         stores,
         receive: transport.receive,
         async outbound(): Promise<shared.ALMessage[]> {
-            const messages = [...transport.sent];
-            for (const key of await outbox.getAllKeys()) {
-                const entry = await outbox.getItem(key);
-                if (entry) {
-                    messages.push(decodePersistedALMessage(entry.resource));
-                }
-            }
-            return messages;
+            return [...transport.sent];
         }
     };
 }
@@ -241,8 +419,9 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
         return channel;
     });
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...channel.readHealth(), readyState: 'open' });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
         ports.sent.push(decodePersistedALMessageValue(message));
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return {
         peerId,
@@ -254,12 +433,14 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
 }
 
 function createRtcRoomMulticast(
-    connections: shared.WebRtcConnectionService,
-    outbox: shared.InMemoryQueueBox
+    connections: shared.WebRtcConnectionService
 ): shared.WebRtcOverlayMulticastManager {
     const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2', 'peer-3'] });
     const groupCache = new shared.LatestRepository<string, GroupSnapshot>();
-    groupCache.accept('group-1', snapshot);
+    groupCache.accept('group-1', {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+    });
     const overlayCache = new shared.LatestRepository<string, shared.OverlayInfo>();
     overlayCache.accept('group-1', {
         sourceGroupStateCausalRevision: snapshot.causalRevision,
@@ -277,7 +458,6 @@ function createRtcRoomMulticast(
         updatedAtEpochMs: 1
     });
     return new shared.WebRtcOverlayMulticastManager({
-        outbox,
         connectionService: connections,
         groupCache,
         overlayCache,
@@ -338,8 +518,8 @@ describe('RTC receiver consumer dispatch', () => {
         });
         const message = exclusiveMessage();
 
-        await sender.peer.channel.send(message);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered).toEqual([]);
@@ -349,7 +529,7 @@ describe('RTC receiver consumer dispatch', () => {
         const { sender, receiver } = createConnectedEndpoints();
         const message = exclusiveMessage();
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
     });
@@ -377,7 +557,7 @@ describe('RTC receiver consumer dispatch', () => {
             }
         );
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);

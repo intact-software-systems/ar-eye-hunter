@@ -1,5 +1,5 @@
+import { validateResourceInboxReleaseDisposition } from '@shared/queuebox/compute-resource-inbox-release.ts';
 import {
-    toResourceInboxReleaseDisposition,
     type ResourceInboxReleaseDisposition
 } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -11,7 +11,12 @@ export async function requeueObservedResourceInboxDeliveryFailure(
     observed: ResourceEntry,
     releaseInput: ResourceInboxReleaseDisposition
 ): Promise<ResourceEntry | null> {
-    const disposition = toResourceInboxReleaseDisposition(releaseInput);
+    const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
+        (error) => {
+            throw error;
+        },
+        (value) => value
+    );
     const releasedAt = new Date();
     const nextTs = disposition.delayMs === null
         ? null

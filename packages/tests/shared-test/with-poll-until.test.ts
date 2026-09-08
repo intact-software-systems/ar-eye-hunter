@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { withPollUntil } from '../../shared-test/black-box-runner/execution/with-poll-until.ts';
 
@@ -17,7 +21,7 @@ function toAttempts(statuses: readonly string[]): () => Promise<{ status: string
 describe('withPollUntil', () => {
     it('runs once and returns when the first attempt succeeds', async () => {
         const execute = toAttempts([SUCCESS]);
-        const status: any = await withPollUntil({ request: { poll: { backoffMs: 0 } }, execute });
+        const status: any = await withPollUntil({ now: Date.now, request: { poll: { backoffMs: 0 } }, execute });
 
         expect(status.status).toBe(SUCCESS);
         expect(status.pollAttempts).toBe(1);
@@ -26,10 +30,7 @@ describe('withPollUntil', () => {
 
     it('retries until the condition holds', async () => {
         const execute = toAttempts([FAILURE, FAILURE, SUCCESS]);
-        const status: any = await withPollUntil({
-            request: { poll: { maxAttempts: 5, backoffMs: 0 } },
-            execute
-        });
+        const status: any = await withPollUntil({ now: Date.now, request: { poll: { maxAttempts: 5, backoffMs: 0 } }, execute });
 
         expect(status.status).toBe(SUCCESS);
         expect(status.pollAttempts).toBe(3);
@@ -39,10 +40,7 @@ describe('withPollUntil', () => {
     // so the failure a recipe reads is the real one.
     it('returns the last failing status when attempts are exhausted', async () => {
         const execute = toAttempts([FAILURE]);
-        const status: any = await withPollUntil({
-            request: { poll: { maxAttempts: 3, backoffMs: 0 } },
-            execute
-        });
+        const status: any = await withPollUntil({ now: Date.now, request: { poll: { maxAttempts: 3, backoffMs: 0 } }, execute });
 
         expect(status.status).toBe(FAILURE);
         expect(status.pollAttempts).toBe(3);
@@ -52,6 +50,7 @@ describe('withPollUntil', () => {
     it('executes exactly once when no poll policy is declared', async () => {
         let calls = 0;
         const status: any = await withPollUntil({
+            now: Date.now,
             request: {},
             execute: () => {
                 calls += 1;
@@ -69,6 +68,7 @@ describe('withPollUntil', () => {
     it('requires the condition to hold for stableForMs before returning', async () => {
         let calls = 0;
         const status: any = await withPollUntil({
+            now: Date.now,
             request: { poll: { maxAttempts: 20, backoffMs: 5, backoffMultiplier: 1, stableForMs: 30 } },
             execute: () => {
                 calls += 1;
@@ -84,6 +84,7 @@ describe('withPollUntil', () => {
         const statuses = [SUCCESS, FAILURE, SUCCESS, SUCCESS, SUCCESS, SUCCESS, SUCCESS, SUCCESS];
         const execute = toAttempts(statuses);
         const status: any = await withPollUntil({
+            now: Date.now,
             request: { poll: { maxAttempts: 20, backoffMs: 5, backoffMultiplier: 1, stableForMs: 20 } },
             execute
         });
@@ -94,10 +95,7 @@ describe('withPollUntil', () => {
 
     it('fails when the condition never holds long enough', async () => {
         const execute = toAttempts([SUCCESS, FAILURE]);
-        const status: any = await withPollUntil({
-            request: { poll: { maxAttempts: 4, backoffMs: 0, stableForMs: 10_000 } },
-            execute
-        });
+        const status: any = await withPollUntil({ now: Date.now, request: { poll: { maxAttempts: 4, backoffMs: 0, stableForMs: 10_000 } }, execute });
 
         expect(status.status).toBe(FAILURE);
         expect(status.pollExhausted).toBe(true);
@@ -109,6 +107,7 @@ describe('withPollUntil', () => {
     it('fails a policy that names zero attempts instead of skipping the step', async () => {
         let calls = 0;
         const status = await withPollUntil({
+            now: Date.now,
             request: { poll: { maxAttempts: 0 } },
             execute: () => {
                 calls += 1;
@@ -123,6 +122,7 @@ describe('withPollUntil', () => {
 
     it('fails a policy whose bounds do not parse', async () => {
         const status = await withPollUntil({
+            now: Date.now,
             request: { poll: { backoffMultiplier: '2x' } },
             execute: () => Promise.resolve({ status: 'SUCCESS' })
         });
@@ -136,6 +136,7 @@ describe('withPollUntil', () => {
     it('polls an action-only poll-until request with the defaults', async () => {
         let calls = 0;
         await withPollUntil({
+            now: Date.now,
             request: { action: 'poll-until' },
             execute: () => {
                 calls += 1;

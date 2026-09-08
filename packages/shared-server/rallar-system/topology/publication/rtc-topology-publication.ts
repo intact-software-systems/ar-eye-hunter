@@ -1,14 +1,15 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-export type RtcTopologyPublication = Readonly<{
-    publicationId: string;
-    workId: string;
-    groupRef: GroupRef;
-    sourceGroupStateCausalRevision: GroupStateCausalRevision;
-    overlayVersion: number;
-    targetGroupSnapshotVersion: number;
-    recipientSessionIds: readonly string[];
-    message: ALMessage;
-    createdAtEpochMs: number;
-}>;
+export interface RtcTopologyPublication {
+    readonly publicationId: string;
+    readonly workId: string;
+    readonly groupRef: GroupRef;
+    readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
+    readonly overlayVersion: number;
+    readonly targetGroupSnapshotVersion: number;
+    readonly recipientSessionIds: readonly string[];
+    readonly snapshot: RallarOverlayTopologySnapshot;
+    readonly expiresAtEpochMs: number;
+    readonly createdAtEpochMs: number;
+}

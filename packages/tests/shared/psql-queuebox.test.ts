@@ -1,17 +1,28 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import type { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
 describe('PSqlQueueBox', () => {
     it.each(HANDLER_FINALIZED_SUMMARY_SCENARIOS)(
         'fences handler-finalized summary release: $name',
         async ({ accepted, entries }) => {
-            const { reserved, current } = entries();
+            const { reserved: original, current } = entries();
+            const reserved = { ...original, db: { id: '1' } };
             const queue = new PSqlQueueBox(createRepo({
                 releaseReserved: vi.fn(async () => null),
                 findAnyByKey: vi.fn(async () => current)
@@ -116,11 +127,7 @@ describe('PSqlQueueBox', () => {
         });
 
         const queue = new PSqlQueueBox(repo as never);
-        const reserved = await queue.reserveEntries(
-            new Set(['type-1']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await queue.reserveEntries({ typeIds: new Set(['type-1']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
         expect(reserved.size).toBe(1);
         expect(reserved.get(first.key)?.status).toBe(EntityStatus.RESERVED);
@@ -142,11 +149,11 @@ describe('PSqlQueueBox', () => {
         });
 
         const queue = new PSqlQueueBox(repo as never);
-        const reserved = await queue.reserveTimeoutEntries(
-            new Set(['type-1']),
-            10,
-            Temporal.Duration.from({ seconds: 30 })
-        );
+        const reserved = await queue.reserveTimeoutEntries({
+            typeIds: new Set(['type-1']),
+            reservationInput: 10,
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 30 })
+        });
 
         expect(reserved.size).toBe(0);
     });
@@ -177,7 +184,7 @@ describe('PSqlQueueBox', () => {
         const queue = new PSqlQueueBox(repo as never);
 
         const selected = await queue.reserveRetryExhaustionFinalizations(
-            new Set([EnqueuedType.APP_INBOX, EnqueuedType.APP_OUTBOX]),
+            new Set([EnqueuedType.APP_INBOX]),
             {
                 processingAttempts: 20,
                 maxToReserve: 1,
@@ -218,11 +225,11 @@ describe('PSqlQueueBox', () => {
         });
         const queue = new PSqlQueueBox(repo as never);
 
-        const reserved = await queue.reserveEntries(
-            new Set(['type-1']),
-            new Set([EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 2 }
-        );
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set(['type-1']),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+        });
 
         expect(reserved.size).toBe(0);
         expect(startProcessingEntity).toHaveBeenCalledWith(exhausted, 2);
@@ -252,11 +259,11 @@ describe('PSqlQueueBox', () => {
         });
         const queue = new PSqlQueueBox(repo as never);
 
-        const reserved = await queue.reserveTimeoutEntries(
-            new Set(['type-1']),
-            { maxToReserve: 1, maxAttempts: 2 },
-            Temporal.Duration.from({ seconds: 30 })
-        );
+        const reserved = await queue.reserveTimeoutEntries({
+            typeIds: new Set(['type-1']),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 30 })
+        });
 
         expect(reserved.size).toBe(0);
         expect(startProcessingEntity).toHaveBeenCalledWith(exhausted, 2);
@@ -320,17 +327,9 @@ describe('PSqlQueueBox', () => {
         };
         const persistedEndTs = Temporal.Instant.from('2026-01-01T00:00:00.123Z');
         const persistedNextTs = persistedEndTs.add({ milliseconds: 37 });
-        const releaseReserved = vi.fn(async (
-            _key: Key,
-            options: Readonly<{
-                status: EntityStatus;
-                expectedAttempts: number;
-                releasedAt: Temporal.Instant;
-                delayMs: number | null;
-            }>
-        ) => ({
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (computed) => ({
             ...entry,
-            status: options.status,
+            status: computed.replacement.entry.status,
             dequeueAudit: {
                 ...entry.dequeueAudit,
                 endTs: persistedEndTs,
@@ -347,10 +346,9 @@ describe('PSqlQueueBox', () => {
         const [updated] = released.values();
 
         expect(releaseReserved).toHaveBeenCalledWith(
-            entry.key,
             expect.objectContaining({
-                expectedAttempts: 1,
-                disposition: { status: EntityStatus.RETRY, delayMs: 37 }
+                expected: expect.objectContaining({ entry }),
+                replacement: expect.objectContaining({ entry: expect.objectContaining({ status: EntityStatus.RETRY }) })
             })
         );
         expect(updated?.dequeueAudit.endTs?.toString()).toBe(persistedEndTs.toString());
@@ -360,6 +358,42 @@ describe('PSqlQueueBox', () => {
                 ?.until(updated.dequeueAudit.nextTs!)
                 .total({ unit: 'milliseconds' })
         ).toBe(37);
+    });
+
+    it('captures the supplied release instant before the transaction while preserving its exact reservation', async () => {
+        const observedAt = Temporal.Instant.from('2025-01-01T00:00:00.123456Z');
+        const entry = {
+            ...createEntry('owned-release-clock', EntityStatus.RESERVED),
+            dequeueAudit: { attempts: 3, startTs: observedAt.subtract({ seconds: 1 }) }
+        };
+        const expectedReservation: ResourceEntry = {
+            ...entry,
+            key: { ...entry.key },
+            audit: { ...entry.audit },
+            dequeueAudit: { ...entry.dequeueAudit },
+            db: entry.db === undefined ? undefined : { ...entry.db }
+        };
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (candidate) => candidate.replacement.entry);
+        const repo = createRepo({ releaseReserved });
+        let insideTransaction = false;
+        repo.transaction.mockImplementation(async (operation) => {
+            insideTransaction = true;
+            return await operation(repo);
+        });
+        const queue = new PSqlQueueBox(repo as never, () => {
+            expect(insideTransaction).toBe(false);
+            return observedAt;
+        });
+
+        const result = await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 37 });
+
+        const released = [...result.values()][0];
+        expect(released.dequeueAudit.endTs?.toString()).toBe('2025-01-01T00:00:00.123Z');
+        expect(released.dequeueAudit.nextTs?.toString()).toBe('2025-01-01T00:00:00.16Z');
+        expect(released.dequeueAudit.attempts).toBe(3);
+        expect(releaseReserved).toHaveBeenCalledWith(
+            expect.objectContaining({ expected: expect.objectContaining({ entry: expectedReservation }) })
+        );
     });
 
     it('surfaces a typed conflict when a stale PostgreSQL reservation loses release', async () => {
@@ -491,7 +525,7 @@ describe('PSqlQueueBox', () => {
     });
 });
 
-function createRepo(overrides: {
+interface PSqlQueueBoxTestRepositoryOverrides {
     isEntriesToLock?: (
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>,
@@ -514,16 +548,7 @@ function createRepo(overrides: {
         replacement: ResourceEntry
     ) => Promise<ResourceEntry | null>;
     writeIfAbsentOrReplaceExpired?: (entry: ResourceEntry) => Promise<ResourceEntry>;
-    updateResourceEntry?: (key: Key, status: EntityStatus, delayMs: number | null) => Promise<number>;
-    releaseReserved?: (
-        key: Key,
-        options: Readonly<{
-            status: EntityStatus;
-            expectedAttempts: number;
-            releasedAt: Temporal.Instant;
-            delayMs: number | null;
-        }>
-    ) => Promise<ResourceEntry | null>;
+    releaseReserved?: PSqlResourceInboxReservationRepository['releaseReserved'];
     startProcessingEntity?: (entry: ResourceEntry, maxAttempts?: number) => Promise<
         Either<{
             kind: 'expired-or-missing';
@@ -531,7 +556,9 @@ function createRepo(overrides: {
         }, ResourceEntry>
     >;
     startFinalizationRecovery?: (entry: ResourceEntry, processingAttempts: number) => Promise<Either<{ kind: 'expired-or-missing'; key: Key; }, ResourceEntry>>;
-}) {
+}
+
+function createRepo(overrides: PSqlQueueBoxTestRepositoryOverrides) {
     const entries = {
         findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
         replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
@@ -550,7 +577,6 @@ function createRepo(overrides: {
             vi.fn(async () => new Map<Key, ResourceEntry>()),
         findOverdueRetryEntriesSkipLocked: overrides.findOverdueRetryEntriesSkipLocked ??
             vi.fn(async () => new Map<Key, ResourceEntry>()),
-        updateResourceEntry: overrides.updateResourceEntry ?? vi.fn(async () => 1),
         releaseReserved: overrides.releaseReserved ?? vi.fn(async () => null),
         startProcessingEntity: overrides.startProcessingEntity ??
             vi.fn(async (entry: ResourceEntry) =>
@@ -605,6 +631,7 @@ function createEntry(
         },
         dequeueAudit: {
             attempts: 0
-        }
+        },
+        db: { id: '1' }
     };
 }

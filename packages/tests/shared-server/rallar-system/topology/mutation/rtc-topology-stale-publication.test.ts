@@ -3,7 +3,11 @@ import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('stale RTC topology publication', () => {
     it('persists an immutable older publication without regressing the latest snapshot', () => {
@@ -91,32 +95,8 @@ function toPublication(snapshot: RallarOverlayTopologySnapshot, workId: string) 
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
-        message: {
-            id: {
-                v: 2 as const,
-                msgId: toRtcTopologyPublicationMessageId(workId),
-                ts: createdAtEpochMs,
-                senderId: 'rallar-server'
-            },
-            route: {
-                topicId: AppTopics.overlayTopology,
-                contextId: snapshot.groupRef.groupId,
-                resourceId: `${snapshot.overlayId}:${tuple.groupRevision}:${tuple.presenceRevision}:${snapshot.version}`
-            },
-            targets: {
-                mode: 'broadcast' as const,
-                scope: 'room' as const,
-                groupRef: snapshot.groupRef,
-                minSnapshotVersion: 1
-            },
-            delivery: { reliability: 'best-effort' as const, ack: 'none' as const },
-            payload: {
-                typeId: AppTopics.overlayTopology,
-                contentType: 'application/json' as const,
-                resource: JSON.stringify(snapshot)
-            },
-            audit: { createdBy: 'rallar-server', createdTs: createdAtEpochMs }
-        },
+        snapshot: snapshot,
+        expiresAtEpochMs: 10000,
         createdAtEpochMs
     };
 }

@@ -1,6 +1,6 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
@@ -22,7 +22,11 @@ import {
 } from './group-state-service-contracts.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import { constantTimeHexEqual, constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
+import {
+    constantTimeHexEqual,
+    constantTimeSecretEqual,
+    hmacSha256Hex
+} from './mutation/group-state-crypto.ts';
 import { isScopedGroupMutationCommandId, toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toTransportMutationCommand } from './to-transport-mutation-command.ts';

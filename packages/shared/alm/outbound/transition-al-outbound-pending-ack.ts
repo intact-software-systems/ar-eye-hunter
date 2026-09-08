@@ -60,7 +60,7 @@ export function trackALOutboundPendingAckSnapshot(
         attempts: input.current?.attempts ?? 0,
         deadlineAtMs: input.nowMs + input.tracking.timeoutMs
     };
-    return isALOutboundPendingAckComplete(pending) ? undefined : pending;
+    return isALOutboundReceiptComplete(pending) ? undefined : pending;
 }
 
 export function acceptALOutboundPendingAckSnapshot(
@@ -76,8 +76,7 @@ export function acceptALOutboundPendingAckSnapshot(
             ackedPeerIds.add(ack.fromPeerId);
         }
     }
-    const pending = { ...input.current, ackedPeerIds: [...ackedPeerIds] } satisfies ALOutboundPendingAckSnapshot;
-    return isALOutboundPendingAckComplete(pending) ? undefined : pending;
+    return { ...input.current, ackedPeerIds: [...ackedPeerIds] };
 }
 
 export function toALOutboundPendingAckExpireAtTimestamp(
@@ -87,7 +86,7 @@ export function toALOutboundPendingAckExpireAtTimestamp(
     return snapshot.deadlineAtMs + snapshot.timeoutMs * remainingTimeoutWindows;
 }
 
-function isALOutboundPendingAckComplete(
+export function isALOutboundReceiptComplete(
     pending: ALOutboundPendingAckSnapshot
 ): boolean {
     return pending.expectedPeerIds.length === 0 ||

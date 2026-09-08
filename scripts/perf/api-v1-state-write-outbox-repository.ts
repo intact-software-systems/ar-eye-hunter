@@ -2,18 +2,11 @@ import type { Sql } from 'postgres';
 
 import type { ProductionOutboxExpectation } from './api-v1-state-write-outbox-expectations.ts';
 import {
-    readExpectedProductionOutboxRecord,
+    validateExpectedProductionOutboxRecord,
     type ProductionOutboxRecord,
     type ProductionOutboxRow
 } from './api-v1-state-write-outbox-resource-codec.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
-
-export type { ProductionOutboxRecord } from './api-v1-state-write-outbox-resource-codec.ts';
-export {
-    readAllCommandIds,
-    readCanonicalEffectCommandId,
-    readResourceEffectKind
-} from './api-v1-state-write-outbox-resource-codec.ts';
 
 export interface ProductionOutboxRepository {
     find(
@@ -58,7 +51,7 @@ export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepo
           and ri_type_id = ${expectation.typeId}
       `;
             const matching = rows.flatMap((row) => {
-                const record = readExpectedProductionOutboxRecord(row, expectation);
+                const record = validateExpectedProductionOutboxRecord(row, expectation).right;
                 return record === undefined ? [] : [{ record }];
             });
             if (matching.length === 0) {

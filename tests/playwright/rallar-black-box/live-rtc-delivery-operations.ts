@@ -342,16 +342,21 @@ async function runDeliveryMatrix(
     const formation = await runtime.groupFormationLifecycleDriver.run({ ...input, readinessScope: 'owner' });
     const [sender, agentB, agentC] = input.agents;
     const cases: DeliveryCase[] = [
-        { sender, receivers: [agentB], deliveryMode: 'direct', matrixId: `direct-${input.transport}-${input.suffix}` },
         {
             sender,
-            receivers: [agentB, agentC],
+            firstHopReceivers: [agentB],
+            deliveryMode: 'direct',
+            matrixId: `direct-${input.transport}-${input.suffix}`
+        },
+        {
+            sender,
+            firstHopReceivers: [agentB, agentC],
             deliveryMode: 'multicast',
             matrixId: `multicast-${input.transport}-${input.suffix}`
         },
         {
             sender,
-            receivers: [agentB, agentC],
+            firstHopReceivers: [agentB, agentC],
             deliveryMode: 'broadcast',
             matrixId: `broadcast-${input.transport}-${input.suffix}`
         }
@@ -396,7 +401,7 @@ async function runAllDeliveryPermutations(
         const receivers = input.agents.filter((agent) => agent.agentId !== sender.agentId);
         const cases: DeliveryCase[] = receivers.map((receiver) => ({
             sender,
-            receivers: [receiver],
+            firstHopReceivers: [receiver],
             deliveryMode: 'direct',
             matrixId:
                 `${slug}-direct-${sender.prefix.toLowerCase()}-to-${receiver.prefix.toLowerCase()}-${input.suffix}`
@@ -404,7 +409,7 @@ async function runAllDeliveryPermutations(
         for (const deliveryMode of ['multicast', 'broadcast'] as const) {
             cases.push({
                 sender,
-                receivers,
+                firstHopReceivers: receivers,
                 deliveryMode,
                 matrixId: `${slug}-${deliveryMode}-${sender.prefix.toLowerCase()}-${input.suffix}`
             });
@@ -595,7 +600,7 @@ async function closeAndResetSettledAgentTrio(
 
 interface DeliveryCase {
     readonly sender: LiveRtcControlClient.FormationAgent;
-    readonly receivers: readonly LiveRtcControlClient.FormationAgent[];
+    readonly firstHopReceivers: readonly LiveRtcControlClient.FormationAgent[];
     readonly deliveryMode: 'direct' | 'multicast' | 'broadcast';
     readonly matrixId: string;
 }
@@ -613,7 +618,12 @@ async function runDeliveryCase(
     runtime: LiveRtcDeliveryRuntime,
     input: RunDeliveryCaseInput
 ): Promise<CompletedDeliveryCase> {
-    const { sender, receivers, deliveryMode, matrixId } = input.deliveryCase;
+    const { sender, firstHopReceivers, deliveryMode, matrixId } = input.deliveryCase;
+    // Room routing hints select entry peers; every other room member must still receive the message.
+    const roomAudience = input.run.transport === 'messages.rtc';
+    const receivers = roomAudience
+        ? input.run.agents.filter((agent) => agent.agentId !== sender.agentId)
+        : firstHopReceivers;
     const startedAtMs = performance.now();
     const commandId = await sendMatrixPayload(runtime, {
         ...input.run,
@@ -622,11 +632,12 @@ async function runDeliveryCase(
         matrixId,
         targetSessionIds: deliveryMode === 'broadcast'
             ? undefined
-            : receivers.map((receiver) => input.sessions[receiver.prefix])
+            : firstHopReceivers.map((receiver) => input.sessions[receiver.prefix])
     });
     const durations = await Promise.all(receivers.map((receiver) =>
         input.run.control.waitForMessage({
             runId: input.run.runId,
+            senderAgentId: sender.agentId,
             agentId: receiver.agentId,
             transport: input.run.transport,
             matrixId,
@@ -643,7 +654,7 @@ async function runDeliveryCase(
             deliveryMode,
             senderAgentId: sender.agentId,
             expectedAgentIds: receiverAgentIds,
-            allowedAgentIds: deliveryMode === 'broadcast'
+            allowedAgentIds: roomAudience || deliveryMode === 'broadcast'
                 ? input.run.agents.map((agent) => agent.agentId)
                 : receiverAgentIds
         },
