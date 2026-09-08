@@ -1868,6 +1868,36 @@ moved or changed test.
         "requiredConstraint": "An application validator rejection must return the typed failure before invoking authorization or writing admission state.",
         "failureRationale": "Authorization can perform asynchronous authoritative reads or side effects and must not receive application commands already rejected by the typed ingress validator."
       }
+    },
+    {
+      "id": "black-box-agent-final-report-upload-once",
+      "domain": "Black-box control agent final report upload",
+      "owner": "Shared Test maintainers",
+      "summary": "Disconnecting a control agent uploads its redacted final report to the run's agent report endpoint exactly once. Executable assertion: “sends and uploads a redacted final report”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-client.test.ts#sends and uploads a redacted final report",
+      "coverageRelation": "The test configures an agent with a secret, disconnects it, and observes the injected upload port receive one authorized request whose body carries the redacted report envelope.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarBlackBoxControlClient injected fetch upload port for finalReportUploadUrl",
+        "observableEffect": "One disconnect produces one authorized request to the run's agent report endpoint.",
+        "requiredConstraint": "Disconnect uploads the final report once, so the recorded upload is the only report the control server stores for that agent.",
+        "failureRationale": "A repeated upload overwrites the stored run artifact with a duplicate envelope and doubles operator report traffic, while a missing upload loses the agent's only report."
+      }
+    },
+    {
+      "id": "shared-control-client-final-report-upload-once",
+      "domain": "Shared control client final report upload",
+      "owner": "Shared Test maintainers",
+      "summary": "Disconnecting the shared control client uploads its redacted final report to the run's agent report endpoint exactly once. Executable assertion: “sends and uploads a redacted final report”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-client.test.ts#sends and uploads a redacted final report",
+      "coverageRelation": "The test configures the shared client with a secret, disconnects it, and observes the injected upload port receive one authorized request whose decoded body is the redacted report envelope.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Shared RallarBlackBoxControlClient injected fetch upload port for finalReportUploadUrl",
+        "observableEffect": "One disconnect produces one authorized request to the run's agent report endpoint.",
+        "requiredConstraint": "Disconnect uploads the final report once, so the recorded upload is the only report the control server stores for that agent.",
+        "failureRationale": "A repeated upload overwrites the stored run artifact with a duplicate envelope and doubles operator report traffic, while a missing upload loses the agent's only report."
+      }
     }
   ],
   "entries": [
@@ -4345,6 +4375,28 @@ moved or changed test.
       "owner": "Shared realtime maintainers",
       "rationale": "No authorization call proves validator failure short-circuits the owned external policy capability; empty admission state alone would allow unnecessary authority work.",
       "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission"
+    },
+    {
+      "id": "test-structure-coupling-1e2be8bdf90b808f",
+      "path": "packages/tests/rallar-black-box/control-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "black-box-agent-final-report-upload-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Counting the upload port proves disconnect uploads the final report once; reading the first recorded upload alone would also pass for a duplicated upload.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-client.test.ts#sends and uploads a redacted final report"
+    },
+    {
+      "id": "test-structure-coupling-50a2d1b9375dddda",
+      "path": "packages/tests/shared-test/rallar-bb-test-control-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-control-client-final-report-upload-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Counting the upload port proves disconnect uploads the final report once; reading the first recorded upload alone would also pass for a duplicated upload.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-client.test.ts#sends and uploads a redacted final report"
     }
   ]
 }
