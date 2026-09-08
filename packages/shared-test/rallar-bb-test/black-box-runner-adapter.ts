@@ -10,7 +10,8 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestRuntime
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestTransport
 } from './types.ts';
 
 // The eight ALM kinds only exist inside a browser agent: this client owns an RTC connection, not a
@@ -146,6 +147,14 @@ function toRtcTransport(value: any): 'realtime' | 'messages.rtc' | undefined {
         : undefined;
 }
 
+function toRtcConnectTransport(
+    value: unknown
+): Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'messages.ws'> | undefined {
+    return value === 'realtime' || value === 'messages.rtc' || value === 'messages.ws'
+        ? value
+        : undefined;
+}
+
 function toCommandId(
     prefix: string,
     connection: string,
@@ -241,7 +250,7 @@ function toConnectCommand(
         request.apiBaseUrl,
         request.rallarApiBaseUrl
     );
-    const transport = toRtcTransport(firstDefined(rallar.transport, request.transport));
+    const transport = toRtcConnectTransport(firstDefined(rallar.transport, request.transport));
 
     return {
         kind: 'rtc.connect',

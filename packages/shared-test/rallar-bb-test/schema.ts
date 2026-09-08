@@ -157,7 +157,7 @@ const configSchema: JsonSchema = {
         actor: stringSchema,
         sessionId: stringSchema,
         roomId: stringSchema,
-        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'ws', 'http'] },
+        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'messages.ws', 'ws', 'http'] },
         rallar: recordSchema,
         browser: recordSchema,
         control: recordSchema,
