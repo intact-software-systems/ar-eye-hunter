@@ -2,6 +2,11 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
+    executeAlmBrowserCommand,
+    type RallarBlackBoxAlmBrowserPort,
+    type RallarBlackBoxAlmCommandWithId
+} from './alm/browser-adapter-alm-commands.ts';
+import {
     toRtcReadyPeerIds,
     waitForRtcConnectReadiness,
     type RtcConnectReadinessOptions,
@@ -560,6 +565,17 @@ function toHeadersRecord(headers: Headers): Record<string, string> {
         result[key] = value;
     });
     return result;
+}
+
+function toAlmConnectionName(
+    command: RallarBlackBoxAlmCommandWithId,
+    config: RallarBlackBoxTestConfig | undefined
+): string {
+    const commandConnection = 'connection' in command ? command.connection : undefined;
+    return commandConnection ??
+        toStringValue(asRecord(config?.defaults).connection) ??
+        config?.actor ??
+        'default';
 }
 
 function readOptionalBrowserSession(): AuthSession | undefined {
@@ -1184,6 +1200,15 @@ class BrowserCommandAdapter {
                     'relayStop',
                     'rallar.bb.director.relay_stopped'
                 );
+            case 'messages.send':
+            case 'messages.observe':
+            case 'messages.cancel':
+            case 'messages.received':
+            case 'messages.receipts':
+            case 'fault.inject':
+            case 'storage.counters':
+            case 'agent.reload':
+                return await executeAlmBrowserCommand(this.almBrowserPort(), command, context);
             case 'health':
                 return await this.health(command, context);
             case 'close':
@@ -1226,6 +1251,22 @@ class BrowserCommandAdapter {
                 url,
                 protocols as string | string[] | undefined
             ) as RallarBlackBoxBrowserWebSocket;
+    }
+
+    private almBrowserPort(): RallarBlackBoxAlmBrowserPort {
+        return {
+            requireRuntime: () => this.requireRallarRuntime(),
+            commandAbortScope: (command, context) => this.commandAbortSignal(command, context),
+            withAbort: (operation, signal) => this.withAbort(operation, signal),
+            resolveCommandFields: (command, context) =>
+                replaceCommandPlaceholders(command, {
+                    config: context.config(),
+                    session: readOptionalBrowserSession()
+                }),
+            resolveConnection: (command, context) => toAlmConnectionName(command, context.config()),
+            sleep: (ms) => sleep(ms),
+            now: () => Date.now()
+        };
     }
 
     private requireRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
