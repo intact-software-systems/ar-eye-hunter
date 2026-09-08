@@ -61,7 +61,7 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-08
 
 **Status:** Tasks 4A/4B, B04, native-browser B05 capture, the continuous B05
 observation stream, and B06 E3-memory observation tooling are merged. Five
@@ -129,10 +129,23 @@ timed out waiting for B to record the first direct `messages.rtc` delivery from
 A. That different failure resets the proof count to zero and shows the current
 failure artifact lacks the endpoint state needed to distinguish transport
 loss from control-event loss. PR #530 therefore remains the single proving PR
-and will add failure-only, sanitized sender/receiver health and event/result
-summaries before another remote attempt. There is not yet a valid B06 E3
-result. B07 remains held, and evidence ranking cannot start until a valid B06
-primary and any required repeat are archived.
+and adds failure-only, sanitized sender/receiver health and event/result
+summaries before another remote attempt.
+
+The branch has since been rebased onto current `main`. Main's bounded ALM
+admission and durable-recovery work now commits IndexedDB metadata and QueueBox
+work through optimistic observation guards and routes typed conflicts through
+the existing recovery owners. The PR's temporary admission-store-wide browser
+lock and its proposed lock-replacement plan are therefore obsolete and have
+been removed; no lock compatibility path remains. This does not resolve the
+separate RTC lifecycle defect: applying the desired-peer deletion regression
+to main without the PR's manager correction still leaves the peer absent. The
+rebased PR retains only that RTC correction, the exact-membership barrier,
+diagnostic failure capture, and the non-publishing branch workflow needed to
+prove them. Rebase changed the candidate head, so its same-head diagnostic
+proof count is zero. There is not yet a valid B06 E3 result. B07 remains held,
+and evidence ranking cannot start until a valid B06 primary and any required
+repeat are archived.
 
 ### Current execution horizon
 
