@@ -13,6 +13,7 @@ import {
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandOutcome
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { createBrowserRallarAlmMethodsTestDouble } from './browser-rallar-alm-methods-test-double.ts';
 
 function expectValidRecipe(entry: RallarBlackBoxCompositeConformanceMatrixEntry): void {
     const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, entry.recipe);
@@ -286,6 +287,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
                 now += ms;
             },
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => {
                     now += 2;
                     return { connected: true };

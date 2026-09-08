@@ -76,7 +76,11 @@ it('applies scoped defaults and reports the connected room reference', async () 
         realtime: {
             laneId: 'realtime'
         },
-        rtc: {}
+        rtc: {},
+        diagnosticsPorts: {
+            transportFaultPort: facade.rallar.diagnostics.faults,
+            indexedDbOperationObserver: facade.rallar.diagnostics.storage
+        }
     });
     expect(facade.records.roomJoins).toContainEqual(['bb-group', {
         timeoutMs: undefined,
@@ -229,6 +233,59 @@ it('emits received WebSocket payloads and releases their subscription on close',
     expect(facade.records.wsMessageUnsubscribeCount).toBe(1);
 });
 
+it('emits typed channel deliveries once per selector and releases their subscription on close', async () => {
+    const { runtime } = await loadConnectedMessageRuntime();
+
+    await sendTypedMessage(runtime, 'handle-1');
+    await sendTypedMessage(runtime, 'handle-2');
+
+    expect(facade.records.typedChannelOpens).toHaveLength(2);
+    expect(facade.records.typedWsHandlers).toHaveLength(1);
+    expect(facade.records.typedRtcHandlers).toHaveLength(1);
+    const wsHandler = facade.records.typedWsHandlers[0];
+    const rtcHandler = facade.records.typedRtcHandlers[0];
+    if (wsHandler === undefined || rtcHandler === undefined) {
+        throw new Error('The typed channel subscriptions were not recorded.');
+    }
+
+    const deliveredOverWs = typedInboundMessage();
+    const deliveredOverRtc: RallarMessage<ChatMessagePayload> = { ...deliveredOverWs, transport: 'rtc' };
+    await wsHandler(deliveredOverWs.payload, deliveredOverWs);
+    await rtcHandler(deliveredOverRtc.payload, deliveredOverRtc);
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'message',
+            topic: 'rallar.browser.ws.message',
+            transport: 'ws',
+            typeId: 'alm.conformance',
+            data: {
+                msgId: 'ws-message-1',
+                typeId: 'alm.conformance',
+                topicId: 'alm',
+                transport: 'ws',
+                payload: { text: 'received over ws' }
+            }
+        }),
+        expect.objectContaining({
+            kind: 'message',
+            topic: 'rallar.browser.messages.rtc.message',
+            transport: 'messages.rtc',
+            typeId: 'alm.conformance',
+            data: {
+                msgId: 'ws-message-1',
+                typeId: 'alm.conformance',
+                topicId: 'alm',
+                transport: 'rtc',
+                payload: { text: 'received over ws' }
+            }
+        })
+    ]));
+
+    await runtime.close();
+    expect(facade.records.typedUnsubscribeCount).toBe(2);
+});
+
 async function loadConnectedMessageRuntime(
     transport?: 'messages.rtc'
 ): Promise<ConnectedMessageRuntime> {
@@ -265,6 +322,25 @@ async function sendWebSocketMessage(runtime: BlackBoxRallarRuntime) {
         contextId: 'bb-group',
         payload: { text: 'hello over ws' }
     });
+}
+
+async function sendTypedMessage(runtime: BlackBoxRallarRuntime, handleId: string) {
+    return await runtime.sendMessage({
+        connection: 'aliceRtc',
+        carrier: 'rtc-with-ws-fallback',
+        typeId: 'alm.conformance',
+        topicId: 'alm',
+        payload: { text: 'hello alm' },
+        handleId
+    });
+}
+
+function typedInboundMessage(): RallarMessage<ChatMessagePayload> {
+    return {
+        ...inboundMessage(),
+        typeId: 'alm.conformance',
+        topicId: 'alm'
+    };
 }
 
 function inboundMessage(): RallarMessage<ChatMessagePayload> {

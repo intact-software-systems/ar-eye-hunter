@@ -23,6 +23,7 @@ import {
     type RallarBlackBoxTestRtcStreamResultValue,
     type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { createBrowserRallarAlmMethodsTestDouble } from './browser-rallar-alm-methods-test-double.ts';
 
 describe('black-box HTTP response evidence', () => {
     it('retains only allow-listed response headers with lowercase names', () => {
@@ -1593,6 +1594,7 @@ describe('rallar-bb-test', () => {
                 return (prefix: string) => `${prefix}-${sequence++}`;
             })(),
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async (config) => {
                     calls.push({ name: 'connect', value: config });
                     return {
@@ -1733,6 +1735,7 @@ describe('rallar-bb-test', () => {
         ) as Record<string, (input: unknown) => Promise<unknown>>;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 refreshRoom: async () => undefined,
@@ -1892,6 +1895,7 @@ describe('rallar-bb-test', () => {
         ) as Record<string, (input: unknown) => Promise<unknown>>;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 refreshRoom: async () => undefined,
@@ -1998,6 +2002,7 @@ describe('rallar-bb-test', () => {
     it('reports unsupported CRDT browser runtimes clearly', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 refreshRoom: async () => undefined,
@@ -2022,6 +2027,7 @@ describe('rallar-bb-test', () => {
     it('reports unsupported director browser runtimes clearly', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 refreshRoom: async () => undefined,
@@ -2047,6 +2053,7 @@ describe('rallar-bb-test', () => {
         const sendCallEpochMs: number[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => {
                     sendCallEpochMs.push(Date.now());
@@ -2080,6 +2087,7 @@ describe('rallar-bb-test', () => {
         const sendStarts: number[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async (input) => {
                     sendStarts.push(Date.now());
@@ -2136,6 +2144,7 @@ describe('rallar-bb-test', () => {
     it('fails rtc.stream when max in-flight saturation violates thresholds', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => {
                     await sleepMs(60);
@@ -2190,6 +2199,7 @@ describe('rallar-bb-test', () => {
     it('samples rtc.stream raw observations without changing aggregate counts', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ status: 'sent' }),
                 refreshRoom: async () => undefined,
@@ -2468,6 +2478,7 @@ describe('rallar-bb-test', () => {
                 return socket;
             },
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 sendWs: async () => {
@@ -2569,6 +2580,7 @@ describe('rallar-bb-test', () => {
                 return socket;
             },
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => {
                     rallarCalls.push('connect');
                     return { connected: true };
@@ -2635,6 +2647,7 @@ describe('rallar-bb-test', () => {
         const sends: unknown[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 sendWs: async (input) => {
@@ -2760,6 +2773,7 @@ describe('rallar-bb-test', () => {
                 return socket;
             },
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async (config) => {
                     connects.push(config);
                     return { connected: true };

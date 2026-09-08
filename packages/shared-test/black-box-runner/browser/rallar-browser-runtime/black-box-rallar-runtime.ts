@@ -1,6 +1,7 @@
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
+import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
@@ -26,6 +27,7 @@ import type {
     BlackBoxRallarCloseDiagnostics,
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarDeliveryObservation,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
 import {
@@ -46,6 +48,12 @@ import {
     createBlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
+import {
+    decodeBlackBoxRallarDeliveryHandleInput,
+    decodeBlackBoxRallarDeliveryObserveInput,
+    decodeBlackBoxRallarFaultInput,
+    decodeBlackBoxRallarStorageCountersInput
+} from './decode-black-box-rallar-command-input.ts';
 import { BlackBoxRallarDirectorController } from './director-controller.ts';
 import { BlackBoxRallarFormationController } from './formation/formation-controller.ts';
 import {
@@ -71,6 +79,7 @@ export type {
     BlackBoxRallarCrdtWaitCondition,
     BlackBoxRallarCrdtWaitInput,
     BlackBoxRallarCrdtWaitOperator,
+    BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDirectorAppointInput,
     BlackBoxRallarDirectorCommandDiagnostics,
     BlackBoxRallarDirectorHandleInput,
@@ -85,6 +94,8 @@ export type {
     BlackBoxRallarEvent,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
+    BlackBoxRallarMessageSendDiagnostics,
+    BlackBoxRallarMessageSendInput,
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarTransport,
@@ -95,6 +106,8 @@ export type {
     BlackBoxRallarRoomRefreshOptions,
     BlackBoxRallarRuntime
 } from './black-box-rallar-runtime-contract.ts';
+
+const DELIVERY_POLL_INTERVAL_MS = 25;
 
 interface RuntimeConnectionAttempt {
     readonly config: BlackBoxRallarConnectionConfig;
@@ -277,7 +290,16 @@ class BlackBoxRallarConnectionRuntime {
     ): Parameters<BlackBoxBrowserRallarRuntimeDependency['setDefaults']>[0] => {
         this.#rallar.configure({ apiBaseUrl: config.rallar.apiBaseUrl });
         const defaults = toBlackBoxRallarDefaults(config);
-        this.#rallar.setDefaults(defaults);
+        // A connection that names no application has no defaults to carry the scripted ports.
+        this.#rallar.setDefaults(
+            defaults === undefined ? undefined : {
+                ...defaults,
+                diagnosticsPorts: {
+                    transportFaultPort: this.#rallar.diagnostics.faults,
+                    indexedDbOperationObserver: this.#rallar.diagnostics.storage
+                }
+            }
+        );
         return defaults;
     };
     #cleanupRuntimeSubscriptions = (
@@ -905,6 +927,39 @@ class BlackBoxRallarConnectionRuntime {
             }
         }, activeCrdtOpens);
     };
+    #observeDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> => {
+        const observe = decodeBlackBoxRallarDeliveryObserveInput(input);
+        const deadlineEpochMs = this.#now() + observe.timeoutMs;
+        let observation = this.#messagingController.readDelivery(observe.handleId);
+        while (!observe.state.includes(observation.state)) {
+            if (this.#now() >= deadlineEpochMs) {
+                throw new TypeError(
+                    `Delivery handle ${observe.handleId} did not reach [${observe.state.join(', ')}]; ` +
+                        `last state ${observation.state}`
+                );
+            }
+            await this.#wait(DELIVERY_POLL_INTERVAL_MS);
+            observation = this.#messagingController.readDelivery(observe.handleId);
+        }
+        return observation;
+    };
+    #cancelDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
+        this.#messagingController.cancelDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+    // F1 derives receipts from the admission ledger, so the peer-id lists stay empty until S1
+    // carries real acknowledgements.
+    #readReceipts = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
+        this.#messagingController.readDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+    #injectFault = async (input: unknown): Promise<void> => {
+        this.#rallar.diagnostics.faults.inject(decodeBlackBoxRallarFaultInput(input));
+    };
+    #readStorageCounters = async (input: unknown): Promise<IndexedDbOperationCounts> => {
+        const counters = decodeBlackBoxRallarStorageCountersInput(input);
+        const counts = this.#rallar.diagnostics.storage.getCounts();
+        if (counters.reset) {
+            this.#rallar.diagnostics.storage.reset();
+        }
+        return counts;
+    };
     #refreshRoom = async (options: BlackBoxRallarRoomRefreshOptions): Promise<void> => {
         const config = this.#requireState().config;
         const roomRef = blackBoxRallarRoomRefOf(config);
@@ -927,6 +982,12 @@ class BlackBoxRallarConnectionRuntime {
             connect: this.#connect,
             send: this.#messagingController.send,
             sendWs: this.#messagingController.sendWs,
+            sendMessage: this.#messagingController.sendMessage,
+            observeDelivery: this.#observeDelivery,
+            cancelDelivery: this.#cancelDelivery,
+            readReceipts: this.#readReceipts,
+            injectFault: this.#injectFault,
+            readStorageCounters: this.#readStorageCounters,
             refreshRoom: this.#refreshRoom,
             readRtcMessageNacks: (messageId) => this.#rallar.readRtcMessageNacks(messageId),
             crdt: this.#crdtController,

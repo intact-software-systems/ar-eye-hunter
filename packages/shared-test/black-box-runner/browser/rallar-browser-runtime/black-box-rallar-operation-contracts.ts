@@ -242,6 +242,63 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly rtcStatus: RallarRtcStatus;
 }
 
+export interface BlackBoxRallarMessageSendInput {
+    readonly connection: string;
+    readonly carrier: 'ws' | 'rtc' | 'rtc-with-ws-fallback';
+    readonly typeId: string;
+    readonly topicId: string | undefined;
+    readonly payload: unknown;
+    readonly roomRef: BlackBoxRallarRoomRef | undefined;
+    readonly scope: 'room' | 'world' | 'all' | undefined;
+    readonly reliability: 'best-effort' | 'at-least-once' | undefined;
+    readonly ack: ALAckMode | undefined;
+    readonly ttlMs: number | undefined;
+    readonly orderingKey: string | undefined;
+    readonly seq: number | undefined;
+    readonly handleId: string;
+}
+
+export interface BlackBoxRallarMessageSendDiagnostics {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
+    readonly status: string;
+    readonly reason: string | undefined;
+    readonly message: RallarMessageSendResult;
+}
+
+export interface BlackBoxRallarDeliveryObservation {
+    readonly handleId: string;
+    readonly state:
+        | 'rejected'
+        | 'accepted'
+        | 'queued'
+        | 'transport-accepted'
+        | 'acknowledged'
+        | 'expired'
+        | 'superseded'
+        | 'failed'
+        | 'cancelled';
+    readonly submitted: boolean;
+    readonly confirmedPeerIds: readonly string[];
+    readonly unconfirmedPeerIds: readonly string[];
+    readonly attempts: number;
+}
+
+export interface BlackBoxRallarDeliveryHandleInput {
+    readonly connection: string;
+    readonly handleId: string;
+}
+
+export interface BlackBoxRallarDeliveryObserveInput extends BlackBoxRallarDeliveryHandleInput {
+    readonly state: readonly string[];
+    readonly timeoutMs: number;
+}
+
+export interface BlackBoxRallarStorageCountersInput {
+    readonly reset: boolean;
+}
+
 export interface BlackBoxRallarCloseDiagnostics {
     readonly status: 'closed';
     readonly connection?: string;

@@ -85,6 +85,12 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     send: RallarBlackBoxBrowserRallarRuntimeMethod;
     sendWs?: RallarBlackBoxBrowserRallarRuntimeMethod;
+    sendMessage: RallarBlackBoxBrowserRallarRuntimeMethod;
+    observeDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
+    cancelDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
+    readReceipts: RallarBlackBoxBrowserRallarRuntimeMethod;
+    injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
+    readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
     refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     readonly director?: RallarBlackBoxBrowserRallarDirectorRuntime;

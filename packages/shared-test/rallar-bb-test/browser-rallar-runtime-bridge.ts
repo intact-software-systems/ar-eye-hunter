@@ -112,6 +112,24 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         async sendWs(input) {
             return await (await resolveBrowserRallarRuntime()).sendWs?.(input);
         },
+        async sendMessage(input) {
+            return await (await resolveBrowserRallarRuntime()).sendMessage(input);
+        },
+        async observeDelivery(input) {
+            return await (await resolveBrowserRallarRuntime()).observeDelivery(input);
+        },
+        async cancelDelivery(input) {
+            return await (await resolveBrowserRallarRuntime()).cancelDelivery(input);
+        },
+        async readReceipts(input) {
+            return await (await resolveBrowserRallarRuntime()).readReceipts(input);
+        },
+        async injectFault(input) {
+            await (await resolveBrowserRallarRuntime()).injectFault(input);
+        },
+        async readStorageCounters(input) {
+            return await (await resolveBrowserRallarRuntime()).readStorageCounters(input);
+        },
         async refreshRoom(options) {
             return await (await resolveBrowserRallarRuntime()).refreshRoom(options);
         },

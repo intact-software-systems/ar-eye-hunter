@@ -20,6 +20,7 @@ import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/r
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 
+import { createBrowserRallarAlmMethodsTestDouble } from '../shared-test/browser-rallar-alm-methods-test-double.ts';
 import { facade, resetFacade } from '../shared-test/rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
 
 async function withBrowserRuntime(
@@ -48,6 +49,115 @@ async function withBrowserRuntime(
         }
     }
 }
+
+function almConnectionConfig(): Parameters<BlackBoxRallarRuntime['connect']>[0] {
+    return {
+        connection: 'aliceAlm',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            username: 'alice',
+            password: 'secret'
+        }
+    };
+}
+
+const almRoomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+
+describe('rallar-black-box browser-rallar ALM operations', () => {
+    it('sends a typed message over the requested carrier and records a delivery observation', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            facade.behavior.typedSend.mockResolvedValue({
+                transport: 'ws',
+                status: 'enqueued',
+                message: {
+                    id: { v: 2, msgId: 'msg-1', ts: 0, senderId: 'client-1' },
+                    route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+                    payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' }
+                },
+                entries: []
+            });
+            await nativeRuntime.connect(almConnectionConfig());
+
+            const sent = await nativeRuntime.sendMessage({
+                connection: 'aliceAlm',
+                carrier: 'ws',
+                typeId: 'alm.conformance',
+                payload: { n: 1 },
+                handleId: 'h-1'
+            });
+
+            expect(sent).toMatchObject({
+                handleId: 'h-1',
+                msgId: 'msg-1',
+                carrier: 'ws',
+                status: 'enqueued'
+            });
+            expect(facade.records.typedChannelOpens).toEqual([{
+                typeId: 'alm.conformance',
+                topicId: undefined,
+                roomId: 'room-1',
+                roomRef: almRoomRef
+            }]);
+            expect(facade.records.typedSends).toEqual([[{ n: 1 }, { strategy: 'ws' }]]);
+
+            const observed = await nativeRuntime.observeDelivery({
+                connection: 'aliceAlm',
+                handleId: 'h-1',
+                state: ['accepted'],
+                timeoutMs: 1_000
+            });
+
+            expect(observed).toMatchObject({
+                handleId: 'h-1',
+                state: 'accepted',
+                submitted: true,
+                attempts: 1
+            });
+            await expect(nativeRuntime.cancelDelivery({ connection: 'aliceAlm', handleId: 'h-1' }))
+                .resolves.toMatchObject({ handleId: 'h-1', state: 'cancelled' });
+            await expect(nativeRuntime.readReceipts({ connection: 'aliceAlm', handleId: 'h-1' }))
+                .resolves.toMatchObject({ confirmedPeerIds: [], unconfirmedPeerIds: [] });
+        });
+    });
+
+    it('injects a scripted transport fault and reports the IndexedDB storage counters', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            await nativeRuntime.connect(almConnectionConfig());
+            const { faults, storage } = facade.rallar.diagnostics;
+
+            await nativeRuntime.injectFault({
+                faultId: 'drop-once',
+                carrier: 'ws',
+                match: { typeId: 'alm.conformance' },
+                action: 'drop',
+                remaining: 1
+            });
+
+            expect(facade.records.defaultWrites.at(-1)?.diagnosticsPorts).toEqual({
+                transportFaultPort: faults,
+                indexedDbOperationObserver: storage
+            });
+            expect(faults.decideSend(
+                'ws',
+                JSON.stringify({ typeId: 'alm.conformance', id: { msgId: 'msg-1' } })
+            )).toEqual({ kind: 'drop', faultId: 'drop-once' });
+            expect(faults.getObservations()).toEqual([
+                { faultId: 'drop-once', carrier: 'ws', decision: 'drop' }
+            ]);
+
+            storage.observe({ owner: 'al-admission', kind: 'write' });
+            await expect(nativeRuntime.readStorageCounters({ reset: false })).resolves.toEqual({
+                total: 1,
+                byOwner: { 'al-admission': 1, 'al-work': 0 },
+                byKind: { write: 1 }
+            });
+        });
+    });
+});
 
 describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('returns browser runtime results through the SPA bridge', async () => {
@@ -254,6 +364,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             });
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -296,6 +407,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         const refreshRoom = vi.fn();
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
                 send: vi.fn(),
                 close: vi.fn(),
@@ -341,6 +453,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         }));
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -391,6 +504,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             ) => new Promise<void>(() => undefined));
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -447,6 +561,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             ) => new Promise<void>(() => undefined));
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -499,6 +614,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 });
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -571,6 +687,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             const refreshRoom = vi.fn().mockRejectedValue(refreshError);
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -629,6 +746,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             });
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -667,6 +785,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('fails rtc.connect when readiness times out', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -712,6 +831,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('fails realtime send commands when the browser runtime resolves no peers', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
                 send: vi.fn(async () => ({
                     status: 'no-peers',
@@ -757,6 +877,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('fails messages.rtc send commands when the browser runtime reports no route', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
                 send: vi.fn(async () => ({
                     status: 'sent',
