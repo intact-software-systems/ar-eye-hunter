@@ -91,6 +91,7 @@ interface ObserveAlmMessageCountInput {
     readonly count: number;
     readonly match: AlmReceivedMessageMatch;
     readonly deadlineEpochMs: number;
+    readonly signal: AbortSignal | undefined;
 }
 
 interface AlmReceivedOutcomeInput {
@@ -304,23 +305,41 @@ async function countAlmReceivedMessages(
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     const connection = input.port.resolveConnection(command, input.context);
-    const observed = await observeAlmMessageCount({
-        port: input.port,
-        context: input.context,
-        holdFullWindow: command.absent === true,
-        count: command.count,
-        match: { connection, typeId: command.typeId, msgId: command.msgId },
-        deadlineEpochMs: waitDeadlineEpochMs(
-            { timeoutMs: command.windowMs, deadlineEpochMs: command.deadlineEpochMs },
-            input.port.now
-        )
-    });
-    return toAlmReceivedOutcome({ command, context: input.context, connection, observed });
+    const abort = input.port.commandAbortScope(command, input.context);
+    try {
+        const observed = await observeAlmMessageCount({
+            port: input.port,
+            context: input.context,
+            holdFullWindow: command.absent === true,
+            count: command.count,
+            match: { connection, typeId: command.typeId, msgId: command.msgId },
+            deadlineEpochMs: waitDeadlineEpochMs(
+                { timeoutMs: command.windowMs, deadlineEpochMs: command.deadlineEpochMs },
+                input.port.now
+            ),
+            signal: abort.signal
+        });
+        return toAlmReceivedOutcome({ command, context: input.context, connection, observed });
+    }
+    catch (caught) {
+        return toAlmFailureOutcome({
+            context: input.context,
+            command,
+            connection,
+            topic: 'rallar.bb.messages.received',
+            error: toError(caught)
+        });
+    }
+    finally {
+        abort.cleanup();
+    }
 }
 
 /**
  * Parity with the wait command: an absence claim holds the whole window and only then scans the
- * buffer, while a presence claim settles as soon as the recipe's count is on the log.
+ * buffer, while a presence claim settles as soon as the recipe's count is on the log. Each poll
+ * tick races the abort signal, so a recipe cancellation interrupts the hold instead of always
+ * running the full window.
  */
 async function observeAlmMessageCount(input: ObserveAlmMessageCountInput): Promise<number> {
     let observed = countAlmMatchingMessages(input.context.state().events, input.match);
@@ -328,8 +347,10 @@ async function observeAlmMessageCount(input: ObserveAlmMessageCountInput): Promi
         if (!input.holdFullWindow && observed >= input.count) {
             return observed;
         }
-        await input.port.sleep(
-            Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, input.deadlineEpochMs - input.port.now())
+        const remainingMs = input.deadlineEpochMs - input.port.now();
+        await input.port.withAbort(
+            input.port.sleep(Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, remainingMs)),
+            input.signal
         );
         observed = countAlmMatchingMessages(input.context.state().events, input.match);
     }

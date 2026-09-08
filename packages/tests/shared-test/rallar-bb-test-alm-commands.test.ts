@@ -29,6 +29,10 @@ const ALM_COMMAND_KINDS = [
     'agent.reload'
 ] as const;
 
+function sleepMs(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function recipeWithCommand(commandId: string, command: RallarBlackBoxTestRecord) {
     return {
         recipeId: 'alm-send',
@@ -320,6 +324,36 @@ describe('ALM browser adapter execution', () => {
         expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.received');
     });
 
+    it('aborts a messages.received poll promptly when the recipe is cancelled', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: createAlmBrowserRuntimeFake(captures)
+        });
+
+        const startedAt = Date.now();
+        const pending = runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-cancelled',
+            typeId: 'alm.conformance',
+            count: 1,
+            windowMs: 60_000
+        });
+        await sleepMs(20);
+        await runtime.execute({
+            kind: 'recipe.cancel',
+            commandId: 'cancel-received',
+            reason: 'operator requested stop'
+        });
+        const result = await pending;
+
+        expect(Date.now() - startedAt).toBeLessThan(1_000);
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
+            message: 'operator requested stop'
+        });
+    });
+
     it('holds the absence window and fails when a matching message arrived', async () => {
         const captures = createAlmRuntimeCaptures();
         const runtime = createRallarBlackBoxBrowserTestRuntime({
@@ -453,22 +487,24 @@ describe('ALM browser adapter execution', () => {
 });
 
 describe('ALM commands on the in-process runner adapter', () => {
-    it('rejects a browser-only ALM kind instead of translating it to an RTC send', async () => {
+    it('rejects every browser-only ALM kind instead of translating it to an RTC send', async () => {
         const client = createRallarBlackBoxRtcClient(
             createRallarBlackBoxTestRuntime(),
             { connection: 'alice' }
         );
 
-        const outcome = await client.send({ n: 1 }, {
-            request: { kind: 'messages.send', connection: 'alice' }
-        });
+        for (const kind of ALM_COMMAND_KINDS) {
+            const outcome = await client.send({ n: 1 }, {
+                request: { kind, connection: 'alice' }
+            });
 
-        expect(outcome).toEqual({
-            status: 'failed',
-            error: {
-                code: 'browser-only-command',
-                message: 'messages.send requires a browser agent'
-            }
-        });
+            expect(outcome).toEqual({
+                status: 'failed',
+                error: {
+                    code: 'browser-only-command',
+                    message: `${kind} requires a browser agent`
+                }
+            });
+        }
     });
 });
