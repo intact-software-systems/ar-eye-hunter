@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 overlay topology publication. Both scoped WebSocket observers must assemble the same room-broadcast topology snapshot with degreeLimit 4, distinct from connect-time unicast hydration. Compare the completed snapshot fields with the authoritative HTTP topology at the same version.",
+  "description": "No-browser API-v1 overlay topology publication. Establish scoped durable degreeLimit 3, then change it to 4 to trigger publication. Both scoped WebSocket observers must assemble the same room-broadcast topology snapshot with degreeLimit 4, distinct from connect-time unicast hydration. Compare the completed snapshot fields with the authoritative HTTP topology at the same version.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -215,6 +215,27 @@
             "groupId": "{groupId}"
           }
         }
+      }
+    },
+    {
+      "name": "configureTheScopedBaselineDegree",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/overlay-baseline-config-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "config": {
+            "degreeLimit": 3
+          }
+        }
+      },
+      "expect": {
+        "status": 200
       }
     },
     {
@@ -486,15 +507,14 @@
       "type": "http",
       "connection": "api",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/overlay-publish-plan-{runId}",
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/overlay-publish-config-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "publish": true,
-          "options": {
+          "config": {
             "degreeLimit": 4
           }
         }
