@@ -1898,6 +1898,51 @@ moved or changed test.
         "requiredConstraint": "Disconnect uploads the final report once, so the recorded upload is the only report the control server stores for that agent.",
         "failureRationale": "A repeated upload overwrites the stored run artifact with a duplicate envelope and doubles operator report traffic, while a missing upload loses the agent's only report."
       }
+    },
+    {
+      "id": "control-agent-auto-connect-opt-in",
+      "domain": "Black-box control agent socket opt-in",
+      "owner": "Shared Test maintainers",
+      "summary": "A control agent bootstrapped with autoConnect disabled configures its runtime and opens no control socket. Executable assertion: \u201cconfigures without opening a control socket when autoConnect is disabled\u201d.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#configures without opening a control socket when autoConnect is disabled",
+      "coverageRelation": "The test bootstraps the agent from a control URL with autoConnect=0, awaits start, and observes the control client's connect port receive nothing while the snapshot reports the configured state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarBlackBoxControlClient.connect socket-opening port",
+        "observableEffect": "Bootstrapping with autoConnect disabled produces no call to the socket-opening port.",
+        "requiredConstraint": "An agent may register with a control run only when its own bootstrap asked it to connect.",
+        "failureRationale": "An unrequested registration enrols the page as a live agent of someone else's run, which then dispatches commands to a browser the operator never offered."
+      }
+    },
+    {
+      "id": "control-agent-disposed-never-connects",
+      "domain": "Black-box control agent disposal",
+      "owner": "Shared Test maintainers",
+      "summary": "A disposed control agent rejects start and opens no control socket. Executable assertion: \u201cdoes not start or connect after disposal\u201d.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#does not start or connect after disposal",
+      "coverageRelation": "The test disposes an autoConnect agent, awaits the rejected start, and observes the control client's connect port receive nothing.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarBlackBoxControlClient.connect socket-opening port",
+        "observableEffect": "Starting a disposed agent produces no call to the socket-opening port.",
+        "requiredConstraint": "Disposal is final, so a disposed agent never opens a control socket even if start is called again.",
+        "failureRationale": "A socket opened after disposal registers an agent nothing can drive or shut down, and the control run then waits on results the torn-down runtime can never produce."
+      }
+    },
+    {
+      "id": "agent-reload-result-precedes-page-reload",
+      "domain": "Black-box agent reload ordering",
+      "owner": "Shared Test maintainers",
+      "summary": "An agent.reload command answers the control server on the socket before the page reload is requested, and requests exactly one reload. Executable assertion: \u201csends the agent.reload result before reloading and persists the resume record\u201d.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#sends the agent.reload result before reloading and persists the resume record",
+      "coverageRelation": "The test delivers an agent.reload command over a fake control socket and lets the injected reload port record what the socket had already sent when it fired.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected window location reload port",
+        "observableEffect": "One agent.reload command produces exactly one reload request, raised after the result envelope is on the socket.",
+        "requiredConstraint": "The result must be sent before the page is torn down, and a single command must never request more than one reload.",
+        "failureRationale": "A reload raised before the result loses the only answer the control server will ever get for that command, and a repeated reload turns one command into a page-reload loop."
+      }
     }
   ],
   "entries": [
@@ -4397,6 +4442,39 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Counting the upload port proves disconnect uploads the final report once; reading the first recorded upload alone would also pass for a duplicated upload.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-client.test.ts#sends and uploads a redacted final report"
+    },
+    {
+      "id": "test-structure-coupling-0e9f802654b9d8f4",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-agent-auto-connect-opt-in",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Absence at the socket-opening port is the only witness that no registration was attempted; the snapshot text alone would still read 'configured' for an agent that had opened a socket.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#configures without opening a control socket when autoConnect is disabled"
+    },
+    {
+      "id": "test-structure-coupling-bbc79fe630b040de",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-agent-disposed-never-connects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The rejected start proves only that the guard threw; absence at the socket-opening port proves the disposed agent left no registered socket behind.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#does not start or connect after disposal"
+    },
+    {
+      "id": "test-structure-coupling-5f2a49add4465c05",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-reload-result-precedes-page-reload",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Waiting for exactly one reload both anchors the ordering snapshot the port records and rejects a second reload; observing the persisted record alone would pass for an agent that reloaded twice.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#sends the agent.reload result before reloading and persists the resume record"
     }
   ]
 }
