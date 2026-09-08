@@ -62,6 +62,7 @@ export class RtcEndpointFixture {
             token: 'fixture-token',
             iceCandidates,
             dataChannelName: 'test',
+            faultPort: createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc'
         });
         for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {

@@ -8,6 +8,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
@@ -251,6 +252,7 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         token: 'benchmark-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'benchmark',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc'
     });
     return {

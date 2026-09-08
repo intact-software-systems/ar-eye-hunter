@@ -1,4 +1,5 @@
 import { WebRtcHeartbeatService, type PingResult } from '@shared/services/web-rtc-heartbeat-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
     createNativeRtcConnectionFixture,
@@ -77,6 +78,7 @@ async function createHeartbeatRuntime(maxMissedPings: number): Promise<Heartbeat
     const fixture = createNativeRtcConnectionFixture({
         sessionId: 'self',
         token: 'fixture-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'heartbeat',
         rtcSignalingTopicId: 'rtc'

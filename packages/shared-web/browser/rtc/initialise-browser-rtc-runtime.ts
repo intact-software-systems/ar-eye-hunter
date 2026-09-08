@@ -29,6 +29,7 @@ import {
     WebRtcRxStreamerService
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
@@ -88,6 +89,7 @@ export interface InitialiseRtcConnectionServiceInput {
     readonly iceCandidates: IceConfig;
     readonly dataChannelName: string;
     readonly rtcSignalingTopicId: string;
+    readonly faultPort: TransportFaultPort;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     readonly maxPeerConnections?: number;
 }
@@ -116,7 +118,8 @@ export async function initialiseRtcConnectionService(
                 ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
                 enabled: true
             },
-            maxPeerConnections: input.maxPeerConnections
+            maxPeerConnections: input.maxPeerConnections,
+            faultPort: input.faultPort
         }
     );
 

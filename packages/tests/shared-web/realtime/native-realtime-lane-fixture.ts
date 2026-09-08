@@ -1,4 +1,5 @@
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcDataChannel, RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { onTestFinished } from 'vitest';
 import {
@@ -28,6 +29,7 @@ export async function createNativeRealtimeLaneFixture(
     const fixture = createNativeRtcConnectionFixture({
         sessionId: 'session-1',
         token: 'fixture-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         dataChannelName: 'reliable',
         dataChannelLanes: [{ id: laneId, label: laneId, flowControl: options.flowControl }],

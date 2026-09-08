@@ -928,6 +928,7 @@ function createConnectionService(
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
     });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);

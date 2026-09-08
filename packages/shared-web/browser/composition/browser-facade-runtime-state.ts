@@ -284,6 +284,9 @@ export function cloneRallarRuntimeDefaults(
             : {}),
         ...(defaults.operations
             ? { operations: { ...defaults.operations } }
+            : {}),
+        ...(defaults.diagnosticsPorts
+            ? { diagnosticsPorts: { ...defaults.diagnosticsPorts } }
             : {})
     };
 }

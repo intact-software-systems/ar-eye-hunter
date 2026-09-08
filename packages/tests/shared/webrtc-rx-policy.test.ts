@@ -383,6 +383,7 @@ function createRtcReceiveTransport(): RtcReceiveTransport {
     const connections = new shared.WebRtcConnectionService(signaler, {
         sessionId: 'self',
         token: 'test-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates,
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'

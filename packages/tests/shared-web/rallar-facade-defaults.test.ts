@@ -13,9 +13,11 @@ import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
+import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
+import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createRoomTransportFixture, type RoomTransportFixture } from './realtime/create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './realtime/native-realtime-lane-fixture.ts';
@@ -274,6 +276,10 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             {
+                diagnosticsPorts: {
+                    transportFaultPort: { decideSend: expect.any(Function) },
+                    indexedDbOperationObserver: { observe: expect.any(Function) }
+                },
                 onAuthInvalid: expect.any(Function),
                 scope: {
                     applicationId: 'default-app',
@@ -295,6 +301,27 @@ describe('Rallar facade default scope behavior', () => {
                     timeoutMs: 321
                 }
             }
+        );
+    });
+
+    it('threads the setup diagnostics ports into the middleware options', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const transportFaultPort = createScriptedTransportFaultPort();
+        const indexedDbOperationObserver = createCountingIndexedDbOperationObserver();
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'default-app',
+            diagnosticsPorts: { transportFaultPort, indexedDbOperationObserver }
+        });
+
+        await facade.connect();
+
+        expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
+            mocks.context.session,
+            expect.any(String),
+            expect.objectContaining({
+                diagnosticsPorts: { transportFaultPort, indexedDbOperationObserver }
+            })
         );
     });
 

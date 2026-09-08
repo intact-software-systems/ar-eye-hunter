@@ -16,6 +16,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundIdentityFact, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
@@ -35,6 +36,8 @@ interface RawWorkRow {
     readonly resource: string;
     readonly typeId: string;
 }
+
+const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
 describe('browser canonical outbound cleanup', () => {
     afterEach(() => {
@@ -127,7 +130,7 @@ describe('browser canonical outbound cleanup', () => {
 });
 
 async function admitForSession(sessionId: string, ttlMs: number) {
-    configureBrowserALRuntimeStores(sessionId);
+    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
     const store = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
     const before = new Set((await readRawWorkRows()).map((row) => row.keyString));
     const runtime = createDefaultOutboundTestRuntime({
@@ -156,7 +159,7 @@ async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
 }
 
 async function retainPendingForSession(sessionId: string, ttlMs: number) {
-    configureBrowserALRuntimeStores(sessionId);
+    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
     const store = resolveBrowserWsClientALInboundRuntimeStores(sessionId).admissionStore;
     await store.ready();
     const msg = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs });

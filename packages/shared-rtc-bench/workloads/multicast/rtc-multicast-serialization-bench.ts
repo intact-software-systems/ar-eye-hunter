@@ -6,6 +6,7 @@ import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multic
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
 import { createDeterministicRtcTopologyGroupSnapshot } from '../topology/create-deterministic-rtc-topology-group-snapshot.ts';
@@ -340,6 +341,7 @@ function createConnectionService(peerIds: readonly string[]): RtcMulticastConnec
         token: 'benchmark-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         dataChannelName: 'realtime',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc',
         maxPeerConnections: peerIds.length,
         peerEstablishmentTimeout: { enabled: false, timeoutMs: 5_000 }

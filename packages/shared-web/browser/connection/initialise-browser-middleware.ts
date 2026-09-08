@@ -27,7 +27,6 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { readSession } from '@shared/api/auth.ts';
@@ -36,6 +35,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
@@ -55,6 +55,7 @@ import {
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 
 export interface MiddlewareInitOptions {
+    readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -154,14 +155,14 @@ interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTranspor
 export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
-    options: MiddlewareInitOptions = {}
+    options: MiddlewareInitOptions
 ): Promise<RallarBrowserMiddleware> {
     const clientData: ClientInfo = {
         clientId: session.clientId,
         sessionId: session.sessionId,
         isOnline: true
     };
-    initialiseBrowserRuntimeStores(clientData.sessionId);
+    initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
     const transportInput = { session, clientData, options };
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
@@ -194,9 +195,12 @@ export async function initialiseMiddleware(
     };
 }
 
-function initialiseBrowserRuntimeStores(sessionId: string): void {
+function initialiseBrowserRuntimeStores(
+    sessionId: string,
+    diagnosticsPorts: RallarDiagnosticsPorts
+): void {
     initialiseBrowserCacheRepositories();
-    configureBrowserALRuntimeStores(sessionId);
+    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
     initBrowserALRuntimeExpiryEviction().catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
@@ -249,7 +253,7 @@ function createBrowserWebSocketClient(
             ticket: wsTicket.ticket,
             scope: input.options.scope
         });
-    }, createPassThroughTransportFaultPort());
+    }, input.options.diagnosticsPorts.transportFaultPort);
 }
 
 async function initialiseBrowserRtcTransport(
@@ -305,7 +309,8 @@ function initialiseBrowserRtcConnection(
         rtcSignalingTopicId: input.rtcSignalingTopicId,
         dataChannelLanes: input.options.dataChannelLanes ??
             [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
-        maxPeerConnections: input.options.maxPeerConnections
+        maxPeerConnections: input.options.maxPeerConnections,
+        faultPort: input.options.diagnosticsPorts.transportFaultPort
     });
 }
 

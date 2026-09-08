@@ -12,6 +12,7 @@ import {
     QRtcPeerDto,
     WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMessage,
@@ -45,6 +46,7 @@ function createInput(): WebRtcConnectionService.InputDto {
         sessionId: 'a-self',
         token: 'private-transport-token',
         dataChannelName: 'room',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 1_000 }
     };

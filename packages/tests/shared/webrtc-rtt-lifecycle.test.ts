@@ -190,6 +190,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         token: 'test-token',
         iceCandidates,
         dataChannelName: 'rtc-test',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
     });
     const multicast = new WebRtcOverlayMulticastManager({

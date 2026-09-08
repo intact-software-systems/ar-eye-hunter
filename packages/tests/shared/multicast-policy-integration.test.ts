@@ -747,6 +747,7 @@ function createConnectionService(connectedPeerIds: readonly string[], readyState
     const connectionService = new shared.WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
         sessionId: 'self',
         token: 'test-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'

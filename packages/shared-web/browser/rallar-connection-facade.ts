@@ -1,4 +1,5 @@
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
+import type { RallarDiagnosticsPortsInput } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type {
     RallarOperationOptions,
@@ -20,6 +21,11 @@ import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+
+export type {
+    RallarDiagnosticsPorts,
+    RallarDiagnosticsPortsInput
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 
 /** Controls the single active heartbeat for a connected browser session. */
 export interface RallarSessionHeartbeat {
@@ -88,6 +94,7 @@ export interface RallarDefaults {
     readonly rtc?: RallarRtcDefaults;
     readonly messages?: RallarMessageDefaults;
     readonly operations?: RallarOperationDefaults;
+    readonly diagnosticsPorts?: RallarDiagnosticsPortsInput;
 }
 
 export interface RallarScopedOperationOptions extends RallarOperationOptions {

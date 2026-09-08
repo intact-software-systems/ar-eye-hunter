@@ -1,6 +1,7 @@
 import { onTestFinished } from 'vitest';
 
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime,
@@ -44,6 +45,7 @@ export function createSimulatedRtcConnections(
     const fixture = createNativeRtcConnectionFixture({
         sessionId,
         token: 'fixture-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc'

@@ -7,6 +7,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupService } from '@shared/services/web-rtc-group-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -166,6 +167,7 @@ export function runWebRtcGroupCacheFallback(
             token: 'benchmark-token',
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
             dataChannelName: 'realtime',
+            faultPort: createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc'
         }),
         {
