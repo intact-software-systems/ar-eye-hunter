@@ -67,6 +67,28 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'createRallarRtcFacade',
             'rallar'
         ]
+    },
+    {
+        moduleId: '@shared-web/browser/rallar-messages.ts',
+        sourcePath: 'packages/shared-web/browser/rallar-messages.ts',
+        expectedRuntimeExports: [
+            'configureApiClient',
+            'matchesRallarMessageSelector',
+            'normalizeRallarMessageSelector',
+            'normalizeApiBaseUrl',
+            'readApiBaseUrl',
+            'toRoomFormationDenial'
+        ],
+        forbiddenRuntimeExports: [
+            'createRallarCrdtFacade',
+            'createRallarDataFacade',
+            'createRallarFacade',
+            'createRallarMediaFacade',
+            'createRallarCallsFacade',
+            'createRallarRealtimeFacade',
+            'createRallarRtcFacade',
+            'rallar'
+        ]
     }
 ];
 

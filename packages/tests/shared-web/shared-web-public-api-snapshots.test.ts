@@ -497,6 +497,36 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         }
     },
     {
+        filePath: 'packages/shared-web/browser/rallar-messages.ts',
+        expected: {
+            values: [],
+            types: [
+                'RallarMessage',
+                'RallarMessageHandler',
+                'RallarMessageLane',
+                'RallarMessagePayload',
+                'RallarMessageSendBase',
+                'RallarMessageSendResult',
+                'RallarMessageTransport',
+                'RallarMessagesOperations',
+                'RallarRoomMessageChannelDefinition',
+                'RallarRtcMessageLane',
+                'RallarRtcSendInput',
+                'RallarTypedMessageChannel',
+                'RallarTypedMessageChannelDefinition',
+                'RallarTypedMessageSendOptions',
+                'RallarTypedMessageSendStrategy',
+                'RallarTypedPayloadHandler',
+                'RallarTypedRtcSendOptions',
+                'RallarTypedWsSendOptions',
+                'RallarWsMessageLane',
+                'RallarWsSendInput'
+            ],
+            starExports: ['@shared-web/browser/rallar-core.ts'],
+            namespaceExports: []
+        }
+    },
+    {
         filePath: 'packages/shared-web/game/mod.ts',
         resolveStarExports: true,
         expected: {

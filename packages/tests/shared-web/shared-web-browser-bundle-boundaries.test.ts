@@ -74,6 +74,13 @@ const budgetedEntries: readonly BundleBoundary[] = [
         entry: 'packages/shared-web/browser/rallar-media-calls.ts',
         output: 'rallar-browser-media-calls.boundary.min.js',
         brotliBudgetKiB: 10
+    },
+    {
+        // Measured 1.69921875 KiB; types erase and the runtime surface is rallar-core.ts's own.
+        label: 'browser/rallar-messages.ts',
+        entry: 'packages/shared-web/browser/rallar-messages.ts',
+        output: 'rallar-browser-messages.boundary.min.js',
+        brotliBudgetKiB: 12
     }
 ];
 
