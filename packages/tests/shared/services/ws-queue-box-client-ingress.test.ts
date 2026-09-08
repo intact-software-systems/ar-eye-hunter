@@ -14,8 +14,10 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -27,6 +29,7 @@ interface ClientIngressFixture {
     readonly service: WsQueueBoxClientService;
     readonly socket: TestWebSocket;
     readonly admissionStore: ALInboundAdmissionStore;
+    readonly outboundStore: ALOutboundAdmissionStore;
     readonly outbox: InMemoryQueueBox;
     readonly admission: ALAdmissionMemoryState;
     readonly delivered: ALMessage[];
@@ -214,15 +217,23 @@ describe('WS client typed ingress and transport effects', () => {
         const incoming = incomingMessage();
         const message: ALMessage = {
             ...incoming,
-            id: { ...incoming.id, senderId: 'self' },
+            id: { ...incoming.id, ts: Date.now(), senderId: 'self' },
             targets: { mode: 'unicast', toPeerId: 'logical-origin' }
         };
 
-        await fixture.service.enqueueOutboxIfAbsent(message);
+        const result = await fixture.service.enqueueOutboxIfAbsent(message);
+        expect(result.status).toBe('accepted');
         expect(fixture.socket.sent).toEqual([]);
-        await vi.advanceTimersByTimeAsync(100);
+        const retryAtMs = await fixture.outboundStore.peekNextEffectReadyAt();
+        if (retryAtMs === undefined) {
+            throw new Error('Expected retained retry work after the failed socket submission');
+        }
+        expect(retryAtMs).toBeGreaterThan(Date.now());
+        await vi.advanceTimersByTimeAsync(retryAtMs - Date.now() - 1);
+        expect(fixture.socket.sent).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
 
-        expect(fixture.socket.sent).toHaveLength(1);
+        expect(fixture.socket.sent.map((serialized) => JSON.parse(serialized))).toMatchObject([message]);
         expect(fixture.delivered).toEqual([]);
     });
 
@@ -290,6 +301,9 @@ async function createClientIngressFixture(
     const admission = createInMemoryALAdmissionState();
     const outbox = new InMemoryQueueBox(new Map());
     const delivered: ALMessage[] = [];
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now)
+    });
     const admissionStore = createALInboundAdmissionStore({
         namespace: 'ws-client-ingress',
         backend: new InMemoryAdmissionBackend(admission, Date.now),
@@ -301,7 +315,8 @@ async function createClientIngressFixture(
         outbox,
         socket: client,
         sessionId: 'self',
-        inboundStores: { admissionStore }
+        inboundStores: { admissionStore },
+        outboundStores
     }).enableDefaultCallbacks();
     service.onAnyInboxMessageDo('test-observer', {
         onMessage: async (message) => {
@@ -309,7 +324,7 @@ async function createClientIngressFixture(
         }
     });
     onTestFinished(() => service.close());
-    return { service, socket, admissionStore, outbox, admission, delivered };
+    return { service, socket, admissionStore, outboundStore: outboundStores.admissionStore, outbox, admission, delivered };
 }
 
 function incomingMessage(): ALMessage {

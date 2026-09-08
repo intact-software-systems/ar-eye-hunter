@@ -14,16 +14,15 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchPlan, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     ALOutboundMessageRuntime,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
-    InMemoryQueueBox,
     newALMulticastMessage,
     newALNackControlMessage,
     newALUnicastMessage,
@@ -109,53 +108,33 @@ describe('AL state retained across runtime recreation', () => {
         );
     });
 
-    it('retransmits cached ordered messages and reuses supersedence keys across outbound restarts', async () => {
-        const sent: Array<OutboundTestPayload> = [];
-        const outbox = new InMemoryQueueBox(new Map());
+    it('retains immutable message payloads and latest supersedence across outbound restarts', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const sent: OutboundTestPayload[] = [];
         const stores = createRetainedOutboundStoreSet();
+        const runtime = createDefaultOutboundRuntime(stores, sent);
+        const firstPresence = createPresenceMessage('presence-1', true);
+        const [firstEntry] = await enqueueOutboundOrThrow(runtime, firstPresence);
+        runtime.dispose();
 
-        const runtime1 = createDefaultOutboundRuntime(stores, sent, outbox);
-        const firstPresence = newALUnicastMessage(
-            'self',
-            {
-                topicId: 'presence',
-                resourceId: 'presence-1',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                online: true
-            },
-            { ttlMs: 30_000 }
-        );
+        const restartedStores = createRetainedOutboundStoreSet(stores);
+        const restarted = createDefaultOutboundRuntime(restartedStores, sent);
+        vi.setSystemTime(Date.now() + 1);
+        const secondPresence = createPresenceMessage('presence-2', false);
+        const [secondEntry] = await enqueueOutboundOrThrow(restarted, secondPresence);
 
-        const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
+        expect(secondEntry.key).not.toEqual(firstEntry.key);
+        const admission = restartedStores.runtimeStores.admissionStore;
+        expect(await admission.isMessageSuperseded(firstPresence)).toBe(true);
+        expect(await admission.isMessageSuperseded(secondPresence)).toBe(false);
+        expect((await admission.readSentMessage(firstPresence.id.msgId))?.msg.payload).toEqual(firstPresence.payload);
+        expect((await admission.readSentMessage(secondPresence.id.msgId))?.msg.payload).toEqual(secondPresence.payload);
+    });
 
-        runtime1.dispose();
-        const restartedForSupersedence = createDefaultOutboundRuntime(
-            createRetainedOutboundStoreSet(stores),
-            sent,
-            outbox
-        );
-        const secondPresence = newALUnicastMessage(
-            'self',
-            {
-                topicId: 'presence',
-                resourceId: 'presence-2',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                online: false
-            },
-            { ttlMs: 30_000 }
-        );
-
-        const [secondEntry] = await enqueueOutboundOrThrow(restartedForSupersedence, secondPresence);
-        expect(secondEntry.key).toEqual(firstEntry.key);
-
+    it('retransmits cached ordered messages after an outbound restart', async () => {
+        const sent: OutboundTestPayload[] = [];
+        const stores = createRetainedOutboundStoreSet();
+        const runtime = createDefaultOutboundRuntime(stores, sent);
         const seq1 = {
             ...createOutboundMessage('msg-seq-1'),
             ordering: {
@@ -173,14 +152,13 @@ describe('AL state retained across runtime recreation', () => {
             }
         };
 
-        await enqueueOutboundOrThrow(restartedForSupersedence, seq1);
-        await enqueueOutboundOrThrow(restartedForSupersedence, seq2);
+        await enqueueOutboundOrThrow(runtime, seq1);
+        await enqueueOutboundOrThrow(runtime, seq2);
 
-        restartedForSupersedence.dispose();
+        runtime.dispose();
         const restartedForRepair = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
-            sent,
-            outbox
+            sent
         );
 
         await restartedForRepair.acceptControlMessage(
@@ -199,8 +177,8 @@ describe('AL state retained across runtime recreation', () => {
             )
         );
 
-        expect(sent.map((entry) => entry.msgId)).toContain(seq1.id.msgId);
-        await expect.poll(() => sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
+        expect(sent).toContainEqual({ kind: 'send', msgId: seq1.id.msgId, phase: 'immediate' });
+        await expect.poll(() => sent.filter((entry) => entry.msgId === seq1.id.msgId && entry.kind === 'repair' && entry.trigger === 'nack')).toHaveLength(1);
     });
 
     it('continues pending outbound acknowledgement timers after restart', async () => {
@@ -290,7 +268,7 @@ function createDefaultInboundRuntime(
     stores: RetainedRuntimeStoreSet<ALInboundRuntimeStores>,
     dispatchedMsgIds: string[],
     controlMessages: ALMessage[] = []
-) {
+): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
 
@@ -339,44 +317,15 @@ function createRetainedOutboundStoreSet(
 
 function createDefaultOutboundRuntime(
     stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores>,
-    sent: Array<OutboundTestPayload>,
-    outbox: InMemoryQueueBox = new InMemoryQueueBox(new Map())
-) {
+    sent: OutboundTestPayload[]
+): ALOutboundMessageRuntime<OutboundTestPayload> {
     const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        outbox,
+        outbox: stores.runtimeStores.admissionStore.workQueue,
         stores: stores.runtimeStores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         decodePreparedMessage: decodeOutboundTestPayload,
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({
-            msg: msg,
-            persist: msg.payload.typeId === 'presence.state.v1',
-            preparedMessages: msg.payload.typeId === 'presence.state.v1'
-                ? []
-                : [{ kind: 'send', msgId: msg.id.msgId }],
-            ackTracking: msg.payload.typeId === 'presence.state.v1'
-                ? undefined
-                : {
-                    enabled: true,
-                    timeoutMs: 100,
-                    maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
-                },
-            repairTracking: msg.payload.typeId === 'presence.state.v1'
-                ? undefined
-                : {
-                    enabled: true,
-                    algo: 'retransmit',
-                    maxAttempts: 1
-                },
-            supersedenceTracking: msg.payload.typeId === 'presence.state.v1'
-                ? {
-                    enabled: true,
-                    algo: 'latest-wins',
-                    key: `presence:${msg.route.contextId}`
-                }
-                : undefined
-        }),
+        planOutgoingMessage: planOutboundTestMessage,
         planRepairMessage: async (msg, request) => ({
             msg: msg,
             persist: false,
@@ -398,7 +347,36 @@ function createDefaultOutboundRuntime(
     return runtime;
 }
 
-function createBufferedOrderedMessage(seq: number, text: string) {
+function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
+    if (msg.payload.typeId === 'presence.state.v1') {
+        return {
+            msg,
+            persist: true,
+            preparedMessages: [],
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: `presence:${msg.route.contextId}` }
+        };
+    }
+    return {
+        msg,
+        persist: false,
+        preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+        ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'] },
+        repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
+    };
+}
+
+function createPresenceMessage(resourceId: string, online: boolean): ALMessage {
+    return newALUnicastMessage(
+        'self',
+        { topicId: 'presence', resourceId, contextId: 'room-1' },
+        'peer-1',
+        'presence.state.v1',
+        { online },
+        { ttlMs: 30_000 }
+    );
+}
+
+function createBufferedOrderedMessage(seq: number, text: string): ALMessage {
     return newALMulticastMessage(
         'peer-1',
         {
@@ -425,7 +403,7 @@ function createBufferedOrderedMessage(seq: number, text: string) {
     );
 }
 
-function createOutboundMessage(resourceId: string) {
+function createOutboundMessage(resourceId: string): ALMessage {
     return newALUnicastMessage(
         'self',
         {

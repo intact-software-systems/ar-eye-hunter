@@ -10,6 +10,8 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type {
     AuditStamp,
@@ -33,6 +35,9 @@ import {
     type ALQosInputProvider,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { createTestGroup } from '../../create-test-group.ts';
 
@@ -110,7 +115,7 @@ describe('RallarServerWsRouter', () => {
         expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
     });
 
-    it.each([-1, 0, 1])('checks expiry after the installed router authorizes at deadline %+i ms', async (offsetMs) => {
+    it.each([-1, 0, 1])('checks expiry after asynchronous topic authorization at deadline %+i ms', async (offsetMs) => {
         let nowMs = 10_000;
         vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
         onTestFinished(() => {
@@ -118,15 +123,11 @@ describe('RallarServerWsRouter', () => {
         });
         const expiresAtMs = nowMs + 1_000;
         const fixture = createIngressRouter({ defaultFanout: 'none', nowEpochMs: () => nowMs });
-        let authorizations = 0;
         fixture.router.defineTopic({
             topicId: 'app.deadline',
             authorize: async () => {
-                authorizations += 1;
-                if (authorizations === 3) {
-                    await Promise.resolve();
-                    nowMs = expiresAtMs + offsetMs;
-                }
+                await Promise.resolve();
+                nowMs = expiresAtMs + offsetMs;
                 return true;
             }
         });
@@ -134,12 +135,15 @@ describe('RallarServerWsRouter', () => {
         fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
             delivered.push(message.raw.id.msgId);
         });
-        fixture.router.install();
         const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {}, { ttlMs: 1_000 });
 
-        await fixture.socket.receive(message);
+        if (offsetMs < 0) {
+            await expect(fixture.router.route(message)).resolves.toBeUndefined();
+        }
+        else {
+            await expect(fixture.router.route(message)).rejects.toBeInstanceOf(NonRetryableException);
+        }
 
-        expect(authorizations).toBe(3);
         expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
     });
 
@@ -279,7 +283,7 @@ describe('RallarServerWsRouter', () => {
 
     it('can route registered topics through the QueueBox outbox', async () => {
         let outboxWakeRequested = false;
-        const { router, outbox } = createRouter({
+        const { router, outboundStores } = createRouter({
             wakeOutbox: () => {
                 outboxWakeRequested = true;
             }
@@ -303,12 +307,20 @@ describe('RallarServerWsRouter', () => {
 
         await router.route(message);
 
-        expect(await outbox.getAllKeys()).toHaveLength(1);
+        expect((await outboundStores.admissionStore.readSentMessage(message.id.msgId))?.msg).toMatchObject({
+            id: message.id,
+            route: message.route,
+            targets: { mode: 'broadcast', scope: 'all' },
+            payload: message.payload,
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            constraints: { expiresAtMs: message.id.ts + 30_000 }
+        });
+        expect(message.constraints).toBeUndefined();
         expect(outboxWakeRequested).toBe(true);
     });
 
     it('publishes a proxy room message with its full scoped identity', async () => {
-        const { router, outbox } = createRouter();
+        const { router, outboundStores } = createRouter();
         const roomRef: GroupRef = {
             applicationId: 'proxy-application',
             workspaceId: 'proxy-workspace',
@@ -332,13 +344,11 @@ describe('RallarServerWsRouter', () => {
 
         await router.route(message);
 
-        const keys = await outbox.getAllKeys();
-        expect(keys).toHaveLength(1);
-        const entry = await outbox.getItem({ ...message.route, contextId: roomRef.groupId });
-        if (!entry) {
+        const retained = await outboundStores.admissionStore.readSentMessage(message.id.msgId);
+        if (!retained) {
             throw new Error('Expected a persisted scoped proxy message');
         }
-        const published = decodePersistedALMessage(entry.resource);
+        const published = retained.msg;
         expect(published.targets).toEqual({
             mode: 'broadcast',
             scope: 'room',
@@ -718,8 +728,12 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('returns queued-outbox metadata for durable outbox fanout', async () => {
-        const { server, socket, outbox, qboxEngine } = createPublicRouterFixture();
-        const groupRef = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const { server, socket, outboundStores, qboxEngine } = createPublicRouterFixture();
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1'
+        };
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-1'),
@@ -741,7 +755,15 @@ describe('RallarServer.ws.publish current behavior', () => {
             enqueueStatus: 'enqueued'
         });
         expect(result.entries).toHaveLength(1);
-        expect(await outbox.getAllKeys()).toHaveLength(1);
+        expect((await outboundStores.admissionStore.readSentMessage(message.id.msgId))?.msg).toMatchObject({
+            id: message.id,
+            route: message.route,
+            targets: { mode: 'broadcast', scope: 'room', groupRef },
+            payload: message.payload,
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            constraints: { expiresAtMs: message.id.ts + 30_000 }
+        });
+        expect(message.constraints).toBeUndefined();
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(true);
     });
@@ -764,7 +786,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             /room broadcast group ref/i
         );
 
-        expect(await outbox.getItem(message.route)).toBeUndefined();
+        expect(await outbox.getAllKeys()).toEqual([]);
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(false);
     });
@@ -820,13 +842,23 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 });
 
+interface RouterFixture {
+    readonly router: RallarServerWsRouter;
+    readonly service: WsQueueBoxServerService;
+    readonly socket: RecordingWsServer;
+    readonly outbox: QueueBoxResourceEntryRepository;
+    readonly outboundStores: ALOutboundRuntimeStores;
+}
+
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
-) {
+): RouterFixture {
     const socket = createRecordingWsServer();
-    const outbox = new InMemoryQueueBox(new Map());
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
+    const outbox = outboundStores.admissionStore.workQueue;
     const service = createDefaultWsQueueBoxServerService({
-        outbox: outbox,
+        outbox,
+        outboundStores,
         socket,
         name: 'server-1',
         targetResolver: createTargetResolver()
@@ -838,15 +870,22 @@ function createRouter(
         router,
         service,
         socket,
-        outbox
+        outbox,
+        outboundStores
     };
+}
+
+interface IngressRouterFixture {
+    readonly router: RallarServerWsRouter;
+    readonly service: WsQueueBoxServerService;
+    readonly socket: RouterIngressWebSocket;
 }
 
 function createIngressRouter(
     options: ConstructorParameters<typeof RallarServerWsRouter>[1],
     inboundStores?: ALInboundRuntimeStores,
     qosProvider?: ALQosInputProvider
-) {
+): IngressRouterFixture {
     const server = new JsonWebSocketServer();
     const socket = new RouterIngressWebSocket();
     server.addConnection(new ConnectionContext({ id: 'conn-1', socket }));
@@ -925,20 +964,39 @@ interface PublicRouterFixtureInput {
     readonly failingConnectionIds?: readonly string[];
 }
 
-function createPublicRouterFixture(options: PublicRouterFixtureInput = {}) {
+interface PublicRouterTestServer {
+    readonly ws: RallarServerWsRouter;
+}
+
+interface RouterQueueWakeRecorder {
+    wakeRequested: boolean;
+    wake(): void;
+}
+
+interface PublicRouterFixture {
+    readonly server: PublicRouterTestServer;
+    readonly service: WsQueueBoxServerService;
+    readonly socket: RecordingWsServer;
+    readonly outbox: QueueBoxResourceEntryRepository;
+    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly qboxEngine: RouterQueueWakeRecorder;
+}
+
+function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): PublicRouterFixture {
     const socket = createRecordingWsServer({
         failingConnectionIds: options.failingConnectionIds
     });
-    const outbox = new InMemoryQueueBox(new Map());
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
+    const outbox = outboundStores.admissionStore.workQueue;
     const service = createDefaultWsQueueBoxServerService({
-        outbox: outbox,
+        outbox,
+        outboundStores,
         socket,
         name: 'server-1',
         targetResolver: options.targetResolver ?? createTargetResolver()
     });
     const qboxEngine = {
         wakeRequested: false,
-        start() {},
         wake() {
             this.wakeRequested = true;
         }
@@ -955,6 +1013,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}) {
         service,
         socket,
         outbox,
+        outboundStores,
         qboxEngine
     };
 }
@@ -968,7 +1027,11 @@ interface RecordedWsSend {
     readonly data: ALMessage;
 }
 
-function createRecordingWsServer(options: RecordingWsServerInput = {}) {
+interface RecordingWsServer extends JsonWebSocketServer {
+    readonly sent: RecordedWsSend[];
+}
+
+function createRecordingWsServer(options: RecordingWsServerInput = {}): RecordingWsServer {
     const sent: RecordedWsSend[] = [];
     const server = new JsonWebSocketServer();
     const failingConnectionIds = new Set(options.failingConnectionIds ?? []);

@@ -750,6 +750,22 @@ treating a next-hop hint as a recipient restriction. Inspect actual results and 
 source/workload scope; a historical passing checkpoint or an artifact named `green` does not
 prove the current release passes.
 
+Validate recovery through canonical message readback and worker replay, rather than obsolete
+physical row counts or another carrier submission. Keep queue-time clock observations separate
+from worker-created auth facts. Use live message timestamps and stored retry eligibility; identify
+NACK-triggered repair separately from an independently scheduled ACK timeout. These test repairs
+must preserve identity, authority, original expiry, and observable delivery assertions.
+
+For the remaining state-write performance gate, preserve the original pre-cutover baseline and
+unchanged workload, thresholds, and controlled database environment. Reuse a locally computed
+expected mutation when validating the enclosing operation; validate the complete inert candidate
+before reading its fields and retain all identity, persistence, authority, and conditional-write
+checks. The standalone invariant check still constructs its own expected value. Separate throwing
+programmer-invariant assertions from pure policy validation, which returns issues; the existing
+QueueBox handler chooses the retry or rejection outcome. Accept this optimization only with focused
+semantic evidence and a fresh comparison; fewer computations alone do not prove the measured
+regression is repaired.
+
 Release acceptance also covers the directly affected HTTP control-observation decoder and WS
 report contracts, owned clocks in the existing queue/auth and black-box execution adapters, and
 malformed performance-artifact rejection before derived calculations. Invalid measurements must

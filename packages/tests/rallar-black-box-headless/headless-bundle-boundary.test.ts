@@ -23,12 +23,12 @@ interface HeadlessBundleMeasurement {
     readonly metafile: Metafile;
 }
 
-const repoRoot = process.cwd();
-const outputDir = path.join(tmpdir(), 'rallar-black-box-headless-boundary-test');
-
 describe('rallar-black-box-headless bundle boundary', () => {
     it('excludes operator UI dependencies and surfaces', () => {
-        const result = bundleHeadlessEntry();
+        const result = bundleHeadlessEntry(
+            process.cwd(),
+            path.join(tmpdir(), 'rallar-black-box-headless-boundary-test')
+        );
         const inputs = Object.keys(result.metafile.inputs);
 
         for (
@@ -51,29 +51,15 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // The room-authority closure measures 208.4658203125 KiB with the
-        // reviewed exclusions and build settings. Canonical inbound persistence,
-        // durable local delivery, and fail-closed corruption handling measure
-        // 215.4443359375 KiB. Reporting each peer setup's phases and bounding a
-        // group's in-flight setups measures 216.6953125 KiB: the headless agent
-        // runs the outbound dialing owner, the in-flight dial admission and the
-        // member-policy validators itself. Persistence-ready IndexedDB writes
-        // measure 219.14453125 KiB in the release runner. The room formation
-        // handle with its eight lifecycle commands, layout slots and denial
-        // reader measures 220.846 KiB; posting the lifecycle bodies the schemas
-        // declare, keeping slot subscriptions across reconfiguration, and the
-        // coherent connect fence with its three read-through refusals measure
-        // 221.455078125 KiB; its fenced layout wait, stage and condition waits,
-        // subscriptions and validated formation view read measure
-        // 222.6103515625 KiB; settling those waits on the room's own reads,
-        // deriving layout events from status differences and decoding the view
-        // from unknown JSON measure 223.23828125 KiB. The maintainer approved the
-        // smallest whole-KiB strict limit containing the current behavior.
-        expect(result.brotliKiB).toBeLessThan(224);
+        // The ALM admission and QueueBox recovery cutover measures 243.958984375
+        // KiB with these build settings and all operator exclusions intact.
+        // The maintainer approved necessary bundle growth; keep the smallest
+        // whole-KiB strict limit containing the measured behavior.
+        expect(result.brotliKiB).toBeLessThan(244);
     });
 });
 
-function bundleHeadlessEntry(): HeadlessBundleMeasurement {
+function bundleHeadlessEntry(repoRoot: string, outputDir: string): HeadlessBundleMeasurement {
     mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'headless-agent.boundary.min.js');
     const result = buildSync({
