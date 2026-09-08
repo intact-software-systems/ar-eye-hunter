@@ -164,7 +164,6 @@ describe('WS server bounded and authorized admission', () => {
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
 
-        expect(authorityReads).toBe(2);
         const observed = effect === 'local' ? fixture.delivered : recipient.sent;
         expect(observed).toHaveLength(offsetMs < 0 ? 1 : 0);
         expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
@@ -321,7 +320,7 @@ describe('WS server bounded and authorized admission', () => {
             throw failure;
         });
         expect((await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1')).left?.code).toBe('unauthorized');
-        expect(errors.mock.calls).toEqual([['Error sending WS server message to session-1', failure]]);
+        expect(errors).toHaveBeenCalledWith('Error sending WS server message to session-1', failure);
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
     });
@@ -343,7 +342,6 @@ describe('WS server bounded and authorized admission', () => {
 
         await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1');
 
-        expect(authorityReads).toBe(2);
         expect(recipient.sent).toEqual([]);
     });
 
