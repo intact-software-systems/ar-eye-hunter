@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 
 import { WebRtcHeartbeatService } from '@shared/services/web-rtc-heartbeat-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
@@ -70,7 +71,11 @@ export function runWebRtcHeartbeatCallbackChurn(
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
             isPolite: true
         });
-        return new QRtcDataChannel(peer, { peerId: peerSessionId, dataChannelName: 'realtime' });
+        return new QRtcDataChannel(peer, {
+            faultPort: createPassThroughTransportFaultPort(),
+            peerId: peerSessionId,
+            dataChannelName: 'realtime'
+        });
     });
     const startedAt = performance.now();
 

@@ -17,6 +17,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
@@ -127,7 +128,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
 function createSignalingQueueBox(): WsQueueBoxClientService {
     const service = createDefaultWsQueueBoxClientService({
-        socket: new JsonWebSocketClient('ws://test'),
+        socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
 
         outbox: new InMemoryQueueBox(new Map()),
         sessionId: 'session-1'

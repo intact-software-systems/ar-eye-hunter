@@ -4,6 +4,7 @@ import { CommandCancelledError, CommandTimedOutError } from '../cache/Command.ts
 import { PullPushCommand } from '../cache/PullPushCommand.ts';
 import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
+import { createPassThroughTransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 import {
     DecodedRtcSignalingMessage,
     decodeRtcSignalingEnvelope,
@@ -1121,6 +1122,7 @@ export class WebRtcConnectionService {
                     {
                         peerId,
                         dataChannelName: lane.label,
+                        faultPort: createPassThroughTransportFaultPort(),
                         dataChannelInit: lane.init,
                         binaryType: lane.binaryType,
                         flowControl: lane.flowControl

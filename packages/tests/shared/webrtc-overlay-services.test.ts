@@ -31,6 +31,7 @@ import {
 import { RateLimiter, toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -954,7 +955,7 @@ function createOpenRtcChannel(): CapturedRtcChannel {
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
     });
-    const channel = new QRtcDataChannel(peerConnection, { peerId: 'peer-1', dataChannelName: 'test' });
+    const channel = new QRtcDataChannel(peerConnection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const health = channel.readHealth();
     const sendCalls: object[][] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });

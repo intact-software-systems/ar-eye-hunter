@@ -1,6 +1,7 @@
 import type { ApiJsonValue } from '../api/api-json-value.ts';
 import { validateJsonMessageSize } from '../api/json-message-validation.ts';
 import { toError } from '../resilience/to-error.ts';
+import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 
 import { OnQRtcMessageCallback, QRtcClientCallbacks } from './qrtc-client-callbacks.ts';
 import { QRtcPeerConnection } from './qrtc-peer-connection.ts';
@@ -162,6 +163,7 @@ export namespace QRtcDataChannel {
     export interface InputDto {
         readonly peerId: string;
         readonly dataChannelName: string;
+        readonly faultPort: TransportFaultPort;
         readonly dataChannelInit?: RTCDataChannelInit;
         readonly binaryType?: BinaryType;
         readonly flowControl?: RtcDataChannelFlowControlPolicy;
@@ -310,6 +312,11 @@ export class QRtcDataChannel {
             return this.recordSendResult('closed', 'Data channel not open', options.key);
         }
 
+        const faultedResult = this.rejectFaultedSend(data, options);
+        if (faultedResult) {
+            return faultedResult;
+        }
+
         this.flushQueuedSends();
 
         const submissionRejection = computeRtcSendRejection(
@@ -358,6 +365,28 @@ export class QRtcDataChannel {
             submissionAttempted: true
         });
         return this.recordSendResult('sent', undefined, options.key);
+    }
+
+    /** A `delay` decision is not supported for RTC in F1 and is treated as `pass`. */
+    private rejectFaultedSend(
+        data: RtcDataChannelPayload,
+        options: RtcDataChannelSendOptions
+    ): RtcDataChannelSendResult | undefined {
+        if (typeof data !== 'string') {
+            return undefined;
+        }
+        const decision = this.input.faultPort.decideSend('rtc', data);
+        if (decision.kind !== 'drop') {
+            return undefined;
+        }
+        const reason = `Transport fault ${decision.faultId}`;
+        this.settleSend(options.onSettled, {
+            status: 'dropped',
+            reason,
+            key: options.key,
+            submissionAttempted: false
+        });
+        return this.recordSendResult('dropped', reason, options.key);
     }
 
     onRawMessageDo(

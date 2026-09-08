@@ -27,6 +27,7 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { readSession } from '@shared/api/auth.ts';
@@ -248,7 +249,7 @@ function createBrowserWebSocketClient(
             ticket: wsTicket.ticket,
             scope: input.options.scope
         });
-    });
+    }, createPassThroughTransportFaultPort());
 }
 
 async function initialiseBrowserRtcTransport(

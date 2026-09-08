@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
@@ -151,7 +152,7 @@ describe('group-state resync on WS reopen', () => {
 
 async function createConnectedSocket(): Promise<JsonWebSocketClient> {
     vi.stubGlobal('WebSocket', TestWebSocket);
-    const socket = new JsonWebSocketClient('ws://test');
+    const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
     onTestFinished(() => socket.close());
     await reopenSocket(socket);
     return socket;

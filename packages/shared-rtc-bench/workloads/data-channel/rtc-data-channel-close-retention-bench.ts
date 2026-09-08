@@ -1,5 +1,6 @@
 import { createRtcBenchmarkPeerConnection } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
@@ -80,6 +81,7 @@ export async function runRtcDataChannelCloseRetention(
     const nativeChannels = peerFixture.native.channels;
     const startedAt = performance.now();
     const dataChannel = new QRtcDataChannel(peerFixture.peer, {
+        faultPort: createPassThroughTransportFaultPort(),
         peerId: 'perf-peer',
         dataChannelName: 'realtime',
         flowControl: {

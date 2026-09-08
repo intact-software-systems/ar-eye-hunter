@@ -7,6 +7,10 @@ import {
     vi
 } from 'vitest';
 
+import {
+    createPassThroughTransportFaultPort,
+    createScriptedTransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
@@ -34,7 +38,12 @@ afterEach(() => {
 describe('QRtcDataChannel', () => {
     it.each(['channel-error', 'native-send-error'])('reports per-message native submission evidence for %s', async (failure) => {
         const fixture = createNativeDataChannelFixture();
-        const channel = new QRtcDataChannel(fixture.peerConnection, { peerId: 'peer-1', dataChannelName: 'room', flowControl: { overflow: 'queue' } });
+        const channel = new QRtcDataChannel(fixture.peerConnection, {
+            faultPort: createPassThroughTransportFaultPort(),
+            peerId: 'peer-1',
+            dataChannelName: 'room',
+            flowControl: { overflow: 'queue' }
+        });
         channel.connect(true);
         const native = fixture.native.channels[0];
         await native.open();
@@ -62,6 +71,7 @@ describe('QRtcDataChannel', () => {
     it('distinguishes an uncertain attempted send from untouched siblings cleared by its channel error', async () => {
         const fixture = createNativeDataChannelFixture();
         const channel = new QRtcDataChannel(fixture.peerConnection, {
+            faultPort: createPassThroughTransportFaultPort(),
             peerId: 'peer-1',
             dataChannelName: 'room',
             flowControl: { overflow: 'queue' }
@@ -96,7 +106,11 @@ describe('QRtcDataChannel', () => {
 
     it('bounds decoded subscriptions before parsing while preserving the raw lane', async () => {
         const fixture = createNativeDataChannelFixture();
-        const channel = new QRtcDataChannel(fixture.peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        const channel = new QRtcDataChannel(fixture.peerConnection, {
+            faultPort: createPassThroughTransportFaultPort(),
+            peerId: 'peer-1',
+            dataChannelName: 'room'
+        });
         const rejected: string[] = [];
         const raw: unknown[] = [];
         const decoded: unknown[] = [];
@@ -133,10 +147,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
         const lifecycle: string[] = [];
         const typedMessages: string[] = [];
@@ -210,10 +221,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
         const opened: string[] = [];
 
@@ -249,10 +257,12 @@ describe('QRtcDataChannel', () => {
     it('routes native receiver channels only to their matching lanes', async () => {
         const peerConnection = createNativeDataChannelFixture();
         const reliable = new QRtcDataChannel(peerConnection.peerConnection, {
+            faultPort: createPassThroughTransportFaultPort(),
             peerId: 'peer-1',
             dataChannelName: 'rtc-data-channel'
         });
         const realtime = new QRtcDataChannel(peerConnection.peerConnection, {
+            faultPort: createPassThroughTransportFaultPort(),
             peerId: 'peer-1',
             dataChannelName: 'rtc-realtime'
         });
@@ -269,7 +279,7 @@ describe('QRtcDataChannel', () => {
 
     it('does not reactivate a reset receiver until it connects again', async () => {
         const { peerConnection, native } = createNativeDataChannelFixture();
-        const channel = new QRtcDataChannel(peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        const channel = new QRtcDataChannel(peerConnection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' });
         channel.connect(false);
         channel.reset();
         const ignored = await native.receiveDataChannel('room');
@@ -287,7 +297,7 @@ describe('QRtcDataChannel', () => {
 
     it('isolates rejected open observers and still completes other observers', async () => {
         const { peerConnection, native } = createNativeDataChannelFixture();
-        const channel = new QRtcDataChannel(peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        const channel = new QRtcDataChannel(peerConnection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' });
         const observed: string[] = [];
         vi.spyOn(console, 'error').mockImplementation(() => {});
         channel.onRtcCallbacksDo('rejected', {
@@ -310,10 +320,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
 
         dataChannel.connect(true);
@@ -332,10 +339,7 @@ describe('QRtcDataChannel', () => {
             const peerConnection = createNativeDataChannelFixture();
             const dataChannel = new QRtcDataChannel(
                 peerConnection.peerConnection,
-                {
-                    peerId: 'peer-1',
-                    dataChannelName: 'room'
-                }
+                { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
             );
 
             dataChannel.connect(true);
@@ -354,10 +358,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
 
         dataChannel.connect(false);
@@ -377,10 +378,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
         const lifecycle: string[] = [];
 
@@ -411,10 +409,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
 
         dataChannel.connect(true);
@@ -435,10 +430,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
 
         dataChannel.connect(true);
@@ -476,10 +468,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
 
         dataChannel.connect(true);
@@ -510,6 +499,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 flowControl: {
@@ -558,6 +548,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 flowControl: {
@@ -605,10 +596,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
 
         dataChannel.connect(false);
@@ -641,6 +629,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 dataChannelInit,
@@ -697,6 +686,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 flowControl: {
@@ -769,10 +759,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'room'
-            }
+            { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'room' }
         );
         const rawMessages: string[] = [];
 
@@ -800,6 +787,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 flowControl: {
@@ -846,6 +834,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 flowControl: {
@@ -895,6 +884,7 @@ describe('QRtcDataChannel', () => {
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection,
             {
+                faultPort: createPassThroughTransportFaultPort(),
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
                 flowControl: {
@@ -935,6 +925,39 @@ describe('QRtcDataChannel', () => {
                 sent: 1
             }
         });
+    });
+
+    it('drops a matching frame through the fault port before native submission', async () => {
+        const fixture = createNativeDataChannelFixture();
+        const faults = createScriptedTransportFaultPort();
+        faults.inject({
+            faultId: 'drop-chat',
+            carrier: 'rtc',
+            match: { controlType: undefined, typeId: 'chat', msgId: undefined },
+            action: 'drop',
+            remaining: 1
+        });
+        const channel = new QRtcDataChannel(fixture.peerConnection, {
+            faultPort: faults,
+            peerId: 'peer-1',
+            dataChannelName: 'room'
+        });
+        channel.connect(true);
+        const native = fixture.native.channels[0];
+        await native.open();
+
+        const settlements: QRtcDataChannel.SendSettlement[] = [];
+        const result = channel.sendJson(
+            { id: { msgId: '1' }, typeId: 'chat' },
+            { onSettled: (settlement) => settlements.push(settlement) }
+        );
+
+        expect(result).toMatchObject({ status: 'dropped' });
+        expect(native.sent).toEqual([]);
+        await Promise.resolve();
+        expect(settlements).toEqual([
+            expect.objectContaining({ status: 'dropped', submissionAttempted: false })
+        ]);
     });
 });
 

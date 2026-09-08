@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
@@ -445,6 +446,7 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}) {
     peer.connect();
     peers.push(peer);
     const channel = new QRtcDataChannel(peer, {
+        faultPort: createPassThroughTransportFaultPort(),
         peerId: 'peer',
         dataChannelName: 'alm',
         flowControl: { highWatermarkBytes: 10, lowWatermarkBytes: 1, overflow: 'queue', maxQueueItems: 4, ...flowControl }

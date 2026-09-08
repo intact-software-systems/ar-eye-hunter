@@ -35,6 +35,7 @@ import {
     createDefaultWsQueueBoxClientService,
     WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -56,7 +57,7 @@ describe('browser RTC runtime composition', () => {
         const nativeRuntime = installNativeRtcRuntime();
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
-        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid');
+        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
         vi.spyOn(socket, 'connect').mockImplementation(() => {
             networkConnectStarted.resolve();
             return networkConnect.promise;

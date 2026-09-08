@@ -1,4 +1,5 @@
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -22,11 +23,14 @@ export function createBrowserRtcPeerTestDouble(input: BrowserRtcPeerTestInput): 
     const channels = new Map(input.channels.map(([laneId, overrides]) =>
         [
             laneId,
-            Object.assign(new QRtcDataChannel(connection, { peerId: input.peerId, dataChannelName: laneId }), overrides)
+            Object.assign(
+                new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: input.peerId, dataChannelName: laneId }),
+                overrides
+            )
         ] as const
     ));
     const channel = channels.get('reliable') ?? channels.values().next().value ??
-        new QRtcDataChannel(connection, { peerId: input.peerId, dataChannelName: 'reliable' });
+        new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: input.peerId, dataChannelName: 'reliable' });
     return { peerId: input.peerId, connection, channel, channels, media: new QRtcMediaChannel(connection, { peerId: input.peerId }) };
 }
 

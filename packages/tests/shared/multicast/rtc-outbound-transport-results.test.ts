@@ -23,6 +23,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
@@ -57,7 +58,7 @@ describe('RTC outbound transport results', () => {
         const manager = createManager([channel], createDefaultALOutboundRuntimeResources({ stores: rtcStores }), {
             defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 500 } } })
         });
-        const socket = new JsonWebSocketClient('ws://canonical-fallback');
+        const socket = new JsonWebSocketClient('ws://canonical-fallback', createPassThroughTransportFaultPort());
         const nativeWs = new TestWebSocket(socket.url);
         nativeWs.open();
         socket.ws = nativeWs;
@@ -270,7 +271,7 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}, peerId
         isPolite: false
     });
     peer.connect();
-    const channel = new QRtcDataChannel(peer, { peerId, dataChannelName: 'alm', flowControl });
+    const channel = new QRtcDataChannel(peer, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'alm', flowControl });
     channel.connect(true);
     onTestFinished(() => {
         peer.reset();

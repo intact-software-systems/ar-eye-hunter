@@ -13,6 +13,7 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
@@ -37,7 +38,7 @@ describe('createBrowserWebSocketQueueBox', () => {
     });
 
     it('returns an open service for the session after the initial socket opens', async () => {
-        const socket = new JsonWebSocketClient('ws://test');
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
@@ -81,7 +82,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         { label: 'configured', connectTimeoutMs: 25, deadlineMs: 25 },
         { label: 'default', connectTimeoutMs: undefined, deadlineMs: 10_000 }
     ])('aborts a pending real socket at the $label connect timeout', async ({ connectTimeoutMs, deadlineMs }) => {
-        const socket = new JsonWebSocketClient('ws://test');
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
@@ -114,7 +115,7 @@ describe('createBrowserWebSocketQueueBox', () => {
     });
 
     it('ignores incoming data before connect and delivers it after the service is ready', async () => {
-        const socket = new JsonWebSocketClient('ws://test');
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
@@ -160,7 +161,7 @@ describe('createBrowserWebSocketQueueBox', () => {
     });
 
     it.each([0, -1])('allows a pending connection with connectTimeoutMs=%i until its socket opens', async (connectTimeoutMs) => {
-        const socket = new JsonWebSocketClient('ws://test');
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
