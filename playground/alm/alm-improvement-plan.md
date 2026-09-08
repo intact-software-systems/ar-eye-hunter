@@ -793,6 +793,11 @@ Recipe expansion preserves quoted and escaped variable strings, and finite traff
 not overflow into biased workload selection. Keep these corrections within the existing owners
 and verify the supported recipe behavior; they do not expand the ALM feature horizon.
 
+Browser-facing report decoders must remain independent of CLI filesystem imports while preserving
+their scalar conversion policies. Browser fixtures must wait for the visible selection to become
+ready and prove a scope change before releasing work held in the previous scope. Preserve actual
+keyboard interaction and authority assertions without adding sleeps or changing timeout limits.
+
 Preserve supplied control values through compilation so validation can reject malformed options;
 apply defaults only under the documented absence policy. Generated result indexes must accept
 all supported step names without inheriting JavaScript prototype keys. Remote command preparation

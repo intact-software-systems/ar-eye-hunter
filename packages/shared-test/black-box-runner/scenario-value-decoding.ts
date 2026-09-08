@@ -1,6 +1,5 @@
 import { Either } from '../../shared/resilience/Either.ts';
 import { toConfig, type CompareConfig } from '../json-compare/compare-json-values.ts';
-import { firstPositiveInteger } from './recipes/scenario-workload.ts';
 
 function isNumericScalar(value: unknown): value is number | string {
     return typeof value === 'number' || typeof value === 'string';
@@ -17,7 +16,16 @@ export function decodeScenarioNumber(value: unknown): number | undefined {
 
 /** Keep the existing positive-integer configuration policy after scalar narrowing. */
 export function decodeScenarioPositiveInteger(values: readonly unknown[]): number | undefined {
-    return firstPositiveInteger(values.filter(isNumericScalar));
+    for (const value of values) {
+        if (!isNumericScalar(value) || value === '') {
+            continue;
+        }
+        const parsed = Number.parseInt(String(value), 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+    return undefined;
 }
 
 export function decodeScenarioText(value: unknown): string | undefined {
