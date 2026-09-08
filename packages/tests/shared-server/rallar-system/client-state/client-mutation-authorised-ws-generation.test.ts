@@ -2,7 +2,7 @@ import type { ClientStateWritten } from '@shared-server/rallar-system/client-sta
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { expect, it } from 'vitest';
 
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -13,7 +13,7 @@ import type { ClientStatePhaseTestDriver } from './client-state-test-driver-cont
 import { createClientStateTestDriver, getClientStateTestOutbox } from './client-state-test-runtime.ts';
 
 it('advances authorised websocket generations with complete receipt delivery and makes an old close stale', async () => {
-    const scenario = await runGenerationAdvanceScenario();
+    const scenario = await runGenerationAdvanceScenario(Date.now() + 60_000);
 
     expect(scenario.second).toMatchObject({
         status: 'ok',
@@ -62,7 +62,7 @@ it('advances authorised websocket generations with complete receipt delivery and
 });
 
 it('orders websocket generations by their server-owned start tuple and bootstraps the authorised principal', async () => {
-    const scenario = await runOrderedGenerationScenario();
+    const scenario = await runOrderedGenerationScenario(Date.now() + 60_000);
 
     expect(scenario.newer.result?.snapshot).toMatchObject({
         principal: {
@@ -116,7 +116,7 @@ interface GenerationAdvanceScenario {
     readonly third: ClientStateWritten;
 }
 
-async function runGenerationAdvanceScenario(): Promise<GenerationAdvanceScenario> {
+async function runGenerationAdvanceScenario(expiresAtEpochMs: number): Promise<GenerationAdvanceScenario> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createClientStateTestDriver({
         runtimeRepository,
@@ -130,7 +130,6 @@ async function runGenerationAdvanceScenario(): Promise<GenerationAdvanceScenario
         sessionId: 'ws-session-1',
         expiresAtEpochMs: 60_000
     };
-    const expiresAtEpochMs = Date.now() + 60_000;
     const first = await service.registerAuthorisedWsClientSession(authSession, 'ws-generation-1', {
         ...CLIENT_MUTATION_SERVICE_SCOPE,
         connectedAtEpochMs: 100,
@@ -193,7 +192,7 @@ interface OrderedGenerationScenario {
     readonly service: ClientStatePhaseTestDriver;
 }
 
-async function runOrderedGenerationScenario(): Promise<OrderedGenerationScenario> {
+async function runOrderedGenerationScenario(expiresAtEpochMs: number): Promise<OrderedGenerationScenario> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createClientStateTestDriver({
         runtimeRepository,
@@ -207,7 +206,6 @@ async function runOrderedGenerationScenario(): Promise<OrderedGenerationScenario
         sessionId: 'ws-session-ordered',
         expiresAtEpochMs: 60_000
     };
-    const expiresAtEpochMs = Date.now() + 60_000;
     const newer = await service.registerAuthorisedWsClientSession(authSession, 'generation-b', {
         ...CLIENT_MUTATION_SERVICE_SCOPE,
         displayName: 'Alice Display',

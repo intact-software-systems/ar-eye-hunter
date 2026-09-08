@@ -28,7 +28,6 @@ import {
     type WsSessionGenerationLifecycleRead
 } from '../../websocket/ws-session-generation-computation.ts';
 import {
-    CLIENT_EXPIRED_SESSION_PAGE_SIZE,
     requiresClientWrite,
     toClientStateWritten,
     type ClientExpiredSessionPage,
@@ -42,9 +41,7 @@ import type {
     ClientMutationRead
 } from '../mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
-import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import { validateClientMutation } from '../mutation/result-validation/validate-client-mutation.ts';
-import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
+import { assertClientMutationComparison } from '../mutation/result-validation/assert-client-mutation.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
@@ -65,7 +62,7 @@ type ClientMutationLifecycleInput =
         read: WsSessionGenerationLifecycleRead;
     }>;
 
-type ClientMutationOperationComputed =
+export type ClientMutationOperationComputed =
     | Readonly<{
         outcome: 'idempotency-conflict';
         mutation: Extract<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>;
@@ -80,7 +77,7 @@ type ClientMutationOperationComputed =
         committedSnapshots: readonly ClientSnapshot[];
     }>;
 
-type AuthorisedWsConnectOperationComputed =
+export type AuthorisedWsConnectOperationComputed =
     | ClientMutationOperationComputed
     | Readonly<{
         outcome: 'inactive';
@@ -88,13 +85,13 @@ type AuthorisedWsConnectOperationComputed =
         completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
     }>;
 
-interface MissingSessionDisconnectComputed {
+export interface MissingSessionDisconnectComputed {
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
     readonly durableResult: InactiveAuthorisedWsSessionResult;
     readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
 }
 
-type ExpiredSessionsOperationComputed =
+export type ExpiredSessionsOperationComputed =
     | Readonly<{
         outcome: 'idempotency-conflict';
         mutations: readonly ClientMutationComputed[];
@@ -114,14 +111,14 @@ export interface ClientExpiredSessionMutationRead {
     readonly read: ClientMutationRead;
 }
 
-interface ComputeClientMutationOperationInput {
+export interface ComputeClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly lifecycle: ClientMutationLifecycleInput | undefined;
 }
 
-interface ValidateClientMutationOperationInput {
+interface AssertClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
@@ -129,7 +126,7 @@ interface ValidateClientMutationOperationInput {
     readonly computed: ClientMutationOperationComputed;
 }
 
-interface ComputeAuthorisedWsConnectOperationInput {
+export interface ComputeAuthorisedWsConnectOperationInput {
     readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
@@ -138,7 +135,7 @@ interface ComputeAuthorisedWsConnectOperationInput {
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-interface ValidateAuthorisedWsConnectOperationInput {
+interface AssertAuthorisedWsConnectOperationInput {
     readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
@@ -148,24 +145,22 @@ interface ValidateAuthorisedWsConnectOperationInput {
     readonly computed: AuthorisedWsConnectOperationComputed;
 }
 
-interface ComputeMissingSessionDisconnectInput {
+export interface ComputeMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-interface ValidateMissingSessionDisconnectInput {
+interface AssertMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
-    readonly command: ClientMutationCommand;
-    readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: MissingSessionDisconnectComputed;
 }
 
-interface ComputeExpiredSessionsOperationInput {
+export interface ComputeExpiredSessionsOperationInput {
     readonly context: AppInboxExecutionMetadata;
     readonly pageInput: ClientExpiredSessionPageInput;
     readonly page: ClientExpiredSessionPage;
@@ -173,7 +168,7 @@ interface ComputeExpiredSessionsOperationInput {
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-interface ValidateExpiredSessionsOperationInput {
+interface AssertExpiredSessionsOperationInput {
     readonly context: AppInboxExecutionMetadata;
     readonly pageInput: ClientExpiredSessionPageInput;
     readonly page: ClientExpiredSessionPage;
@@ -212,18 +207,20 @@ export function computeClientMutationOperation(
     };
 }
 
-export function validateClientMutationOperation(
-    input: ValidateClientMutationOperationInput
-): readonly ClientMutationValidationIssue[] {
+export function assertClientMutationOperation(
+    input: AssertClientMutationOperationInput
+): void {
+    const expected = computeClientMutationOperation(input);
     assertExactOperationComputed(
-        computeClientMutationOperation(input),
+        expected,
         input.computed,
         'Client mutation operation computed'
     );
-    return validateClientMutation({
+    assertClientMutationComparison({
         command: input.command,
         read: input.read,
-        computed: input.computed.mutation
+        computed: input.computed.mutation,
+        expected: expected.mutation
     });
 }
 
@@ -266,21 +263,23 @@ export function computeAuthorisedWsConnectOperation(
     };
 }
 
-export function validateAuthorisedWsConnectOperation(
-    input: ValidateAuthorisedWsConnectOperationInput
-): readonly ClientMutationValidationIssue[] {
+export function assertAuthorisedWsConnectOperation(
+    input: AssertAuthorisedWsConnectOperationInput
+): void {
+    const expected = computeAuthorisedWsConnectOperation(input);
     assertExactOperationComputed(
-        computeAuthorisedWsConnectOperation(input),
+        expected,
         input.computed,
         'Authorised WebSocket client operation computed'
     );
-    if (input.computed.outcome === 'inactive') {
-        return validateClientMutationAuthorityPolicy(input.command, input.read);
+    if (expected.outcome === 'inactive' || input.computed.outcome === 'inactive') {
+        return;
     }
-    return validateClientMutation({
+    assertClientMutationComparison({
         command: input.command,
         read: input.read,
-        computed: input.computed.mutation
+        computed: input.computed.mutation,
+        expected: expected.mutation
     });
 }
 
@@ -303,15 +302,14 @@ export function computeMissingSessionDisconnect(
     };
 }
 
-export function validateMissingSessionDisconnect(
-    input: ValidateMissingSessionDisconnectInput
-): readonly ClientMutationValidationIssue[] {
+export function assertMissingSessionDisconnect(
+    input: AssertMissingSessionDisconnectInput
+): void {
     assertExactOperationComputed(
         computeMissingSessionDisconnect(input),
         input.computed,
         'Missing-session WebSocket disconnect computed'
     );
-    return validateClientMutationAuthorityPolicy(input.command, input.read);
 }
 
 export function computeExpiredSessionsOperation(
@@ -338,21 +336,23 @@ export function computeExpiredSessionsOperation(
     };
 }
 
-export function validateExpiredSessionsOperation(
-    input: ValidateExpiredSessionsOperationInput
-): readonly ClientMutationValidationIssue[] {
+export function assertExpiredSessionsOperation(
+    input: AssertExpiredSessionsOperationInput
+): void {
+    const expected = computeExpiredSessionsOperation(input);
     assertExactOperationComputed(
-        computeExpiredSessionsOperation(input),
+        expected,
         input.computed,
         'Expired client sessions operation computed'
     );
-    return input.reads.flatMap(({ command, read }, index) =>
-        validateClientMutation({
+    for (const [index, { command, read }] of input.reads.entries()) {
+        assertClientMutationComparison({
             command,
             read,
-            computed: input.computed.mutations[index]!
-        })
-    );
+            computed: input.computed.mutations[index]!,
+            expected: expected.mutations[index]!
+        });
+    }
 }
 
 function computeExpiredSessionSuccessorWrite(
@@ -430,10 +430,7 @@ function computeExpiredSessionSuccessorEntry(
         topicId: key.topicId,
         resourceId: key.resourceId,
         contextId: key.contextId,
-        data: encodeAppInboxCommand(
-            successorInput,
-            'Expired client sessions AppInbox continuation'
-        )
+        data: encodeAppInboxCommand(successorInput, 'Expired client sessions AppInbox continuation')
     };
     const message: ALMessage = {
         id: {

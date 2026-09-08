@@ -90,12 +90,13 @@ function createMessage(
     return {
         key: {
             topicId: 'topic',
-            resourceId: crypto.randomUUID(),
+            resourceId: `message-${options.publisherId}`,
             contextId: 'context'
         },
         channel: 'ws-channel',
         publisherId: options.publisherId,
         typeId: 'WS_OUTBOX',
-        delivery: 'key'
+        delivery: 'key',
+        expiresAtMs: 1_800_000_060_000
     };
 }

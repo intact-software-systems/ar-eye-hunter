@@ -22,7 +22,6 @@ import {
     type ClientStateWritten
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
-    ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import {
@@ -31,12 +30,11 @@ import {
     toAuthorisedWsClientDisconnectEnqueue
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import {
-    computeClientMutationOperation,
-    validateClientMutationOperation
+    assertClientMutationOperation,
+    computeClientMutationOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import {
-    ClientStateInboxHandler,
-    type ClientStateInboxHandlerDependencies
+    ClientStateInboxHandler
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import {
@@ -162,7 +160,7 @@ describe('ClientStateInboxHandler phases', () => {
         }
 
         expect(() =>
-            validateClientMutationOperation({
+            assertClientMutationOperation({
                 command,
                 read,
                 completionFacts,
@@ -403,6 +401,41 @@ describe('ClientStateInboxHandler phases', () => {
         ]);
     });
 
+    it.each([
+        {
+            actorPrincipalId: 'other-principal',
+            actorSessionId: null,
+            path: 'command.input.actorPrincipalId',
+            message: 'Client mutation actor principal differs from durable authority.'
+        },
+        {
+            actorPrincipalId: null,
+            actorSessionId: 'other-session',
+            path: 'command.input.actorSessionId',
+            message: 'Client mutation actor session differs from durable authority.'
+        }
+    ])('rejects $path at the handler policy boundary before writing', async ({ actorPrincipalId, actorSessionId, message }) => {
+        const fixture = createHandlerFixture({ generationClosed: false, sessionPresent: false });
+        const original = await connectCommand('rejected-actor');
+        if (original.operation !== 'connectSession') {
+            throw new Error('Expected a connect command');
+        }
+        const context = createContext<ClientStateWritten>({
+            type: AppInboxType.CLIENT_SESSION_CONNECT,
+            resourceId: original.commandId,
+            authority: original.authority,
+            data: {}
+        });
+        const input = { ...original, input: { ...original.input, actorPrincipalId, actorSessionId } };
+
+        await expect(fixture.handler.processCommand(context, input)).rejects.toMatchObject({
+            code: 'client-mutation-rejected',
+            status: 400,
+            message
+        });
+        expect(fixture.writesByTransaction).toEqual([]);
+    });
+
     it('does not enter the transaction when mutation policy validation returns issues', async () => {
         const fixture = createHandlerFixture({
             authoritySessionClientId: 'mallory',
@@ -528,7 +561,7 @@ interface ClientHandlerMutationObservations {
 function createHandlerMutationService(
     options: HandlerFixtureOptions,
     { actions, writesByTransaction }: ClientHandlerMutationObservations
-): ClientStateInboxHandlerDependencies['mutationService'] {
+): ClientStateInboxHandler.Input['mutationService'] {
     return {
         read: async (command: ClientMutationCommand): Promise<ClientMutationRead> => {
             actions.push('domain.read');
@@ -561,7 +594,7 @@ function createHandlerMutationService(
 
 function createHandlerTransactionWriter(
     { actions, writesByTransaction }: ClientHandlerMutationObservations
-): ClientStateInboxHandlerDependencies['transactionWriter'] {
+): ClientStateInboxHandler.Input['transactionWriter'] {
     return {
         readCompletionFacts: (context) => {
             actions.push('completion.read');

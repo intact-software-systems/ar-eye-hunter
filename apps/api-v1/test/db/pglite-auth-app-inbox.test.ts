@@ -1,7 +1,4 @@
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
@@ -13,6 +10,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import assert from 'node:assert/strict';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -184,7 +182,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 });
 
 interface WaitForPGliteQueueRowsInput {
-    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+    readonly sql: PGliteSql;
     readonly typeId: string;
     readonly status: string;
     readonly minimum: number;
@@ -282,12 +280,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
 
         const result = await pending;
         assert.equal(result.left?.status, 403);
-        assert.equal(
-            await new AuthSessionRepository(runtime).findBySessionId(
-                'pglite-disabled-session'
-            ),
-            undefined
-        );
+        assert.deepEqual(await runtime.findAllEntries('auth-sessions:by-session'), []);
         const rows = await sql<{ ris_status: string; ris_resource: JsonWireValue; }[]>`
       select ris_status, ris_resource
       from resource_inbox_results
@@ -308,8 +301,11 @@ Deno.test(
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
-            let authFactNowEpochMs = 0;
-            let authClockCalls = 0;
+            let authFactNowEpochMs = databaseNowEpochMs;
+            const issuer = createHmacAuthCredentialIssuer(
+                'pglite-auth-delayed-facts-secret-0123456789abcdef'
+            );
+            const issuedAccessTokenSessionIds: string[] = [];
             const appAuth = new AppAuthInboxService(
                 {
                     inboxQueueReader: inboxReader,
@@ -320,9 +316,13 @@ Deno.test(
                         runtimeRepository: runtime,
                         serviceId: 'pglite-auth-delayed-facts'
                     }),
-                    credentialIssuer: createHmacAuthCredentialIssuer(
-                        'pglite-auth-delayed-facts-secret-0123456789abcdef'
-                    )
+                    credentialIssuer: {
+                        ...issuer,
+                        issueAccessToken: async (sessionId) => {
+                            issuedAccessTokenSessionIds.push(sessionId);
+                            return await issuer.issueAccessToken(sessionId);
+                        }
+                    }
                 },
                 {
                     serviceId: 'pglite-auth-delayed-facts',
@@ -333,10 +333,7 @@ Deno.test(
                         waitJitterRatio: 0,
                         nowEpochMs: () => databaseNowEpochMs
                     },
-                    authFactNowEpochMs: () => {
-                        authClockCalls += 1;
-                        return authFactNowEpochMs;
-                    }
+                    authFactNowEpochMs: () => authFactNowEpochMs
                 }
             );
             const input = {
@@ -359,12 +356,16 @@ Deno.test(
       where ri_type_id = 'APP_INBOX' and ri_status = 'NEW'
     `;
             assert.ok(queued);
-            assert.equal(authClockCalls, 0);
+            assert.deepEqual(issuedAccessTokenSessionIds, []);
+            const beforeWorker = await readAuthDurableRows(sql);
+            assert.deepEqual(beforeWorker.state, []);
+            assert.deepEqual(beforeWorker.results, []);
+            assert.deepEqual(beforeWorker.queue.map(({ status }) => status), ['NEW']);
             assert.equal(queued.ri_resource.includes('capturedAtEpochMs'), false);
             assert.equal(queued.ri_resource.includes('sessionId'), false);
             assert.equal(queued.ri_resource.includes('accessTokenDigest'), false);
 
-            authFactNowEpochMs = 9_000;
+            authFactNowEpochMs = databaseNowEpochMs + 9_000;
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 createApiV1TestQueueResilience()
@@ -372,18 +373,54 @@ Deno.test(
             const [firstResult, secondResult] = await Promise.all([first, second]);
             assert.ok(firstResult.right);
             assert.deepEqual(secondResult.right, firstResult.right);
-            assert.equal(firstResult.right.expiresAtEpochMs, 69_000);
-            assert.equal(authClockCalls, 1);
-            const [resultRows] = await sql<{ count: string | number; }[]>`
-      select count(*) as count from resource_inbox_results
-      where ris_resource_id = 'pglite-auth-delayed-session'
-    `;
-            assert.ok(resultRows);
-            assert.equal(Number(resultRows.count), 1);
+            assert.equal(firstResult.right.expiresAtEpochMs, databaseNowEpochMs + 69_000);
+            const session = await new AuthSessionRepository(runtime).findBySessionId(firstResult.right.sessionId);
+            assert.ok(session);
+            assert.equal(session.issuedAtEpochMs, databaseNowEpochMs + 9_000);
+            assert.equal(session.expiresAtEpochMs, databaseNowEpochMs + 69_000);
+            assert.equal(issuedAccessTokenSessionIds[0], session.sessionId);
+            assert.ok(issuedAccessTokenSessionIds.every((sessionId) => sessionId === session.sessionId));
+            const committed = await readAuthDurableRows(sql);
+            assert.equal(committed.state.length, 2);
+            assert.equal(committed.results.length, 1);
+            assert.deepEqual(committed.queue.map(({ status }) => status), ['COMPLETED']);
+            assert.equal(JSON.stringify(committed).includes(firstResult.right.accessToken), false);
 
+            authFactNowEpochMs = databaseNowEpochMs + 18_000;
             const replay = await appAuth.issueSession(input);
             assert.deepEqual(replay.right, firstResult.right);
-            assert.equal(authClockCalls, 1);
+            assert.deepEqual(await readAuthDurableRows(sql), committed);
         });
     }
 );
+
+interface AuthDurableRows {
+    readonly state: readonly JsonWireValue[];
+    readonly results: readonly JsonWireValue[];
+    readonly queue: readonly AuthQueueSnapshotRow[];
+}
+
+interface AuthQueueSnapshotRow {
+    readonly status: string;
+    readonly value: JsonWireValue;
+}
+
+async function readAuthDurableRows(sql: PGliteSql): Promise<AuthDurableRows> {
+    const state = await sql<{ value: JsonWireValue; }[]>`
+        select to_jsonb(state_row) as value from runtime_state_store state_row
+        order by store_namespace, store_key
+    `;
+    const results = await sql<{ value: JsonWireValue; }[]>`
+        select to_jsonb(result_row) as value from resource_inbox_results result_row
+        order by ris_topic_id, ris_resource_id, fk_ext_bank_id
+    `;
+    const queue = await sql<AuthQueueSnapshotRow[]>`
+        select ri_status as status, to_jsonb(queue_row) as value from resource_inbox queue_row
+        order by ri_topic_id, ri_resource_id, fk_ext_bank_id
+    `;
+    return {
+        state: state.map(({ value }) => value),
+        results: results.map(({ value }) => value),
+        queue
+    };
+}

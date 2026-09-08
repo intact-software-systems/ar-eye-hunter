@@ -1,3 +1,4 @@
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -13,7 +14,7 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
@@ -715,7 +716,8 @@ Deno.test(
                 );
                 const read = await service.read(command);
                 const computed = computeClientMutation({ command, read });
-                validateClientMutation({ command, read, computed });
+                assertClientMutation({ command, read, computed });
+                assert.deepEqual(validateClientMutationAuthorityPolicy(command, read), []);
                 assert.equal(computed.outcome, 'write');
                 if (computed.outcome !== 'write') {
                     throw new Error('Expected applied client write');

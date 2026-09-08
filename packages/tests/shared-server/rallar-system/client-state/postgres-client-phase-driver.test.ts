@@ -2,7 +2,11 @@ import type { ClientMutationComputedWrite } from '@shared-server/rallar-system/c
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createPostgresClientPhaseDriver } from './postgres-client-mutation-test-driver.ts';
 
@@ -20,17 +24,19 @@ describe('Postgres client phase driver', () => {
         });
 
         await driver.connectSession(
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            'alice',
-            'browser-1',
-            'session-1',
             {
-                generationId: 'generation-1',
-                connectedAtEpochMs: atEpochMs,
-                expiresAtEpochMs: atEpochMs + 60_000,
-                actorPrincipalId: 'alice',
-                actorSessionId: 'session-1',
-                requestId: 'phase-driver-read'
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                principalId: 'alice',
+                clientInstanceId: 'browser-1',
+                sessionId: 'session-1',
+                request: {
+                    generationId: 'generation-1',
+                    connectedAtEpochMs: atEpochMs,
+                    expiresAtEpochMs: atEpochMs + 60_000,
+                    actorPrincipalId: 'alice',
+                    actorSessionId: 'session-1',
+                    requestId: 'phase-driver-read'
+                }
             }
         );
 
@@ -59,22 +65,26 @@ describe('Postgres client phase driver', () => {
 
         await expect(
             driver.connectSession(
-                { applicationId: 'app-1', workspaceId: 'workspace-1' },
-                'alice',
-                'browser-1',
-                'session-1',
-                request
+                {
+                    scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                    principalId: 'alice',
+                    clientInstanceId: 'browser-1',
+                    sessionId: 'session-1',
+                    request: request
+                }
             )
         ).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(attempts).toEqual([1]);
 
         await expect(
             driver.connectSession(
-                { applicationId: 'app-1', workspaceId: 'workspace-1' },
-                'alice',
-                'browser-1',
-                'session-1',
-                request
+                {
+                    scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                    principalId: 'alice',
+                    clientInstanceId: 'browser-1',
+                    sessionId: 'session-1',
+                    request: request
+                }
             )
         ).resolves.toMatchObject({ outcome: 'write' });
         expect(attempts).toEqual([1, 2]);

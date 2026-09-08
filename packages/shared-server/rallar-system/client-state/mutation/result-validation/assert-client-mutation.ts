@@ -1,8 +1,5 @@
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
-import {
-    ClientMutationRejectedError,
-    type ClientMutationValidationIssue
-} from '../../validation/client-mutation-rejection.ts';
+import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
@@ -16,7 +13,6 @@ import { computeClientMutation } from '../compute/compute-client-mutation.ts';
 import { assertClientMutationRead } from './assert-client-mutation-read.ts';
 import { assertClientMutationResult } from './assert-client-mutation-result.ts';
 import { assertExactClientPersistence } from './assert-client-persistence.ts';
-import { validateClientMutationAuthorityPolicy } from './validate-client-mutation-authority-policy.ts';
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -39,19 +35,35 @@ export class ClientMutationIdempotencyConflictError extends Error {
     }
 }
 
-export interface ClientMutationValidationInput {
+export interface ClientMutationAssertionInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly computed: ClientMutationComputed;
 }
 
-export function validateClientMutation(
-    input: ClientMutationValidationInput
-): readonly ClientMutationValidationIssue[] {
+export interface ClientMutationComparisonInput extends ClientMutationAssertionInput {
+    readonly expected: ClientMutationComputed;
+}
+
+export function assertClientMutation(
+    input: ClientMutationAssertionInput
+): void {
     const { command, read, computed } = input;
+    const expected = computeClientMutation({ command, read });
+    assertClientMutationComparison({ command, read, computed, expected });
+}
+
+/** The owning computation supplies expected; this boundary asserts data equivalence and programmer invariants. */
+export function assertClientMutationComparison(
+    input: ClientMutationComparisonInput
+): void {
+    const { command, read, computed, expected } = input;
     assertClientMutationCommand(command);
     assertClientMutationFacts(command.facts);
-    assertExactClientMutationComputation(command, read, computed);
+    const issue = validateComputedProjection(expected, computed, 'Client mutation computed')[0];
+    if (issue) {
+        throw new ClientMutationRejectedError(issue.message);
+    }
     assertClientMutationResult(computed);
     assertClientMutationIdentity(command);
     assertClientMutationRead(command, read);
@@ -62,23 +74,6 @@ export function validateClientMutation(
         if (computed.outcome === 'write') {
             assertEffectfulClientMutation(read, computed);
         }
-    }
-    return validateClientMutationAuthorityPolicy(command, read);
-}
-
-function assertExactClientMutationComputation(
-    command: ClientMutationCommand,
-    read: ClientMutationRead,
-    computed: ClientMutationComputed
-): void {
-    const expected = computeClientMutation({ command, read });
-    const issue = validateComputedProjection(
-        expected,
-        computed,
-        'Client mutation computed'
-    )[0];
-    if (issue) {
-        throw new ClientMutationRejectedError(issue.message);
     }
 }
 
@@ -104,15 +99,6 @@ function assertClientSessionIdentity(command: ClientMutationCommand): void {
     }
     if (!command.sessionId || !command.clientInstanceId || !command.input.generationId) {
         throw new ClientMutationRejectedError('Invalid client session identity');
-    }
-    if (
-        command.input.actorPrincipalId !== null &&
-        command.input.actorPrincipalId !== command.aggregateRef.principalId
-    ) {
-        throw new ClientMutationRejectedError('Client session actor is not authorized');
-    }
-    if (command.input.actorSessionId !== null && command.input.actorSessionId !== command.sessionId) {
-        throw new ClientMutationRejectedError('Client connection identity differs');
     }
 }
 

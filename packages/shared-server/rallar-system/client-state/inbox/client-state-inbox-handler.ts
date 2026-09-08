@@ -4,6 +4,7 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type { ClientSessionExpiryCandidate } from '../../presence/session-expiry.ts';
 import {
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts
@@ -24,12 +25,14 @@ import { toClientMutationCommand, type ClientMutationPersistedFacts } from '../m
 import type {
     ClientMutationCommand,
     ClientMutationCommandInput,
-    ClientMutationComputed
+    ClientMutationComputed,
+    ClientMutationRead
 } from '../mutation/client-mutation-contracts.ts';
 import { toConnectClientSessionMutationInput } from '../mutation/command-input/to-connect-client-session-mutation-input.ts';
 import { toDisconnectClientSessionMutationInput } from '../mutation/command-input/to-disconnect-client-session-mutation-input.ts';
 import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
-import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/assert-client-mutation.ts';
+import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -37,38 +40,63 @@ import type {
 } from './app-client-inbox-contracts.ts';
 import { readClientMutationAuthority } from './authenticated-client-mutation-ingress.ts';
 import {
+    assertAuthorisedWsConnectOperation,
+    assertClientMutationOperation,
+    assertExpiredSessionsOperation,
+    assertMissingSessionDisconnect,
     computeAuthorisedWsConnectOperation,
     computeClientMutationOperation,
     computeExpiredSessionsOperation,
     computeMissingSessionDisconnect,
-    validateAuthorisedWsConnectOperation,
-    validateClientMutationOperation,
-    validateExpiredSessionsOperation,
-    validateMissingSessionDisconnect,
-    type ClientExpiredSessionMutationRead
+    type AuthorisedWsConnectOperationComputed,
+    type ClientExpiredSessionMutationRead,
+    type ClientMutationOperationComputed,
+    type ComputeAuthorisedWsConnectOperationInput,
+    type ComputeClientMutationOperationInput,
+    type ComputeExpiredSessionsOperationInput,
+    type ComputeMissingSessionDisconnectInput,
+    type ExpiredSessionsOperationComputed,
+    type MissingSessionDisconnectComputed
 } from './client-state-inbox-computation.ts';
 import type { AuthorisedWsClientMutationResult } from './client-state-inbox-result-codec.ts';
-
-export interface ClientStateInboxHandlerDependencies {
-    readonly mutationService: ClientStateMutationService;
-    readonly sessionGenerationLifecycle: Pick<WsSessionGenerationLifecycleService, 'read' | 'write'>;
-    readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
-    readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
-    readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
-    readonly transactionWriter: AppInboxMutationTransactionWriter;
-    readonly mutationTiming: ClientStateMutationTiming;
-    readonly wakeQueue?: () => void;
-    readonly serviceId: string;
-}
 
 export interface ClientExpiryContinuationWriter {
     write(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void>;
 }
 
-export class ClientStateInboxHandler {
-    private readonly dependencies: ClientStateInboxHandlerDependencies;
+interface MissingSessionDisconnectAttemptInput extends ComputeMissingSessionDisconnectInput {
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+}
 
-    constructor(dependencies: ClientStateInboxHandlerDependencies) {
+interface WriteClientMutationOperationInput {
+    readonly context: AppInboxExecutionMetadata;
+    readonly computed: Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>;
+}
+
+interface WriteExpiredSessionsOperationInput {
+    readonly context: AppInboxExecutionMetadata;
+    readonly computed: Extract<ExpiredSessionsOperationComputed, { outcome: 'completed'; }>;
+}
+
+export namespace ClientStateInboxHandler {
+    export interface Input {
+        readonly mutationService: ClientStateMutationService;
+        readonly sessionGenerationLifecycle: Pick<WsSessionGenerationLifecycleService, 'read' | 'write'>;
+        readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
+        readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
+        readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
+        readonly transactionWriter: AppInboxMutationTransactionWriter;
+        readonly mutationTiming: ClientStateMutationTiming;
+        readonly wakeQueue?: () => void;
+        readonly serviceId: string;
+    }
+}
+
+export class ClientStateInboxHandler {
+    private readonly dependencies: ClientStateInboxHandler.Input;
+
+    constructor(dependencies: ClientStateInboxHandler.Input) {
         this.dependencies = dependencies;
     }
 
@@ -79,47 +107,11 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const command = await this.toCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = timeClientStateMutationPhase(
-            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
-            () =>
-                computeClientMutationOperation({
-                    command,
-                    read,
-                    completionFacts,
-                    lifecycle: undefined
-                })
-        );
-        timeClientStateMutationPhase(
-            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () => {
-                const validationInput = {
-                    command,
-                    read,
-                    completionFacts,
-                    lifecycle: undefined,
-                    computed
-                } as const;
-                throwFirstClientMutationValidationIssue(
-                    validateClientMutationOperation(validationInput)
-                );
-            }
-        );
+        const computed = this.measureMutationComputation({ command, read, completionFacts, lifecycle: undefined });
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        const result = await timeClientStateMutationCommit(
-            { timing: this.dependencies.mutationTiming, writes: computed.writes },
-            async () =>
-                await this.dependencies.transactionWriter.writeComputedMutation(
-                    context,
-                    computed.completion,
-                    async (transaction) => {
-                        for (const mutation of computed.writes) {
-                            await this.dependencies.mutationService.write(transaction, mutation);
-                        }
-                    }
-                )
-        );
+        const result = await this.writeMutationOperation({ context, computed });
         await this.observeCommittedSnapshots(computed.committedSnapshots);
         return result;
     }
@@ -133,35 +125,14 @@ export class ClientStateInboxHandler {
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
         const command = await this.toAuthorisedWsConnectCommand(context, connection);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = timeClientStateMutationPhase(
-            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
-            () =>
-                computeAuthorisedWsConnectOperation({
-                    connection,
-                    command,
-                    read,
-                    lifecycleFacts,
-                    lifecycleRead,
-                    completionFacts
-                })
-        );
-        timeClientStateMutationPhase(
-            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () => {
-                const validationInput = {
-                    connection,
-                    command,
-                    read,
-                    lifecycleFacts,
-                    lifecycleRead,
-                    completionFacts,
-                    computed
-                } as const;
-                throwFirstClientMutationValidationIssue(
-                    validateAuthorisedWsConnectOperation(validationInput)
-                );
-            }
-        );
+        const computed = this.measureAuthorisedConnectComputation({
+            connection,
+            command,
+            read,
+            lifecycleFacts,
+            lifecycleRead,
+            completionFacts
+        });
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
@@ -172,25 +143,7 @@ export class ClientStateInboxHandler {
                 async () => {}
             );
         }
-        const result = await timeClientStateMutationCommit(
-            { timing: this.dependencies.mutationTiming, writes: computed.writes },
-            async () =>
-                await this.dependencies.transactionWriter.writeComputedMutation(
-                    context,
-                    computed.completion,
-                    async (transaction) => {
-                        if (computed.lifecycleComputed) {
-                            await this.dependencies.sessionGenerationLifecycle.write(
-                                transaction,
-                                computed.lifecycleComputed
-                            );
-                        }
-                        for (const mutation of computed.writes) {
-                            await this.dependencies.mutationService.write(transaction, mutation);
-                        }
-                    }
-                )
-        );
+        const result = await this.writeMutationOperation({ context, computed });
         await this.observeCommittedSnapshots(computed.committedSnapshots);
         return result;
     }
@@ -205,78 +158,159 @@ export class ClientStateInboxHandler {
         const command = await this.toAuthorisedWsDisconnectCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
         if (!read.session) {
-            const computed = timeClientStateMutationPhase(
-                { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
-                () =>
-                    computeMissingSessionDisconnect({
-                        commandInput: input,
-                        lifecycleFacts,
-                        lifecycleRead,
-                        completionFacts
-                    })
-            );
-            timeClientStateMutationPhase(
-                { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-                () => {
-                    const validationInput = {
-                        commandInput: input,
-                        command,
-                        read,
-                        lifecycleFacts,
-                        lifecycleRead,
-                        completionFacts,
-                        computed
-                    } as const;
-                    throwFirstClientMutationValidationIssue(
-                        validateMissingSessionDisconnect(validationInput)
-                    );
-                }
-            );
+            const computed = this.measureMissingDisconnectComputation({
+                commandInput: input,
+                command,
+                read,
+                lifecycleFacts,
+                lifecycleRead,
+                completionFacts
+            });
             return await this.dependencies.transactionWriter.writeComputedMutation(
                 context,
                 computed.completion,
-                async (transaction) => {
-                    await this.dependencies.sessionGenerationLifecycle.write(
-                        transaction,
-                        computed.lifecycleComputed
-                    );
-                }
+                async (transaction) =>
+                    await this.dependencies.sessionGenerationLifecycle.write(transaction, computed.lifecycleComputed)
             );
         }
-        const lifecycleInput = {
-            kind: 'disconnect',
-            facts: lifecycleFacts,
-            read: lifecycleRead
-        } as const;
+        const computed = this.measureMutationComputation({
+            command,
+            read,
+            completionFacts,
+            lifecycle: { kind: 'disconnect', facts: lifecycleFacts, read: lifecycleRead }
+        });
+        if (computed.outcome === 'idempotency-conflict') {
+            throwClientMutationIdempotencyConflict(command, computed.mutation);
+        }
+        const result = await this.writeMutationOperation({ context, computed });
+        await this.observeCommittedSnapshots(computed.committedSnapshots);
+        return result;
+    }
+
+    async processExpiredSessionCommands(
+        context: AppInboxMessageContext<readonly ClientStateWritten[]>,
+        input: ClientExpiredSessionPageInput
+    ): Promise<readonly ClientStateWritten[]> {
+        const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
+        const page = await this.dependencies.expiryCandidates.readExpiredSessionPage(input);
+        const reads = await this.readExpiredSessionMutations(context, page.candidates);
+        const computed = this.measureExpiredSessionsComputation({
+            context,
+            pageInput: input,
+            page,
+            reads,
+            completionFacts
+        });
+        if (computed.outcome === 'idempotency-conflict') {
+            const conflictIndex = computed.mutations.findIndex((mutation) =>
+                mutation.outcome === 'idempotency-conflict'
+            );
+            const conflict = computed.mutations[conflictIndex];
+            if (!conflict || conflict.outcome !== 'idempotency-conflict') {
+                throw new TypeError('Expired client mutation conflict is missing');
+            }
+            throwClientMutationIdempotencyConflict(reads[conflictIndex]!.command, conflict);
+        }
+        const result = await this.writeExpiredSessionsOperation({ context, computed });
+        await this.observeCommittedSnapshots(computed.committedSnapshots);
+        if (computed.successorWrite !== null) {
+            this.dependencies.wakeQueue?.();
+        }
+        return result;
+    }
+
+    private async readExpiredSessionMutations(
+        context: AppInboxExecutionMetadata,
+        candidates: readonly ClientSessionExpiryCandidate[]
+    ): Promise<ClientExpiredSessionMutationRead[]> {
+        const reads: ClientExpiredSessionMutationRead[] = [];
+        for (const candidate of candidates) {
+            const command = await this.toCommand(context, toExpireClientSessionMutationInput(candidate));
+            reads.push({ command, read: await this.dependencies.mutationService.read(command) });
+        }
+        return reads;
+    }
+
+    private measureMutationComputation(input: ComputeClientMutationOperationInput): ClientMutationOperationComputed {
+        const { command, read } = input;
         const computed = timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
-            () =>
-                computeClientMutationOperation({
-                    command,
-                    read,
-                    completionFacts,
-                    lifecycle: lifecycleInput
-                })
+            () => computeClientMutationOperation(input)
         );
         timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
             () => {
-                const validationInput = {
-                    command,
-                    read,
-                    completionFacts,
-                    lifecycle: lifecycleInput,
-                    computed
-                } as const;
+                assertClientMutationOperation({ ...input, computed });
+                throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
+            }
+        );
+        return computed;
+    }
+
+    private measureAuthorisedConnectComputation(
+        input: ComputeAuthorisedWsConnectOperationInput
+    ): AuthorisedWsConnectOperationComputed {
+        const { command, read } = input;
+        const computed = timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
+            () => computeAuthorisedWsConnectOperation(input)
+        );
+        timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
+            () => {
+                assertAuthorisedWsConnectOperation({ ...input, computed });
+                throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
+            }
+        );
+        return computed;
+    }
+
+    private measureMissingDisconnectComputation(
+        input: MissingSessionDisconnectAttemptInput
+    ): MissingSessionDisconnectComputed {
+        const { command, read } = input;
+        const computed = timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
+            () => computeMissingSessionDisconnect(input)
+        );
+        timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
+            () => {
+                assertMissingSessionDisconnect({ ...input, computed });
+                throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
+            }
+        );
+        return computed;
+    }
+
+    private measureExpiredSessionsComputation(
+        input: ComputeExpiredSessionsOperationInput
+    ): ExpiredSessionsOperationComputed {
+        const firstRead = input.reads[0];
+        if (!firstRead) {
+            const computed = computeExpiredSessionsOperation(input);
+            assertExpiredSessionsOperation({ ...input, computed });
+            return computed;
+        }
+        const computed = timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command: firstRead.command, operation: 'mutation.compute' },
+            () => computeExpiredSessionsOperation(input)
+        );
+        timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command: firstRead.command, operation: 'mutation.validate' },
+            () => {
+                assertExpiredSessionsOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(
-                    validateClientMutationOperation(validationInput)
+                    input.reads.flatMap(({ command, read }) => validateClientMutationAuthorityPolicy(command, read))
                 );
             }
         );
-        if (computed.outcome === 'idempotency-conflict') {
-            throwClientMutationIdempotencyConflict(command, computed.mutation);
-        }
-        const result = await timeClientStateMutationCommit(
+        return computed;
+    }
+
+    private async writeMutationOperation(input: WriteClientMutationOperationInput): Promise<ClientStateWritten> {
+        const { context, computed } = input;
+        return await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
             async () =>
                 await this.dependencies.transactionWriter.writeComputedMutation(
@@ -295,83 +329,13 @@ export class ClientStateInboxHandler {
                     }
                 )
         );
-        await this.observeCommittedSnapshots(computed.committedSnapshots);
-        return result;
     }
 
-    async processExpiredSessionCommands(
-        context: AppInboxMessageContext<readonly ClientStateWritten[]>,
-        input: ClientExpiredSessionPageInput
+    private async writeExpiredSessionsOperation(
+        input: WriteExpiredSessionsOperationInput
     ): Promise<readonly ClientStateWritten[]> {
-        const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
-        const page = await this.dependencies.expiryCandidates.readExpiredSessionPage(input);
-        const reads: ClientExpiredSessionMutationRead[] = [];
-        for (const candidate of page.candidates) {
-            const command = await this.toCommand(
-                context,
-                toExpireClientSessionMutationInput(candidate)
-            );
-            reads.push({ command, read: await this.dependencies.mutationService.read(command) });
-        }
-        const computeInput = {
-            context,
-            pageInput: input,
-            page,
-            reads,
-            completionFacts
-        } as const;
-        const firstRead = reads[0];
-        const computed = firstRead
-            ? timeClientStateMutationPhase(
-                {
-                    timing: this.dependencies.mutationTiming,
-                    command: firstRead.command,
-                    operation: 'mutation.compute'
-                },
-                () => computeExpiredSessionsOperation(computeInput)
-            )
-            : computeExpiredSessionsOperation(computeInput);
-        const validateInput = {
-            context,
-            pageInput: input,
-            page,
-            reads,
-            completionFacts,
-            computed
-        } as const;
-        if (firstRead) {
-            timeClientStateMutationPhase(
-                {
-                    timing: this.dependencies.mutationTiming,
-                    command: firstRead.command,
-                    operation: 'mutation.validate'
-                },
-                () => {
-                    throwFirstClientMutationValidationIssue(
-                        validateExpiredSessionsOperation(validateInput)
-                    );
-                }
-            );
-        }
-        else {
-            throwFirstClientMutationValidationIssue(
-                validateExpiredSessionsOperation(validateInput)
-            );
-        }
-        if (computed.outcome === 'idempotency-conflict') {
-            const conflictIndex = computed.mutations.findIndex(
-                (mutation) => mutation.outcome === 'idempotency-conflict'
-            );
-            const conflict = computed.mutations[conflictIndex];
-            if (!conflict || conflict.outcome !== 'idempotency-conflict') {
-                throw new TypeError('Expired client mutation conflict is missing');
-            }
-            throwClientMutationIdempotencyConflict(
-                reads[conflictIndex]!.command,
-                conflict
-            );
-        }
-        const result = await timeClientStateMutationCommit(
+        const { context, computed } = input;
+        return await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
             async () =>
                 await this.dependencies.transactionWriter.writeComputedMutation(
@@ -390,11 +354,6 @@ export class ClientStateInboxHandler {
                     }
                 )
         );
-        await this.observeCommittedSnapshots(computed.committedSnapshots);
-        if (computed.successorWrite !== null) {
-            this.dependencies.wakeQueue?.();
-        }
-        return result;
     }
 
     private async observeCommittedSnapshots(snapshots: readonly ClientSnapshot[]): Promise<void> {
@@ -500,7 +459,7 @@ function throwClientMutationIdempotencyConflict(
 function toClientMutationPersistedFacts(
     context: AppInboxExecutionMetadata,
     commandId: string,
-    dependencies: Pick<ClientStateInboxHandlerDependencies, 'serviceId'>
+    dependencies: Pick<ClientStateInboxHandler.Input, 'serviceId'>
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {
     return {
         nowEpochMs: context.message.id.ts,

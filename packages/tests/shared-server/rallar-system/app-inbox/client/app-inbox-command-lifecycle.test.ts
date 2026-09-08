@@ -17,7 +17,7 @@ import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-sys
 import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
@@ -48,8 +48,7 @@ import type { OnQueuedMessageCallback } from '@shared/services/queue-message-cal
 import {
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
 
@@ -840,6 +839,12 @@ class MaterializedTestAppInboxService extends TestAppInboxRuntime {
 
 class TestResourceInbox extends InMemoryQueueBox {
     private readonly materializations = new Map<string, Promise<ResourceEntry>>();
+    private readonly observeNow: () => Temporal.Instant;
+
+    constructor(now: () => Temporal.Instant = Temporal.Now.instant) {
+        super(new Map(), now);
+        this.observeNow = now;
+    }
 
     async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
         const entry = await this.getItem(key);
@@ -870,7 +875,7 @@ class TestResourceInbox extends InMemoryQueueBox {
         materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
         const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+        if (existing !== undefined && !isExpiredResourceEntry(existing, this.observeNow())) {
             return existing;
         }
         const materialized = await materialize();
@@ -899,6 +904,11 @@ class CapturingInboxQueueReader extends InboxQueueReader {
 
 class TestResourceInboxResults {
     private readonly data = new Map<string, ResourceEntry>();
+    private readonly observeNow: () => Temporal.Instant;
+
+    constructor(now: () => Temporal.Instant = Temporal.Now.instant) {
+        this.observeNow = now;
+    }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
         this.data.set(toKeyAsString(entry.key), entry);
@@ -908,7 +918,7 @@ class TestResourceInboxResults {
     async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
         const key = toKeyAsString(entry.key);
         const existing = this.data.get(key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+        if (existing !== undefined && !isExpiredResourceEntry(existing, this.observeNow())) {
             return existing;
         }
 
@@ -918,7 +928,7 @@ class TestResourceInboxResults {
 
     async findByKey(key: Key): Promise<ResourceEntry | undefined> {
         const entry = this.data.get(toKeyAsString(key));
-        return entry === undefined || isExpiredResourceEntry(entry) ? undefined : entry;
+        return entry === undefined || isExpiredResourceEntry(entry, this.observeNow()) ? undefined : entry;
     }
 }
 

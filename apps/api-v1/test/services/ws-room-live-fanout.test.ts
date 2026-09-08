@@ -9,6 +9,8 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -39,12 +41,13 @@ interface LiveRoomTestRuntime extends RoomStateTestRuntime {
     readonly socket: JsonWebSocketServer;
     readonly sent: RoomLiveSend[];
     readonly deliveryClock: RoomDeliveryClock;
+    readonly outboundStores: ALOutboundRuntimeStores;
 }
 
 for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const) {
     Deno.test(`API authorized room fanout survives ${cacheState} cache`, async () => {
         const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
-        const runtime = createLiveRoomRuntime();
+        const runtime = createLiveRoomRuntime(Date.now());
         try {
             await putRoomSnapshot(runtime.repository, snapshot);
             const cached = cacheState === 'cold' ? undefined : cacheState === 'older-empty'
@@ -80,7 +83,7 @@ for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const)
 
 Deno.test('API authorized broadcast keeps exclusions and closed connections out of the live audience', async () => {
     const snapshot = createGroupSnapshot(2, ['closed-session', 'session-1', 'session-2']);
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
         const closedSocket = createOpenTestWebSocket();
@@ -106,7 +109,7 @@ Deno.test('API authorized broadcast keeps exclusions and closed connections out 
 
 Deno.test('authorized room authority requires the exact application, workspace, and room identity', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
 
@@ -133,7 +136,7 @@ Deno.test('authorized room authority requires the exact application, workspace, 
 
 Deno.test('room authority checks leases again after asynchronous topic handlers', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
         runtime.router.on({ topicId: 'room.chat' }, async () => {
@@ -153,7 +156,7 @@ Deno.test('room authority checks leases again after asynchronous topic handlers'
 
 Deno.test('same-tuple authoritative disconnect removes a recipient despite the cached summary', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
         runtime.cache.observe(snapshot);
@@ -163,7 +166,7 @@ Deno.test('same-tuple authoritative disconnect removes a recipient despite the c
             (await runtime.repository.updatePresence({
                 ...presence.value,
                 status: 'disconnected',
-                disconnectedAtEpochMs: Date.now(),
+                disconnectedAtEpochMs: runtime.deliveryClock.atEpochMs,
                 disconnectReason: 'client-disconnect'
             }, presence.entry.revision)).status,
             'applied'
@@ -182,7 +185,7 @@ Deno.test('same-tuple authoritative disconnect removes a recipient despite the c
 
 Deno.test('transformed proxy targets and public publishes never inherit room authority', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
         runtime.router.proxy({
@@ -212,7 +215,7 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
 
 Deno.test('outbox fanout keeps the original message and uses its existing queue path', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
         runtime.router.defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
@@ -224,15 +227,23 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
         };
         const message: ALMessage = {
             ...roomMessage(snapshot),
+            constraints: { expiresAtMs: runtime.deliveryClock.atEpochMs + 30_000 },
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
         };
+        const encodedOriginal = JSON.stringify(message);
 
         await runtime.router.route(message);
         assert.deepEqual(enqueued, [message]);
-        assert.equal((await runtime.service.outbox.getAllKeys()).length, 1);
-        const entry = await runtime.service.outbox.getItem(message.route);
-        assert.ok(entry);
-        assert.equal(entry.resource, JSON.stringify(message));
+        const retained = await runtime.outboundStores.admissionStore.readSentMessage(message.id.msgId);
+        assert.ok(retained);
+        assert.deepEqual(retained.msg.id, message.id);
+        assert.deepEqual(retained.msg.route, message.route);
+        assert.deepEqual(retained.msg.targets, decodePersistedALMessage(encodedOriginal).targets);
+        assert.deepEqual(retained.msg.payload, message.payload);
+        assert.deepEqual(retained.msg.audit, message.audit);
+        assert.deepEqual(retained.msg.constraints, message.constraints);
+        assert.deepEqual(retained.msg.delivery, message.delivery);
+        assert.equal(JSON.stringify(message), encodedOriginal);
         assert.deepEqual(runtime.sent, []);
         assert.equal(runtime.reads.snapshots, 1);
     }
@@ -243,7 +254,7 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
 });
 
 Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
-    const runtime = createLiveRoomRuntime();
+    const runtime = createLiveRoomRuntime(Date.now());
     const service = createDefaultWsQueueBoxServerService({
         name: 'custom-policy-test',
         outbox: new InMemoryQueueBox(),
@@ -266,11 +277,12 @@ Deno.test('generic custom authorization retains its configured resolver without 
     }
 });
 
-function createLiveRoomRuntime(): LiveRoomTestRuntime {
+function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
     const state = createRoomStateTestRuntime();
     const socket = new JsonWebSocketServer();
     const sent: RoomLiveSend[] = [];
-    const deliveryClock: RoomDeliveryClock = { atEpochMs: Date.now() };
+    const deliveryClock: RoomDeliveryClock = { atEpochMs: nowEpochMs };
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
     for (const sessionId of ['session-1', 'session-2', 'outsider']) {
         const webSocket = createOpenTestWebSocket();
         webSocket.send = (data) => {
@@ -282,7 +294,8 @@ function createLiveRoomRuntime(): LiveRoomTestRuntime {
     const service = createDefaultWsQueueBoxServerService({
         name: 'api-live-room-test',
 
-        outbox: new InMemoryQueueBox(),
+        outbox: outboundStores.admissionStore.workQueue,
+        outboundStores,
         socket,
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(socket, {
@@ -296,7 +309,7 @@ function createLiveRoomRuntime(): LiveRoomTestRuntime {
         }),
         nowEpochMs: () => deliveryClock.atEpochMs
     });
-    return { ...state, service, socket, router, sent, deliveryClock };
+    return { ...state, service, socket, router, sent, deliveryClock, outboundStores };
 }
 
 function roomMessage(snapshot: GroupSnapshot): ALMessage {
