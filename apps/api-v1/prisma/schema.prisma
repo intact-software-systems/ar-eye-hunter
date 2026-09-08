@@ -21,7 +21,7 @@ model resource_inbox {
 
   @@unique([fk_ext_bank_id, ri_resource_id, ri_topic_id], map: "resource_inbox_unique_k")
   @@index([expire_ts], map: "resource_inbox_expire_ts_ix")
-  @@index([ri_status, ri_type_id], map: "resource_inbox_ix")
+  @@index([ri_status, ri_type_id, created_ts, ri_row_id], map: "resource_inbox_ix")
   @@index([ri_type_id, ri_status, expire_ts, next_ts, ri_row_id], map: "resource_inbox_runnable_ix")
   @@index([ri_type_id, ri_status, start_ts, expire_ts, ri_row_id], map: "resource_inbox_reserved_timeout_ix")
 }

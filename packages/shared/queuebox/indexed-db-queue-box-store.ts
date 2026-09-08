@@ -2,20 +2,61 @@ import {
     readIndexedDbRequest,
     readIndexedDbTransaction
 } from '../persistence/indexed-db-request.ts';
+import type { IndexedDbStoreDefinition } from '../persistence/open-indexed-db.ts';
 import {
     decodeStoredResourceEntryValue,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
+import type { ResourceInboxWorkPage } from './queue-box-types.ts';
 import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
-type ReadFairnessStoredQueueEntriesInput = Readonly<{
-    db: IDBDatabase;
-    indexName: string;
-    maxToScan: number;
-    overdueBeforeEpochMs: number;
-    storeName: string;
-    typeIds: readonly string[];
-}>;
+interface ReadFairnessStoredQueueEntriesInput {
+    readonly db: IDBDatabase;
+    readonly indexName: string;
+    readonly maxToScan: number;
+    readonly overdueBeforeEpochMs: number;
+    readonly storeName: string;
+    readonly typeIds: readonly string[];
+}
+
+export const INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME = 'by-type-status-next-key';
+const INDEXED_DB_QUEUE_WORK_INDEX_NAME = 'by-type-status-key';
+
+export function toIndexedDbQueueStoreDefinition(name: string): IndexedDbStoreDefinition<object> {
+    return {
+        name,
+        keyPath: 'keyString',
+        indexes: [
+            {
+                name: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
+                keyPath: ['typeId', 'status', 'fairnessDueEpochMs', 'keyString'],
+                unique: false
+            },
+            {
+                name: INDEXED_DB_QUEUE_WORK_INDEX_NAME,
+                keyPath: ['typeId', 'status', 'keyString'],
+                unique: false
+            }
+        ]
+    };
+}
+
+export async function readStoredQueueWorkPage(
+    db: IDBDatabase,
+    storeName: string,
+    request: ResourceInboxWorkPage.Request
+): Promise<readonly StoredResourceEntry[]> {
+    const lower = request.cursor === null
+        ? [request.typeId, request.status]
+        : [request.typeId, request.status, request.cursor.position];
+    const range = IDBKeyRange.bound(lower, [request.typeId, request.status, []], request.cursor !== null, true);
+    const transaction = db.transaction(storeName, 'readonly');
+    const values = await readIndexedDbTransaction(transaction, async () =>
+        await readIndexedDbRequest(
+            transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME).getAll(range, request.maxToRead)
+        ));
+    return values.map(decodeStoredResourceEntryValue);
+}
 
 export async function readStoredQueueEntry(
     db: IDBDatabase,

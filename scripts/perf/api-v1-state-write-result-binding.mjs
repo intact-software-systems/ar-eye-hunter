@@ -1,6 +1,7 @@
 export function isValidPersistedResult(entry, command, binding) {
     if (
-        !isObject(entry) || !isObject(command) || typeof entry.commandType !== 'string' ||
+        !isObject(entry) || !isObject(command) || typeof command.kind !== 'string' ||
+        typeof entry.commandType !== 'string' ||
         !isObject(entry.durableResult) || !isObject(binding)
     ) {
         return false;
@@ -33,14 +34,20 @@ export function isValidPersistedResult(entry, command, binding) {
         matchesStateResult(result.result, binding, 'group');
 }
 
-export function validateReceiptResultBindings(receipt, command, path, index, errors) {
-    const bindings = receipt?.resultBindings;
+/**
+ * @typedef {{ receipt: unknown, command: object | undefined, path: string, index: number, errors: string[] }} ValidateReceiptResultBindingsInput
+ * @param {ValidateReceiptResultBindingsInput} input
+ */
+export function validateReceiptResultBindings({ receipt, command, path, index, errors }) {
+    const bindings = isObject(receipt) ? receipt.resultBindings : undefined;
+    const operations = isDenseArray(bindings) ? bindings.map((binding) => binding?.operationId) : undefined;
     const expectedOperations = command?.kind === 'profile-instance'
         ? ['profile', 'instance']
         : ['command'];
     if (
-        !isDenseArray(bindings) || !sameStringArray(
-            bindings.map((binding) => binding?.operationId).toSorted(),
+        !isObject(command) || typeof command.kind !== 'string' || typeof command.commandId !== 'string' ||
+        !isDenseStringArray(receipt?.receiptIds) || !isDenseStringArray(operations) || !sameStringArray(
+            operations.toSorted(),
             expectedOperations.toSorted()
         )
     ) {
@@ -73,7 +80,7 @@ export function validateReceiptResultBindings(receipt, command, path, index, err
                 'eventId'
             ]) || typeof binding.receiptId !== 'string' || binding.receiptId.length === 0 ||
             !isValidReceiptIdentity(command, binding) ||
-            !/^sha256:[0-9a-f]{64}$/.test(binding.commandHash) ||
+            typeof binding.commandHash !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(binding.commandHash) ||
             typeof binding.outcome !== 'string' || binding.outcome.length === 0 ||
             !Number.isSafeInteger(binding.attemptCount) || binding.attemptCount < 1 ||
             !isDenseStringArray(binding.outboxIds) ||
@@ -124,8 +131,7 @@ function validTopologyBinding(binding, topology) {
         return false;
     }
     const causal = binding.acceptedCausalRevision;
-    const validCausal = causal !== null && validAcceptedCausalRevision(causal);
-    const expectedOutboxId = !validCausal ? null : [
+    const expectedOutboxId = causal === null ? null : [
         binding.receiptId,
         'rtc-topology-recompute',
         'group-revision',
@@ -133,7 +139,7 @@ function validTopologyBinding(binding, topology) {
     ].join(':');
     const effectMatches = binding.outcome === 'applied'
         ? binding.acceptedVersion > 0 && binding.acceptedStorageRevision !== null &&
-            validCausal && binding.outboxIds.length === 1 &&
+            causal !== null && binding.outboxIds.length === 1 &&
             binding.outboxIds[0] === expectedOutboxId
         : causal === null && binding.outboxIds.length === 0 &&
             (binding.acceptedVersion !== 0 || binding.acceptedStorageRevision === null);

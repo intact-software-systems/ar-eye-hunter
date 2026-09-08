@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease BOUNDS (api-v1-presence-lease-bound rejects future timestamps) and never the expiry itself: `disconnectReason` appears in no recipe and the internal `expired` reason has never been observed. Bob connects with a lease that lapses seconds later while Alice takes the default 24h one, the group is driven to connecting, and the 60s reconciliation sweep is then allowed to fire. The sweep DELETES the expired row rather than marking it disconnected, so the assertion is that exactly one session survives and it is Alice's; membership and lifecycleState must be untouched, because a lapsed lease is a presence fact and not a roster or stage change; and Bob must be able to take a fresh lease without rejoining. The sweep has no HTTP surface, so this is settle-sequenced rather than raced (D7). The recipe separates the two things that make a lapsed lease disappear, because conflating them is how it reads as one event: the snapshot filters a lapsed session out of activeSessions at READ time, moving the roster with no write and no change to causalRevision.presenceRevision, and only the later sweep writes the row away and advances that revision. onlineMemberCount alone therefore proves nothing about the sweep -- the event does. See open finding 15.",
+  "description": "No-browser API-v1 presence lease expiry in a lifecycle-managed group. Bob takes a short lease and Alice the default lease. Current reads must exclude Bob after expiry and preserve monotonic revisions while activation and expiry workers may advance durable state. A named session-disconnected/expired event proves reconciliation; membership and connecting lifecycle remain intact, and Bob can take a fresh lease without rejoining. Read-time filtering preserves its observed causal tuple, as covered by controlled repository snapshot tests; separate live HTTP observations cannot require tuple equality.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -452,7 +452,7 @@
       }
     },
     {
-      "name": "theReadTimeFilterMovedTheRosterWithoutTheChangeToken",
+      "name": "theExpiredLeaseLeavesOnlyAliceWithAMonotonicChangeToken",
       "type": "assert",
       "actual": {
         "sessions": "{sessionsAtFilter}",
@@ -475,7 +475,7 @@
           },
           {
             "path": "revisionAtFilter",
-            "equals": "{presenceRevisionBeforeSweep}"
+            "gte": "{presenceRevisionBeforeSweep}"
           }
         ]
       }

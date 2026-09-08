@@ -19,6 +19,7 @@ export interface PublishRallarServerWsMessageInput {
     readonly fanout: RallarServerWsFanout;
     readonly wakeOutbox?: () => void;
     readonly audience?: RallarServerWsRoomAudience;
+    readonly admittedPeerIds?: readonly string[];
     readonly nowEpochMs: number;
 }
 
@@ -36,7 +37,9 @@ export async function publishRallarServerWsMessage(
             };
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(input.message);
-            if (result.status === 'enqueued' || result.status === 'duplicate') {
+            if (
+                result.status === 'enqueued' || result.status === 'duplicate' || result.status === 'pending-admission'
+            ) {
                 input.wakeOutbox?.();
             }
             return toOutboxPublishResult(input.message, input.fanout, result);
@@ -46,7 +49,8 @@ export async function publishRallarServerWsMessage(
                 input.message,
                 input.audience === undefined
                     ? undefined
-                    : resolveAuthorizedRoomSessionIds(input.message, input.audience, input.nowEpochMs)
+                    : resolveAuthorizedRoomSessionIds(input.message, input.audience, input.nowEpochMs),
+                input.admittedPeerIds
             );
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
@@ -125,9 +129,9 @@ function toOutboxPublishStatus(
 ): RallarServerWsPublishStatus {
     switch (status) {
         case 'enqueued':
+        case 'pending-admission':
+        case 'accepted':
             return 'queued-outbox';
-        case 'sent-immediate':
-            return 'sent-live';
         case 'skipped':
         case 'duplicate':
         case 'superseded':

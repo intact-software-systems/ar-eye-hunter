@@ -1,7 +1,8 @@
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
@@ -23,7 +24,7 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -148,11 +149,11 @@ describe('CRDT persisted mutation contract invariants', () => {
     it('never configures update topics for live-only fanout without mutation ingress', () => {
         const socket = new JsonWebSocketServer();
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: socket,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const bridge = installRallarCrdtWsTopics(new RallarServerWsRouter(service));
 
         expect(

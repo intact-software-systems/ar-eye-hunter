@@ -1,18 +1,18 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts';
 
 export function isRtcTopologyCurrentStateMessage(
-    message: ALMessage,
+    snapshot: CompletedStateSnapshot,
     topology: RallarOverlayTopologySnapshot,
     sessionId: string
 ): boolean {
+    const message = snapshot.envelope;
     if (
-        message.id.senderId !== 'rallar-server' ||
-        message.audit?.createdBy !== 'rallar-server'
+        message.audit?.createdBy !== message.id.senderId
     ) {
         return false;
     }
-    const identity = readTopologyMessageIdentity(message.id.msgId);
+    const identity = readTopologyMessageIdentity(snapshot.page.originalMessageId);
     if (!identity) {
         return false;
     }
@@ -32,13 +32,15 @@ export function isRtcTopologyCurrentStateMessage(
     }
     if (identity[0] === 'rtc-topology-hydration') {
         const targets = message.targets;
-        return identity.length === 6 &&
-            identity[1] === sessionId &&
-            typeof identity[2] === 'string' &&
-            identity[2].length > 0 &&
-            identity[3] === revision.groupRevision &&
-            identity[4] === revision.presenceRevision &&
-            identity[5] === topology.version &&
+        return identity.length === 9 &&
+            identity[1] === topology.groupRef.applicationId &&
+            identity[2] === topology.groupRef.workspaceId &&
+            identity[3] === topology.groupRef.groupId &&
+            identity[4] === sessionId &&
+            typeof identity[5] === 'string' && identity[5].length > 0 &&
+            identity[6] === revision.groupRevision &&
+            identity[7] === revision.presenceRevision &&
+            identity[8] === topology.version &&
             message.id.sessionId === sessionId &&
             targets?.mode === 'unicast' &&
             targets.toPeerId === sessionId;

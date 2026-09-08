@@ -1,3 +1,4 @@
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
@@ -9,17 +10,28 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
-import { createCrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
+import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
 import { createLocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
-import { toResilienceDto } from '../middleware-resilience.ts';
-import { myPublisherId, myRtcTopologyStreamId, myServerId } from '../runtime/runtime-identity.ts';
+import { createApiV1QueueResilience } from '../middleware-resilience.ts';
+import {
+    myPublisherId,
+    myRtcTopologyStreamId,
+    myServerId
+} from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
 import { createApiTimingSink, toApiAppInboxServiceOptions } from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
-import { createApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
+import {
+    createApiV1BackgroundTaskLifecycle,
+    type ApiV1BackgroundTaskLifecycle
+} from './api-v1-background-task-lifecycle.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
-import { createApiV1AdminServices, readApiV1WebSocketStatus } from './create-api-v1-admin-services.ts';
+import {
+    createApiV1AdminServices,
+    readApiV1WebSocketStatus,
+    type ApiV1AdminServices
+} from './create-api-v1-admin-services.ts';
 import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
 import { createApiV1Runtime } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
@@ -57,12 +69,75 @@ export async function createDefaultRallarServer(
 
 function constructDefaultRallarServer(
     input: CreateDefaultRallarServerInput,
-    backgroundTasks: ReturnType<typeof createApiV1BackgroundTaskLifecycle>
+    backgroundTasks: ApiV1BackgroundTaskLifecycle
 ): RallarServerApplication<ApiV1Runtime, Hono> {
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
     const nowEpochMs = Date.now;
     const timing = createApiTimingSink(configuration.observability);
+    const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing });
+
+    const crdtLogRepository = new PSqlCrdtLogRepository(database, {
+        policies: configuration.crdt.documentTypePolicies
+    });
+    const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
+    const authUserRepository = new AuthUserRepository(runtimeStateRepository);
+    const topology = runtime.topologyServices;
+
+    const { admin, crdtAdminMutations } = createDefaultApiV1AdminServices({
+        input,
+        runtime,
+        nowEpochMs,
+        timing,
+        crdtLogRepository
+    });
+
+    const systemInstallers = createApiV1SystemInstallers({
+        database,
+        serviceId: myServerId,
+        nowEpochMs,
+        topology,
+        crdtLogRepository,
+        crdtPolicies: configuration.crdt.documentTypePolicies
+    });
+    const routeInstallers = createDefaultApiV1RouteInstallers({
+        configuration,
+        runtime,
+        admin,
+        crdtLogRepository,
+        crdtAdminMutations,
+        authUserRepository,
+        nowEpochMs
+    });
+
+    return createRallarServer({
+        runtime,
+        repositories: defaultRepositoryManager,
+        appDataRepository: new PSqlAppDataRepository(database),
+        nowEpochMs,
+        ws: {
+            authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
+                readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref)
+            }),
+            ...input.ws
+        },
+        systemInstallers,
+        routeInstallers
+    });
+}
+
+interface ConfiguredApiV1RuntimeInput {
+    readonly input: CreateDefaultRallarServerInput;
+    readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
+    readonly nowEpochMs: () => number;
+    readonly timing: RallarTimingSink;
+}
+
+function createConfiguredApiV1Runtime(
+    { input, backgroundTasks, nowEpochMs, timing }: ConfiguredApiV1RuntimeInput
+): ApiV1Runtime {
+    const configuration = input.configuration;
+    const database = input.databaseLifecycle.database;
     const planning = configuration.topology.planning;
     const rtcTopologyOptions = {
         topologyKind: planning.topologyKind,
@@ -76,7 +151,7 @@ function constructDefaultRallarServer(
         rttRebuildDebounceMs: configuration.topology.recompute.rttRebuildDebounceMs
     };
 
-    const runtime = createApiV1Runtime({
+    return createApiV1Runtime({
         database,
         databasePubSubMode: configuration.database.pubSub,
         databaseNotification: input.databaseLifecycle.notification,
@@ -101,20 +176,33 @@ function constructDefaultRallarServer(
         rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
         resilience: {
-            inbox: toResilienceDto(configuration.topology.queueResilience),
-            outbox: toResilienceDto(configuration.topology.queueResilience),
-            appOutbox: toResilienceDto(configuration.topology.queueResilience)
+            inbox: createApiV1QueueResilience(configuration.topology.queueResilience),
+            outbox: createApiV1QueueResilience(configuration.topology.queueResilience),
+            appOutbox: createApiV1QueueResilience(configuration.topology.queueResilience)
         },
         backgroundTasks
     });
+}
 
-    const crdtLogRepository = new PSqlCrdtLogRepository(database, {
-        policies: configuration.crdt.documentTypePolicies
-    });
-    const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
-    const authUserRepository = new AuthUserRepository(runtimeStateRepository);
+interface DefaultApiV1AdminServicesInput {
+    readonly input: CreateDefaultRallarServerInput;
+    readonly runtime: ApiV1Runtime;
+    readonly nowEpochMs: () => number;
+    readonly timing: RallarTimingSink;
+    readonly crdtLogRepository: PSqlCrdtLogRepository;
+}
+
+interface DefaultApiV1AdminServices {
+    readonly admin: ApiV1AdminServices;
+    readonly crdtAdminMutations: CrdtAdminMutations;
+}
+
+function createDefaultApiV1AdminServices(
+    { input, runtime, nowEpochMs, timing, crdtLogRepository }: DefaultApiV1AdminServicesInput
+): DefaultApiV1AdminServices {
+    const configuration = input.configuration;
+    const database = input.databaseLifecycle.database;
     const topology = runtime.topologyServices;
-
     const appAdminInboxService = runtime.appAdminInboxService;
     const appCrdtInboxService = runtime.appCrdtInboxService;
     if (!appAdminInboxService || !appCrdtInboxService) {
@@ -150,15 +238,30 @@ function constructDefaultRallarServer(
         topologyInboxService: runtime.topologyInboxService
     });
 
-    const systemInstallers = createApiV1SystemInstallers({
-        database,
-        serviceId: myServerId,
-        nowEpochMs,
-        topology,
-        crdtLogRepository,
-        crdtPolicies: configuration.crdt.documentTypePolicies
-    });
-    const routeInstallers = createApiV1RouteInstallers({
+    return { admin, crdtAdminMutations };
+}
+
+interface DefaultApiV1RouteInstallersInput {
+    readonly configuration: ApiV1Configuration;
+    readonly runtime: ApiV1Runtime;
+    readonly admin: ApiV1AdminServices;
+    readonly crdtLogRepository: PSqlCrdtLogRepository;
+    readonly crdtAdminMutations: CrdtAdminMutations;
+    readonly authUserRepository: AuthUserRepository;
+    readonly nowEpochMs: () => number;
+}
+
+function createDefaultApiV1RouteInstallers({
+    configuration,
+    runtime,
+    admin,
+    crdtLogRepository,
+    crdtAdminMutations,
+    authUserRepository,
+    nowEpochMs
+}: DefaultApiV1RouteInstallersInput) {
+    const topology = runtime.topologyServices;
+    return createApiV1RouteInstallers({
         runtime,
         topology,
         admin,
@@ -184,20 +287,5 @@ function constructDefaultRallarServer(
         createWsAuthRequestFacts: () => ({
             requestId: crypto.randomUUID()
         })
-    });
-
-    return createRallarServer({
-        runtime,
-        repositories: defaultRepositoryManager,
-        appDataRepository: new PSqlAppDataRepository(database),
-        nowEpochMs,
-        ws: {
-            authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
-                readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref)
-            }),
-            ...input.ws
-        },
-        systemInstallers,
-        routeInstallers
     });
 }

@@ -1,14 +1,5 @@
-import type { ProductionOutboxRecord } from './api-v1-state-write-outbox-repository.ts';
+import type { ProductionOutboxRecord } from './api-v1-state-write-outbox-resource-codec.ts';
 import type { ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';
-
-export { computeProductionOutboxExpectations } from './api-v1-state-write-outbox-expectations.ts';
-export {
-    createProductionOutboxRepository,
-    readAllCommandIds,
-    readCanonicalEffectCommandId,
-    readReferencedProductionOutboxRecords,
-    readResourceEffectKind
-} from './api-v1-state-write-outbox-repository.ts';
 
 export interface StateWriteOutboxCommand {
     readonly commandId: string;
@@ -64,9 +55,7 @@ export function computeProductionOutboxEvidence({
     const receiptByCommand = new Map(receipts.map((receipt) => [receipt.commandId, receipt]));
     const known = new Set(commands.map((command) => command.commandId));
     return records.flatMap((record) => {
-        const commandId = record.canonicalCommandId === undefined
-            ? undefined
-            : rawByProductionId.get(record.canonicalCommandId);
+        const commandId = rawByProductionId.get(record.canonicalCommandId);
         const receipt = commandId === undefined ? undefined : receiptByCommand.get(commandId);
         const effectId = receipt?.identityKind === 'logical-msg-id'
             ? record.outboxId

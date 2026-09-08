@@ -112,13 +112,13 @@ export class WebRtcHeartbeatService {
     private async receiveHeartbeatMessage(message: PingPayload): Promise<void> {
         try {
             if (message.pingType === 'ping') {
-                await this.input.channel.sendAsJsonString(JSON.stringify(
+                this.input.channel.sendJson(
                     {
                         type: pingMessageType,
                         pingType: 'pong',
                         ts: message.ts
                     } satisfies PingPayload
-                ));
+                );
             }
             else if (this.reportingCallbacks) {
                 this.status.missedPings = 0;
@@ -146,13 +146,13 @@ export class WebRtcHeartbeatService {
         }
 
         this.status.missedPings++;
-        await this.input.channel.sendAsJsonString(JSON.stringify(
+        this.input.channel.sendJson(
             {
                 type: pingMessageType,
                 pingType: 'ping',
                 ts: performance.now()
             } satisfies PingPayload
-        ));
+        );
     }
 }
 

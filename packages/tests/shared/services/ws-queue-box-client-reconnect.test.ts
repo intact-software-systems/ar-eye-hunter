@@ -13,7 +13,7 @@ import {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
     type WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
@@ -63,7 +63,6 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         service.enableReconnect();
         loseNextResponse = true;
         initialSocket.disconnect(1006, 'network-lost');
-        await vi.runAllTimersAsync();
         await vi.waitFor(() => expect(TestWebSocket.instances).toHaveLength(1));
 
         const connected = TestWebSocket.instances[0];
@@ -193,7 +192,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         service.enableReconnect();
 
         socket.disconnect(1006, 'network-lost');
-        await vi.runAllTimersAsync();
+        await vi.waitFor(() => expect(service.readHealth().reconnectExhausted).toBe(true));
 
         expect(connectionRequests).toBe(4);
         expect(service.readHealth()).toMatchObject({
@@ -261,7 +260,6 @@ function createDefaultReconnectService(
 ): WsQueueBoxClientService {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const service = createDefaultWsQueueBoxClientService({
-        inbox: new InMemoryQueueBox(new Map()),
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         sessionId: 'session-1',

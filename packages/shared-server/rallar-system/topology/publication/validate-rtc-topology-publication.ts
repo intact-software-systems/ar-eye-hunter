@@ -1,13 +1,8 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import {
-    toRtcTopologyPublicationId,
-    toRtcTopologyPublicationMessageId
+    toRtcTopologyPublicationId
 } from '../persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
@@ -26,7 +21,8 @@ export function validateRtcTopologyPublication(
         'overlayVersion',
         'targetGroupSnapshotVersion',
         'recipientSessionIds',
-        'message',
+        'snapshot',
+        'expiresAtEpochMs',
         'createdAtEpochMs'
     ]);
     validateExactGroupRef(publication.groupRef, expectedRef);
@@ -54,101 +50,20 @@ export function validateRtcTopologyPublication(
     ) {
         throw new TypeError('RTC topology publication recipients are invalid');
     }
-    const message = decodePersistedALMessageValue(publication.message);
-    let snapshot: RallarOverlayTopologySnapshot;
-    try {
-        snapshot = decodeRtcTopologySnapshot(
-            decodeJsonWireValue(
-                JSON.parse(message.payload.resource),
-                'RTC topology publication snapshot'
-            ),
-            expectedRef
-        );
-    }
-    catch {
-        throw new TypeError('RTC topology publication message snapshot is invalid');
-    }
-    validateEnvelope({
-        message,
-        expectedRef,
-        snapshot,
-        targetGroupSnapshotVersion,
-        createdAtEpochMs
-    });
-    if (
-        message.id.msgId !==
-            toRtcTopologyPublicationMessageId(publication.workId)
-    ) {
-        throw new TypeError('RTC topology publication message id is not deterministic');
-    }
+    const snapshot = decodeRtcTopologySnapshot(
+        decodeJsonWireValue(publication.snapshot, 'RTC topology publication snapshot'),
+        expectedRef
+    );
+    safeInteger(publication.expiresAtEpochMs, createdAtEpochMs + 1, 'expiresAtEpochMs');
     if (
         !rtcTopologySemanticEqual(
             snapshot.sourceGroupStateCausalRevision,
             publication.sourceGroupStateCausalRevision
         ) ||
-        snapshot.version !== publication.overlayVersion ||
-        !rtcTopologySemanticEqual(
-            snapshot.activeSessionIds,
-            publication.recipientSessionIds
-        )
+        snapshot.version !== overlayVersion ||
+        !rtcTopologySemanticEqual(snapshot.activeSessionIds, publication.recipientSessionIds)
     ) {
-        throw new TypeError(
-            'RTC topology publication winner is internally inconsistent'
-        );
-    }
-}
-
-interface ValidateEnvelopeInput {
-    readonly message: ALMessage;
-    readonly expectedRef: GroupRef;
-    readonly snapshot: RallarOverlayTopologySnapshot;
-    readonly targetGroupSnapshotVersion: number;
-    readonly createdAtEpochMs: number;
-}
-
-function validateEnvelope(input: ValidateEnvelopeInput): void {
-    const {
-        message,
-        expectedRef,
-        snapshot,
-        targetGroupSnapshotVersion,
-        createdAtEpochMs
-    } = input;
-    if (!message.targets || !message.delivery || !message.audit) {
-        throw new TypeError(
-            'RTC topology publication is missing mandatory envelope sections'
-        );
-    }
-    const expectedResourceId = `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:` +
-        `${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`;
-    if (
-        message.targets.mode !== 'broadcast' ||
-        message.targets.minSnapshotVersion !== targetGroupSnapshotVersion
-    ) {
-        throw new TypeError(
-            'RTC topology publication target snapshot version is invalid'
-        );
-    }
-    if (
-        message.id.senderId !== 'rallar-server' ||
-        message.route.topicId !== AppTopics.overlayTopology ||
-        message.route.contextId !== expectedRef.groupId ||
-        message.route.resourceId !== expectedResourceId ||
-        message.payload.typeId !== AppTopics.overlayTopology ||
-        message.payload.contentType !== 'application/json' ||
-        message.targets.mode !== 'broadcast' ||
-        message.targets.scope !== 'room' ||
-        message.targets.groupRef === undefined ||
-        !sameGroupRef(message.targets.groupRef, expectedRef) ||
-        message.delivery.reliability !== 'best-effort' ||
-        message.delivery.ack !== 'none' ||
-        message.audit.createdBy !== 'rallar-server' ||
-        message.audit.createdTs !== createdAtEpochMs ||
-        message.id.ts !== createdAtEpochMs
-    ) {
-        throw new TypeError(
-            'RTC topology publication envelope identity or timestamp is invalid'
-        );
+        throw new TypeError('RTC topology publication winner is internally inconsistent');
     }
 }
 

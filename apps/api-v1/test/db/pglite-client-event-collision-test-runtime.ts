@@ -1,3 +1,12 @@
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type {
+    ClientMutationCommandInput,
+    ClientMutationComputedAppliedWrite
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import assert from 'node:assert/strict';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -7,134 +16,41 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
-import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
-interface ResourceInboxStatusRow {
-    readonly ri_type_id: string;
-    readonly ri_status: string;
-}
-
-interface NumericCountRow {
-    readonly count: string | number;
-}
-
-interface StringCountRow {
-    readonly count: string;
-}
-
-interface ResourceInboxLifecycleRow {
-    readonly ri_resource_id: string;
-    readonly ri_topic_id: string;
-    readonly ri_type_id: string;
-    readonly ri_status: string;
-    readonly ri_resource: string;
-}
-
-interface ResourceInboxForeignKeyRow {
-    readonly ri_topic_id: string;
-    readonly ri_resource_id: string;
-    readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-    readonly ri_topic_id: string;
-    readonly ri_type_id: string;
-}
-
-interface NumericValueRow {
-    readonly value: number;
-}
-
-interface StringValueRow {
-    readonly value: string;
-}
-
-interface RuntimeStateExpiryRow {
-    readonly store_key: string;
-    readonly expire_at_ts: string;
-}
-
-interface ResourceInboxAttemptStatusRow {
-    readonly ri_attempts: string | number;
-    readonly ri_status: string;
-}
-
-interface ResourceInboxPayloadRow {
-    readonly ri_resource: string;
-}
-
-interface EpochMillisecondsRow {
-    readonly epoch_ms: string | number;
-}
-
-interface GroupEventWorkspaceRow {
-    readonly workspace_key: string;
-}
-
-interface CreatedTimestampRow {
-    readonly created_ts: string;
-}
-
-interface ExpireTimestampRow {
-    readonly expire_ts: string;
-}
-
-interface StartTimestampRow {
-    readonly start_ts: string;
-}
-
-interface EndTimestampRow {
-    readonly end_ts: string;
-}
-
-interface TopologyCommandPayload {
-    readonly data: TopologyAppInboxCommand;
-}
-
-interface DurableTopologyAuthorityProof {
+interface PGliteClientEventCollisionFixture {
+    readonly before: ClientSnapshot;
+    readonly clientInstanceId: string;
+    readonly computed: ClientMutationComputedAppliedWrite;
+    readonly events: PSqlClientStateEventRepository;
     readonly principalId: string;
-    readonly sessionId: string;
-    readonly sessionIssuedAtEpochMs: number;
+    readonly repository: ClientStateRepository;
+    readonly requestId: string;
+    readonly scope: StateScope;
+    readonly service: ClientStateService;
 }
 
-interface DurableTopologyAuthorityValue {
-    readonly proof: DurableTopologyAuthorityProof;
+interface PreparePGliteClientEventInput {
+    readonly service: ClientStateService;
+    readonly authority: IssuedAuthSession;
+    readonly scope: StateScope;
+    readonly commandInput: ClientMutationCommandInput;
+    readonly operation: 'upsertPrincipal' | 'upsertInstance';
+    readonly eventId: string;
+    readonly nowEpochMs: number;
 }
 
-interface DurableTopologyAuthority {
-    readonly authority: DurableTopologyAuthorityValue;
-}
-
-interface ResourceInboxKeyFields {
-    readonly topicId: string;
-    readonly resourceId: string;
-    readonly contextId: string;
-}
-
-interface RtcTopologyDeliveryState {
-    readonly headSequence: number;
-    readonly sequences: readonly number[];
-}
-
-interface RtcTopologyDeliveryStreamRow {
-    readonly head_sequence: number;
-}
-
-interface RtcTopologyDeliveryEntryRow {
-    readonly sequence: number;
-}
 export async function createPGliteClientEventCollisionFixture(
     sql: PGliteSql,
     prefix: string
-) {
+): Promise<PGliteClientEventCollisionFixture> {
     const runtime = new PSqlRuntimeStateRepository(sql);
     const authSessions = new AuthSessionRepository(runtime);
     const events = new PSqlClientStateEventRepository(sql);
@@ -149,72 +65,17 @@ export async function createPGliteClientEventCollisionFixture(
         workspaceId: `${prefix}-workspace`
     };
     const principalId = `${prefix}-client`;
-    const authority = {
-        clientId: principalId,
-        accessToken: `${prefix}-client-token`,
-        username: principalId,
-        sessionId: `${prefix}-client-session`,
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: FUTURE_MS
-    } as const;
+    const authority = toPGliteClientAuthority(prefix);
     await authSessions.putSession(authority);
 
-    interface ComputeInput {
-        readonly commandInput: ReturnType<typeof toUpsertClientPrincipalMutationInput>;
-        readonly operation: 'upsertPrincipal' | 'upsertInstance';
-        readonly eventId: string;
-        readonly nowEpochMs: number;
-    }
-    const compute = async (input: ComputeInput) => {
-        const { commandInput, operation, eventId, nowEpochMs } = input;
-        const command = await toClientMutationCommand(
-            commandInput,
-            {
-                nowEpochMs,
-                serviceId: 'pglite-client-service',
-                eventId,
-                attemptCount: 1,
-                expireAtEpochMs: FUTURE_MS
-            },
-            toClientMutationIssuedSessionAuthority(authority, scope, operation)
-        );
-        const read = await service.read(command);
-        const computed = computeClientMutation({ command, read });
-        validateClientMutation({ command, read, computed });
-        assert.equal(computed.outcome, 'write');
-        if (computed.outcome !== 'write') {
-            throw new Error('Expected applied client write');
-        }
-        return computed;
-    };
-
-    const seedRequestId = `${prefix}-seed`;
-    const seed = await compute({
-        commandInput: toUpsertClientPrincipalMutationInput({
-            scope,
-            principalId,
-            request: {
-                username: principalId,
-                displayName: `Before ${prefix}`,
-                actorPrincipalId: principalId,
-                actorSessionId: authority.sessionId,
-                requestId: seedRequestId
-            },
-            defaultCommandId: seedRequestId
-        }),
-        operation: 'upsertPrincipal',
-        eventId: `${seedRequestId}-event`,
-        nowEpochMs: 2_000
-    });
-    await sql.begin(async (transaction) => {
-        await service.write(transaction, seed);
-    });
-    const before = await repository.readSnapshot({ ...scope, principalId });
-    assert.ok(before);
+    const before = await seedPGliteClientPrincipal({ sql, prefix, scope, principalId, authority, service, repository });
 
     const requestId = `${prefix}-instance`;
     const clientInstanceId = `${prefix}-browser`;
-    const computed = await compute({
+    const computed = await preparePGliteClientEvent({
+        service,
+        authority,
+        scope,
         commandInput: toUpsertClientInstanceMutationInput({
             scope,
             principalId,
@@ -242,5 +103,83 @@ export async function createPGliteClientEventCollisionFixture(
         requestId,
         scope,
         service
+    };
+}
+
+async function preparePGliteClientEvent(
+    input: PreparePGliteClientEventInput
+): Promise<ClientMutationComputedAppliedWrite> {
+    const { commandInput, operation, eventId, nowEpochMs, service, authority, scope } = input;
+    const command = await toClientMutationCommand(
+        commandInput,
+        {
+            nowEpochMs,
+            serviceId: 'pglite-client-service',
+            eventId,
+            attemptCount: 1,
+            expireAtEpochMs: FUTURE_MS
+        },
+        toClientMutationIssuedSessionAuthority(authority, scope, operation)
+    );
+    const read = await service.read(command);
+    const computed = computeClientMutation({ command, read });
+    assertClientMutation({ command, read, computed });
+    assert.deepEqual(validateClientMutationAuthorityPolicy(command, read), []);
+    assert.equal(computed.outcome, 'write');
+    if (computed.outcome !== 'write') {
+        throw new Error('Expected applied client write');
+    }
+    return computed;
+}
+
+interface SeedPGliteClientPrincipalInput {
+    readonly sql: PGliteSql;
+    readonly prefix: string;
+    readonly scope: StateScope;
+    readonly principalId: string;
+    readonly authority: IssuedAuthSession;
+    readonly service: ClientStateService;
+    readonly repository: ClientStateRepository;
+}
+async function seedPGliteClientPrincipal(input: SeedPGliteClientPrincipalInput): Promise<ClientSnapshot> {
+    const { sql, prefix, scope, principalId, authority, service, repository } = input;
+    const seedRequestId = `${prefix}-seed`;
+    const seed = await preparePGliteClientEvent({
+        service,
+        authority,
+        scope,
+        commandInput: toUpsertClientPrincipalMutationInput({
+            scope,
+            principalId,
+            request: {
+                username: principalId,
+                displayName: `Before ${prefix}`,
+                actorPrincipalId: principalId,
+                actorSessionId: authority.sessionId,
+                requestId: seedRequestId
+            },
+            defaultCommandId: seedRequestId
+        }),
+        operation: 'upsertPrincipal',
+        eventId: `${seedRequestId}-event`,
+        nowEpochMs: 2_000
+    });
+    await sql.begin(async (transaction) => {
+        await service.write(transaction, seed);
+    });
+    const before = await repository.readSnapshot({ ...scope, principalId });
+    assert.ok(before);
+
+    return before;
+}
+
+function toPGliteClientAuthority(prefix: string): IssuedAuthSession {
+    return {
+        clientId: `${prefix}-client`,
+        accessToken: `${prefix}-client-token`,
+        username: `${prefix}-client`,
+        sessionId: `${prefix}-client-session`,
+        issuedAtEpochMs: 1_000,
+        expiresAtEpochMs: FUTURE_MS
     };
 }

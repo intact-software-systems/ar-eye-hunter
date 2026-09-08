@@ -1,6 +1,9 @@
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import assert from 'node:assert/strict';
-import { createAuthorisedWsConnectionContext, toAuthorisedWsClientInput } from '../src/routes/ws-routes.ts';
+
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
+import { toAuthorisedWsClientInput } from '../src/routes/ws-routes.ts';
+import { PGliteTestSocket } from './db/pglite-test-socket.ts';
 
 Deno.test('websocket route forwards scoped state parameters to authorised connect', () => {
     const input = toAuthorisedWsClientInput(
@@ -20,39 +23,32 @@ Deno.test('websocket route forwards scoped state parameters to authorised connec
 });
 
 Deno.test('websocket connection generation is stable per context and fresh per upgrade', () => {
-    const socket = {} as WebSocket;
-    const first = createAuthorisedWsConnectionContext('session-1', socket);
-    const second = createAuthorisedWsConnectionContext('session-1', socket);
+    const socket = new PGliteTestSocket();
+    const server = new JsonWebSocketServer();
+    const first = server.createConnectionContext({ id: 'session-1', socket });
+    const second = server.createConnectionContext({ id: 'session-1', socket });
 
-    assert.equal(first.generationId, first.generationId);
+    assert.match(first.generationId, /^[a-f0-9-]{36}$/u);
+    assert.equal(first.socket, socket);
     assert.notEqual(first.generationId, second.generationId);
     assert.equal(
-        createAuthorisedWsConnectionContext('session-1', socket, 'fixed-generation')
+        server.createConnectionContext({ id: 'session-1', socket, generationId: 'fixed-generation' })
             .generationId,
         'fixed-generation'
     );
 });
 
 Deno.test('websocket server captures a strictly monotonic generation start fact once per upgrade', () => {
-    const socket = {} as WebSocket;
+    const socket = new PGliteTestSocket();
     const server = new JsonWebSocketServer();
     const first = server.createConnectionContext(
-        'session-1',
-        socket,
-        'generation-a',
-        100
+        { id: 'session-1', socket, generationId: 'generation-a', observedAtEpochMs: 100 }
     );
     const tiedClock = server.createConnectionContext(
-        'session-2',
-        socket,
-        'generation-b',
-        100
+        { id: 'session-2', socket, generationId: 'generation-b', observedAtEpochMs: 100 }
     );
     const regressedClock = server.createConnectionContext(
-        'session-3',
-        socket,
-        'generation-c',
-        99
+        { id: 'session-3', socket, generationId: 'generation-c', observedAtEpochMs: 99 }
     );
 
     assert.equal(first.generationStartedAtEpochMs, 100);

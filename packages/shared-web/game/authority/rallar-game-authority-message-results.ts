@@ -14,7 +14,7 @@ export function notReadyAuthoritySendResult(
 export function isSuccessfulAuthorityMessageStatus(
     status: ALOutboundEnqueueStatus
 ): boolean {
-    return status === 'enqueued' || status === 'sent-immediate' ||
+    return status === 'enqueued' || status === 'accepted' ||
         status === 'skipped' || status === 'duplicate';
 }
 

@@ -1,7 +1,7 @@
+import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 // deno-lint-ignore-file no-explicit-any
 import type {
-    RallarRemoteBrowserControlFetch,
-    RallarRemoteBrowserControlResultEnvelope
+    RallarRemoteBrowserControlFetch
 } from '../rallar-remote-browser-provider.ts';
 
 export function remoteBrowserOptions(context: any): any {
@@ -25,7 +25,7 @@ export function isRallarRemoteBrowserRequest(request: any): boolean {
         control.remoteBrowser === true;
 }
 
-export function remoteResultValue(result: RallarRemoteBrowserControlResultEnvelope): any {
+export function remoteResultValue(result: ControlResultEnvelope): any {
     return result.result?.value ?? result.error?.details ?? result.error ?? result.result ?? result;
 }
 

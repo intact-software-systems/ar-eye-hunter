@@ -13,7 +13,7 @@ export interface ALInboundEffectIntent {
     readonly expireAtTimestamp: number | undefined;
     readonly payload:
         | {
-            readonly kind: 'dispatch-local' | 'enqueue-inbox';
+            readonly kind: 'dispatch-local';
             readonly msg: ALMessage;
             readonly plan: ALMessageHandlingPlan;
         }
@@ -75,11 +75,17 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
     if (read.plan.localDelivery.deferred || !trackKey) {
         return [];
     }
-    return read.orderingAcceptance.observation.releasableSeqs.map((seq) => ({
-        effectId: toEffectId(['release', trackKey, seq]),
-        expireAtTimestamp: undefined,
-        payload: { kind: 'release-buffered', trackKey, seq }
-    }));
+    const bufferedBySequence = new Map(read.bufferedSnapshots.map((snapshot) => [snapshot.seq, snapshot]));
+    return read.orderingAcceptance.observation.releasableSeqs.map((seq) => {
+        const buffered = bufferedBySequence.get(seq);
+        return {
+            effectId: toEffectId(['release', trackKey, seq]),
+            expireAtTimestamp: buffered === undefined
+                ? undefined
+                : resolveALMessageExpireAtMs(buffered.msg, buffered.plan.effective),
+            payload: { kind: 'release-buffered', trackKey, seq }
+        };
+    });
 }
 
 export function toALInboundLocalDeliveryEffects(
@@ -88,12 +94,11 @@ export function toALInboundLocalDeliveryEffects(
     if (!input.plan.localDelivery.enabled) {
         return [];
     }
-    const queued = shouldDeferALInboundLocalDelivery(input.plan) || input.plan.localDelivery.persist;
     return [{
-        effectId: toEffectId([queued ? 'inbox' : 'dispatch', input.msg.id.senderId, input.msg.id.msgId]),
+        effectId: toEffectId(['dispatch', input.msg.id.senderId, input.msg.id.msgId]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         payload: {
-            kind: queued ? 'enqueue-inbox' : 'dispatch-local',
+            kind: 'dispatch-local',
             msg: input.msg,
             plan: input.plan
         }
@@ -174,6 +179,8 @@ function toNackReason(reason?: string) {
     switch (reason) {
         case 'gap':
             return 'gap' as const;
+        case 'resync-required':
+            return 'resync-required' as const;
         case 'expired':
             return 'expired' as const;
         case 'overloaded':
@@ -191,4 +198,10 @@ export function shouldDeferALInboundLocalDelivery(
     return plan.localDelivery.enabled &&
         plan.congestion.overloaded &&
         plan.congestion.action === 'defer';
+}
+
+export function shouldRetryALInboundDelivery(plan: ALMessageHandlingPlan): boolean {
+    return plan.dropReason === 'not-yet-in-sync' ||
+        (Boolean(plan.dropReason) && plan.nack.reason === 'overloaded') ||
+        (!plan.dropReason && shouldDeferALInboundLocalDelivery(plan));
 }

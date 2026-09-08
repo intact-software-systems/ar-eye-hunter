@@ -1,7 +1,8 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type {
@@ -9,10 +10,13 @@ import type {
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import type { AppAdminInboxService } from '../admin-operations/inbox/app-admin-inbox-service.ts';
+import type { AppAuthInboxService } from '../auth/inbox/app-auth-inbox-service.ts';
 import type { AppClientInboxService } from '../client-state/inbox/app-client-inbox-service.ts';
 import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
+import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
@@ -29,6 +33,41 @@ import type {
 } from './rallar-middleware-inbox-service-factories.ts';
 import type { RtcTopologyReplayRuntime } from './rallar-middleware-runtime.ts';
 
+export interface RallarGroupStateInboxServiceFactoryInput {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly wsQBoxServerService: WsQueueBoxServerService;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
+    readonly wakeQueueEngine: () => void;
+}
+
+export interface RallarTopologyInboxServiceFactoryInput {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly wakeQueueEngine: () => void;
+}
+
+export interface RallarRtcRttInboxServiceFactoryInput {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly wakeQueueEngine: () => void;
+}
+
+export interface RallarAppClientInboxServiceFactoryInput {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly wsQBoxServerService: WsQueueBoxServerService;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly wakeQueueEngine: () => void;
+}
+
+export interface RallarMiddlewareResilience {
+    readonly inbox: ResourceInboxResilience;
+    readonly outbox?: ResourceInboxResilience;
+    readonly appInbox?: ResourceInboxResilience;
+    readonly appOutbox: ResourceInboxResilience;
+}
+
 export interface CreateRallarMiddlewareOptions {
     readonly inbox: QueueBoxResourceEntryRepository;
     readonly outbox?: QueueBoxResourceEntryRepository;
@@ -38,53 +77,26 @@ export interface CreateRallarMiddlewareOptions {
     readonly targetResolver?: WsServerTargetResolver;
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
-    readonly findGroupSnapshotById?: WsServerTargetResolutionOptions['findGroupSnapshotById'];
-    readonly resolveGroupRef?: WsServerTargetResolutionOptions['resolveGroupRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
     readonly inboundStores?: ALInboundRuntimeStores;
     readonly outboundStores?: ALOutboundRuntimeStores;
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly createGroupStateInboxService: (
-        input: Readonly<{
-            inboxQueueReader: InboxQueueReader;
-            outboxQueueReader: OutboxQueueReader;
-            wsQBoxServerService: WsQueueBoxServerService;
-            appInboxResilience: ResilienceDto;
-            appOutboxResilience: ResilienceDto;
-            wakeQueueEngine: () => void;
-        }>
+        input: RallarGroupStateInboxServiceFactoryInput
     ) => GroupStateInboxService;
     readonly createTopologyInboxService: (
-        input: Readonly<{
-            inboxQueueReader: InboxQueueReader;
-            appInboxResilience: ResilienceDto;
-            wakeQueueEngine: () => void;
-        }>
+        input: RallarTopologyInboxServiceFactoryInput
     ) => TopologyInboxService;
     readonly createRtcRttInboxService: (
-        input: Readonly<{
-            inboxQueueReader: InboxQueueReader;
-            appInboxResilience: ResilienceDto;
-            wakeQueueEngine: () => void;
-        }>
+        input: RallarRtcRttInboxServiceFactoryInput
     ) => RtcRttInboxService;
     readonly createAppClientInboxService: (
-        input: Readonly<{
-            inboxQueueReader: InboxQueueReader;
-            wsQBoxServerService: WsQueueBoxServerService;
-            appInboxResilience: ResilienceDto;
-            wakeQueueEngine: () => void;
-        }>
+        input: RallarAppClientInboxServiceFactoryInput
     ) => AppClientInboxService;
     readonly createAppAuthInboxService?: RallarAuthInboxServiceFactory;
     readonly createAppAdminInboxService?: RallarAdminInboxServiceFactory;
     readonly createAppCrdtInboxService?: RallarCrdtInboxServiceFactory;
-    readonly resilience: Readonly<{
-        inbox: ResilienceDto;
-        outbox?: ResilienceDto;
-        appInbox?: ResilienceDto;
-        appOutbox: ResilienceDto;
-    }>;
+    readonly resilience: RallarMiddlewareResilience;
     readonly clientsRepository: ClientStateRepository;
     readonly groupsRepository: GroupStateRepository;
     readonly rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
@@ -100,8 +112,8 @@ export interface RallarMiddlewareInfrastructure {
     readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
-    readonly appOutboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
     readonly queuePubSubBridgeReadiness: Promise<void>;
     readonly wakeQueueEngine: () => void;
 }
@@ -111,7 +123,7 @@ export interface RallarMiddlewareInboxServices {
     readonly topologyInboxService: TopologyInboxService;
     readonly rtcRttInboxService: RtcRttInboxService;
     readonly appClientInboxService: AppClientInboxService;
-    readonly appAuthInboxService?: ReturnType<RallarAuthInboxServiceFactory>;
-    readonly appAdminInboxService?: ReturnType<RallarAdminInboxServiceFactory>;
-    readonly appCrdtInboxService?: ReturnType<RallarCrdtInboxServiceFactory>;
+    readonly appAuthInboxService?: AppAuthInboxService;
+    readonly appAdminInboxService?: AppAdminInboxService;
+    readonly appCrdtInboxService?: AppCrdtInboxService;
 }

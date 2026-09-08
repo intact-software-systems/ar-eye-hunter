@@ -1,43 +1,48 @@
-import {
+import type {
     CompareConfig,
+    Comparison,
+    ComparisonResult
+} from './compare-json-values.ts';
+import {
     compareJson,
     COMPARISON,
-    Comparison,
-    ComparisonResult,
-    JsonValue,
     toConfig
-} from './CompareJson.ts';
+} from './compare-json-values.ts';
 
 export interface CompareJsonOptions {
     ignoreJsonKeys?: string[];
     ignoreJsonPaths?: string[];
 }
 
+export interface CompareJsonInput {
+    comparison: Comparison | string;
+    options?: CompareJsonOptions;
+}
+
 export interface CompareJsonFacade {
-    compatibleStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): ComparisonResult;
-    compatible(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): ComparisonResult;
+    compatibleStructure(expected: unknown, actual: unknown, options?: CompareJsonOptions): ComparisonResult;
+    compatible(expected: unknown, actual: unknown, options?: CompareJsonOptions): ComparisonResult;
     compatibleComplete(
-        expected: JsonValue,
-        actual: JsonValue,
+        expected: unknown,
+        actual: unknown,
         options?: CompareJsonOptions
     ): ComparisonResult;
-    exactStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): ComparisonResult;
-    exact(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): ComparisonResult;
+    exactStructure(expected: unknown, actual: unknown, options?: CompareJsonOptions): ComparisonResult;
+    exact(expected: unknown, actual: unknown, options?: CompareJsonOptions): ComparisonResult;
     compare(
-        expected: JsonValue,
-        actual: JsonValue,
-        comparison: Comparison | string,
-        options?: CompareJsonOptions
+        expected: unknown,
+        actual: unknown,
+        input: CompareJsonInput
     ): ComparisonResult;
-    assertCompatibleStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
-    assertCompatible(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
+    assertCompatibleStructure(expected: unknown, actual: unknown, options?: CompareJsonOptions): void;
+    assertCompatible(expected: unknown, actual: unknown, options?: CompareJsonOptions): void;
     assertCompatibleComplete(
-        expected: JsonValue,
-        actual: JsonValue,
+        expected: unknown,
+        actual: unknown,
         options?: CompareJsonOptions
     ): void;
-    assertExactStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
-    assertExact(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
+    assertExactStructure(expected: unknown, actual: unknown, options?: CompareJsonOptions): void;
+    assertExact(expected: unknown, actual: unknown, options?: CompareJsonOptions): void;
 }
 
 function toFacadeConfig(comparison: Comparison | string, options: CompareJsonOptions = {}): CompareConfig {
@@ -55,61 +60,60 @@ function assertComparisonResult(result: ComparisonResult): void {
 }
 
 export const CompareJson: CompareJsonFacade = {
-    compatibleStructure(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): ComparisonResult {
+    compatibleStructure(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): ComparisonResult {
         return compareJson(expected, actual, toFacadeConfig(COMPARISON.COMPATIBLE_STRUCTURE, options));
     },
 
-    compatible(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): ComparisonResult {
+    compatible(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): ComparisonResult {
         return compareJson(expected, actual, toFacadeConfig(COMPARISON.COMPATIBLE, options));
     },
 
     compatibleComplete(
-        expected: JsonValue,
-        actual: JsonValue,
+        expected: unknown,
+        actual: unknown,
         options: CompareJsonOptions = {}
     ): ComparisonResult {
         const config = toFacadeConfig(COMPARISON.COMPATIBLE_COMPLETE, options);
         return compareJson(expected, actual, config);
     },
 
-    exactStructure(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): ComparisonResult {
+    exactStructure(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): ComparisonResult {
         return compareJson(expected, actual, toFacadeConfig(COMPARISON.EXACT_STRUCTURE, options));
     },
 
-    exact(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): ComparisonResult {
+    exact(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): ComparisonResult {
         return compareJson(expected, actual, toFacadeConfig(COMPARISON.EXACT, options));
     },
 
     compare(
-        expected: JsonValue,
-        actual: JsonValue,
-        comparison: Comparison | string,
-        options: CompareJsonOptions = {}
+        expected: unknown,
+        actual: unknown,
+        input: CompareJsonInput
     ): ComparisonResult {
-        return compareJson(expected, actual, toFacadeConfig(comparison, options));
+        return compareJson(expected, actual, toFacadeConfig(input.comparison, input.options));
     },
 
-    assertCompatibleStructure(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): void {
+    assertCompatibleStructure(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): void {
         assertComparisonResult(this.compatibleStructure(expected, actual, options));
     },
 
-    assertCompatible(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): void {
+    assertCompatible(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): void {
         assertComparisonResult(this.compatible(expected, actual, options));
     },
 
     assertCompatibleComplete(
-        expected: JsonValue,
-        actual: JsonValue,
+        expected: unknown,
+        actual: unknown,
         options: CompareJsonOptions = {}
     ): void {
         assertComparisonResult(this.compatibleComplete(expected, actual, options));
     },
 
-    assertExactStructure(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): void {
+    assertExactStructure(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): void {
         assertComparisonResult(this.exactStructure(expected, actual, options));
     },
 
-    assertExact(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): void {
+    assertExact(expected: unknown, actual: unknown, options: CompareJsonOptions = {}): void {
         assertComparisonResult(this.exact(expected, actual, options));
     }
 };

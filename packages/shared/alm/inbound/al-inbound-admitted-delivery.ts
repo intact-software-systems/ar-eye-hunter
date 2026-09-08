@@ -1,223 +1,209 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
-import {
-    RetryableConflictError,
-    tryWithPolicy,
-    type TryWithPolicy
-} from '../../resilience/TryWith.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import type { ALInboundAdmissionStore, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
-import { shouldDeferALInboundLocalDelivery } from './al-inbound-effect-intent.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALPersistedInboundEffect
+} from './al-inbound-admission-store.ts';
+import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
-import { computeALInboundBufferedRelease } from './compute-al-inbound-admission.ts';
-import { prepareALInboundCommitBundle } from './prepare-al-inbound-commit-bundle.ts';
+import { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
+import {
+    computeALInboundBufferedReleasePlanningObservations,
+    computeALInboundStoredPlanningObservations
+} from './al-inbound-planner-snapshot.ts';
 
 export namespace ALInboundAdmittedDelivery {
     export interface Dependencies extends
         Pick<
             ALInboundMessageRuntime.Dependencies,
             | 'admissionStore'
-            | 'inbox'
             | 'planIncomingMessage'
             | 'readStoredEntry'
             | 'dispatchInboxEntry'
+            | 'canDispatchMessage'
             | 'sendControlMessage'
             | 'forwardMessage'
             | 'clock'
             | 'effectPreparation'
-        > {
-        readonly commitRetryPolicy: TryWithPolicy;
-    }
+        > {}
 }
 
 export class ALInboundAdmittedDelivery {
     private readonly dependencies: ALInboundAdmittedDelivery.Dependencies;
     private readonly admissionStore: ALInboundAdmissionStore;
-    private disposed = false;
+    private readonly shutdown = new AbortController();
+    private readonly orderedDelivery: ALInboundOrderedDelivery;
 
     constructor(dependencies: ALInboundAdmittedDelivery.Dependencies) {
         this.dependencies = dependencies;
         this.admissionStore = dependencies.admissionStore;
+        this.orderedDelivery = new ALInboundOrderedDelivery({
+            admissionStore: dependencies.admissionStore,
+            planIncomingMessage: dependencies.planIncomingMessage,
+            clock: dependencies.clock,
+            effectPreparation: dependencies.effectPreparation,
+            signal: this.shutdown.signal
+        });
     }
 
     dispose(): void {
-        this.disposed = true;
+        this.shutdown.abort();
+    }
+
+    async readReadiness(effect: ALPersistedInboundEffect, nowMs: number): Promise<boolean> {
+        if (this.shutdown.signal.aborted) {
+            return false;
+        }
+        const payload = effect.payload;
+        if (payload.kind === 'send-control' || payload.kind === 'admit-message') {
+            return true;
+        }
+        if (payload.kind === 'release-buffered') {
+            const read = await this.admissionStore.readBufferedRelease({
+                trackKey: payload.trackKey,
+                seq: payload.seq,
+                nowMs
+            });
+            if (read === undefined) {
+                return true;
+            }
+            const plan = this.dependencies.planIncomingMessage(
+                read.snapshot.msg,
+                read.source,
+                computeALInboundBufferedReleasePlanningObservations(read)
+            );
+            return !shouldRetryALInboundDelivery(plan) && await this.isLocalDeliveryReady(read.snapshot.msg, plan);
+        }
+        const msg = payload.kind === 'dispatch-local' ? this.dependencies.readStoredEntry(payload.entry) : payload.msg;
+        const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs });
+        const plan = this.dependencies.planIncomingMessage(
+            msg,
+            read.source,
+            computeALInboundStoredPlanningObservations(read)
+        );
+        return !shouldRetryALInboundDelivery(plan) &&
+            (payload.kind === 'forward-message' || await this.isLocalDeliveryReady(msg, plan));
+    }
+
+    private async isLocalDeliveryReady(msg: ALMessage, plan: ALMessageHandlingPlan): Promise<boolean> {
+        const readiness = await this.orderedDelivery.readiness(msg);
+        if (readiness.kind === 'waiting') {
+            return false;
+        }
+        return readiness.kind !== 'ready' || plan.dropReason !== undefined || !plan.localDelivery.enabled ||
+            (this.dependencies.canDispatchMessage?.(msg) ?? true);
     }
 
     async deliver(
         effect: ALPersistedInboundEffect
     ): Promise<'completed' | 'retry'> {
         if (effect.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
-            if (effect.payload.kind === 'dispatch-local' || effect.payload.kind === 'enqueue-inbox') {
-                await this.completeOrderedDelivery(this.dependencies.readStoredEntry(effect.payload.entry));
-            }
-            return 'completed';
+            throw new NonRetryableException('Inbound work expired before delivery');
         }
 
         switch (effect.payload.kind) {
+            case 'admit-message':
+                throw new NonRetryableException('Pending admission must run before admitted delivery');
             case 'dispatch-local':
                 return await this.dispatchAdmittedEntry(effect.payload.entry);
-            case 'enqueue-inbox':
-                await this.dependencies.inbox.enqueueIfAbsent(effect.payload.entry);
-                return 'completed';
             case 'send-control':
                 await this.dependencies.sendControlMessage(effect.payload.msg);
                 return 'completed';
             case 'forward-message':
-                return await this.forwardAdmittedMessage(effect.payload.msg, effect.payload.fromPeerId);
-            case 'release-buffered':
-                return await this.releaseBufferedMessageWithAdmission(
-                    effect.payload.trackKey,
-                    effect.payload.seq
+                return await this.forwardAdmittedMessage(
+                    effect.payload.msg,
+                    effect.payload.fromPeerId,
+                    effect.expireAtTimestamp
                 );
+            case 'release-buffered': {
+                const release = await this.orderedDelivery.release({
+                    trackKey: effect.payload.trackKey,
+                    seq: effect.payload.seq,
+                    effectId: effect.effectId
+                });
+                if (typeof release === 'string') {
+                    return release;
+                }
+                if (this.shutdown.signal.aborted) {
+                    return 'retry';
+                }
+                return await this.dispatchAdmittedEntry(release.entry);
+            }
         }
     }
 
-    async dispatchAdmittedEntry(entry: ResourceEntry): Promise<'completed' | 'retry'> {
-        if (this.disposed) {
+    private async dispatchAdmittedEntry(entry: ResourceEntry): Promise<'completed' | 'retry'> {
+        if (this.shutdown.signal.aborted) {
             return 'retry';
         }
         const msg = this.dependencies.readStoredEntry(entry);
-        const plan = await this.admissionStore.planStoredEntry(
+        const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs: this.dependencies.clock.nowMs() });
+        const source = read.source;
+        const plan = this.dependencies.planIncomingMessage(
             msg,
-            this.dependencies.planIncomingMessage
+            source,
+            computeALInboundStoredPlanningObservations(read)
         );
 
-        if (this.disposed || ALInboundAdmittedDelivery.shouldRetryAdmittedDelivery(plan)) {
+        if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
             return 'retry';
         }
 
+        if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.clock.nowMs()) {
+            throw new NonRetryableException('Inbound message expired before delivery');
+        }
         if (plan.dropReason || !plan.localDelivery.enabled) {
-            await this.completeOrderedDelivery(msg);
+            return await this.orderedDelivery.complete(msg);
+        }
+
+        const readiness = await this.orderedDelivery.readiness(msg);
+        if (readiness.kind === 'waiting') {
+            return 'retry';
+        }
+        if (readiness.kind === 'completed') {
             return 'completed';
         }
-
-        if (await this.hasUndeliveredPredecessor(msg)) {
+        if (readiness.kind === 'resync-required') {
+            return await this.orderedDelivery.reject(msg, readiness.completedThrough);
+        }
+        if (this.shutdown.signal.aborted || this.dependencies.canDispatchMessage?.(msg) === false) {
             return 'retry';
         }
-        if (this.disposed) {
+        if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.clock.nowMs()) {
+            throw new NonRetryableException('Inbound message expired before delivery');
+        }
+        const dispatched = await this.dependencies.dispatchInboxEntry(entry, plan, source);
+        if (dispatched === 'retry') {
             return 'retry';
         }
-        await this.dependencies.dispatchInboxEntry(entry, plan);
-        await this.completeOrderedDelivery(msg);
-        return 'completed';
+        return await this.orderedDelivery.complete(msg);
     }
 
-    private async releaseBufferedMessageWithAdmission(
-        trackKey: string,
-        seq: number
+    private async forwardAdmittedMessage(
+        msg: ALMessage,
+        fromPeerId: string,
+        expireAtTimestamp: number
     ): Promise<'completed' | 'retry'> {
-        try {
-            return await tryWithPolicy(
-                () => this.commitBufferedRelease(trackKey, seq),
-                this.dependencies.commitRetryPolicy
-            );
-        }
-        catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
-            }
-            throw new Error(
-                `Failed to release buffered inbound message after retries: ${trackKey}:${seq}`,
-                { cause: error }
-            );
-        }
-    }
-
-    private async commitBufferedRelease(trackKey: string, seq: number): Promise<'completed' | 'retry'> {
-        const read = await this.admissionStore.readBufferedRelease(trackKey, seq);
-        if (!read) {
-            return 'completed';
-        }
-        const plan = await this.admissionStore.planStoredEntry(
-            read.snapshot.msg,
-            this.dependencies.planIncomingMessage
-        );
-        if (
-            ALInboundAdmittedDelivery.shouldRetryAdmittedDelivery(plan) ||
-            (!plan.dropReason && await this.hasUndeliveredPredecessor(read.snapshot.msg))
-        ) {
-            return 'retry';
-        }
-        const computed = computeALInboundBufferedRelease(read, plan);
-        const bundle = prepareALInboundCommitBundle(computed, this.dependencies.effectPreparation);
-        const status = await this.admissionStore.commitBundle(bundle);
-        if (status === 'conflict') {
-            throw new RetryableConflictError('Buffered inbound release commit conflict');
-        }
-        return 'completed';
-    }
-
-    private async hasUndeliveredPredecessor(msg: ALMessage): Promise<boolean> {
-        const seq = msg.ordering?.seq;
-        const trackKey = toALOrderingTrackKey(msg);
-        if (seq === undefined || trackKey === undefined) {
-            return false;
-        }
-        const predecessors = await this.admissionStore.readDeliveryPredecessors(trackKey, seq);
-        for (const predecessor of predecessors) {
-            if (predecessor.kind === 'effect') {
-                return true;
-            }
-            const entry = await this.dependencies.inbox.getItem(predecessor.key);
-            if (
-                entry && NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status) &&
-                entry.audit.expiryTs.epochMilliseconds > this.dependencies.clock.nowMs()
-            ) {
-                const queued = this.dependencies.readStoredEntry(entry);
-                if (
-                    queued.id.msgId === predecessor.msg.id.msgId && queued.id.senderId === predecessor.msg.id.senderId
-                ) {
-                    return true;
-                }
-            }
-            await this.completeOrderedDelivery(predecessor.msg);
-        }
-        return false;
-    }
-
-    private async completeOrderedDelivery(msg: ALMessage): Promise<void> {
-        const trackKey = toALOrderingTrackKey(msg);
-        const seq = msg.ordering?.seq;
-        if (trackKey === undefined || seq === undefined) {
-            return;
-        }
-        await tryWithPolicy(async () => {
-            const read = await this.admissionStore.readBufferedRelease(trackKey, seq);
-            if (!read || read.snapshot.msg.id.msgId !== msg.id.msgId) {
-                return;
-            }
-            const status = await this.admissionStore.commitMutations({
-                senderId: msg.id.senderId,
-                expectedVersion: read.clientRecord?.version,
-                mutations: [{ kind: 'delete-buffered', trackKey, seq }]
-            });
-            if (status === 'conflict') {
-                throw new RetryableConflictError('Ordered delivery completion conflict');
-            }
-        }, this.dependencies.commitRetryPolicy);
-    }
-
-    private async forwardAdmittedMessage(msg: ALMessage, fromPeerId: string): Promise<'completed' | 'retry'> {
-        const plan = await this.admissionStore.planStoredEntry(
+        const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs: this.dependencies.clock.nowMs() });
+        const plan = this.dependencies.planIncomingMessage(
             msg,
-            (message, _senderId, stores) => this.dependencies.planIncomingMessage(message, fromPeerId, stores)
+            read.source,
+            computeALInboundStoredPlanningObservations(read)
         );
-        if (this.disposed || ALInboundAdmittedDelivery.shouldRetryAdmittedDelivery(plan)) {
+        if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
             return 'retry';
+        }
+        if (expireAtTimestamp <= this.dependencies.clock.nowMs()) {
+            throw new NonRetryableException('Inbound message expired before forwarding');
         }
         if (!plan.dropReason && plan.forwarding.enabled) {
-            await this.dependencies.forwardMessage?.(msg, fromPeerId, plan);
+            const forwarded = await this.dependencies.forwardMessage?.(msg, fromPeerId, plan);
+            if (forwarded === 'retry') {
+                return 'retry';
+            }
         }
         return 'completed';
-    }
-
-    private static shouldRetryAdmittedDelivery(plan: ALMessageHandlingPlan): boolean {
-        return plan.dropReason === 'not-yet-in-sync' ||
-            (Boolean(plan.dropReason) && plan.nack.reason === 'overloaded') ||
-            (!plan.dropReason && shouldDeferALInboundLocalDelivery(plan));
     }
 }

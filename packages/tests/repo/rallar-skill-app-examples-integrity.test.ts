@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const repoRoot = process.cwd();
 
@@ -79,7 +83,7 @@ describe('Rallar skill app and example integrity', () => {
             .soft({
                 readyResult: scaffolding.includes('const readyResult = await ready.send'),
                 poseResult: scaffolding.includes('const poseResult = await poses.send'),
-                acceptedMessageStatuses: scaffolding.includes('\'sent-immediate\''),
+                acceptedMessageStatuses: scaffolding.includes('\'accepted\''),
                 degradedRealtimeResult: scaffolding.includes('poseResult.status !== \'sent\''),
                 messageExampleResult: messageExample.includes('sendResult.status'),
                 realtimeExampleResult: realtimeExample.includes('sendResult.status !== \'sent\'')

@@ -1,5 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
@@ -16,7 +22,6 @@ import {
     type ClientStateWritten
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
-    ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import {
@@ -25,10 +30,12 @@ import {
     toAuthorisedWsClientDisconnectEnqueue
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import {
-    computeClientMutationOperation,
-    validateClientMutationOperation
+    assertClientMutationOperation,
+    computeClientMutationOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
-import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
+import {
+    ClientStateInboxHandler
+} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import {
     toClientMutationIssuedSessionAuthority,
@@ -58,7 +65,11 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
 import {
     connectCommand,
@@ -149,7 +160,7 @@ describe('ClientStateInboxHandler phases', () => {
         }
 
         expect(() =>
-            validateClientMutationOperation({
+            assertClientMutationOperation({
                 command,
                 read,
                 completionFacts,
@@ -390,6 +401,41 @@ describe('ClientStateInboxHandler phases', () => {
         ]);
     });
 
+    it.each([
+        {
+            actorPrincipalId: 'other-principal',
+            actorSessionId: null,
+            path: 'command.input.actorPrincipalId',
+            message: 'Client mutation actor principal differs from durable authority.'
+        },
+        {
+            actorPrincipalId: null,
+            actorSessionId: 'other-session',
+            path: 'command.input.actorSessionId',
+            message: 'Client mutation actor session differs from durable authority.'
+        }
+    ])('rejects $path at the handler policy boundary before writing', async ({ actorPrincipalId, actorSessionId, message }) => {
+        const fixture = createHandlerFixture({ generationClosed: false, sessionPresent: false });
+        const original = await connectCommand('rejected-actor');
+        if (original.operation !== 'connectSession') {
+            throw new Error('Expected a connect command');
+        }
+        const context = createContext<ClientStateWritten>({
+            type: AppInboxType.CLIENT_SESSION_CONNECT,
+            resourceId: original.commandId,
+            authority: original.authority,
+            data: {}
+        });
+        const input = { ...original, input: { ...original.input, actorPrincipalId, actorSessionId } };
+
+        await expect(fixture.handler.processCommand(context, input)).rejects.toMatchObject({
+            code: 'client-mutation-rejected',
+            status: 400,
+            message
+        });
+        expect(fixture.writesByTransaction).toEqual([]);
+    });
+
     it('does not enter the transaction when mutation policy validation returns issues', async () => {
         const fixture = createHandlerFixture({
             authoritySessionClientId: 'mallory',
@@ -440,7 +486,7 @@ interface HandlerFixtureOptions {
     readonly sessionPresent: boolean;
 }
 
-function createHandlerFixture(options: HandlerFixtureOptions): {
+interface ClientHandlerFixture {
     readonly actions: string[];
     readonly continuationEntries: readonly ResourceEntry[];
     readonly continuationWriteCount: () => number;
@@ -448,14 +494,75 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
     readonly pageReads: readonly ClientExpiredSessionPageInput[];
     readonly pageReadCount: () => number;
     readonly writesByTransaction: number[];
-} {
+}
+
+function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixture {
     const actions: string[] = [];
     const continuationEntries: ResourceEntry[] = [];
     const pageReads: ClientExpiredSessionPageInput[] = [];
     const writesByTransaction: number[] = [];
-    let continuationWriteCount = 0;
-    let pageReadCount = 0;
-    const mutationService = {
+    const handler = new ClientStateInboxHandler({
+        mutationService: createHandlerMutationService(options, { actions, writesByTransaction }),
+        sessionGenerationLifecycle: {
+            read: async (identity) => {
+                actions.push('lifecycle.read');
+                return lifecycleRead(identity, options.generationClosed);
+            },
+            write: async () => {
+                actions.push('lifecycle.write');
+            }
+        },
+        expiryCandidates: {
+            readExpiredSessionPage: async (input) => {
+                actions.push('expiry.read');
+                pageReads.push(input);
+                return {
+                    candidates: options.expiryCandidates ?? [],
+                    nextAfterKey: options.nextAfterKey ?? null
+                };
+            }
+        },
+        expiryContinuationWriter: {
+            write: async (_transaction, computed) => {
+                actions.push('continuation.write');
+                continuationEntries.push(computed.entry);
+            }
+        },
+        snapshotObserver: {
+            observeSnapshot: async (snapshot) => {
+                actions.push('observe');
+                return snapshot;
+            }
+        },
+        transactionWriter: createHandlerTransactionWriter({ actions, writesByTransaction }),
+        mutationTiming: {
+            serviceId: SERVICE_ID,
+            sink: (event) => actions.push(event.operation)
+        },
+        wakeQueue: () => actions.push('wake'),
+        serviceId: SERVICE_ID
+    });
+    return {
+        actions,
+        continuationEntries,
+        continuationWriteCount: () => continuationEntries.length,
+        handler,
+        pageReads,
+        pageReadCount: () => pageReads.length,
+        writesByTransaction
+    };
+}
+
+interface ClientHandlerMutationObservations {
+    readonly actions: string[];
+    readonly writesByTransaction: number[];
+}
+
+function createHandlerMutationService(
+    options: HandlerFixtureOptions,
+    { actions, writesByTransaction }: ClientHandlerMutationObservations
+): ClientStateInboxHandler.Input['mutationService'] {
+    return {
         read: async (command: ClientMutationCommand): Promise<ClientMutationRead> => {
             actions.push('domain.read');
             const read = clientMutationRead(command, options.sessionPresent);
@@ -483,69 +590,23 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
             return computed.receipt;
         }
     };
-    const handler = new ClientStateInboxHandler({
-        mutationService,
-        sessionGenerationLifecycle: {
-            read: async (identity) => {
-                actions.push('lifecycle.read');
-                return lifecycleRead(identity, options.generationClosed);
-            },
-            write: async () => {
-                actions.push('lifecycle.write');
-            }
-        },
-        expiryCandidates: {
-            readExpiredSessionPage: async (input) => {
-                actions.push('expiry.read');
-                pageReadCount += 1;
-                pageReads.push(input);
-                return {
-                    candidates: options.expiryCandidates ?? [],
-                    nextAfterKey: options.nextAfterKey ?? null
-                };
-            }
-        },
-        expiryContinuationWriter: {
-            write: async (_transaction, computed) => {
-                actions.push('continuation.write');
-                continuationWriteCount += 1;
-                continuationEntries.push(computed.entry);
-            }
-        },
-        snapshotObserver: {
-            observeSnapshot: async (snapshot) => {
-                actions.push('observe');
-                return snapshot;
-            }
-        },
-        transactionWriter: {
-            readCompletionFacts: (context) => {
-                actions.push('completion.read');
-                return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
-            },
-            writeComputedMutation: async (_context, computed, write) => {
-                actions.push('transaction');
-                writesByTransaction.push(0);
-                await write({} as PSqlSql);
-                actions.push('commit');
-                return computed.durableResult;
-            }
-        },
-        mutationTiming: {
-            serviceId: SERVICE_ID,
-            sink: (event) => actions.push(event.operation)
-        },
-        wakeQueue: () => actions.push('wake'),
-        serviceId: SERVICE_ID
-    });
+}
+
+function createHandlerTransactionWriter(
+    { actions, writesByTransaction }: ClientHandlerMutationObservations
+): ClientStateInboxHandler.Input['transactionWriter'] {
     return {
-        actions,
-        continuationEntries,
-        continuationWriteCount: () => continuationWriteCount,
-        handler,
-        pageReads,
-        pageReadCount: () => pageReadCount,
-        writesByTransaction
+        readCompletionFacts: (context) => {
+            actions.push('completion.read');
+            return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+        },
+        writeComputedMutation: async (_context, computed, write) => {
+            actions.push('transaction');
+            writesByTransaction.push(0);
+            await write({} as PSqlSql);
+            actions.push('commit');
+            return computed.durableResult;
+        }
     };
 }
 
@@ -776,6 +837,12 @@ function createContext<Result>(
             }
         },
         entry,
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Client handler test result')
     };
 }

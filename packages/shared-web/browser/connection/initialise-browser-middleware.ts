@@ -1,8 +1,5 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
-import { toError } from '@shared/resilience/to-error.ts';
-// dprint-ignore
 import type {
     ApiConfig,
     AuthSession,
@@ -10,6 +7,7 @@ import type {
     IceConfig,
     RttMeasurementInfo
 } from '@shared/api/api-config.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -17,6 +15,7 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type {
@@ -28,7 +27,7 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -40,12 +39,10 @@ import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connect
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
-import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import { toResilienceDto } from '../resilience-config.ts';
+import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -202,9 +199,6 @@ function initialiseBrowserRuntimeStores(sessionId: string): void {
     initBrowserALRuntimeExpiryEviction().catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
-    initBrowserQueueBoxExpiryEviction().catch((error) =>
-        console.error('Failed to initialise browser queuebox expiry eviction:', toError(error))
-    );
 }
 
 async function initialiseBrowserWebSocketTransport(
@@ -220,7 +214,6 @@ async function initialiseBrowserWebSocketTransport(
         qboxEngine,
         socket,
         clientData: input.clientData,
-        resilience: toResilienceDto(),
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
@@ -273,7 +266,6 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcConnectionService,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            resilience: toResilienceDto(),
             outboundDiagnostics: input.options.outboundDiagnostics
         }
     );
@@ -281,8 +273,7 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcOverlayMulticastManager,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            clientData: input.clientData,
-            resilience: toResilienceDto()
+            clientData: input.clientData
         }
     );
     registerBrowserRttEgress(input, rtcRxStreamer);
@@ -411,7 +402,7 @@ async function initialiseBrowserStateTransport(
 async function hydrateBrowserStateCaches(
     input: InitialiseBrowserStateTransportInput,
     stateCacheOptions: StateCacheScopeOptions,
-    snapshots: Awaited<ReturnType<typeof refreshStateSnapshots>>
+    snapshots: StateSnapshots
 ): Promise<void> {
     await browserStateCacheLifecycle.hydrate({
         webRtcGroupManager: input.webRtcGroupManager,
@@ -440,6 +431,7 @@ function installBrowserStateResync(
     stateCacheOptions: StateCacheScopeOptions
 ): void {
     initGroupStateResyncOnReopen({
+        cancelSnapshotAssemblies: () => browserStateCacheLifecycle.cancelSnapshotAssemblies(),
         socket: input.webSocketQueueBox.socket,
         resyncStateSnapshots: async () => {
             const refreshed = await refreshStateSnapshots(input.options.scope, {

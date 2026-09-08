@@ -402,6 +402,14 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -412,7 +420,11 @@
       "connection": "wsPrimary",
       "request": {
         "url": "{aliceWsUrl}",
-        "timeoutMs": 15000
+        "timeoutMs": 15000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -425,10 +437,10 @@
         "consume": true,
         "messages": [
           {
-            "route": {
-              "topicId": "client-state.snapshot"
-            },
-            "payload": {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
               "typeId": "client-state.snapshot"
             }
           }
@@ -481,6 +493,14 @@
             "urlEncode": {
               "path": "outputs.bobWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -491,7 +511,11 @@
       "connection": "wsTertiary",
       "request": {
         "url": "{bobWsUrl}",
-        "timeoutMs": 15000
+        "timeoutMs": 15000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -504,10 +528,10 @@
         "consume": true,
         "messages": [
           {
-            "route": {
-              "topicId": "client-state.snapshot"
-            },
-            "payload": {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
               "typeId": "client-state.snapshot"
             }
           }
@@ -533,12 +557,17 @@
                 "consume": true,
                 "messages": [
                   {
-                    "route": {
-                      "topicId": "overlay.topology",
-                      "contextId": "{groupId}"
-                    },
-                    "payload": {
-                      "typeId": "overlay.topology"
+                    "completedSnapshot": {
+                      "route": {
+                        "topicId": "overlay.topology"
+                      },
+                      "typeId": "overlay.topology",
+                      "scope": {
+                        "kind": "group",
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "resourceId": "{groupId}"
+                      }
                     }
                   }
                 ]
@@ -586,12 +615,17 @@
                 "consume": true,
                 "messages": [
                   {
-                    "route": {
-                      "topicId": "overlay.topology",
-                      "contextId": "{groupId}"
-                    },
-                    "payload": {
-                      "typeId": "overlay.topology"
+                    "completedSnapshot": {
+                      "route": {
+                        "topicId": "overlay.topology"
+                      },
+                      "typeId": "overlay.topology",
+                      "scope": {
+                        "kind": "group",
+                        "applicationId": "{applicationId}",
+                        "workspaceId": "{workspaceId}",
+                        "resourceId": "{groupId}"
+                      }
                     }
                   }
                 ]

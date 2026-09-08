@@ -165,10 +165,6 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
         return mutations;
     }
 
-    async apply(mutations: readonly ALAdmissionMutation[]): Promise<void> {
-        await this.repository.begin((transaction) => this.writeMutations(transaction, mutations));
-    }
-
     private async readObservation(key: string): Promise<PSqlAdmissionMutationCollector.Observation> {
         const existing = this.observations.get(key);
         if (existing) {
@@ -187,7 +183,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
         return observation;
     }
 
-    private async writeMutations(
+    async writeMutations(
         transaction: RuntimeStateOptimisticTransactionalRepositoryLike,
         mutations: readonly ALAdmissionMutation[]
     ): Promise<void> {

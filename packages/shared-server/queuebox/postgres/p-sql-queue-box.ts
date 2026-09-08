@@ -2,6 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
+    computeResourceInboxRelease,
+    validateResourceInboxReleaseDisposition
+} from '@shared/queuebox/compute-resource-inbox-release.ts';
+import {
     isIdempotentHandlerFinalizedRelease,
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
@@ -12,12 +16,18 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
+    ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
-    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
-    toResourceInboxWorkAdvertisementOptions
+    toResourceInboxWorkAdvertisementOptions,
+    type ResourceInboxReservationRequest,
+    type ResourceInboxTimeoutReservationRequest
 } from '@shared/queuebox/queue-box-types.ts';
+import {
+    captureResourceEntryObservations,
+    validateResourceEntryObservation
+} from '@shared/queuebox/resource-entry-observations.ts';
 import {
     EntityStatus,
     Key,
@@ -31,20 +41,28 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
+import { computeResourceInboxObservedReplacement } from './p-sql-resource-inbox-entry-repository.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
+    private readonly now: () => Temporal.Instant;
 
     constructor(
-        resourceInbox: PSqlResourceInboxRepository
+        resourceInbox: PSqlResourceInboxRepository,
+        now: () => Temporal.Instant = Temporal.Now.instant
     ) {
         this.resourceInbox = resourceInbox;
+        this.now = now;
     }
 
     cleanup(): void {
         void this.deleteExpired().catch((error) => {
             console.error('Failed to cleanup expired resource_inbox rows', toError(error));
         });
+    }
+
+    async readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        return await this.resourceInbox.reservations.readWorkPage(request);
     }
 
     async isAnyEntryToLock(
@@ -87,21 +105,37 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveEntries(
-        typeIds: Set<string>,
-        statusIds: Set<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput
+        { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const options = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
+        const observations = captureResourceEntryObservations(observedEntries);
+        const observedRowIds = observations === undefined
+            ? undefined
+            : [...observations.values()].flatMap((entry) => entry.db === undefined ? [] : [entry.db.id]);
+        if (observedRowIds?.length === 0 || options.maxToReserve === 0) {
+            return new Map();
+        }
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
-                const foundEntries = await txRepo.reservations.findEntriesSkipLocked(typeIds, statusIds, options);
+                const foundEntries = await txRepo.reservations.findEntriesSkipLocked({
+                    typeIds: typeIds,
+                    statusIds: statusIds,
+                    reservationInput: options,
+                    observedRowIds: observedRowIds
+                });
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
+                    if (reservedEntries.size >= options.maxToReserve) {
+                        break;
+                    }
+                    if (validateResourceEntryObservation(e, observations).left) {
+                        continue;
+                    }
                     const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
@@ -118,25 +152,38 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveTimeoutEntries(
-        typeIds: Set<string>,
-        reservationInput: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration
+        { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const options = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
+        const observations = captureResourceEntryObservations(observedEntries);
+        const observedRowIds = observations === undefined
+            ? undefined
+            : [...observations.values()].flatMap((entry) => entry.db === undefined ? [] : [entry.db.id]);
+        const timeoutMs = timeSinceStartTs.total({ unit: 'milliseconds' });
+        if (observedRowIds?.length === 0 || options.maxToReserve === 0) {
+            return new Map();
+        }
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
-                const foundEntries = await txRepo.reservations.findTimedOutReservedEntriesSkipLocked(
-                    typeIds,
-                    timeSinceStartTs.total({ unit: 'milliseconds' }),
-                    options
-                );
+                const foundEntries = await txRepo.reservations.findTimedOutReservedEntriesSkipLocked({
+                    typeIds: typeIds,
+                    timeSinceStartMs: timeoutMs,
+                    reservationInput: options,
+                    observedRowIds: observedRowIds
+                });
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
+                    if (reservedEntries.size >= options.maxToReserve) {
+                        break;
+                    }
+                    if (validateResourceEntryObservation(e, observations).left) {
+                        continue;
+                    }
                     const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
@@ -204,15 +251,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
-        const finalizationTypes = typeIds.has(EnqueuedType.APP_INBOX)
-            ? new Set([EnqueuedType.APP_INBOX])
-            : new Set<string>();
-        if (finalizationTypes.size === 0 || options.maxToReserve === 0) {
+        if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
         return await this.resourceInbox.transaction(async (txRepo) => {
             const found = await txRepo.finalization.findRetryExhaustionFinalizationsSkipLocked(
-                finalizationTypes,
+                typeIds,
                 options.staleAfterMs,
                 {
                     processingAttempts: options.processingAttempts,
@@ -245,26 +289,32 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         resources: ResourceEntry[],
         releaseInput: ResourceInboxReleaseDisposition
     ): Promise<Map<Key, ResourceEntry>> {
-        const disposition = toResourceInboxReleaseDisposition(releaseInput);
-        const releasedAt = Temporal.Now.instant();
+        const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
+            (error) => {
+                throw error;
+            },
+            (value) => value
+        );
+        const releasedAt = Temporal.Instant.fromEpochMilliseconds(this.now().epochMilliseconds);
+        const candidates = resources.map((entry) =>
+            computeResourceInboxObservedReplacement(entry, computeResourceInboxRelease(entry, disposition, releasedAt))
+        );
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
                 const releasedEntries = new Map<Key, ResourceEntry>();
 
-                for (const entry of resources) {
-                    const updated = await txRepo.reservations.releaseReserved(entry.key, {
-                        expectedAttempts: entry.dequeueAudit.attempts,
-                        releasedAt,
-                        disposition
-                    });
+                for (const candidate of candidates) {
+                    const entry = candidate.expected.entry;
+                    const updated = await txRepo.reservations.releaseReserved(candidate);
                     if (!updated) {
                         const current = await txRepo.entries.findAnyByKey(entry.key);
                         if (
-                            !current || !isIdempotentHandlerFinalizedRelease(
+                            !current || !isIdempotentHandlerFinalizedRelease({
                                     current,
-                                    entry,
-                                    disposition
-                                ) && !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
+                                    reserved: entry,
+                                    disposition,
+                                    observedAt: releasedAt
+                                }) && !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
                         ) {
                             throw new ResourceInboxLostReservationError(
                                 entry.key,

@@ -19,7 +19,11 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import {
     createGroupRef,
     createPublication,
@@ -142,7 +146,7 @@ describe('RTC topology complete write computation', () => {
                         publication
                     }
                 },
-                outbox: createReservedEntry(),
+                outbox: [createReservedEntry()],
                 delivery: null
             },
             reservationFinish: {
@@ -219,21 +223,7 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
 
 function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
     const group = createRtcTopologyGroupSnapshot('group-1', ['session-1']);
-    const candidate: RallarOverlayTopologySnapshot = {
-        sourceGroupStateCausalRevision: group.causalRevision,
-        state: 'active',
-        overlayId: toScopedOverlayId(group.group),
-        groupRef: group.group,
-        name: 'group-1',
-        topology: 'star',
-        activeSessionIds: ['session-1'],
-        nextHopsBySessionId: { 'session-1': [] },
-        degreeLimit: 5,
-        version: 1,
-        createdByClientId: 'session-1',
-        createdAtEpochMs: 1,
-        updatedAtEpochMs: 1
-    };
+    const candidate = createCandidateSnapshot(group);
     const mutationInput = {
         read: { snapshot: null, publicationClaim: null },
         candidate,
@@ -283,6 +273,24 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         formationAutomationEnabled: false,
         serviceId: 'topology-service',
         publisherStreamId: undefined
+    };
+}
+
+function createCandidateSnapshot(group: ReturnType<typeof createRtcTopologyGroupSnapshot>): RallarOverlayTopologySnapshot {
+    return {
+        sourceGroupStateCausalRevision: group.causalRevision,
+        state: 'active',
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        name: 'group-1',
+        topology: 'star',
+        activeSessionIds: ['session-1'],
+        nextHopsBySessionId: { 'session-1': [] },
+        degreeLimit: 5,
+        version: 1,
+        createdByClientId: 'session-1',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 1
     };
 }
 

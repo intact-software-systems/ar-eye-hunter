@@ -1,9 +1,20 @@
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { DequeueResourceEntryController, type ResourceInboxRetryExhaustion } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { EntityStatus, toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    createDefaultResourceInboxDequeuer,
+    type ResourceInboxRetryExhaustion
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import {
+    EntityStatus,
+    toKeyAsString,
+    type Key
+} from '@shared/queuebox/ResourceEntry.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -24,8 +35,8 @@ describe('AppInbox retry exhaustion', () => {
             database: harness.database.sql
         });
         let reserved = false;
-        const controller = DequeueResourceEntryController.toDequeuer<Key>(
-            {
+        const controller = createDefaultResourceInboxDequeuer<Key>({
+            repository: {
                 isAnyEntryToLock: async () => true,
                 reserveEntries: async () => {
                     if (reserved) {
@@ -42,12 +53,11 @@ describe('AppInbox retry exhaustion', () => {
                     return new Map();
                 }
             },
-            () => new Set([EnqueuedType.APP_INBOX]),
-            () => 1,
-            20,
-            1,
-            createResilience(),
-            {
+            typesToDequeue: () => new Set([EnqueuedType.APP_INBOX]),
+            maxToReserve: () => 1,
+            maxNumToDequeue: 1,
+            resilience: createResilience(),
+            options: {
                 nowEpochMs: () => NOW_EPOCH_MS,
                 jitterUnit: () => 0.5,
                 onRetryExhausted,
@@ -57,7 +67,7 @@ describe('AppInbox retry exhaustion', () => {
                     }
                 }
             }
-        );
+        });
 
         await controller.dequeueForCompute(async () => {
             throw Object.assign(new Error('conditional write lost secret=password-123'), {

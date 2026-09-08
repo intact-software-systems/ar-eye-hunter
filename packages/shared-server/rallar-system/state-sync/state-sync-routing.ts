@@ -5,22 +5,20 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     isClientSnapshotSessionLive,
-    isGroupSnapshotSessionLive,
     type RallarSnapshotPresenceClock
 } from '../presence/snapshot-presence.ts';
 import {
     decodeStateSyncMessage,
     sameScope,
-    type StateSyncDecodeResult,
     type StateSyncPayload
 } from './state-sync-payload.ts';
 
 export interface StateSyncRoutingOptions {
     readonly findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
-    readonly findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+    readonly findClientSnapshotByRef?: (ref: ClientPrincipalRef) => ClientSnapshot | undefined;
     readonly readClientSnapshots?: () => readonly ClientSnapshot[];
     readonly readGroupSnapshots?: () => readonly GroupSnapshot[];
     readonly now?: RallarSnapshotPresenceClock;
@@ -31,18 +29,7 @@ export function resolveStateSyncRecipients(
     message: ALMessage,
     options: StateSyncRoutingOptions = {}
 ): readonly WsServerResolvedRecipient[] | undefined {
-    return resolveDecodedStateSyncRecipients(
-        webSocketServer,
-        decodeStateSyncMessage(message),
-        options
-    );
-}
-
-export function resolveDecodedStateSyncRecipients(
-    webSocketServer: JsonWebSocketServer,
-    decoded: StateSyncDecodeResult,
-    options: StateSyncRoutingOptions = {}
-): readonly WsServerResolvedRecipient[] | undefined {
+    const decoded = decodeStateSyncMessage(message);
     if (decoded.kind === 'unsupported') {
         return undefined;
     }
@@ -59,44 +46,45 @@ function resolveStateSyncPayloadRecipients(
     options: StateSyncRoutingOptions
 ): readonly WsServerResolvedRecipient[] {
     switch (payload.kind) {
-        case 'client-snapshot':
-            return resolvePrincipalRecipients(
-                webSocketServer,
-                {
-                    principalRef: payload.snapshot.principal,
-                    payloadSnapshots: [payload.snapshot]
-                },
-                options
-            );
+        case 'snapshot-page': {
+            if (payload.page.expiresAtMs <= (options.now?.() ?? Date.now())) {
+                return [];
+            }
+            if (payload.recipientPeerId) {
+                return toOpenConnectionRecipients(webSocketServer, [payload.recipientPeerId]);
+            }
+            const scope = payload.page.scope;
+            if (scope.kind === 'principal') {
+                return resolvePrincipalRecipients(webSocketServer, {
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    principalId: scope.resourceId
+                }, options);
+            }
+            const ref = {
+                applicationId: scope.applicationId,
+                workspaceId: scope.workspaceId,
+                groupId: scope.resourceId
+            };
+            const snapshot = options.findGroupSnapshotByRef?.(ref) ??
+                (options.readGroupSnapshots?.() ?? groupStateSnapshotsRepository.getAllGroupStateSnapshots())
+                    .find((group) => sameScope(group.group, ref) && group.group.groupId === ref.groupId);
+            return snapshot && sameScope(snapshot.group, ref) && snapshot.group.groupId === ref.groupId
+                ? resolveGroupRecipients(webSocketServer, snapshot, options)
+                : [];
+        }
         case 'client-event':
             return resolvePrincipalRecipients(
                 webSocketServer,
-                {
-                    principalRef: payload.event,
-                    payloadSnapshots: []
-                },
+                payload.event,
                 options
             );
-        case 'group-snapshot':
-            return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
-        case 'group-directory-snapshot':
-            return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-event':
             return toOpenConnectionRecipients(
                 webSocketServer,
                 payload.envelope.audienceSessionIds
             );
     }
-}
-
-interface PrincipalRecipientTarget {
-    readonly principalRef: ClientPrincipalRef;
-    /**
-     * Authoritative client snapshots carried by the row itself. The mutation
-     * that produced the row may have committed on another server, so the
-     * local cache does not yet list the very session the snapshot announces.
-     */
-    readonly payloadSnapshots: readonly ClientSnapshot[];
 }
 
 /**
@@ -106,16 +94,10 @@ interface PrincipalRecipientTarget {
  */
 function resolvePrincipalRecipients(
     webSocketServer: JsonWebSocketServer,
-    target: PrincipalRecipientTarget,
+    principalRef: ClientPrincipalRef,
     options: StateSyncRoutingOptions
 ): readonly WsServerResolvedRecipient[] {
-    const principalRef = target.principalRef;
-    const clientSnapshots = [
-        ...(options.readClientSnapshots?.() ??
-            clientStateSnapshotsRepository.getAllClientStateSnapshots()),
-        ...target.payloadSnapshots
-    ];
-    const ownRecipients = clientSnapshots
+    const ownRecipients = readScopedClientSnapshots([principalRef], options)
         .filter((snapshot) =>
             sameScope(snapshot.principal, principalRef) &&
             snapshot.principal.principalId === principalRef.principalId
@@ -141,8 +123,6 @@ function resolveGroupRecipients(
     options: StateSyncRoutingOptions
 ): readonly WsServerResolvedRecipient[] {
     const now = options.now?.() ?? Date.now();
-    const clientSnapshots = options.readClientSnapshots?.() ??
-        clientStateSnapshotsRepository.getAllClientStateSnapshots();
     const fullReadPrincipalIds = new Set(
         snapshot.members
             .filter((member) =>
@@ -154,7 +134,14 @@ function resolveGroupRecipients(
             )
             .map((member) => member.principalId)
     );
-    const scopedFullReadSessionIds = new Set<string>();
+    const clientSnapshots = readScopedClientSnapshots(
+        [...fullReadPrincipalIds].map((principalId) => ({
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            principalId
+        })),
+        options
+    );
     const clientRecipients: WsServerResolvedRecipient[] = [];
     for (const clientSnapshot of clientSnapshots) {
         if (
@@ -169,7 +156,6 @@ function resolveGroupRecipients(
                 continue;
             }
 
-            scopedFullReadSessionIds.add(session.sessionId);
             if (webSocketServer.connections.get(session.sessionId)?.isOpen) {
                 clientRecipients.push({
                     peerId: clientSnapshot.principal.principalId,
@@ -178,19 +164,27 @@ function resolveGroupRecipients(
             }
         }
     }
-    const presenceRecipients = snapshot.activeSessions
-        .filter((session) =>
-            fullReadPrincipalIds.has(session.principalId) &&
-            scopedFullReadSessionIds.has(session.sessionId) &&
-            isGroupSnapshotSessionLive(session, now) &&
-            webSocketServer.connections.get(session.sessionId)?.isOpen
-        )
-        .map((session) => ({
-            peerId: session.principalId,
-            connectionId: session.sessionId
-        }));
+    return dedupRecipients(clientRecipients);
+}
 
-    return dedupRecipients([...clientRecipients, ...presenceRecipients]);
+function readScopedClientSnapshots(
+    principalRefs: readonly ClientPrincipalRef[],
+    options: StateSyncRoutingOptions
+): readonly ClientSnapshot[] {
+    if (options.findClientSnapshotByRef) {
+        return principalRefs.flatMap((ref) => {
+            const snapshot = options.findClientSnapshotByRef?.(ref);
+            return snapshot && sameScope(snapshot.principal, ref) && snapshot.principal.principalId === ref.principalId
+                ? [snapshot]
+                : [];
+        });
+    }
+    return (options.readClientSnapshots?.() ?? clientStateSnapshotsRepository.getAllClientStateSnapshots())
+        .filter((snapshot) =>
+            principalRefs.some((ref) =>
+                sameScope(snapshot.principal, ref) && snapshot.principal.principalId === ref.principalId
+            )
+        );
 }
 
 /**

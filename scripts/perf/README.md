@@ -164,6 +164,14 @@ deterministic auth-session insertion, and HTTP routing are not included in
 mutation latency. Each authoritative command is enqueued, retried, and completed
 by the production AppInbox transaction boundary; authorization revalidation and
 its SQL remain measured.
+`create-state-write-benchmark-sql.ts` configures both the admin and service
+clients with API-v1's existing lossless timestamp decoder. PostgreSQL reservation
+comparisons require all six fractional digits; JavaScript `Date` decoding loses
+precision and can make a worker reject its own observation. When comparing a
+revision whose harness omits that decoder, record the same harness-only
+correction on a separate measurement commit, retaining its unchanged product
+code and original parent identity. Never attribute a setup failure to mutation
+latency or fabricate a successful baseline artifact.
 Every workload uses 100
 clients, concurrency 10, and the same deterministic mix: profile/instance,
 membership, presence connect/heartbeat/disconnect, group config, and topology
@@ -211,6 +219,17 @@ inventing evidence: principal snapshot/event effects for profile-instance,
 topology-source. Receipt linkage records the command-specific immutable identity:
 physical ResourceInbox keys for client/group receipts and outer envelope
 `id.msgId` for topology receipts. Intermediate mutation-intent evidence is forbidden.
+Snapshot receipts enumerate every page and audience carrier. Capture uses the
+canonical AL envelope and snapshot-page decoders, checks the page's source
+message, scope, and revision against its operation receipt, and distinguishes
+the source route key from the physical page key. Receipt order does not classify
+effect kinds. The comparator requires exact physical effect linkage for each
+operation, including all snapshot carriers and exactly one event per profile or
+instance update. Missing, repeated, or cross-operation carriers fail validation.
+`api-v1-state-write-outbox-contract.mjs` owns those completion rules and carrier
+counts for capture, comparison, and pooled summaries. Attempt histories are
+validated in `validate-state-write-attempt-evidence.mjs`; durable result and
+receipt linkage are validated in `validate-state-write-durable-evidence.mjs`.
 `atomicCompletionFailures` requires each completed AppInbox result, receipt,
 and exact final effects in the same observation. These evidence queries are
 excluded from command latency and measurement counters. Every metric source is disclosed in
@@ -238,11 +257,10 @@ correctness summaries from raw records before applying comparison gates. Both
 roles are validated against the production durable contract with strict unique
 receipt/final-effect ID, command, and effect linkage; DBW tags cannot waive
 those invariants.
-DBW retention never waives record structure: every receipt is a nonempty raw
-command ID, every final ResourceInbox record has nonempty effect/command/topic/type
-identity and a raw-command reference, and finding IDs must match the governed `DBW-...`
-format. The legacy waiver is selected only by governed baseline metadata; there
-is no permissive either-contract candidate path.
+Every receipt links to a nonempty raw command ID, every final ResourceInbox
+record has nonempty effect/command/topic/type identity and a raw-command
+reference, and finding IDs must match the governed `DBW-...` format. Both
+baseline and candidate artifacts must satisfy these same requirements.
 Validation and comparison are total over parsed JSON-like input: malformed
 nested samples, unsupported mutation kinds, missing evidence containers, or
 invalid derivation records produce path-oriented baseline/candidate errors
@@ -262,7 +280,7 @@ trimming). Validation and resource-regression authorization share this exact
 predicate, so malformed entries cannot authorize a regression.
 
 Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
-runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
+runs 1–100, and concurrency 1–256. The state-write gate requires exactly one warmup,
 at least three measured runs, and concurrency 10.
 
 ## Pinned Benchmark Environment
@@ -318,7 +336,17 @@ rather than surviving into a verdict.
 
 The order-balanced protocol runs four positions — approved-base, candidate,
 candidate, approved-base — each against a freshly recreated container, and
-`write-api-v1-state-write-pooled-results.mjs` pools them. Note that it rejects
+requires exactly nine measured runs per workload at every position:
+
+```sh
+DATABASE_URL=postgres://app:app@localhost:5433/appdb npm run perf:api-v1:state-write -- \
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
+  --out=tmp/perf/position-1.json
+```
+
+Capture preflight and postflight evidence separately for every position.
+`write-api-v1-state-write-pooled-results.mjs` validates the four sources and
+pools them into eighteen measured runs per workload for each role. It rejects
 equal approved-base and candidate commits, so an identical-code control needs
 two distinct commits whose runtime code does not differ.
 

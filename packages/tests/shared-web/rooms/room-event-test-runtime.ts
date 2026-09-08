@@ -15,6 +15,10 @@ import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 
+export interface RoomEventEnvelopeOptions {
+    readonly omitGroup?: boolean;
+}
+
 export interface RoomEventFixtureInput {
     readonly groupId: string;
     readonly eventId: string;
@@ -67,7 +71,8 @@ vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts
     browserStateCacheLifecycle: {
         hydrate: roomEventMocks.hydrateStateCache,
         onChange: vi.fn(() => vi.fn()),
-        initialise: vi.fn()
+        initialise: vi.fn(),
+        cancelSnapshotAssemblies: vi.fn(() => undefined)
     }
 }));
 
@@ -123,7 +128,7 @@ export async function dispatchRoomWsMessage(message: ALMessage): Promise<void> {
 
 export function toRoomEventEnvelopeMessage(
     event: GroupEvent,
-    options: Readonly<{ omitGroup?: boolean; }> = {}
+    options: RoomEventEnvelopeOptions = {}
 ) {
     const snapshot = createGroupSnapshotFixture({
         applicationId: event.applicationId,

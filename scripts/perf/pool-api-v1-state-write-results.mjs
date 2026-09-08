@@ -3,6 +3,9 @@
 import { createHash } from 'node:crypto';
 import {
     PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
+    requiredStateWriteOutboxCount
+} from './api-v1-state-write-outbox-contract.mjs';
+import {
     validateStateWriteArtifact
 } from './compare-api-v1-state-write-results.mjs';
 import { validateStateWritePoolingSource } from './validate-state-write-pooling-source.mjs';
@@ -300,9 +303,7 @@ function summarizeCorrectness(samples, commands) {
             (command) => PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
         ).length,
         requiredOutboxIntentCount: sum(
-            acceptedCommands.map(
-                (command) => PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length
-            )
+            samples.map((sample) => requiredStateWriteOutboxCount(sample.commands, sample.durableEvidence.receipts))
         ),
         outboxIntentCount: sum(samples.map((sample) => sample.durableEvidence.resourceOutbox.length)),
         atomicCompletionFailures: sumSampleMetric('atomicCompletionFailures'),

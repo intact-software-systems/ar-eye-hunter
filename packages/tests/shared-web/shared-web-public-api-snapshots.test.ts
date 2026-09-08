@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { collectExportSnapshot, type ExportSnapshot } from './public-api-snapshot-collector.ts';
 
 interface PublicSurfaceSnapshot {
@@ -713,7 +717,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/rallar-ai.ts',
                 './browser/rallar-crdt.ts',
                 './browser/rallar.ts',
-                './browser/resilience-config.ts',
                 './browser/rooms/room-group-state-http-api.ts',
                 './browser/rtc/rtc-topology-http-api.ts',
                 './browser/session/client-session-http-api.ts',

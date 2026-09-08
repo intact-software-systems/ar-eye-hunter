@@ -1,4 +1,4 @@
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -8,7 +8,7 @@ import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.t
 
 export interface RallarAuthInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 
@@ -19,7 +19,7 @@ export type RallarAuthInboxServiceFactory = (
 export interface RallarCrdtInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 
@@ -30,7 +30,7 @@ export type RallarCrdtInboxServiceFactory = (
 export interface RallarAdminInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 

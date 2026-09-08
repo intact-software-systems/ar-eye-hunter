@@ -1,5 +1,5 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import type { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 
@@ -7,6 +7,7 @@ const RESYNC_CALLBACK_ID = 'rallar:group-state-resync-on-reopen';
 
 export interface InitGroupStateResyncOnReopenInput {
     readonly socket: JsonWebSocketClient;
+    readonly cancelSnapshotAssemblies: () => void;
     // Refresh authoritative snapshot collections into the caches and return the
     // accepted group snapshots (the connect-time hydration flow, re-run).
     readonly resyncStateSnapshots: () => Promise<readonly GroupSnapshot[]>;
@@ -30,10 +31,21 @@ export function initGroupStateResyncOnReopen(
 ): () => void {
     input.socket.onWebsocketCallbacksDo(RESYNC_CALLBACK_ID, {
         onOpen: () => {
+            if (input.isCurrentGeneration()) {
+                input.cancelSnapshotAssemblies();
+            }
             void resyncAfterReopen(input);
+        },
+        onClose: () => {
+            if (input.isCurrentGeneration()) {
+                input.cancelSnapshotAssemblies();
+            }
         }
     });
     return () => {
+        if (input.isCurrentGeneration()) {
+            input.cancelSnapshotAssemblies();
+        }
         input.socket.removeWebsocketCallbackById(RESYNC_CALLBACK_ID);
     };
 }

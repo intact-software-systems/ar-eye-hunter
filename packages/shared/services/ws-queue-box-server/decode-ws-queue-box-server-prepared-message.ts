@@ -1,11 +1,11 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../alm/al-admission-value-validation.ts';
-import { decodeALOutboundPreparedMessage } from '../../alm/outbound/al-outbound-effect-validation.ts';
+import { decodeALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
 export function decodeWsQueueBoxServerPreparedMessage(value: unknown, msg: ALMessage): WsQueueBoxServerPreparedMessage {
     const prepared = decodeALAdmissionRecord(value, ['kind', 'message'], ['peerId', 'connectionId']);
-    const message = decodeALOutboundPreparedMessage(prepared.message, msg);
+    const message = decodeALOutboundTransportMessage(prepared.message, msg);
     if (prepared.kind === 'recipient') {
         decodeALAdmissionRecord(value, ['kind', 'message', 'peerId', 'connectionId']);
         return {

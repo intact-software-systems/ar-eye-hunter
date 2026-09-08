@@ -1,12 +1,15 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { RetryableConflictError, RetryPolicies, tryWithPolicy } from '../../resilience/TryWith.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
+import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type {
     ALOutboundAdmissionStore,
-    ALOutboundCommitBundle,
     ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
+import { captureALOutboundPolicy } from './al-outbound-admission-validation.ts';
+import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
+import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
@@ -14,13 +17,20 @@ import type {
     ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeDiagnosticsSink
 } from './al-outbound-message-runtime.ts';
+import { toALOutboundPendingAdmissionId } from './al-outbound-pending-admission.ts';
+import {
+    decodeALOutboundWorkEntry,
+    isPendingALOutboundWork,
+    toALOutboundWorkKey
+} from './al-outbound-work-entry.ts';
 import {
     computeALOutboundDispatch,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
-    type ALOutboundComputeDependencies,
-    type ALOutboundComputeIntent
+    type ALOutboundComputeIntent,
+    type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
+import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 export namespace ALOutboundDispatchAdmission {
     export interface Result<TPrepared> {
@@ -33,13 +43,18 @@ export namespace ALOutboundDispatchAdmission {
         readonly planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
-        readonly options: ALOutboundCommitDispatchOptions<TPrepared>;
+        readonly options: ALOutboundCommitDispatchOptions;
+    }
+
+    export interface CommitResultInput<TPrepared> {
+        readonly computed: ALOutboundComputedDto<TPrepared>;
+        readonly msg: ALMessage;
+        readonly intent: ALOutboundComputeIntent;
     }
 
     export interface Dependencies<TPrepared> {
         readonly admissionStore: ALOutboundAdmissionStore;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
-        readonly canFallback: boolean;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
@@ -49,19 +64,6 @@ export namespace ALOutboundDispatchAdmission {
 
 /** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
 export class ALOutboundDispatchAdmission<TPrepared> {
-    private static readonly MAX_COMMIT_ATTEMPTS = 10;
-    private static readonly COMMIT_RETRY_INTERVAL_MSECS = 10;
-    private static readonly COMMIT_MAX_RETRY_INTERVAL_MSECS = 50;
-    private static readonly COMMIT_MAX_ELAPSED_MSECS = 500;
-    static readonly COMMIT_RETRY_POLICY = RetryPolicies
-        .optimisticCommit('al-outbound-commit')
-        .maxAttempts(ALOutboundDispatchAdmission.MAX_COMMIT_ATTEMPTS)
-        .retryIntervalMsecs(ALOutboundDispatchAdmission.COMMIT_RETRY_INTERVAL_MSECS)
-        .maxRetryIntervalMsecs(
-            ALOutboundDispatchAdmission.COMMIT_MAX_RETRY_INTERVAL_MSECS
-        )
-        .maxElapsedMsecs(ALOutboundDispatchAdmission.COMMIT_MAX_ELAPSED_MSECS);
-
     private readonly admissionStore: ALOutboundAdmissionStore;
     private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
     private disposed = false;
@@ -79,29 +81,20 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     async commit(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
-        return await this.withSenderCommitQueue(
-            dispatch.msg.id.senderId,
-            () => this.commitDispatchPlanWithRetryNow(dispatch)
-        );
-    }
-
-    private async commitDispatchPlanWithRetryNow(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
-    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         try {
-            return await tryWithPolicy<ALOutboundDispatchAdmission.Result<TPrepared>>(
-                () => this.commitDispatchOnce(dispatch),
-                ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
+            return await this.withSenderCommitQueue(
+                dispatch.msg.id.senderId,
+                () => this.commitDispatchOnce(dispatch)
             );
         }
         catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
+            if (!(error instanceof NonRetryableException) || dispatch.intent !== 'enqueue') {
                 throw error;
             }
-            throw new Error(
-                `Failed to commit outbound message after retries: ${dispatch.msg.id.msgId}`,
-                { cause: error }
-            );
+            return {
+                computed: { msg: dispatch.msg, status: 'failed', reason: error.message, entries: [] },
+                committed: false
+            };
         }
     }
 
@@ -112,19 +105,33 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const read = await this.admissionStore.readOutgoingMessage(dispatch.msg, dispatch.planner);
+        const input = await this.readDispatch(dispatch);
         if (this.disposed) {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const computed = computeALOutboundDispatch({
-            read,
-            dependencies: this.toComputeDependencies(),
-            intent: dispatch.intent,
-            phase: dispatch.phase,
-            options: dispatch.options
-        });
-        this.logDispatchDecision(computed, read.plan);
+        const pending = await this.readPendingDispatch(input);
+        if (pending) {
+            return pending;
+        }
+
+        const computed = computeALOutboundDispatch(input);
+        const issues = validateALOutboundDispatch(input.read, computed).left;
+        if (issues) {
+            if (dispatch.intent !== 'enqueue') {
+                throw new NonRetryableException(issues.map((issue) => issue.message).join('; '));
+            }
+            return {
+                computed: {
+                    msg: input.read.msg,
+                    status: 'failed',
+                    reason: issues.map((issue) => issue.message).join('; '),
+                    entries: []
+                },
+                committed: false
+            };
+        }
+        this.logDispatchDecision(computed, input.read.plan);
         if (!computed.bundle) {
             return { computed, committed: false };
         }
@@ -133,10 +140,118 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
 
         const status = await this.admissionStore.commitBundle(
-            this.toRuntimeClockedBundle(computed.bundle),
+            computed.bundle,
             this.dependencies.decodePreparedMessage
         );
+        if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
+            return await this.retainPendingDispatch(input, computed);
+        }
+        if (status === 'conflict' && dispatch.options.pendingAdmission) {
+            throw new RetryableConflictError('Outbound pending admission commit conflict');
+        }
+        return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+    }
+
+    private async retainPendingDispatch(
+        input: ComputeALOutboundDispatchInput<TPrepared>,
+        computed: ALOutboundComputedDto<TPrepared>
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        const canonicalEntry = computed.bundle?.canonicalEntry;
+        if (!canonicalEntry) {
+            throw new NonRetryableException('Pending admission requires its validated canonical candidate');
+        }
+        const status = await this.admissionStore.retainPendingAdmission({
+            canonicalEntry,
+            creationExpiry: input.read.creationExpiry,
+            payload: {
+                kind: 'admit-message',
+                message: toALOutboundMessageReference(
+                    this.admissionStore.canonicalScope,
+                    canonicalEntry,
+                    input.read.msg
+                ),
+                policy: captureALOutboundPolicy(input.read.plan),
+                preparedMessages: input.read.plan.preparedMessages
+            },
+            decodePrepared: this.dependencies.decodePreparedMessage
+        });
+        if (status !== 'pending') {
+            return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
+        }
+        return {
+            computed: { msg: input.read.msg, status: 'pending-admission', entries: [canonicalEntry] },
+            committed: false
+        };
+    }
+
+    private async readPendingDispatch(
+        input: ComputeALOutboundDispatchInput<TPrepared>
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared> | undefined> {
+        if (
+            input.intent !== 'enqueue' || input.options.pendingAdmission || !input.read.canonicalEntry ||
+            input.read.sentSnapshot
+        ) {
+            return undefined;
+        }
+        const reference = toALOutboundMessageReference(
+            this.admissionStore.canonicalScope,
+            input.outboxEntry,
+            input.read.msg
+        );
+        const key = toALOutboundWorkKey(this.admissionStore.namespace, toALOutboundPendingAdmissionId(reference));
+        const entry = await this.admissionStore.workQueue.getItem(key);
+        if (!entry || reference.expiresAtMs <= this.readNowMs()) {
+            return undefined;
+        }
+        const pending = decodeALOutboundWorkEntry(entry, this.admissionStore.namespace, {
+            decodePrepared: this.dependencies.decodePreparedMessage,
+            message: input.read.msg
+        }).payload;
+        if (
+            pending.kind !== 'admit-message' || !jsonEquals(pending.message, reference) ||
+            (input.options.explicitPlan && (!jsonEquals(pending.policy, captureALOutboundPolicy(input.read.plan)) ||
+                !jsonEquals(pending.preparedMessages, input.read.plan.preparedMessages)))
+        ) {
+            throw new NonRetryableException('Pending outbound admission differs from the supplied captured plan');
+        }
+        return {
+            computed: {
+                msg: input.read.msg,
+                status: isPendingALOutboundWork(entry) ? 'pending-admission' : 'skipped',
+                entries: [input.outboxEntry],
+                reason: isPendingALOutboundWork(entry) ? undefined : 'Pending admission has already terminated'
+            },
+            committed: false
+        };
+    }
+
+    private toCommitResult(
+        status: 'committed' | 'conflict' | 'expired',
+        { computed, msg, intent }: ALOutboundDispatchAdmission.CommitResultInput<TPrepared>
+    ): ALOutboundDispatchAdmission.Result<TPrepared> {
+        if (status === 'expired') {
+            return {
+                computed: {
+                    msg: msg,
+                    status: 'expired',
+                    reason: 'Message expired before commit',
+                    entries: []
+                },
+                committed: false
+            };
+        }
         if (status === 'conflict') {
+            if (intent === 'enqueue') {
+                return {
+                    computed: {
+                        msg: msg,
+                        status: 'failed',
+                        reason: 'Outbound commit conflict',
+                        entries: []
+                    },
+                    committed: false
+                };
+            }
             throw new RetryableConflictError('Outbound commit conflict');
         }
 
@@ -166,21 +281,27 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         };
     }
 
-    private toRuntimeClockedBundle(
-        bundle: ALOutboundCommitBundle<TPrepared>
-    ): ALOutboundCommitBundle<TPrepared> {
-        if (bundle.durableEffects.length === 0) {
-            return bundle;
-        }
-
-        const nowMs = this.readNowMs();
+    private async readDispatch(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
+    ): Promise<ComputeALOutboundDispatchInput<TPrepared>> {
+        const read = await this.admissionStore.readOutgoingMessage({
+            msg: dispatch.msg,
+            planner: dispatch.planner,
+            observedCanonicalEntry: dispatch.options.observedOutboxEntry,
+            intent: dispatch.intent
+        });
+        const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);
         return {
-            ...bundle,
-            durableEffects: bundle.durableEffects.map((effect) =>
-                effect.retryAtMs === undefined
-                    ? { ...effect, retryAtMs: nowMs }
-                    : effect
-            )
+            read,
+            outboxEntry: {
+                ...entry,
+                key: read.canonicalEntry?.key ?? read.sentSnapshot?.outboxKey ??
+                    toALOutboundCanonicalKey(this.admissionStore.canonicalScope, read.msg)
+            },
+            dispatchAtMs: this.readNowMs(),
+            intent: dispatch.intent,
+            phase: dispatch.phase,
+            options: dispatch.options
         };
     }
 
@@ -290,12 +411,5 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         catch (error) {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
-    }
-
-    private toComputeDependencies(): ALOutboundComputeDependencies {
-        return {
-            toOutboxEntry: this.dependencies.toOutboxEntry,
-            canFallback: this.dependencies.canFallback
-        };
     }
 }

@@ -1,8 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { isValidPersistedResult, validateReceiptResultBindings } from '../../../../../scripts/perf/api-v1-state-write-result-binding.mjs';
-import { binding, durableResult, type StateWriteResultBinding } from './test-support/state-write-performance-result-fixture.ts';
+import {
+    binding,
+    durableResult,
+    type StateWriteResultBinding
+} from './test-support/state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write persisted result binding', () => {
+    it('rejects missing command or invalid receipt identity arrays at its own boundary', () => {
+        const command = { kind: 'membership', commandId: 'request' } as const;
+        const resultBinding = binding(command, 'command');
+        for (
+            const input of [
+                { command: undefined, receipt: { receiptIds: ['receipt'], resultBindings: [resultBinding] } },
+                { command, receipt: { receiptIds: { toString: 0 }, resultBindings: [resultBinding] } }
+            ]
+        ) {
+            const errors: string[] = [];
+            expect(() => validateReceiptResultBindings({ ...input, path: 'sample', index: 0, errors })).not.toThrow();
+            expect(errors).toContainEqual(expect.stringContaining('sample.durableEvidence.receipts[0]'));
+        }
+    });
+
     it('rejects the removed nested Either success envelope', () => {
         const command = {
             kind: 'membership',
@@ -60,17 +83,17 @@ describe('API-v1 state-write persisted result binding', () => {
         const authoritative = binding(command, 'command');
         mutate(authoritative);
         const errors: string[] = [];
-        validateReceiptResultBindings(
-            {
+        validateReceiptResultBindings({
+            receipt: {
                 commandId: command.commandId,
                 receiptIds: [command.commandId],
                 resultBindings: [authoritative]
             },
             command,
-            'sample',
-            0,
+            path: 'sample',
+            index: 0,
             errors
-        );
+        });
         expect(errors).not.toEqual([]);
     });
 });

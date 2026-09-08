@@ -1,4 +1,10 @@
-import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
+import {
+    expect,
+    test,
+    type BrowserContext,
+    type Page,
+    type Route
+} from '@playwright/test';
 import type {
     ControlAgentSnapshot,
     ControlRunSnapshot
@@ -9,7 +15,7 @@ const EXECUTE_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=e
     '&applicationId=rallar-server&workspaceId=default&roomId=execute-live-group';
 
 test('opens three browser agents and selects the exact registered cohort from current UI controls', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context);
+    const control = await installAgentLaunchControl(context, Date.now);
     await page.goto(EXECUTE_ROUTE);
 
     await page.getByLabel('Control run ID for new agents').fill('human-flow-run');
@@ -39,7 +45,7 @@ test('opens three browser agents and selects the exact registered cohort from cu
 });
 
 test('lets an operator replace an already selected control run ID', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context);
+    const control = await installAgentLaunchControl(context, Date.now);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(EXECUTE_ROUTE);
 
@@ -61,7 +67,7 @@ test('lets an operator replace an already selected control run ID', async ({ con
 });
 
 test('holds lifecycle actions while a new cohort registers beside existing agents', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context, {
+    const control = await installAgentLaunchControl(context, Date.now, {
         registerOnToken: false,
         initialAgents: [{ runId: 'cohort-run', agentId: 'existing-agent' }]
     });
@@ -90,7 +96,7 @@ test('holds lifecycle actions while a new cohort registers beside existing agent
 });
 
 test('blocks lifecycle actions while launch authority is prepared and recovers after a run switch', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context, {
+    const control = await installAgentLaunchControl(context, Date.now, {
         holdTokenResponses: true,
         initialAgents: [
             { runId: 'pending-run', agentId: 'pending-existing' },
@@ -112,6 +118,7 @@ test('blocks lifecycle actions while launch authority is prepared and recovers a
     );
 
     await chooseControlRun(page, 'other-run');
+    await expect(page).toHaveURL(/controlRunId=other-run/);
     control.releaseTokenResponses();
     await expect(page).toHaveURL(/controlRunId=other-run/);
     await expect(page.getByRole('button', { name: 'Copy 3 launch links' }))
@@ -121,7 +128,7 @@ test('blocks lifecycle actions while launch authority is prepared and recovers a
 });
 
 test('clears completed cohort gating when the selected control run changes', async ({ context, page }) => {
-    await installAgentLaunchControl(context, {
+    await installAgentLaunchControl(context, Date.now, {
         registerOnToken: false,
         initialAgents: [
             { runId: 'first-run', agentId: 'first-existing' },
@@ -143,7 +150,7 @@ test('clears completed cohort gating when the selected control run changes', asy
 });
 
 test('allows manual target adjustment after the launched cohort is selected', async ({ context, page }) => {
-    await installAgentLaunchControl(context);
+    await installAgentLaunchControl(context, Date.now);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(EXECUTE_ROUTE);
     await page.getByLabel('Control run ID for new agents').fill('adjust-run');
@@ -161,7 +168,7 @@ test('allows manual target adjustment after the launched cohort is selected', as
 });
 
 test('explains popup blocking without minting and keeps copy-link fallback usable', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context, {
+    const control = await installAgentLaunchControl(context, Date.now, {
         registerOnToken: false
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -204,7 +211,7 @@ test('explains popup blocking without minting and keeps copy-link fallback usabl
 });
 
 test('replaces an unopened copied cohort when the whole batch is copied again', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context, {
+    const control = await installAgentLaunchControl(context, Date.now, {
         registerOnToken: false
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -239,7 +246,7 @@ test('replaces an unopened copied cohort when the whole batch is copied again', 
 });
 
 test('mints only reserved tabs and keeps each partially blocked identity copyable', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context);
+    const control = await installAgentLaunchControl(context, Date.now);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.addInitScript(() => {
         const nativeOpen = window.open.bind(window);
@@ -288,7 +295,7 @@ test('mints only reserved tabs and keeps each partially blocked identity copyabl
 });
 
 test('removes a reserved tab closed during preparation from registration gating', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context, {
+    const control = await installAgentLaunchControl(context, Date.now, {
         holdTokenResponses: true,
         registerOnToken: false
     });
@@ -342,7 +349,7 @@ test('removes a reserved tab closed during preparation from registration gating'
 });
 
 test('gates missing launch identity and browser-rallar authentication in the visible setup', async ({ context, page }) => {
-    const control = await installAgentLaunchControl(context);
+    const control = await installAgentLaunchControl(context, Date.now);
     await page.goto(EXECUTE_ROUTE);
 
     const setup = page.locator('[data-execute-agent-setup]');
@@ -366,96 +373,108 @@ test('gates missing launch identity and browser-rallar authentication in the vis
     expect(control.tokenRequests).toHaveLength(0);
 });
 
+interface AgentLaunchIdentity {
+    readonly runId: string;
+    readonly agentId: string;
+}
+
+interface AgentLaunchControlOptions {
+    readonly registerOnToken?: boolean;
+    readonly holdTokenResponses?: boolean;
+    readonly initialAgents?: readonly AgentLaunchIdentity[];
+}
+
+interface AgentLaunchControlFixture {
+    readonly tokenRequests: readonly AgentLaunchIdentity[];
+    registerAgent(runId: string, agentId: string): void;
+    releaseTokenResponses(): void;
+}
+
 async function installAgentLaunchControl(
     context: BrowserContext,
-    options: Readonly<{
-        registerOnToken?: boolean;
-        holdTokenResponses?: boolean;
-        initialAgents?: readonly Readonly<{ runId: string; agentId: string; }>[];
-    }> = {}
-) {
+    nowMs: () => number,
+    options: AgentLaunchControlOptions = {}
+): Promise<AgentLaunchControlFixture> {
     const agents = new Map<string, ControlAgentSnapshot>();
     for (const agent of options.initialAgents ?? []) {
-        agents.set(agent.agentId, connectedAgent(agent.runId, agent.agentId));
+        agents.set(agent.agentId, connectedAgent(agent.runId, agent.agentId, nowMs()));
     }
-    const tokenRequests: Array<{ runId: string; agentId: string; }> = [];
-    let releaseTokenResponses = () => undefined;
+    const tokenRequests: AgentLaunchIdentity[] = [];
+    let releaseTokenResponses: () => void = () => undefined;
     const tokenResponseGate = options.holdTokenResponses
         ? new Promise<void>((resolve) => {
             releaseTokenResponses = resolve;
         })
         : undefined;
-    const currentRuns = (): ControlRunSnapshot[] => {
-        const byRun = new Map<string, ControlAgentSnapshot[]>();
-        for (const agent of agents.values()) {
-            const rows = byRun.get(agent.runId) ?? [];
-            rows.push(agent);
-            byRun.set(agent.runId, rows);
-        }
-        const now = Date.now();
-        return [...byRun].map(([runId, rows]) => ({
-            runId,
-            createdAtEpochMs: now - 1_000,
-            updatedAtEpochMs: now,
-            agents: rows,
-            commands: [],
-            results: [],
-            events: [],
-            stats: [],
-            reports: [],
-            heartbeats: []
+    await context.route(CONTROL_ROUTE, (route) =>
+        fulfillAgentLaunchControlRequest(route, {
+            agents,
+            tokenRequests,
+            tokenResponseGate,
+            registerOnToken: options.registerOnToken !== false,
+            nowMs
         }));
-    };
-    await context.route(CONTROL_ROUTE, async (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        const tokenMatch = url.pathname.match(
-            /^\/runs\/([^/]+)\/agents\/([^/]+)\/tokens$/
-        );
-        if (request.method() === 'POST' && tokenMatch) {
-            const runId = decodeURIComponent(tokenMatch[1]);
-            const agentId = decodeURIComponent(tokenMatch[2]);
-            tokenRequests.push({ runId, agentId });
-            await tokenResponseGate;
-            if (options.registerOnToken !== false) {
-                agents.set(agentId, connectedAgent(runId, agentId));
-            }
-            await fulfillJson(route, {
-                runId,
-                agentId,
-                token: `secret-${agentId}`,
-                issuedAtEpochMs: Date.now(),
-                expiresAtEpochMs: Date.now() + 60_000
-            }, 201);
-            return;
-        }
-        if (request.method() === 'GET' && url.pathname === '/runs') {
-            await fulfillJson(route, {
-                runs: currentRuns(),
-                distributedRuns: []
-            });
-            return;
-        }
-        const detailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
-        if (request.method() === 'GET' && detailMatch) {
-            const runId = decodeURIComponent(detailMatch[1]);
-            const run = currentRuns().find((candidate) => candidate.runId === runId);
-            await fulfillJson(
-                route,
-                run ?? { error: 'Control run not found.' },
-                run ? 200 : 404
-            );
-            return;
-        }
-        await fulfillJson(route, { error: 'Not found.' }, 404);
-    });
     return {
         tokenRequests,
         registerAgent: (runId: string, agentId: string) => {
-            agents.set(agentId, connectedAgent(runId, agentId));
+            agents.set(agentId, connectedAgent(runId, agentId, nowMs()));
         },
         releaseTokenResponses
     };
+}
+
+interface AgentLaunchControlRouteState {
+    readonly agents: Map<string, ControlAgentSnapshot>;
+    readonly tokenRequests: AgentLaunchIdentity[];
+    readonly tokenResponseGate: Promise<void> | undefined;
+    readonly registerOnToken: boolean;
+    readonly nowMs: () => number;
+}
+
+async function fulfillAgentLaunchControlRequest(route: Route, control: AgentLaunchControlRouteState): Promise<void> {
+    const request = route.request();
+    const url = new URL(request.url());
+    const tokenMatch = url.pathname.match(
+        /^\/runs\/([^/]+)\/agents\/([^/]+)\/tokens$/
+    );
+    if (request.method() === 'POST' && tokenMatch) {
+        const runId = decodeURIComponent(tokenMatch[1]);
+        const agentId = decodeURIComponent(tokenMatch[2]);
+        control.tokenRequests.push({ runId, agentId });
+        await control.tokenResponseGate;
+        if (control.registerOnToken) {
+            control.agents.set(agentId, connectedAgent(runId, agentId, control.nowMs()));
+        }
+        await fulfillJson(route, {
+            runId,
+            agentId,
+            token: `secret-${agentId}`,
+            issuedAtEpochMs: control.nowMs(),
+            expiresAtEpochMs: control.nowMs() + 60_000
+        }, 201);
+        return;
+    }
+    if (request.method() === 'GET' && url.pathname === '/runs') {
+        await fulfillJson(route, {
+            runs: computeAgentLaunchRuns(Array.from(control.agents.values()), control.nowMs()),
+            distributedRuns: []
+        });
+        return;
+    }
+    const detailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+    if (request.method() === 'GET' && detailMatch) {
+        const runId = decodeURIComponent(detailMatch[1]);
+        const run = computeAgentLaunchRuns(Array.from(control.agents.values()), control.nowMs()).find((candidate) =>
+            candidate.runId === runId
+        );
+        await fulfillJson(
+            route,
+            run ?? { error: 'Control run not found.' },
+            run ? 200 : 404
+        );
+        return;
+    }
+    await fulfillJson(route, { error: 'Not found.' }, 404);
 }
 
 async function chooseControlRun(page: Page, runId: string): Promise<void> {
@@ -465,11 +484,43 @@ async function chooseControlRun(page: Page, runId: string): Promise<void> {
     await trigger.click();
     const search = group.getByRole('combobox', { name: 'Search Control run' });
     await search.fill(runId);
+    const popup = group.locator('[data-searchable-listbox-popup]');
+    await expect(popup).toHaveAttribute('aria-busy', 'false');
+    const option = group.getByRole('option').filter({ hasText: runId });
+    await expect(option).toHaveAttribute('data-option-key', runId);
+    const optionId = await option.getAttribute('id');
+    if (optionId === null) {
+        throw new Error(`Expected control run option ${runId} to have an id.`);
+    }
+    await expect(search).toHaveAttribute('aria-activedescendant', optionId);
     await search.press('Enter');
 }
 
-function connectedAgent(runId: string, agentId: string): ControlAgentSnapshot {
-    const now = Date.now();
+function computeAgentLaunchRuns(
+    agents: readonly ControlAgentSnapshot[],
+    now: number
+): ControlRunSnapshot[] {
+    const byRun = new Map<string, ControlAgentSnapshot[]>();
+    for (const agent of agents) {
+        const rows = byRun.get(agent.runId) ?? [];
+        rows.push(agent);
+        byRun.set(agent.runId, rows);
+    }
+    return [...byRun].map(([runId, rows]) => ({
+        runId,
+        createdAtEpochMs: now - 1_000,
+        updatedAtEpochMs: now,
+        agents: rows,
+        commands: [],
+        results: [],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: []
+    }));
+}
+
+function connectedAgent(runId: string, agentId: string, now: number): ControlAgentSnapshot {
     return {
         runId,
         agentId,
@@ -496,7 +547,7 @@ function connectedAgent(runId: string, agentId: string): ControlAgentSnapshot {
     };
 }
 
-async function fulfillJson(route: Route, body: unknown, status = 200) {
+async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',

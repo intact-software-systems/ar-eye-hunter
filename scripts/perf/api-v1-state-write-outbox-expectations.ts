@@ -11,7 +11,7 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import type { StateWriteOutboxCommand } from './api-v1-state-write-outbox-evidence.ts';
-import type { ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';
+import type { AuthoritativeResultBinding, ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';
 
 export interface ProductionOutboxExpectation {
     readonly effectId: string;
@@ -22,6 +22,9 @@ export interface ProductionOutboxExpectation {
     readonly typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
     readonly payloadTypeId: string;
     readonly identityKind: ProductionReceiptEvidence['identityKind'];
+    readonly aggregateRef: AuthoritativeResultBinding['aggregateRef'];
+    readonly sourceMessageId: string | null;
+    readonly stateRevision: AuthoritativeResultBinding['stateRevision'];
 }
 
 interface ExpectedOutboxIdentity {
@@ -36,55 +39,80 @@ export function computeProductionOutboxExpectations(
     receipts: readonly ProductionReceiptEvidence[]
 ): readonly ProductionOutboxExpectation[] {
     const receiptByCommand = new Map(receipts.map((receipt) => [receipt.commandId, receipt]));
-    return commands.flatMap((command) => {
+    const expectations: ProductionOutboxExpectation[] = [];
+    for (const command of commands) {
         const receipt = receiptByCommand.get(command.commandId);
         if (receipt === undefined) {
-            return [];
+            continue;
         }
-        const effectKinds = expectedEffectKinds(command.kind);
-        return receipt.outboxIds.flatMap((effectId, index) => {
-            const effectKind = effectKinds[index];
-            const binding = receipt.resultBindings.find((candidate) => candidate.outboxIds.includes(effectId));
-            if (effectKind === undefined || binding === undefined) {
-                return [];
+        for (const effectId of receipt.outboxIds) {
+            const bindings = receipt.resultBindings.filter((candidate) => candidate.outboxIds.includes(effectId));
+            if (bindings.length === 1) {
+                expectations.push(computeOutboxExpectation(command, bindings[0]!, {
+                    effectId,
+                    identityKind: receipt.identityKind
+                }));
             }
-            const identity = toExpectedOutboxIdentity(effectKind, binding.aggregateRef);
-            const physicalKey = toAppQueueKey({
-                topicId: identity.topicId,
-                resourceId: effectId,
-                contextId: identity.logicalContextId
-            });
-            return [{
-                effectId,
-                physicalKey,
-                logicalContextId: identity.logicalContextId,
-                canonicalCommandId: binding.receiptId,
-                effectKind,
-                typeId: identity.typeId,
-                payloadTypeId: identity.payloadTypeId,
-                identityKind: receipt.identityKind
-            }];
-        });
-    });
+        }
+    }
+    return expectations;
 }
 
-function expectedEffectKinds(kind: StateWriteOutboxCommand['kind']): readonly string[] {
-    switch (kind) {
+interface ReceiptOutboxEffect {
+    readonly effectId: string;
+    readonly identityKind: ProductionReceiptEvidence['identityKind'];
+}
+
+function computeOutboxExpectation(
+    command: StateWriteOutboxCommand,
+    binding: AuthoritativeResultBinding,
+    effect: ReceiptOutboxEffect
+): ProductionOutboxExpectation {
+    const effectKind = expectedEffectKind(command, binding, effect.effectId);
+    const identity = toExpectedOutboxIdentity(effectKind, binding.aggregateRef);
+    return {
+        effectId: effect.effectId,
+        physicalKey: toAppQueueKey({
+            topicId: identity.topicId,
+            resourceId: effect.effectId,
+            contextId: identity.logicalContextId
+        }),
+        logicalContextId: identity.logicalContextId,
+        canonicalCommandId: binding.receiptId,
+        effectKind,
+        typeId: identity.typeId,
+        payloadTypeId: identity.payloadTypeId,
+        identityKind: effect.identityKind,
+        aggregateRef: binding.aggregateRef,
+        stateRevision: binding.stateRevision,
+        sourceMessageId: command.kind === 'profile-instance'
+            ? `${binding.receiptId}:${effectKind}:revision=${binding.stateRevision}`
+            : null
+    };
+}
+
+function expectedEffectKind(
+    command: StateWriteOutboxCommand,
+    binding: AuthoritativeResultBinding,
+    effectId: string
+): string {
+    switch (command.kind) {
         case 'profile-instance':
-            return [
-                'principal-state:snapshot',
-                'principal-state:event',
-                'principal-state:snapshot',
-                'principal-state:event'
-            ];
+            return effectId === toAppQueueKey({
+                    resourceId: `${binding.receiptId}:principal-state:event:revision=${binding.stateRevision}`,
+                    topicId: AppTopics.clientStateEvent,
+                    contextId: ''
+                }).resourceId
+                ? 'principal-state:event'
+                : 'principal-state:snapshot';
         case 'membership':
         case 'presence-connect':
         case 'presence-heartbeat':
         case 'presence-disconnect':
         case 'config':
-            return ['group-presence-summary'];
+            return 'group-presence-summary';
         case 'topology-source':
-            return ['rtc-topology-recompute'];
+            return 'rtc-topology-recompute';
     }
 }
 

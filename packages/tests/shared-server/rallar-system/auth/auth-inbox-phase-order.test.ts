@@ -1,8 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
@@ -322,8 +328,18 @@ function createContext(
     };
     return {
         enqueue,
-        message: { id: { ts: 1_000 } } as never,
+        message: {
+            id: { v: 2, msgId: entry.key.resourceId, ts: 1_000, senderId: 'auth-test-service' },
+            route: { ...entry.key },
+            payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
+        },
         entry,
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Auth handler test result')
     };
 }

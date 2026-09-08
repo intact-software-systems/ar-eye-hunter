@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS resource_inbox
 );
 
 CREATE INDEX IF NOT EXISTS resource_inbox_ix
-    ON resource_inbox (ri_status, ri_type_id);
+    ON resource_inbox (ri_status, ri_type_id, created_ts, ri_row_id);
 
 CREATE INDEX IF NOT EXISTS resource_inbox_expire_ts_ix
     ON resource_inbox (expire_ts);

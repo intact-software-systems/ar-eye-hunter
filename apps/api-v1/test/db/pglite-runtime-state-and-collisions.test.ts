@@ -27,7 +27,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createPGliteClientEventCollisionFixture } from './pglite-client-event-collision-test-runtime.ts';
@@ -731,7 +731,7 @@ Deno.test(
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 return await pending;
             };

@@ -1,9 +1,11 @@
+import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { expect, onTestFinished } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALOutboundRuntimeDiagnosticsSink, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { computeALOutboundDispatch, type ALOutboundComputeIntent } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
@@ -18,10 +20,12 @@ import {
     type ALOutboundPlanner,
     type ResourceEntry
 } from '@shared/mod.ts';
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 interface OutboundTestRuntimeInput {
+    readonly queueEngine?: InboxOutboxEngine;
     readonly outbox?: InMemoryQueueBox;
     readonly stores?: ALOutboundRuntimeStores;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -46,11 +50,7 @@ export async function enqueueOutboundOrThrow(
 export async function reserveOutbox(outbox: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
     return [
         ...(
-            await outbox.reserveEntries(
-                new Set(['outbox']),
-                new Set([EntityStatus.NEW]),
-                10
-            )
+            await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 })
         ).values()
     ];
 }
@@ -60,8 +60,9 @@ export function createDefaultOutboundTestRuntime(options: OutboundTestRuntimeInp
 
     const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
         decodePreparedMessage: decodeOutboundTestPayload,
+        queueEngine: options.queueEngine,
         outbox,
-        stores: options.stores ?? { admissionStore: createDefaultOutboundTestAdmissionStore() },
+        stores: options.stores ?? { admissionStore: createDefaultOutboundTestAdmissionStore(outbox) },
         diagnostics: options.diagnostics,
         nowMs: options.nowMs ?? Date.now,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
@@ -84,11 +85,11 @@ export async function waitUntil(predicate: () => boolean): Promise<void> {
     expect(predicate()).toBe(true);
 }
 
-export function createDefaultOutboundTestAdmissionStore(): ALOutboundAdmissionStore {
+export function createDefaultOutboundTestAdmissionStore(outbox?: InMemoryQueueBox): ALOutboundAdmissionStore {
     return createALOutboundAdmissionStore({
         namespace: 'outbound-test',
         supersedenceTrackTtlMs: 5 * 60_000,
-        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
         retention: normalizeALRuntimeStoreRetention()
     });
 }
@@ -107,18 +108,21 @@ export function createFlakyOutboundAdmissionStore(
     >
 ): ALOutboundAdmissionStore {
     return {
+        retainPendingAdmission: (input) => inner.retainPendingAdmission(input),
+        namespace: inner.namespace,
+        canonicalScope: inner.canonicalScope,
+        workQueue: inner.workQueue,
+        isMessageSuperseded: (message) => inner.isMessageSuperseded(message),
         ready: () => inner.ready(),
-        readOutgoingMessage: <TPrepared>(
-            msg: ALMessage,
-            planner: ALOutboundPlanner<TPrepared>
-        ) => inner.readOutgoingMessage<TPrepared>(msg, planner),
+        readOutgoingMessage: (input) => inner.readOutgoingMessage(input),
         readRepairMessage: <TPrepared>(
             msgId: string,
             planner: ALOutboundPlanner<TPrepared>
         ) => inner.readRepairMessage<TPrepared>(msgId, planner),
-        getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
-        getAllSentMessages: () => inner.getAllSentMessages(),
-        getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
+        readSentMessage: (msgId: string) => inner.readSentMessage(msgId),
+        readSentMessageByOrdering: (trackKey, seq) => inner.readSentMessageByOrdering(trackKey, seq),
+        readReceiptState: (msgId: string) => inner.readReceiptState(msgId),
+        readPendingAck: (msgId: string) => inner.readPendingAck(msgId),
         commitBundle: (bundle, decodePrepared) =>
             hooks.commitBundle
                 ? hooks.commitBundle(bundle, decodePrepared)
@@ -132,15 +136,16 @@ export function createFlakyOutboundAdmissionStore(
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decodePrepared)
                 : inner.claimReadyEffects(input, decodePrepared),
-        completeEffect: (effectId, workerId, decodePrepared) =>
+        rejectEffect: (reservation) => inner.rejectEffect(reservation),
+        completeEffect: (reservation) =>
             hooks.completeEffect
-                ? hooks.completeEffect(effectId, workerId, decodePrepared)
-                : inner.completeEffect(effectId, workerId, decodePrepared),
-        rescheduleEffect: (input, decodePrepared) =>
+                ? hooks.completeEffect(reservation)
+                : inner.completeEffect(reservation),
+        rescheduleEffect: (input) =>
             hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input, decodePrepared)
-                : inner.rescheduleEffect(input, decodePrepared),
-        peekNextEffectReadyAt: (decodePrepared) => inner.peekNextEffectReadyAt(decodePrepared)
+                ? hooks.rescheduleEffect(input)
+                : inner.rescheduleEffect(input),
+        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
     };
 }
 
@@ -160,7 +165,7 @@ export function createOutboundMessage(
         {
             text: resourceId
         },
-        options
+        { ttlMs: options?.ttlMs ?? 30_000 }
     );
 }
 
@@ -170,4 +175,29 @@ export function firstValue<K, V>(map: Map<K, V>): V {
         throw new Error('Expected at least one map value');
     }
     return first;
+}
+
+export function createOutboundCanonicalEntry(store: ALOutboundAdmissionStore, msg: ALMessage): ResourceEntry {
+    return { ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'), key: toALOutboundCanonicalKey(store.canonicalScope, msg) };
+}
+
+export async function computeOutboundTestAdmission(store: ALOutboundAdmissionStore, message: ALMessage) {
+    const read = await store.readOutgoingMessage({
+        msg: message,
+        planner: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+        observedCanonicalEntry: undefined,
+        intent: 'enqueue'
+    });
+    const computed = computeALOutboundDispatch({
+        read,
+        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+        dispatchAtMs: Date.now(),
+        intent: 'enqueue',
+        phase: 'immediate',
+        options: {}
+    });
+    if (!computed.bundle) {
+        throw new Error(`Expected outbound admission, received ${computed.status}`);
+    }
+    return computed.bundle;
 }

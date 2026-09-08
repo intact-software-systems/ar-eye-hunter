@@ -1,10 +1,19 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { SuccessDto } from '@shared/queuebox/DequeueController.ts';
-import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { describe, expect, it } from 'vitest';
+import { EitherCollectors } from '@shared/resilience/Either.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 class TestData {
     public readonly name: string;
@@ -32,13 +41,13 @@ describe('queuedeno compatibility', () => {
             duration
         );
 
-        const resilienceDto = ResilienceDto.toResilienceDto(
-            circuitBreakerPolicy,
-            initialRate,
-            maxRate,
-            concurrencyIncreaseStep,
-            concurrencyReduceStep
-        );
+        const resilienceDto = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: circuitBreakerPolicy,
+            initialRate: initialRate,
+            maxRate: maxRate,
+            concurrencyIncreaseStep: concurrencyIncreaseStep,
+            concurrencyReduceStep: concurrencyReduceStep
+        });
 
         const helloWorld = 'hello world';
         const newEntry: ResourceEntry = {
@@ -64,31 +73,31 @@ describe('queuedeno compatibility', () => {
 
         await queue.enqueue(newEntry);
 
-        const dequeued = await DequeueResourceEntryController.toDequeuer<string>(
-            queue,
-            () => types,
-            () => 1,
-            20,
-            100,
-            resilienceDto
-        )
+        const dequeued = await createDefaultResourceInboxDequeuer<string>({
+            repository: queue,
+            typesToDequeue: () => types,
+            maxToReserve: () => 1,
+            maxNumToDequeue: 100,
+            resilience: resilienceDto
+        })
             .withReturnDequeuedEntries(true)
-            .dequeueForCompute(async (_key, entry) => {
+            .dequeueForCompute(async (_key, attempt) => {
+                const entry = attempt.entry;
                 const testData: TestData = JSON.parse(entry.resource);
                 expect(testData.name).toBe(helloWorld);
 
                 return helloWorld;
             });
 
-        const successes: Array<SuccessDto<Key, ResourceEntry, string>> = DequeueResourceEntryController.toSuccesses(dequeued);
+        const successes = [...dequeued.values()].flatMap((lane) => EitherCollectors.toListFoldRights(lane.values()));
 
-        expect(successes.length).toBeGreaterThan(0);
+        expect(successes).toHaveLength(1);
         expect(
             successes.some((success) => success.computedValue === helloWorld)
         ).toBe(true);
         expect(
             successes.some(
-                (success) => success.value.status === EntityStatus.COMPLETED
+                (success) => success.value.entry.status === EntityStatus.COMPLETED
             )
         ).toBe(true);
     });

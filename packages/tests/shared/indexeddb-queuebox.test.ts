@@ -4,13 +4,25 @@ import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
+import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { encodeStoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
+import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    ResourceEntry,
+    toKeyAsString
+} from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -24,7 +36,9 @@ describe('IndexedDbQueueBox', () => {
             status: EntityStatus.RETRY,
             nextTs: now.subtract({ seconds: 30 })
         });
-        const database = await openIndexedDbWithStore(dbName, queueStoreDefinition());
+        const database = await openIndexedDbWithStores(dbName, [
+            toIndexedDbQueueStoreDefinition(IndexedDbQueueBox.DEFAULT_STORE_NAME)
+        ]);
         try {
             await writeRawQueueEntry(database, withoutRevision(encodeStoredResourceEntry(original, 0)));
         }
@@ -76,11 +90,7 @@ describe('IndexedDbQueueBox', () => {
         const existing = await queue.enqueueIfAbsent(replacement);
         expect(existing.resource).toBe(original.resource);
 
-        const reserved = await queue.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.NEW]),
-            1
-        );
+        const reserved = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 
         expect(firstValue(reserved).resource).toBe(original.resource);
     });
@@ -193,11 +203,7 @@ describe('IndexedDbQueueBox', () => {
 
         await writer.enqueueIfAbsent(entry);
 
-        const reserved = await reader.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.NEW]),
-            1
-        );
+        const reserved = await reader.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 
         expect(reserved.size).toBe(1);
 
@@ -342,11 +348,7 @@ describe('IndexedDbQueueBox', () => {
 
         await queue.enqueueIfAbsent(createEntry(typeId, 'msg-2'));
 
-        const reserved = await queue.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.NEW]),
-            1
-        );
+        const reserved = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 
         const retrying = await queue.releaseEntries(
             [firstValue(reserved)],
@@ -365,11 +367,7 @@ describe('IndexedDbQueueBox', () => {
         expect((await queue.getItem(retryEntry.key))?.dequeueAudit.nextTs?.toString())
             .toBe(retryEntry.dequeueAudit.nextTs?.toString());
 
-        const immediatelyReservable = await queue.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.RETRY]),
-            1
-        );
+        const immediatelyReservable = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.RETRY]), reservationInput: 1 });
 
         expect(immediatelyReservable.size).toBe(0);
     });
@@ -510,16 +508,8 @@ describe('IndexedDbQueueBox', () => {
         const queueAfterCleanup = new IndexedDbQueueBox({ dbName });
         expect(await queueAfterCleanup.cleanupAsync()).toBe(false);
 
-        const completed = await queue.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.COMPLETED]),
-            10
-        );
-        const active = await queue.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const completed = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.COMPLETED]), reservationInput: 10 });
+        const active = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
         expect(completed.size).toBe(0);
         expect(active.size).toBe(1);
@@ -561,11 +551,11 @@ describe('IndexedDbQueueBox', () => {
             })
         );
 
-        const reclaimed = await queue.reserveTimeoutEntries(
-            new Set([typeId]),
-            1,
-            Temporal.Duration.from({ seconds: 1 })
-        );
+        const reclaimed = await queue.reserveTimeoutEntries({
+            typeIds: new Set([typeId]),
+            reservationInput: 1,
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 1 })
+        });
 
         expect(reclaimed.size).toBe(1);
 
@@ -609,11 +599,11 @@ describe('IndexedDbQueueBox', () => {
         });
         await queue.enqueue(exhausted);
 
-        const reserved = await queue.reserveEntries(
-            new Set([typeId]),
-            new Set([EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 2 }
-        );
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([typeId]),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+        });
 
         expect(reserved.size).toBe(0);
         expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(2);
@@ -648,19 +638,19 @@ describe('IndexedDbQueueBox', () => {
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000
-            } as never
+            }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY
-            ? await queue.reserveEntries(
-                new Set([typeId]),
-                new Set([EntityStatus.RETRY]),
-                { maxToReserve: 1, maxAttempts: 2 }
-            )
-            : await queue.reserveTimeoutEntries(
-                new Set([typeId]),
-                { maxToReserve: 1, maxAttempts: 2 },
-                Temporal.Duration.from({ minutes: 5 })
-            );
+            ? await queue.reserveEntries({
+                typeIds: new Set([typeId]),
+                statusIds: new Set([EntityStatus.RETRY]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+            })
+            : await queue.reserveTimeoutEntries({
+                typeIds: new Set([typeId]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+                timeSinceStartTs: Temporal.Duration.from({ minutes: 5 })
+            });
 
         expect(advertised).toBe(false);
         expect(reserved.size).toBe(0);
@@ -676,11 +666,11 @@ describe('IndexedDbQueueBox', () => {
             attempts: 2
         }));
 
-        const reclaimed = await queue.reserveTimeoutEntries(
-            new Set([typeId]),
-            { maxToReserve: 1, maxAttempts: 2 },
-            Temporal.Duration.from({ minutes: 5 })
-        );
+        const reclaimed = await queue.reserveTimeoutEntries({
+            typeIds: new Set([typeId]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            timeSinceStartTs: Temporal.Duration.from({ minutes: 5 })
+        });
 
         expect(reclaimed.size).toBe(0);
     });
@@ -884,12 +874,12 @@ describe('IndexedDbQueueBox', () => {
         const bounded = await queue.reserveOverdueRetryEntries(
             new Set([requestedType]),
             Number(now.epochMilliseconds) - 30_000,
-            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 } as never
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 }
         );
         const extended = await queue.reserveOverdueRetryEntries(
             new Set([requestedType]),
             Number(now.epochMilliseconds) - 30_000,
-            { maxToReserve: 1, maxAttempts: 2, maxToScan: 3 } as never
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 3 }
         );
 
         expect(bounded.size).toBe(0);
@@ -946,7 +936,7 @@ describe('IndexedDbQueueBox', () => {
             await queue.reserveOverdueRetryEntries(
                 new Set([newer.typeId, older.typeId]),
                 Number(now.epochMilliseconds) - 30_000,
-                { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 } as never
+                { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 }
             )
         );
 
@@ -999,32 +989,6 @@ async function openQueueDatabase(dbName: string): Promise<IDBDatabase> {
         const request = indexedDB.open(dbName);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('IndexedDB queue open failed'));
-    });
-}
-
-function queueStoreDefinition() {
-    return {
-        name: IndexedDbQueueBox.DEFAULT_STORE_NAME,
-        keyPath: 'keyString',
-        indexes: [{
-            name: IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
-            keyPath: ['typeId', 'status', 'fairnessDueEpochMs', 'keyString']
-        }]
-    } as const;
-}
-
-async function readRawQueueEntry(
-    database: IDBDatabase,
-    keyString: string
-): Promise<unknown> {
-    return await new Promise<unknown>((resolve, reject) => {
-        const transaction = database.transaction(
-            IndexedDbQueueBox.DEFAULT_STORE_NAME,
-            'readonly'
-        );
-        const request = transaction.objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME).get(keyString);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB raw queue read failed'));
     });
 }
 

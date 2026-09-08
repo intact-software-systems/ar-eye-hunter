@@ -1,9 +1,9 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
     decodeCanonicalGroupPresenceSummaryEntry,
     type GroupPresenceSummaryWorkData
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 const MALFORMED_SUMMARY_WORK = 'Presence-summary work payload is malformed';

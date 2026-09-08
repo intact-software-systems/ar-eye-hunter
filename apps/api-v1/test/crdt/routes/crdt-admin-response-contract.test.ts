@@ -35,7 +35,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
@@ -514,7 +514,7 @@ async function verifyEqualStrictCrdtHttpContenders(
         clocks: beforeFacts.clocks + 1,
         ids: beforeFacts.ids + 1
     });
-    await harness.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await harness.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
     const [first, contender] = await Promise.all([firstPending, contenderPending]);
 
     assert.equal(first.response.status, 200);
@@ -631,7 +631,7 @@ async function verifyEraseResponseAndAuditDelivery(
     await waitForPGliteQueueRow(harness.sql, 'APP_OUTBOX', 'NEW');
     await harness.outbox.dequeueOutbox(
         OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-        toResilienceDto()
+        createApiV1TestQueueResilience()
     );
     assert.equal(harness.readAuditAttempts(), 2);
     assert.equal(harness.audit.length, 1);
@@ -802,7 +802,7 @@ async function postAndProcess(
         body: JSON.stringify(body)
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
     return await readJsonRecord(await responsePending);
 }
 
@@ -816,7 +816,7 @@ async function postAndProcessRaw(
         body: JSON.stringify(body)
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
     const response = await responsePending;
     return { response, body: await readJsonRecord(response) };
 }

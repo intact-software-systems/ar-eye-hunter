@@ -88,8 +88,11 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
                 payload
             )
         );
-        if (result.status === 'enqueued' || result.status === 'duplicate') {
+        if (result.status === 'enqueued' || result.status === 'duplicate' || result.status === 'pending-admission') {
             this.wakeOutbox?.();
+        }
+        else if (result.status !== 'accepted') {
+            throw new Error(result.reason ?? `Signaling admission returned ${result.status}`);
         }
     }
 }

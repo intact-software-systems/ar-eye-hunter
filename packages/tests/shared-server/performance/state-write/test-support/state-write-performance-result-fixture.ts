@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
+import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../scripts/perf/api-v1-state-write-outbox-contract.mjs';
 
 export type StateWriteMutationKind = keyof typeof PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
 
@@ -142,7 +142,9 @@ export function binding(command: StateWriteFixtureCommand, operationId: string):
         commandHash: `sha256:${'a'.repeat(64)}`,
         outcome: 'applied',
         attemptCount: 1,
-        outboxIds: effectIds(command),
+        outboxIds: command.kind === 'profile-instance'
+            ? effectIds(command).slice(operationId === 'profile' ? 0 : 2, operationId === 'profile' ? 2 : 4)
+            : effectIds(command),
         aggregateRef,
         stateRevision: command.kind === 'profile-instance' ? 1 : null,
         causalRevision: command.kind === 'profile-instance' || topology
@@ -177,37 +179,7 @@ export function durableResult(
     const authoritative = binding(command, operationId);
     const outboxIds = effectIds(command);
     if (command.kind === 'topology-source') {
-        const config = authoritative.acceptedConfig;
-        return {
-            receipt: {
-                commandId: authoritative.receiptId,
-                requestId: authoritative.requestId,
-                commandHash: authoritative.commandHash,
-                groupRef: authoritative.aggregateRef,
-                acceptedVersion: authoritative.acceptedVersion,
-                acceptedStorageRevision: authoritative.acceptedStorageRevision,
-                acceptedCreatedAtEpochMs: authoritative.acceptedCreatedAtEpochMs,
-                acceptedUpdatedAtEpochMs: authoritative.acceptedUpdatedAtEpochMs,
-                acceptedExpiresAtEpochMs: authoritative.acceptedExpiresAtEpochMs,
-                acceptedConfig: config,
-                acceptedCausalRevision: authoritative.acceptedCausalRevision,
-                eventId: authoritative.eventId,
-                operation: authoritative.operation,
-                target: authoritative.target,
-                outcome: authoritative.outcome,
-                attemptCount: authoritative.attemptCount,
-                outboxIds: authoritative.outboxIds
-            },
-            config: {
-                groupRef: authoritative.aggregateRef,
-                config,
-                version: authoritative.acceptedVersion,
-                createdAtEpochMs: 1,
-                updatedAtEpochMs: 1,
-                updatedByPrincipalId: 'principal',
-                requestId: authoritative.requestId
-            }
-        };
+        return createTopologyDurableResult(authoritative);
     }
     if (command.kind.startsWith('presence-')) {
         return {
@@ -242,6 +214,40 @@ export function durableResult(
                 requestId: authoritative.requestId,
                 snapshotVersion: authoritative.snapshotVersion
             }
+        }
+    };
+}
+
+function createTopologyDurableResult(authoritative: StateWriteResultBinding): StateWriteTopologyDurableResult {
+    const config = authoritative.acceptedConfig;
+    return {
+        receipt: {
+            commandId: authoritative.receiptId,
+            requestId: authoritative.requestId,
+            commandHash: authoritative.commandHash,
+            groupRef: authoritative.aggregateRef,
+            acceptedVersion: authoritative.acceptedVersion,
+            acceptedStorageRevision: authoritative.acceptedStorageRevision,
+            acceptedCreatedAtEpochMs: authoritative.acceptedCreatedAtEpochMs,
+            acceptedUpdatedAtEpochMs: authoritative.acceptedUpdatedAtEpochMs,
+            acceptedExpiresAtEpochMs: authoritative.acceptedExpiresAtEpochMs,
+            acceptedConfig: config,
+            acceptedCausalRevision: authoritative.acceptedCausalRevision,
+            eventId: authoritative.eventId,
+            operation: authoritative.operation,
+            target: authoritative.target,
+            outcome: authoritative.outcome,
+            attemptCount: authoritative.attemptCount,
+            outboxIds: authoritative.outboxIds
+        },
+        config: {
+            groupRef: authoritative.aggregateRef,
+            config,
+            version: authoritative.acceptedVersion,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'principal',
+            requestId: authoritative.requestId
         }
     };
 }

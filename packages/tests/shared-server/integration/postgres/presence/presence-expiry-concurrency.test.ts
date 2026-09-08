@@ -7,12 +7,25 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
-import type { AuditStamp, Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupEvent,
+    GroupRef
+} from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+    mkdtemp,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 
@@ -1002,11 +1015,13 @@ describe('Postgres presence expiry concurrency', () => {
                 const [expiryAttempt, reconnectAttempt] = await Promise.allSettled([
                     reconnectExpiry.expireExpiredSessions(atEpochMs),
                     reconnect.connectSession(
-                        scope,
-                        reconnectRef.principalId,
-                        reconnectRef.clientInstanceId,
-                        reconnectRef.sessionId,
-                        reconnectRequest
+                        {
+                            scope: scope,
+                            principalId: reconnectRef.principalId,
+                            clientInstanceId: reconnectRef.clientInstanceId,
+                            sessionId: reconnectRef.sessionId,
+                            request: reconnectRequest
+                        }
                     )
                 ]);
                 if (expiryAttempt.status === 'rejected') {
@@ -1016,11 +1031,13 @@ describe('Postgres presence expiry concurrency', () => {
                 if (reconnectAttempt.status === 'rejected') {
                     expect(reconnectAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
                     await reconnect.connectSession(
-                        scope,
-                        reconnectRef.principalId,
-                        reconnectRef.clientInstanceId,
-                        reconnectRef.sessionId,
-                        reconnectRequest
+                        {
+                            scope: scope,
+                            principalId: reconnectRef.principalId,
+                            clientInstanceId: reconnectRef.clientInstanceId,
+                            sessionId: reconnectRef.sessionId,
+                            request: reconnectRequest
+                        }
                     );
                 }
                 expect(await repository.findSession(reconnectRef)).toMatchObject({
@@ -1129,7 +1146,8 @@ describe('Postgres presence expiry concurrency', () => {
                     workspaceId: 'workspace-default',
                     groupId: 'shared-group'
                 },
-                'Absent workspace'
+                'Absent workspace',
+                Date.now()
             );
             const explicitSentinelGroup = groupFixture(
                 {
@@ -1137,7 +1155,8 @@ describe('Postgres presence expiry concurrency', () => {
                     workspaceId: '_',
                     groupId: 'shared-group'
                 },
-                'Explicit sentinel workspace'
+                'Explicit sentinel workspace',
+                Date.now()
             );
 
             try {
@@ -1161,6 +1180,7 @@ describe('Postgres presence expiry concurrency', () => {
                 ).toEqual([explicitSentinelGroup]);
 
                 const eventStore = new PSqlGroupStateEventRepository(sql);
+                const eventEpochMs = Date.now();
                 const eventFor = (ref: GroupRef, reason: string, snapshotVersion: number): GroupEvent => ({
                     applicationId: ref.applicationId,
                     workspaceId: ref.workspaceId,
@@ -1172,7 +1192,7 @@ describe('Postgres presence expiry concurrency', () => {
                         groupRevision: snapshotVersion,
                         presenceRevision: 0
                     },
-                    occurredAtEpochMs: Date.now() + snapshotVersion,
+                    occurredAtEpochMs: eventEpochMs + snapshotVersion,
                     actor: {
                         kind: 'service',
                         serviceId: 'postgres-group-event-key-test'
@@ -1241,9 +1261,9 @@ function createGroupStateEventRepository(
     return new PSqlGroupStateEventRepository(runtimeRepository.sql);
 }
 
-function groupFixture(ref: GroupRef, displayName: string): Group {
+function groupFixture(ref: GroupRef, displayName: string, atEpochMs: number): Group {
     const audit: AuditStamp = {
-        atEpochMs: Date.now(),
+        atEpochMs,
         actor: { kind: 'service', serviceId: 'postgres-group-key-test' },
         reason: null,
         traceId: null,
@@ -1263,9 +1283,9 @@ function groupFixture(ref: GroupRef, displayName: string): Group {
     });
 }
 
-function uniqueScope(prefix: string): StateScope {
+function uniqueScope(prefix: string, nonce = crypto.randomUUID()): StateScope {
     return {
-        applicationId: `${prefix}-${crypto.randomUUID()}`,
+        applicationId: `${prefix}-${nonce}`,
         workspaceId: 'workspace-1'
     };
 }

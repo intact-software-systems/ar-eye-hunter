@@ -1,39 +1,45 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/al-control.ts';
-import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import {
-    RetryableConflictError,
-    RetryPolicies,
-    tryWithPolicy
-} from '../../resilience/TryWith.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import { Either } from '../../resilience/Either.ts';
+import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type {
     ALInboundAdmissionStore,
     ALInboundPlanner
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
-import { ALInboundDurableEffectWorker } from './al-inbound-durable-effect-worker.ts';
-import { computeALInboundAdmission } from './compute-al-inbound-admission.ts';
+import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
+import { ALInboundWorkHandler } from './al-inbound-work-handler.ts';
 import {
-    prepareALInboundCommitBundle,
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
+import { validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
 }
 
 export namespace ALInboundMessageRuntime {
+    export type Source =
+        | { readonly kind: 'rtc-peer'; readonly peerId: string; }
+        | { readonly kind: 'ws-client'; readonly peerId: string; readonly roomRecipientPeerIds?: readonly string[]; }
+        | { readonly kind: 'trusted-server'; };
+
+    export type Acceptance =
+        | { readonly kind: 'admitted' | 'duplicate' | 'resync-required' | 'disposed' | 'pending-admission'; }
+        | { readonly kind: 'not-admitted'; readonly reason: string; }
+        | { readonly kind: 'control'; readonly handled: boolean; };
+
+    export type PendingAuthority =
+        | { readonly kind: 'authorized'; readonly source: Source; }
+        | { readonly kind: 'retry'; readonly retryAfterMs: number; }
+        | { readonly kind: 'rejected'; };
+
     export interface Clock {
         nowMs(): number;
-    }
-
-    export interface Scheduler {
-        /** Runs the callback once after the delay; the returned operation cancels it before invocation. */
-        schedule(callback: () => void, delayMs: number): () => void;
     }
 
     export interface Resources {
@@ -41,33 +47,42 @@ export namespace ALInboundMessageRuntime {
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
         readonly effectWorkerId: string;
         readonly clock: Clock;
-        readonly scheduler: Scheduler;
+        readonly random: () => number;
+        readonly queueEngine: InboxOutboxEngine;
+        readonly ownsQueueEngine: boolean;
     }
 
     export interface Dependencies extends Resources {
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly planIncomingMessage: ALInboundPlanner;
+        /** Rechecks asynchronous ingress authority before pending data enters conditional admission. */
+        readonly readPendingAdmissionAuthority?: (msg: ALMessage, source: Source) => Promise<PendingAuthority>;
         readonly readStoredEntry: (entry: ResourceEntry) => Readonly<ALMessage>;
-        readonly dispatchInboxEntry: (entry: ResourceEntry, plan?: ALMessageHandlingPlan) => Promise<void>;
+        readonly dispatchInboxEntry: (
+            entry: ResourceEntry,
+            plan: ALMessageHandlingPlan,
+            source: Source
+        ) => Promise<void | 'completed' | 'retry'>;
+        /** Absence means the supplied dispatcher is ready for every local message. */
+        readonly canDispatchMessage?: (msg: ALMessage) => boolean;
         readonly sendControlMessage: (msg: ALMessage) => Promise<void>;
         readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
-        readonly forwardMessage?: (msg: ALMessage, fromPeerId: string, plan: ALMessageHandlingPlan) => Promise<void>;
+        readonly forwardMessage?: (
+            msg: ALMessage,
+            fromPeerId: string,
+            plan: ALMessageHandlingPlan
+        ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
     }
 }
 
 export class ALInboundMessageRuntime {
-    private static readonly COMMIT_RETRY_POLICY = RetryPolicies.optimisticCommit(
-        'al-inbound-commit'
-    );
-
     private readonly admissionStore: ALInboundAdmissionStore;
     private readonly readyPromise: Promise<void>;
-    private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
 
+    private readonly admission: ALInboundMessageAdmission;
     private readonly delivery: ALInboundAdmittedDelivery;
-    private readonly effects: ALInboundDurableEffectWorker;
+    private readonly effects: ALInboundWorkHandler;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -76,11 +91,16 @@ export class ALInboundMessageRuntime {
         this.dependencies = dependencies;
         this.admissionStore = dependencies.admissionStore;
         this.readyPromise = this.admissionStore.ready();
-        this.delivery = new ALInboundAdmittedDelivery({
+        this.admission = new ALInboundMessageAdmission(dependencies);
+        this.delivery = new ALInboundAdmittedDelivery(dependencies);
+        this.effects = new ALInboundWorkHandler({
             ...dependencies,
-            commitRetryPolicy: ALInboundMessageRuntime.COMMIT_RETRY_POLICY
+            delivery: this.delivery,
+            admission: this.admission
         });
-        this.effects = new ALInboundDurableEffectWorker({ ...dependencies, delivery: this.delivery });
+        if (dependencies.ownsQueueEngine) {
+            void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
+        }
     }
 
     async ready(): Promise<void> {
@@ -91,135 +111,66 @@ export class ALInboundMessageRuntime {
 
     dispose(): void {
         this.disposed = true;
+        this.admission.dispose();
         this.effects.dispose();
         this.delivery.dispose();
     }
 
     async handleIncomingMessage(
-        msg: ALMessage,
-        fromPeerId: string,
+        value: unknown,
+        source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner = this.dependencies.planIncomingMessage
-    ): Promise<void> {
+    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+        if (this.disposed) {
+            return Either.ofRight({ kind: 'disposed' });
+        }
+        const decoded = decodeALMessageValue(value);
+        if (decoded.left) {
+            return Either.ofLeft(decoded.left);
+        }
+        const msg = decoded.right!;
+        const validated = validateALInboundMessage(msg, source, this.dependencies.effectPreparation.selfPeerId);
+        if (validated.left) {
+            return Either.ofLeft(validated.left);
+        }
         await this.ready();
-
         if (this.disposed) {
-            return;
+            return Either.ofRight({ kind: 'disposed' });
         }
-
         if (isALControlTypeId(msg.payload.typeId)) {
-            const acceptance = await this.acceptControlMessageWithRetry(msg);
-            const waitForEffects = !this.effects.hasActiveDrain();
-            const effectDrain = this.effects.start();
-            if (waitForEffects) {
-                await effectDrain;
-            }
-            if (!this.disposed) {
-                await this.dependencies.onControlMessage?.(msg, acceptance);
-            }
-            return;
+            return Either.ofRight(await this.handleControlMessage(msg));
         }
-
-        await this.withSenderCommitQueue(
-            msg.id.senderId,
-            () => this.admitIncomingMessage(msg, fromPeerId, planIncomingMessage)
-        );
+        const attempt = await this.admission.attempt(msg, source, planIncomingMessage);
+        if (attempt.left) {
+            return Either.ofLeft(attempt.left);
+        }
+        const result = attempt.right!;
+        const acceptance = result.kind === 'completed' ? result.acceptance : result.pending === undefined
+            ? { kind: 'not-admitted' as const, reason: 'conflict' }
+            : await this.admission.retainPending(result.pending);
+        await this.effects.committed();
+        return Either.ofRight(acceptance);
     }
 
-    private async acceptControlMessageWithRetry(
-        msg: ALMessage
-    ): Promise<ALControlAcceptance> {
-        return await tryWithPolicy(
-            async () => {
-                try {
-                    return await this.admissionStore.acceptControlMessage(msg);
-                }
-                catch (error) {
-                    if (error instanceof ALAdmissionBackendConflictError) {
-                        throw new RetryableConflictError(
-                            'Inbound control-message admission conflict',
-                            { cause: error }
-                        );
-                    }
-                    throw error;
-                }
-            },
-            ALInboundMessageRuntime.COMMIT_RETRY_POLICY
-        );
-    }
-
-    private async admitIncomingMessage(
-        msg: ALMessage,
-        fromPeerId: string,
-        planIncomingMessage: ALInboundPlanner
-    ): Promise<void> {
-        if (this.disposed) {
-            return;
-        }
+    private async handleControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
+        let acceptance: ALControlAcceptance;
         try {
-            await tryWithPolicy(
-                () => this.commitIncomingMessage(msg, fromPeerId, planIncomingMessage),
-                ALInboundMessageRuntime.COMMIT_RETRY_POLICY
-            );
+            acceptance = await this.admissionStore.acceptControlMessage(msg);
         }
         catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return { kind: 'not-admitted', reason: 'conflict' };
             }
-            throw new Error(
-                `Failed to commit inbound message after retries: ${msg.id.msgId}`,
-                { cause: error }
-            );
+            throw error;
         }
-    }
-
-    private async commitIncomingMessage(
-        msg: ALMessage,
-        fromPeerId: string,
-        planIncomingMessage: ALInboundPlanner
-    ): Promise<void> {
-        const read = await this.admissionStore.readIncomingMessage(
-            msg,
-            fromPeerId,
-            planIncomingMessage
-        );
-        const canForward = !read.plan.dropReason && this.dependencies.forwardMessage !== undefined &&
-            (this.dependencies.canForwardMessage?.(msg) ?? true);
-        const computed = computeALInboundAdmission(read, canForward);
-        const bundle = prepareALInboundCommitBundle(computed, this.dependencies.effectPreparation);
-        const status = await this.admissionStore.commitBundle(bundle);
-        if (status === 'conflict') {
-            throw new RetryableConflictError('Inbound commit conflict');
+        const waitForEffects = !this.effects.hasActiveDrain();
+        const effectDrain = this.effects.committed();
+        if (waitForEffects) {
+            await effectDrain;
         }
-        await this.effects.start();
-    }
-
-    private async withSenderCommitQueue<T>(
-        senderId: string,
-        task: () => Promise<T>
-    ): Promise<T> {
-        const previous = this.commitQueuesBySenderId.get(senderId) ?? Promise.resolve();
-        let release: (() => void) | undefined;
-        const gate = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        const tail = previous.catch(() => undefined).then(() => gate);
-        this.commitQueuesBySenderId.set(senderId, tail);
-
-        await previous.catch(() => undefined);
-
-        try {
-            return await task();
+        if (!this.disposed) {
+            await this.dependencies.onControlMessage?.(msg, acceptance);
         }
-        finally {
-            release?.();
-            if (this.commitQueuesBySenderId.get(senderId) === tail) {
-                this.commitQueuesBySenderId.delete(senderId);
-            }
-        }
-    }
-
-    async dispatchStoredEntry(entry: ResourceEntry): Promise<'completed' | 'retry'> {
-        await this.ready();
-        return await this.delivery.dispatchAdmittedEntry(entry);
+        return { kind: 'control', handled: acceptance.handled };
     }
 }

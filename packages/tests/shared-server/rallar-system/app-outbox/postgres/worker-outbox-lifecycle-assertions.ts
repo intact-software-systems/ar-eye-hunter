@@ -1,5 +1,11 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
@@ -8,10 +14,10 @@ import {
     type DirectResourceOutboxLifecycleExpectation
 } from '../direct-resource-outbox-lifecycle.ts';
 
-export type WorkerOutboxReceipt = Readonly<{
-    outboxIds: readonly string[];
-    domainStatus: 'applied' | 'no-op' | 'rejected';
-}>;
+export interface WorkerOutboxReceipt {
+    readonly outboxIds: readonly string[];
+    readonly domainStatus: 'applied' | 'no-op' | 'rejected';
+}
 
 export type WorkerOutboxKind = 'client' | 'group';
 export type WorkerOutboxEffect =
@@ -19,13 +25,13 @@ export type WorkerOutboxEffect =
     | 'principal-state:event'
     | 'group-presence-summary';
 
-export type DirectResourceInboxRow = Readonly<{
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_type_id: string;
-    ri_status: string;
-    ri_resource: string;
-}>;
+export interface DirectResourceInboxRow {
+    readonly ri_resource_id: string;
+    readonly ri_topic_id: string;
+    readonly ri_type_id: string;
+    readonly ri_status: string;
+    readonly ri_resource: string;
+}
 
 export interface AssertWorkerOutboxLifecycleInput {
     readonly entries: readonly DirectResourceOutboxEntry[];
@@ -36,6 +42,11 @@ export interface AssertWorkerOutboxLifecycleInput {
 
 export function assertWorkerOutboxLifecycle(input: AssertWorkerOutboxLifecycleInput): void {
     const { entries, outputs, kind, effects } = input;
+    if (kind === 'client') {
+        for (const entry of entries) {
+            assertClientOutboxMessageIdentity(entry);
+        }
+    }
     const expectedEntries = outputs.flatMap((output) => {
         if (output.domainStatus !== 'applied') {
             throw new Error(`Expected applied worker receipt, received: ${output.domainStatus}`);
@@ -142,13 +153,15 @@ function readJsonWireString(value: JsonWireValue | undefined, label: string): st
     return value;
 }
 
+interface ExpectedGroupPresenceSummaryWsEntry {
+    readonly resourceId: string;
+    readonly expected: DirectResourceOutboxLifecycleExpectation['entries'][number];
+}
+
 function expectedGroupPresenceSummaryWsEntries(
     entries: readonly DirectResourceOutboxEntry[],
     commandId: string
-): readonly Readonly<{
-    resourceId: string;
-    expected: DirectResourceOutboxLifecycleExpectation['entries'][number];
-}>[] {
+): readonly ExpectedGroupPresenceSummaryWsEntry[] {
     // The event row carries the delta envelope; the bare member-state:event
     // payload went with snapshot-per-change.
     const expectedEffects = [
@@ -190,7 +203,7 @@ function expectedOutboxEntry(
             topicId: AppTopics.clientStateSnapshot,
             typeId: EnqueuedType.WS_OUTBOX,
             status: EntityStatus.NEW,
-            payloadIncludes: [resourceId, effect]
+            payloadIncludes: [effect]
         };
     }
     if (kind === 'client' && effect === 'principal-state:event') {
@@ -199,7 +212,7 @@ function expectedOutboxEntry(
             topicId: AppTopics.clientStateEvent,
             typeId: EnqueuedType.WS_OUTBOX,
             status: EntityStatus.NEW,
-            payloadIncludes: [resourceId, effect]
+            payloadIncludes: [effect]
         };
     }
     if (kind === 'group' && effect === 'group-presence-summary') {
@@ -212,4 +225,12 @@ function expectedOutboxEntry(
         };
     }
     throw new Error(`Unsupported ${kind} worker outbox effect: ${effect}`);
+}
+
+function assertClientOutboxMessageIdentity(entry: DirectResourceOutboxEntry): void {
+    const message = decodePersistedALMessage(entry.resource);
+    const key = toAppQueueKey({ ...message.route, resourceId: message.id.msgId });
+    if (key.resourceId !== entry.resourceId || key.topicId !== entry.topicId) {
+        throw new Error(`Client outbox message does not bind its canonical key: ${entry.resourceId}`);
+    }
 }

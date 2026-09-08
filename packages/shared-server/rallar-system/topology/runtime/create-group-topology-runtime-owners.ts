@@ -12,8 +12,7 @@ import type {
     GroupTopologyPublisher
 } from '../planning/group-topology-planning-contracts.ts';
 import {
-    GroupTopologyPlanningService,
-    type GroupTopologyPlanningServiceDependencies
+    GroupTopologyPlanningService
 } from '../planning/group-topology-planning-service.ts';
 import type { RallarRtcTopologyService } from './rallar-rtc-topology-service.ts';
 
@@ -61,7 +60,7 @@ export function createGroupTopologyRuntimeOwners(
         configRepository: input.configRepository,
         serverDefaults: input.serverDefaults
     });
-    const planningDependencies: GroupTopologyPlanningServiceDependencies = {
+    const planningDependencies: GroupTopologyPlanningService.Dependencies = {
         findGroupSnapshotByRef: input.findGroupSnapshotByRef,
         queryService: query,
         topologyService: input.topologyService,

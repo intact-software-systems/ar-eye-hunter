@@ -1,3 +1,4 @@
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
@@ -5,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupTopologyConfigMutationReceipt, GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
@@ -84,7 +84,11 @@ const APP_OUTBOX_WORKER_PATH = fileURLToPath(
 
 export async function createPostgresSql(databaseUrl: string): Promise<PostgresSql> {
     const postgres = await import('postgres');
-    const rawSql = postgres.default(databaseUrl, { max: 2, idle_timeout: 1 });
+    const rawSql = postgres.default(databaseUrl, {
+        max: 2,
+        idle_timeout: 1,
+        types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
+    });
     return Object.assign(toPSqlSql(rawSql), {
         end: async (): Promise<void> => await rawSql.end()
     });

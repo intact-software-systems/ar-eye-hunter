@@ -58,6 +58,8 @@ export function createRallarSessionController(
         clearCurrentRoom: options.stateRuntime.clearCurrentRoom
     });
     const authLifecycle = new BrowserSessionAuthLifecycle({
+        nowMs: Date.now,
+        newRequestId: crypto.randomUUID.bind(crypto),
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         authRuntime: options.authRuntime,

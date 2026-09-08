@@ -26,7 +26,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
@@ -168,7 +168,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const validation = await validationPending;
             assert.equal(validation.status, 422);
@@ -197,7 +197,7 @@ Deno.test(
             await authSessions.deleteSession(authority);
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const denied = await authorityPending;
             assert.equal(denied.status, 403);
@@ -218,7 +218,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             assert.equal((await firstPending).status, 200);
             const conflict = await submit(
@@ -412,7 +412,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         assert.ok((await seedPending).right);
         const command = await toTopologyAppInboxCommand({
@@ -426,7 +426,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         const result = await pending;
         assert.match(result.left?.message ?? '', /active|archived|lifecycle|forbidden/i);

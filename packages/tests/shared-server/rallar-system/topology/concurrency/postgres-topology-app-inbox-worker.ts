@@ -3,6 +3,7 @@ import postgres from 'postgres';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -15,7 +16,12 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
-import { requireExactKeys, requireExactOptionalKeys, requireOneOf, requireString } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
+import {
+    requireExactKeys,
+    requireExactOptionalKeys,
+    requireOneOf,
+    requireString
+} from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -54,12 +60,10 @@ interface WorkerOutput {
     readonly failure: AppInboxFailure | null;
 }
 
-type WorkerResult = Either<AppInboxFailure, GroupTopologyConfigMutationExecution>;
-
-type TopologyAppInboxWorkerTrace = PostgresAppInboxWorkerTrace & {
+interface TopologyAppInboxWorkerTrace extends PostgresAppInboxWorkerTrace {
     backendPid: number;
     topologyReadBarrierPrimitive: TopologyReadBarrierPrimitive | null;
-};
+}
 
 async function main(): Promise<void> {
     const databaseUrl = Deno.env.get('DATABASE_URL');
@@ -67,7 +71,11 @@ async function main(): Promise<void> {
         throw new Error('DATABASE_URL is required');
     }
     const input = readInput();
-    const postgresSql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+    const postgresSql = postgres(databaseUrl, {
+        max: 2,
+        idle_timeout: 1,
+        types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
+    });
     const sql = toPSqlSql(postgresSql);
     const [{ pid }] = await sql<{ pid: number; }[]>`select pg_backend_pid()::int as pid`;
     const trace: TopologyAppInboxWorkerTrace = {
@@ -137,7 +145,7 @@ async function writeTopologyAppInboxCommand(
     runtime: PostgresAppInboxWorkerRuntime,
     input: WorkerInput,
     authority: IssuedAuthSession
-): Promise<WorkerResult> {
+): Promise<Either<AppInboxFailure, GroupTopologyConfigMutationExecution>> {
     const principalId = input.request.updatedByPrincipalId;
     const data = await toTopologyAppInboxCommand({
         actor: { principalId, sessionId: authority.sessionId },
@@ -201,7 +209,7 @@ async function readRequestAttemptCount(sql: PSqlSql, requestId: string): Promise
 
 function toWorkerOutput(
     requestId: string,
-    result: WorkerResult,
+    result: Either<AppInboxFailure, GroupTopologyConfigMutationExecution>,
     attemptCount: number
 ): WorkerOutput {
     return result.fold<WorkerOutput>(

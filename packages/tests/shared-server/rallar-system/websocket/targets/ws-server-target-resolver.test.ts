@@ -1,4 +1,11 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
@@ -6,6 +13,7 @@ import type {
     GroupMember,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+import { computeStateSnapshotPages, type StateSnapshotScope } from '@shared/api/state-snapshot-page.ts';
 import {
     AppTopics,
     ConnectionContext,
@@ -16,16 +24,95 @@ import {
 } from '@shared/mod.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createOpenTestWebSocket } from '../test-support/open-test-websocket.ts';
 
 describe('createWsServerTargetResolver state sync routing', () => {
+    it.each(['applicationId', 'workspaceId', 'groupId'] as const)('rejects a scoped lookup that returns another %s', (field) => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'room',
+            applicationId: 'app',
+            workspaceId: 'workspace',
+            members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+            snapshotVersion: 1
+        });
+        const server = new JsonWebSocketServer();
+        addOpenConnection(server, 'session-a');
+        const message = newALMulticastMessage('session-a', newALEventRoute('room.chat', 'room', 'message'), snapshot.group, 'chat.message.v1', {});
+        const resolver = createWsServerTargetResolver(server, {
+            findGroupSnapshotByRef: () => ({ ...snapshot, group: { ...snapshot.group, [field]: 'another' } })
+        });
+
+        expect(resolver.resolveGroupRecipients?.('room', message)).toEqual([]);
+    });
+
+    it.each(['cold', 'older', 'newer', 'newer-retained-presence', 'wrong-scope'] as const)(
+        'uses a frozen page audience with a %s current snapshot',
+        (cacheState) => {
+            const published = createGroupSnapshot({
+                groupId: 'room',
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+                snapshotVersion: 2
+            });
+            const current = createGroupSnapshot({
+                groupId: 'room',
+                applicationId: 'app',
+                workspaceId: cacheState === 'wrong-scope' ? 'another' : 'workspace',
+                members: [{ principalId: 'alice', sessionId: 'session-a', status: 'removed' }],
+                snapshotVersion: cacheState === 'older' ? 1 : 3
+            });
+            const server = new JsonWebSocketServer();
+            addOpenConnection(server, 'session-a');
+            addOpenConnection(server, 'joined-after-publication');
+            const resolver = createWsServerTargetResolver(server, {
+                findGroupSnapshotByRef: () =>
+                    cacheState === 'cold'
+                        ? undefined
+                        : cacheState === 'newer-retained-presence'
+                        ? { ...current, activeSessions: published.activeSessions }
+                        : current
+            });
+            const page = createSnapshotPage(published, AppTopics.groupStateSnapshot);
+
+            expect(resolver.resolveBroadcastRecipients?.('room', page)).toEqual(
+                cacheState === 'cold' || cacheState === 'older' ? [{ peerId: 'session-a', connectionId: 'session-a' }] : []
+            );
+        }
+    );
+
+    it.each(['cache', 'provider'] as const)('retains current member device fanout from the %s without group presence for ordinary pages', (source) => {
+        configureTestCacheRepositories();
+        const snapshot = createGroupSnapshot({
+            groupId: 'room',
+            applicationId: 'app',
+            workspaceId: 'workspace',
+            members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+            snapshotVersion: 2
+        });
+        const current = { ...snapshot, activeSessions: [] };
+        const client = createClientSnapshot({
+            principalId: 'alice',
+            sessionId: 'session-a',
+            applicationId: 'app',
+            workspaceId: 'workspace',
+            snapshotVersion: 2
+        });
+        clientStateSnapshotsRepository.setClientStateSnapshots(source === 'cache' ? [client] : []);
+        const server = new JsonWebSocketServer();
+        addOpenConnection(server, 'session-a');
+        const resolver = createWsServerTargetResolver(server, {
+            findGroupSnapshotByRef: () => current,
+            findClientSnapshotByRef: source === 'provider' ? () => client : undefined
+        });
+
+        expect(resolver.resolveBroadcastRecipients?.('room', createSnapshotPage(snapshot, AppTopics.groupStateSnapshot, 'current')))
+            .toEqual([{ peerId: 'alice', connectionId: 'session-a' }]);
+    });
+
     it('routes client state broadcasts only to open sessions in the same application and workspace', () => {
         configureTestCacheRepositories();
 
@@ -65,24 +152,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             workspaceId: 'workspace-a',
             snapshotVersion: 2
         });
-        const message = {
-            ...newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(
-                    AppTopics.clientStateSnapshot,
-                    snapshot.principal.principalId,
-                    snapshot.principal.principalId
-                ),
-                'all',
-                AppTopics.clientStateSnapshot,
-                snapshot
-            ),
-            targets: {
-                mode: 'broadcast' as const,
-                scope: 'principal' as const,
-                principalRef: snapshot.principal
-            }
-        };
+        const message = createSnapshotPage(snapshot, AppTopics.clientStateSnapshot);
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
@@ -136,18 +206,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             ],
             snapshotVersion: 2
         });
-        const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(
-                AppTopics.groupStateSnapshot,
-                snapshot.group.groupId,
-                snapshot.group.groupId
-            ),
-            'room',
-            AppTopics.groupStateSnapshot,
-            snapshot,
-            { groupRef: snapshot.group }
-        );
+        const message = createSnapshotPage(snapshot, AppTopics.groupStateSnapshot);
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
@@ -199,18 +258,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             ],
             snapshotVersion: 2
         });
-        const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(
-                AppTopics.groupDirectorySnapshot,
-                snapshot.group.groupId,
-                snapshot.group.groupId
-            ),
-            'room',
-            AppTopics.groupDirectorySnapshot,
-            snapshot,
-            { groupRef: snapshot.group }
-        );
+        const message = createSnapshotPage(snapshot, AppTopics.groupDirectorySnapshot);
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
@@ -291,18 +339,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 }
             ]
         };
-        const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(
-                AppTopics.groupStateSnapshot,
-                snapshot.group.groupId,
-                snapshot.group.groupId
-            ),
-            'room',
-            AppTopics.groupStateSnapshot,
-            snapshot,
-            { groupRef: snapshot.group }
-        );
+        const message = createSnapshotPage(snapshot, AppTopics.groupStateSnapshot);
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
@@ -372,19 +409,12 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-b']);
     });
 
-    it('routes room broadcasts with a scoped group snapshot resolver when same group id exists in multiple workspaces', () => {
+    it('rejects an unscoped room broadcast without consulting a scoped snapshot resolver', () => {
         configureTestCacheRepositories();
 
         const webSocketServer = new JsonWebSocketServer();
         addOpenConnection(webSocketServer, 'session-a');
         addOpenConnection(webSocketServer, 'session-b');
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
-            snapshotVersion: 1
-        });
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
@@ -400,12 +430,6 @@ describe('createWsServerTargetResolver state sync routing', () => {
             { text: 'workspace-b' }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
-            findGroupSnapshotById: () => workspaceA,
-            resolveGroupRef: (groupId) => ({
-                applicationId: 'app-1',
-                workspaceId: 'workspace-b',
-                groupId
-            }),
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -414,22 +438,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
                 .sort()
-        ).toEqual(['session-b']);
+        ).toEqual([]);
     });
 
-    it('routes room broadcasts using target groupRef before the group id fallback', () => {
+    it('routes room broadcasts using target groupRef', () => {
         configureTestCacheRepositories();
 
         const webSocketServer = new JsonWebSocketServer();
         addOpenConnection(webSocketServer, 'session-a');
         addOpenConnection(webSocketServer, 'session-b');
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
-            snapshotVersion: 1
-        });
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
@@ -448,7 +465,6 @@ describe('createWsServerTargetResolver state sync routing', () => {
             }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
-            findGroupSnapshotById: () => workspaceA,
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -458,6 +474,26 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 .map((recipient) => recipient.connectionId)
                 .sort()
         ).toEqual(['session-b']);
+    });
+
+    it('rejects a fixed topology audience whose route names another room', () => {
+        const server = new JsonWebSocketServer();
+        addOpenConnection(server, 'session-a');
+        const message = newALBroadcastMessage(
+            'rallar-server',
+            newALEventRoute('overlay.topology', 'wrong-room', 'topology'),
+            'room',
+            'overlay.topology',
+            { version: 1 },
+            { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-a', groupId: 'room-a' } }
+        );
+        const resolver = createWsServerTargetResolver(server);
+        expect(
+            resolver.resolveBroadcastRecipients?.('room', {
+                ...message,
+                targets: { ...message.targets, mode: 'broadcast', scope: 'room', recipientPeerIds: ['session-a'] }
+            })
+        ).toEqual([]);
     });
 
     it('routes a fixed room audience without consulting a lagging group snapshot', () => {
@@ -475,7 +511,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
         });
         const message = {
             ...newALBroadcastMessage(
-                'rallar-server',
+                'api-node-17',
                 newALEventRoute('overlay.topology', 'shared-room', 'topology-3'),
                 'room',
                 'overlay.topology',
@@ -541,19 +577,12 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-a']);
     });
 
-    it('routes multicast targets using target groupRef before the group id fallback', () => {
+    it('routes multicast targets using target groupRef', () => {
         configureTestCacheRepositories();
 
         const webSocketServer = new JsonWebSocketServer();
         addOpenConnection(webSocketServer, 'session-a');
         addOpenConnection(webSocketServer, 'session-b');
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
-            snapshotVersion: 1
-        });
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
@@ -571,7 +600,6 @@ describe('createWsServerTargetResolver state sync routing', () => {
             )
         };
         const resolver = createWsServerTargetResolver(webSocketServer, {
-            findGroupSnapshotById: () => workspaceA,
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -583,7 +611,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-b']);
     });
 
-    it('routes state sync group events with the scoped resolver before the group id fallback', () => {
+    it('routes state sync group events with the scoped resolver', () => {
         configureTestCacheRepositories();
 
         const webSocketServer = new JsonWebSocketServer();
@@ -606,14 +634,6 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 snapshotVersion: 1
             })
         ]);
-
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            members: [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
-            snapshotVersion: 1
-        });
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
@@ -632,7 +652,6 @@ describe('createWsServerTargetResolver state sync routing', () => {
             { groupRef: event }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
-            findGroupSnapshotById: () => workspaceA,
             findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
 
@@ -687,26 +706,17 @@ describe('createWsServerTargetResolver state sync routing', () => {
             expiresAtEpochMs: expiredAt
         });
         clientStateSnapshotsRepository.setClientStateSnapshots([client]);
-        const stateSyncMessage = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(
-                AppTopics.groupStateSnapshot,
-                group.group.groupId,
-                group.group.groupId
-            ),
-            'all',
-            AppTopics.groupStateSnapshot,
-            group
-        );
+        const stateSyncMessage = createSnapshotPage(group, AppTopics.groupStateSnapshot);
         const roomMessage = newALBroadcastMessage(
             'session-a',
             newALEventRoute('room.chat', 'room-a', 'msg-1'),
             'room',
             'chat.message.v1',
-            { text: 'expired session' }
+            { text: 'expired session' },
+            { groupRef: group.group }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
-            findGroupSnapshotById: () => group,
+            findGroupSnapshotByRef: () => group,
             now: () => now
         });
 
@@ -722,7 +732,7 @@ function addOpenConnection(
     connectionId: string
 ): void {
     server.addConnection(
-        new ConnectionContext(connectionId, createOpenTestWebSocket())
+        new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() })
     );
 }
 
@@ -996,4 +1006,44 @@ function createClientSessions(input: CreateClientSnapshotInput): ClientSnapshot[
             expiresAtEpochMs
         }
     ];
+}
+
+function createSnapshotPage(snapshot: GroupSnapshot | ClientSnapshot, topicId: string, audience: 'fixed' | 'current' = 'fixed'): ALMessage {
+    const group = 'group' in snapshot ? snapshot.group : undefined;
+    const principal = 'principal' in snapshot ? snapshot.principal : undefined;
+    const ref = group ?? principal!;
+    const scope: StateSnapshotScope = {
+        kind: group ? 'group' : 'principal',
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        resourceId: group ? group.groupId : principal!.principalId
+    };
+    const original = newALBroadcastMessage('api-node-17', newALEventRoute(topicId, scope.resourceId, 'snapshot'), 'all', topicId, {});
+    const envelope = {
+        ...original,
+        delivery: original.delivery,
+        audit: original.audit,
+        ordering: original.ordering,
+        constraints: { expiresAtMs: original.id.ts + 60_000 },
+        targets: group
+            ? {
+                mode: 'broadcast' as const,
+                scope: 'room' as const,
+                groupRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, groupId: scope.resourceId },
+                ...(audience === 'fixed' ? { recipientPeerIds: snapshot.activeSessions.map((session) => session.sessionId) } : {})
+            }
+            : {
+                mode: 'broadcast' as const,
+                scope: 'principal' as const,
+                principalRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, principalId: scope.resourceId }
+            }
+    };
+    const revision = 'causalRevision' in snapshot
+        ? `group=${snapshot.causalRevision.groupRevision};presence=${snapshot.causalRevision.presenceRevision}`
+        : `client=${snapshot.stateRevision}`;
+    const result = computeStateSnapshotPages({ envelope, scope, revision, resource: JSON.stringify(snapshot) });
+    if (!result.right?.[0]) {
+        throw new Error(result.left?.message ?? 'Expected snapshot page');
+    }
+    return result.right[0];
 }

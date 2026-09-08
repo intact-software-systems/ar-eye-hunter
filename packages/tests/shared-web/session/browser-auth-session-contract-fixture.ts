@@ -32,9 +32,6 @@ const mocks = await vi.hoisted(async () => {
                 deleted: 0
             })
         ),
-        deleteBrowserQueueBoxDatabasesForSession: vi.fn<ContractModules.BrowserQueueBoxPersistence['deleteBrowserQueueBoxDatabasesForSession']>(() =>
-            Promise.resolve()
-        ),
         createAndJoinStateGroup: vi.fn<ContractModules.RoomGroupStateWorkflows['createAndJoinStateGroup']>(() =>
             Promise.reject(new Error('create not mocked'))
         ),
@@ -130,19 +127,13 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/queuebox/browser-queuebox-persistence.ts'),
-    (): Partial<ContractModules.BrowserQueueBoxPersistence> => ({
-        deleteBrowserQueueBoxDatabasesForSession: mocks.deleteBrowserQueueBoxDatabasesForSession
-    })
-);
-
-vi.mock(
     import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
     (): Partial<ContractModules.StateCacheLifecycle> => ({
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
-            initialise: vi.fn()
+            initialise: vi.fn(),
+            cancelSnapshotAssemblies: vi.fn(() => undefined)
         }
     })
 );
@@ -199,7 +190,6 @@ function resetSessionAndRoomMocks(): void {
         scanned: 0,
         deleted: 0
     });
-    mocks.deleteBrowserQueueBoxDatabasesForSession.mockResolvedValue();
     mocks.createAndJoinStateGroup.mockRejectedValue(
         new Error('create not mocked')
     );

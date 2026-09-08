@@ -1,4 +1,4 @@
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -34,8 +34,8 @@ export interface RallarMiddlewareRuntime {
     readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
-    readonly appOutboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
     readonly groupStateInboxService: GroupStateInboxService;
     readonly topologyInboxService: TopologyInboxService;
     readonly rtcRttInboxService: RtcRttInboxService;

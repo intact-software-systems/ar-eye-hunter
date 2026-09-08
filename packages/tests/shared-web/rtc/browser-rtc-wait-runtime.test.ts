@@ -8,9 +8,8 @@ import {
 
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
-import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
+import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 import {
-    createChannelHealth,
     readRtcWaitMocks,
     resetRtcWaitTestRuntime
 } from './browser-rtc-wait-test-runtime.ts';
@@ -28,7 +27,7 @@ describe('Rallar RTC peer wait', () => {
         let state = 'Opening';
         const channel = {
             readHealth: vi.fn(() =>
-                createChannelHealth({
+                createBrowserRtcChannelHealth({
                     peerId: 'peer-1',
                     label: 'rtc-data-channel',
                     state,
@@ -142,7 +141,7 @@ describe('Rallar RTC peer wait', () => {
         );
         const channel = {
             readHealth: vi.fn(() =>
-                createChannelHealth({
+                createBrowserRtcChannelHealth({
                     peerId: 'peer-1',
                     label: 'rtc-realtime',
                     state: 'Closed',
@@ -180,7 +179,7 @@ describe('Rallar RTC peer wait', () => {
         const deferred = Promise.withResolvers<boolean>();
         const channel = {
             readHealth: vi.fn(() =>
-                createChannelHealth({
+                createBrowserRtcChannelHealth({
                     peerId: 'peer-1',
                     label: 'rtc-realtime',
                     state: 'Opening',
@@ -259,7 +258,7 @@ describe('Rallar RTC peer wait', () => {
         );
         const channel = {
             readHealth: vi.fn(() =>
-                createChannelHealth({
+                createBrowserRtcChannelHealth({
                     peerId: 'peer-1',
                     label: 'rtc-realtime',
                     state: 'Open',

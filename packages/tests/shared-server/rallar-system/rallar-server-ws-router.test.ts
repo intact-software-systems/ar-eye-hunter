@@ -1,11 +1,23 @@
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type {
     AuditStamp,
     GroupMember,
     GroupPresenceSession,
+    GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import {
@@ -20,18 +32,121 @@ import {
     newALRoute,
     parseALControlMessage,
     type ALInboundRuntimeStores,
-    type ALNackPayload,
+    type ALQosInputProvider,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
+    it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
+        let nowMs = 10_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const expiresAtMs = nowMs + 1_000;
+        const fixture = createIngressRouter({ defaultFanout: 'none' }, undefined, {
+            defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } })
+        });
+        const delivered: string[] = [];
+        const observedDeadlines: (number | undefined)[] = [];
+        fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
+            observedDeadlines.push(message.raw.constraints?.expiresAtMs);
+            await Promise.resolve();
+            nowMs = expiresAtMs + offsetMs;
+        });
+        fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
+            delivered.push(message.raw.id.msgId);
+        });
+        fixture.router.install();
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {});
+
+        await fixture.socket.receive(message);
+
+        expect(observedDeadlines).toEqual([expiresAtMs]);
+        expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
+        expect(message.constraints?.expiresAtMs).toBeUndefined();
+    });
+
+    it.each(['handler', 'proxy'] as const)('retries a failing public %s through the existing admission owner', async (consumer) => {
+        vi.useFakeTimers();
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const fixture = createIngressRouter({ defaultFanout: 'none' }, stores);
+        fixture.router.install();
+        let available = false;
+        const attempts: string[] = [];
+        if (consumer === 'handler') {
+            fixture.router.on({ topicId: 'app.retry' }, async (message) => {
+                attempts.push(message.raw.id.msgId);
+                if (!available) {
+                    throw new Error('Application unavailable');
+                }
+            });
+        }
+        else {
+            fixture.router.proxy({
+                from: { topicId: 'app.retry' },
+                transform: async (message) => {
+                    attempts.push(message.raw.id.msgId);
+                    if (!available) {
+                        throw new Error('Proxy dependency unavailable');
+                    }
+                    return message.raw;
+                }
+            });
+        }
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'all'), 'all', 'app.retry.v1', {});
+
+        await fixture.socket.receive(message);
+
+        const keys = await stores.admissionStore.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        available = true;
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
+        expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
+    });
+
+    it.each([-1, 0, 1])('checks expiry after asynchronous topic authorization at deadline %+i ms', async (offsetMs) => {
+        let nowMs = 10_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const expiresAtMs = nowMs + 1_000;
+        const fixture = createIngressRouter({ defaultFanout: 'none', nowEpochMs: () => nowMs });
+        fixture.router.defineTopic({
+            topicId: 'app.deadline',
+            authorize: async () => {
+                await Promise.resolve();
+                nowMs = expiresAtMs + offsetMs;
+                return true;
+            }
+        });
+        const delivered: string[] = [];
+        fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
+            delivered.push(message.raw.id.msgId);
+        });
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {}, { ttlMs: 1_000 });
+
+        if (offsetMs < 0) {
+            await expect(fixture.router.route(message)).resolves.toBeUndefined();
+        }
+        else {
+            await expect(fixture.router.route(message)).rejects.toBeInstanceOf(NonRetryableException);
+        }
+
+        expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
+    });
+
     it('does not route a recognized state-sync payload on a user topic', async () => {
         const { router, socket, outbox } = createRouter();
         let handlerRan = false;
@@ -168,7 +283,7 @@ describe('RallarServerWsRouter', () => {
 
     it('can route registered topics through the QueueBox outbox', async () => {
         let outboxWakeRequested = false;
-        const { router, outbox } = createRouter({
+        const { router, outboundStores } = createRouter({
             wakeOutbox: () => {
                 outboxWakeRequested = true;
             }
@@ -192,8 +307,57 @@ describe('RallarServerWsRouter', () => {
 
         await router.route(message);
 
-        expect(await outbox.getAllKeys()).toHaveLength(1);
+        expect((await outboundStores.admissionStore.readSentMessage(message.id.msgId))?.msg).toMatchObject({
+            id: message.id,
+            route: message.route,
+            targets: { mode: 'broadcast', scope: 'all' },
+            payload: message.payload,
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            constraints: { expiresAtMs: message.id.ts + 30_000 }
+        });
+        expect(message.constraints).toBeUndefined();
         expect(outboxWakeRequested).toBe(true);
+    });
+
+    it('publishes a proxy room message with its full scoped identity', async () => {
+        const { router, outboundStores } = createRouter();
+        const roomRef: GroupRef = {
+            applicationId: 'proxy-application',
+            workspaceId: 'proxy-workspace',
+            groupId: 'proxy-room'
+        };
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute('app.proxy', 'original-context', 'proxy-message'),
+            'all',
+            'proxy.message.v1',
+            { text: 'scoped delivery' },
+            { reliability: 'at-least-once', ack: 'receiver' }
+        );
+        router.defineTopic({ topicId: 'app.proxy', fanout: 'none' });
+        router.on({ topicId: 'app.proxy' }, async (_message, context) => {
+            await context.proxy.toRoom(roomRef, message, {
+                fanout: 'outbox',
+                exceptPeerIds: ['peer-2']
+            });
+        });
+
+        await router.route(message);
+
+        const retained = await outboundStores.admissionStore.readSentMessage(message.id.msgId);
+        if (!retained) {
+            throw new Error('Expected a persisted scoped proxy message');
+        }
+        const published = retained.msg;
+        expect(published.targets).toEqual({
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: roomRef,
+            exceptPeerIds: ['peer-2']
+        });
+        expect(published.route).toEqual({ ...message.route, contextId: roomRef.groupId });
+        expect(published.id).toEqual(message.id);
+        expect(message.targets).toEqual({ mode: 'broadcast', scope: 'all' });
     });
 
     it('can require explicit topic definitions while still rejecting custom prefixes', async () => {
@@ -273,9 +437,11 @@ describe('RallarServerWsRouter', () => {
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
             expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
-            const nack = JSON.parse(
-                socket.sent[0].data.payload.resource
-            ) as ALNackPayload;
+            const control = parseALControlMessage(socket.sent[0].data);
+            if (control?.type !== 'nack') {
+                throw new Error('Expected a decoded NACK control');
+            }
+            const nack = control.payload;
             expect(nack).toMatchObject({
                 msgId: message.id.msgId,
                 reason: 'not-yet-in-sync',
@@ -360,17 +526,13 @@ describe('RallarServerWsRouter', () => {
         const allAuthorizationsCompleted = Promise.withResolvers<void>();
         const readIncomingMessage = stores.admissionStore.readIncomingMessage.bind(stores.admissionStore);
         let firstAdmissionBlocked = false;
-        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockImplementation(async (
-            message,
-            fromPeerId,
-            planIncomingMessage
-        ) => {
+        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockImplementation(async (input) => {
             if (!firstAdmissionBlocked) {
                 firstAdmissionBlocked = true;
                 firstAdmissionRead.resolve();
                 await releaseFirstAdmission.promise;
             }
-            return await readIncomingMessage(message, fromPeerId, planIncomingMessage);
+            return await readIncomingMessage(input);
         });
         const publishedSessionIds: string[][] = [];
         let authorizationCount = 0;
@@ -389,13 +551,7 @@ describe('RallarServerWsRouter', () => {
                     authorized: true,
                     audience: {
                         targets: message.targets,
-                        sessions: [
-                            createGroupPresenceRecord(
-                                'room-1',
-                                `session-${authorizationCount}`,
-                                1
-                            )
-                        ]
+                        sessions: Array.from({ length: authorizationCount }, (_, index) => createGroupPresenceRecord('room-1', `session-${index + 1}`, 1))
                     }
                 };
             }
@@ -441,6 +597,22 @@ describe('RallarServerWsRouter', () => {
         finally {
             warn.mockRestore();
         }
+    });
+
+    it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {
+        const { router, socket } = createRouter({ authorizeRoomMessage: () => true });
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute('room.chat', 'room-1', 'retained-audience'),
+            'room',
+            'chat.message.v1',
+            { text: 'original audience only' },
+            { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
+        );
+
+        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', roomRecipientPeerIds: ['peer-2', 'departed-peer'] });
+
+        expect(socket.sent.map((entry) => entry.connectionId)).toEqual(['conn-2']);
     });
 });
 
@@ -556,8 +728,12 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('returns queued-outbox metadata for durable outbox fanout', async () => {
-        const { server, socket, outbox, qboxEngine } = createPublicRouterFixture();
-        const groupRef = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const { server, socket, outboundStores, qboxEngine } = createPublicRouterFixture();
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1'
+        };
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-1'),
@@ -579,7 +755,15 @@ describe('RallarServer.ws.publish current behavior', () => {
             enqueueStatus: 'enqueued'
         });
         expect(result.entries).toHaveLength(1);
-        expect(await outbox.getAllKeys()).toHaveLength(1);
+        expect((await outboundStores.admissionStore.readSentMessage(message.id.msgId))?.msg).toMatchObject({
+            id: message.id,
+            route: message.route,
+            targets: { mode: 'broadcast', scope: 'room', groupRef },
+            payload: message.payload,
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            constraints: { expiresAtMs: message.id.ts + 30_000 }
+        });
+        expect(message.constraints).toBeUndefined();
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(true);
     });
@@ -602,7 +786,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             /room broadcast group ref/i
         );
 
-        expect(await outbox.getItem(message.route)).toBeUndefined();
+        expect(await outbox.getAllKeys()).toEqual([]);
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(false);
     });
@@ -631,14 +815,12 @@ describe('RallarServer.ws.publish current behavior', () => {
 
     it('reports minimal server websocket status from current connections', () => {
         const { server, socket } = createPublicRouterFixture();
-        socket.connections.set('conn-1', {
-            id: 'conn-1',
-            isOpen: true
-        });
-        socket.connections.set('conn-2', {
-            id: 'conn-2',
-            isOpen: false
-        });
+        socket.connections.delete('conn-3');
+        const closed = socket.connections.get('conn-2');
+        if (!closed || !(closed.socket instanceof RouterIngressWebSocket)) {
+            throw new Error('Expected the fixture native WebSocket');
+        }
+        closed.socket.readyState = WebSocket.CLOSED;
 
         expect(server.ws.status()).toEqual({
             transport: 'ws-server',
@@ -660,43 +842,59 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 });
 
+interface RouterFixture {
+    readonly router: RallarServerWsRouter;
+    readonly service: WsQueueBoxServerService;
+    readonly socket: RecordingWsServer;
+    readonly outbox: QueueBoxResourceEntryRepository;
+    readonly outboundStores: ALOutboundRuntimeStores;
+}
+
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
-) {
-    const socket = createFakeWsServer();
-    const inbox = new InMemoryQueueBox(new Map());
-    const outbox = new InMemoryQueueBox(new Map());
+): RouterFixture {
+    const socket = createRecordingWsServer();
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
+    const outbox = outboundStores.admissionStore.workQueue;
     const service = createDefaultWsQueueBoxServerService({
-        inbox: inbox,
-        outbox: outbox,
-        socket: socket as never,
+        outbox,
+        outboundStores,
+        socket,
         name: 'server-1',
         targetResolver: createTargetResolver()
     });
     const router = new RallarServerWsRouter(service, options);
+    onTestFinished(() => service.dispose());
 
     return {
         router,
         service,
         socket,
-        inbox,
-        outbox
+        outbox,
+        outboundStores
     };
+}
+
+interface IngressRouterFixture {
+    readonly router: RallarServerWsRouter;
+    readonly service: WsQueueBoxServerService;
+    readonly socket: RouterIngressWebSocket;
 }
 
 function createIngressRouter(
     options: ConstructorParameters<typeof RallarServerWsRouter>[1],
-    inboundStores?: ALInboundRuntimeStores
-) {
+    inboundStores?: ALInboundRuntimeStores,
+    qosProvider?: ALQosInputProvider
+): IngressRouterFixture {
     const server = new JsonWebSocketServer();
     const socket = new RouterIngressWebSocket();
-    server.addConnection(new ConnectionContext('conn-1', socket));
+    server.addConnection(new ConnectionContext({ id: 'conn-1', socket }));
     const service = createDefaultWsQueueBoxServerService({
-        inbox: new InMemoryQueueBox(new Map()),
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server-1',
         inboundStores,
+        qosProvider,
         targetResolver: {
             resolvePeerIdForConnection: () => 'peer-1',
             resolvePeerRecipients: (peerId) =>
@@ -706,6 +904,7 @@ function createIngressRouter(
             resolveBroadcastRecipients: () => []
         }
     });
+    onTestFinished(() => service.dispose());
     return { router: new RallarServerWsRouter(service, options), service, socket };
 }
 
@@ -718,7 +917,7 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
     readonly bufferedAmount = 0;
     readonly extensions = '';
     readonly protocol = '';
-    readonly readyState = WebSocket.OPEN;
+    readyState: WebSocket['readyState'] = WebSocket.OPEN;
     readonly url = 'ws://router-ingress-test';
     onclose = null;
     onerror = null;
@@ -744,7 +943,7 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
         if (typeof data !== 'string') {
             throw new TypeError('Router ingress test expects JSON text');
         }
-        this.sent.push(JSON.parse(data) as ALMessage);
+        this.sent.push(decodePersistedALMessage(data));
     }
 
     async receive(message: ALMessage): Promise<void> {
@@ -760,31 +959,49 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
     }
 }
 
-function createPublicRouterFixture(
-    options: Readonly<{
-        targetResolver?: WsServerTargetResolver;
-        failingConnectionIds?: readonly string[];
-    }> = {}
-) {
-    const socket = createFakeWsServer({
+interface PublicRouterFixtureInput {
+    readonly targetResolver?: WsServerTargetResolver;
+    readonly failingConnectionIds?: readonly string[];
+}
+
+interface PublicRouterTestServer {
+    readonly ws: RallarServerWsRouter;
+}
+
+interface RouterQueueWakeRecorder {
+    wakeRequested: boolean;
+    wake(): void;
+}
+
+interface PublicRouterFixture {
+    readonly server: PublicRouterTestServer;
+    readonly service: WsQueueBoxServerService;
+    readonly socket: RecordingWsServer;
+    readonly outbox: QueueBoxResourceEntryRepository;
+    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly qboxEngine: RouterQueueWakeRecorder;
+}
+
+function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): PublicRouterFixture {
+    const socket = createRecordingWsServer({
         failingConnectionIds: options.failingConnectionIds
     });
-    const inbox = new InMemoryQueueBox(new Map());
-    const outbox = new InMemoryQueueBox(new Map());
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
+    const outbox = outboundStores.admissionStore.workQueue;
     const service = createDefaultWsQueueBoxServerService({
-        inbox: inbox,
-        outbox: outbox,
-        socket: socket as never,
+        outbox,
+        outboundStores,
+        socket,
         name: 'server-1',
         targetResolver: options.targetResolver ?? createTargetResolver()
     });
     const qboxEngine = {
         wakeRequested: false,
-        start() {},
         wake() {
             this.wakeRequested = true;
         }
     };
+    onTestFinished(() => service.dispose());
     const server = {
         ws: new RallarServerWsRouter(service, {
             wakeOutbox: () => qboxEngine.wake()
@@ -795,49 +1012,43 @@ function createPublicRouterFixture(
         server,
         service,
         socket,
-        inbox,
         outbox,
+        outboundStores,
         qboxEngine
     };
 }
 
-function createFakeWsServer(
-    options: Readonly<{
-        failingConnectionIds?: readonly string[];
-    }> = {}
-) {
-    const sent: Array<{ connectionId: string; data: ALMessage; }> = [];
-    const connections = new Map<string, { id: string; isOpen: boolean; }>();
-    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
+interface RecordingWsServerInput {
+    readonly failingConnectionIds?: readonly string[];
+}
 
-    return {
-        sent,
-        connections,
-        onMessageDo() {
-            return this;
-        },
-        send(connectionId: string, data: ALMessage) {
-            this.sendEncoded(connectionId, this.encode(data));
-        },
-        encode(data: ALMessage) {
-            return {
-                text: JSON.stringify(data),
-                data
-            };
-        },
-        sendEncoded(
-            connectionId: string,
-            encoded: Readonly<{ text: string; data?: ALMessage; }>
-        ) {
+interface RecordedWsSend {
+    readonly connectionId: string;
+    readonly data: ALMessage;
+}
+
+interface RecordingWsServer extends JsonWebSocketServer {
+    readonly sent: RecordedWsSend[];
+}
+
+function createRecordingWsServer(options: RecordingWsServerInput = {}): RecordingWsServer {
+    const sent: RecordedWsSend[] = [];
+    const server = new JsonWebSocketServer();
+    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
+    for (const connectionId of ['conn-1', 'conn-2', 'conn-3']) {
+        const socket = new RouterIngressWebSocket();
+        socket.send = (data) => {
             if (failingConnectionIds.has(connectionId)) {
                 throw new Error('send failed');
             }
-            sent.push({
-                connectionId,
-                data: encoded.data ?? JSON.parse(encoded.text) as ALMessage
-            });
-        }
-    };
+            if (typeof data !== 'string') {
+                throw new TypeError('Router fixture expects a serialized AL frame');
+            }
+            sent.push({ connectionId, data: decodePersistedALMessage(data) });
+        };
+        server.addConnection(new ConnectionContext({ id: connectionId, socket }));
+    }
+    return Object.assign(server, { sent });
 }
 
 function createTargetResolver(): WsServerTargetResolver {

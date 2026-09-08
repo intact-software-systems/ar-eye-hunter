@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { decideRtcTopologyReplayEntry } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-decision.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
@@ -11,9 +15,9 @@ describe('decideRtcTopologyReplayEntry', () => {
 
         expect(decideRtcTopologyReplayEntry(fixture)).toEqual({
             status: 'deliver-publication',
-            message: JSON.parse(fixture.outbox.resource)
+            messages: fixture.outbox.map((page) => JSON.parse(page.resource))
         });
-        expect(JSON.parse(fixture.outbox.resource).targets.recipientPeerIds).toEqual(['session-1']);
+        expect(JSON.parse(fixture.outbox[0].resource).targets.recipientPeerIds).toEqual(['session-1']);
     });
 
     it.each([

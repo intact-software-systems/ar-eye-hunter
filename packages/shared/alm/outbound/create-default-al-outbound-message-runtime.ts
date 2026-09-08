@@ -1,9 +1,17 @@
+import { Temporal } from '@js-temporal/polyfill';
+import { InMemoryQueueBox } from '../../queuebox/in-memory-queue-box.ts';
+import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
 import { ALOutboundMessageRuntime, type ALOutboundRuntimeStores } from './al-outbound-message-runtime.ts';
 
 export interface DefaultALOutboundRuntimeResourceInput {
     readonly stores?: ALOutboundRuntimeStores;
+    readonly canonicalQueue?: QueueBoxResourceEntryRepository;
     readonly nowMs?: () => number;
+    readonly random?: () => number;
+    readonly queueEngine?: InboxOutboxEngine;
 }
 
 export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
@@ -11,7 +19,6 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
         DefaultALOutboundRuntimeResourceInput,
         Pick<
             ALOutboundMessageRuntime.Dependencies<TPrepared>,
-            | 'outbox'
             | 'toOutboxEntry'
             | 'readMessageFromEntry'
             | 'planOutgoingMessage'
@@ -22,23 +29,23 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
             Pick<
                 ALOutboundMessageRuntime.Dependencies<TPrepared>,
                 | 'planDequeuedMessage'
-                | 'beforeDequeueDispatch'
+                | 'afterDequeueAdmission'
                 | 'planRepairMessage'
-                | 'onFallbackDequeue'
                 | 'diagnostics'
             >
-        > {}
+        > {
+    readonly outbox: QueueBoxResourceEntryRepository;
+}
 
 export function createDefaultALOutboundMessageRuntime<TPrepared>(
     dependencies: CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
 ): ALOutboundMessageRuntime<TPrepared> {
     return new ALOutboundMessageRuntime({
         ...dependencies,
-        ...createDefaultALOutboundRuntimeResources(dependencies),
+        ...createDefaultALOutboundRuntimeResources({ ...dependencies, canonicalQueue: dependencies.outbox }),
         planDequeuedMessage: dependencies.planDequeuedMessage ?? dependencies.planOutgoingMessage,
-        beforeDequeueDispatch: dependencies.beforeDequeueDispatch,
+        afterDequeueAdmission: dependencies.afterDequeueAdmission,
         planRepairMessage: dependencies.planRepairMessage,
-        onFallbackDequeue: dependencies.onFallbackDequeue,
         diagnostics: dependencies.diagnostics
     });
 }
@@ -46,16 +53,28 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
 export function createDefaultALOutboundRuntimeResources(
     input: DefaultALOutboundRuntimeResourceInput = {}
 ): ALOutboundMessageRuntime.Resources {
+    if (!input.stores && input.canonicalQueue && !(input.canonicalQueue instanceof InMemoryQueueBox)) {
+        throw new TypeError('Persistent outbound QueueBox requires its coordinated admission store');
+    }
+    const nowMs = input.nowMs ?? Date.now;
+    const stores = input.stores ?? createDefaultInMemoryALOutboundRuntimeStores({
+        nowMs,
+        outboundBackend: new InMemoryAdmissionBackend(
+            createInMemoryALAdmissionState(
+                input.canonicalQueue instanceof InMemoryQueueBox
+                    ? input.canonicalQueue
+                    : new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+            ),
+            nowMs
+        )
+    });
     return {
-        admissionStore: (input.stores ?? createDefaultInMemoryALOutboundRuntimeStores()).admissionStore,
+        admissionStore: stores.admissionStore,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
-        clock: { nowMs: input.nowMs ?? (() => Date.now()) },
-        scheduler: {
-            schedule: (callback, delayMs) => {
-                const timer = setTimeout(callback, delayMs);
-                return () => clearTimeout(timer);
-            }
-        },
+        clock: { nowMs },
+        random: input.random ?? Math.random,
+        queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
+        ownsQueueEngine: input.queueEngine === undefined,
         browserLocks: typeof globalThis.navigator?.locks?.request === 'function'
             ? globalThis.navigator.locks
             : undefined

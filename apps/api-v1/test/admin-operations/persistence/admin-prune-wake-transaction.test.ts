@@ -10,7 +10,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import { assertUtcPGliteSession, RealEngineAdminPruneFixture } from './admin-prune-real-engine-fixture.ts';
@@ -93,14 +93,14 @@ Deno.test('initial admin page work does not wake until its successful transactio
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await waitForWakeCount(() => wakeCount, 1);
         wakeCount = 0;
-        const processing = inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+        const processing = inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await writeObserved;
         assert.equal(wakeCount, 0);
         releaseCommit?.();
         await processing;
         assert.equal(wakeCount, 1);
         await waitForPGliteQueueRow(sql, 'APP_OUTBOX', 'NEW');
-        await outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+        await outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await pending;
     });
 });
@@ -153,7 +153,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await waitForWakeCount(() => wakeCount, 1);
         wakeCount = 0;
-        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await pending;
         assert.equal(wakeCount, 0);
     });
@@ -222,7 +222,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await waitForWakeCount(() => wakeCount, 1);
         wakeCount = 0;
-        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await pending;
         assert.equal(wakeCount, 0);
         const [page] = await sql<{ count: string; }[]>`
@@ -293,7 +293,7 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await waitForWakeCount(() => wakeCount, 1);
         wakeCount = 0;
-        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await pending;
         assert.equal(wakeCount, 0);
         const [page] = await sql<{ count: string; }[]>`

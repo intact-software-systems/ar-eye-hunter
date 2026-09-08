@@ -7,7 +7,11 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import {
+    createAppInboxTestResilience,
+    TestResourceInbox,
+    TestResourceInboxResults
+} from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import type { AppInboxTestDatabase, AppInboxTestDatabaseOptions } from '../app-inbox/test-support/app-inbox-test-database-contracts.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 
@@ -30,6 +34,7 @@ interface CreateAuthInboxTestRuntimeInput {
     readonly databaseOptions?: AppInboxTestDatabaseOptions;
     readonly credentialIssuer?: AuthCredentialIssuer;
     readonly nowEpochMs?: () => number;
+    readonly newAuthMessageId?: () => string;
 }
 
 interface RunAuthInboxCommandInput<Result> {
@@ -56,7 +61,8 @@ export function createAuthInboxTestRuntime({
     credentialSecret,
     databaseOptions,
     credentialIssuer: credentialIssuerInput,
-    nowEpochMs
+    nowEpochMs,
+    newAuthMessageId
 }: CreateAuthInboxTestRuntimeInput): AuthInboxTestRuntime {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
@@ -78,7 +84,8 @@ export function createAuthInboxTestRuntime({
         },
         {
             serviceId: serviceId,
-            authFactNowEpochMs: nowEpochMs
+            authFactNowEpochMs: nowEpochMs,
+            newAuthMessageId
         }
     );
     return { queue, results, reader, service, credentialIssuer, database };

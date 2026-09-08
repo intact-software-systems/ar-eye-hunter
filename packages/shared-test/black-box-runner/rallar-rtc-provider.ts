@@ -1,8 +1,12 @@
 // rallar-rtc-provider.ts
 // deno-lint-ignore-file no-explicit-any
-import { createRtcProviderFromClientFactory, type RtcClient, type RtcProvider } from './rtc-provider.ts';
+import {
+    createRtcProviderFromClientFactory,
+    type RtcClient,
+    type RtcProvider
+} from './rtc-provider.ts';
 
-export type RallarRtcClientArgs = {
+export interface RallarRtcClientArgs {
     connection: string;
     provider: string;
     actor?: string;
@@ -25,24 +29,24 @@ export type RallarRtcClientArgs = {
     waitForOpen?: boolean;
     openTimeoutMs?: number;
     request: any;
-};
+}
 
-export type RallarRtcClientFactory = {
+export interface RallarRtcClientFactory {
     createClient: (args: RallarRtcClientArgs, config?: any, context?: any) => Promise<RtcClient> | RtcClient;
-};
+}
 
-export type RallarRtcClientEventHandlers = {
+export interface RallarRtcClientEventHandlers {
     messageHandlers: Array<(message: any) => void>;
     closeHandlers: Array<(event: any) => void>;
-};
+}
 
-export type RallarRtcClientEventDispatcher = {
+export interface RallarRtcClientEventDispatcher {
     onMessage: (handler: (message: any) => void) => void;
     onClose: (handler: (event: any) => void) => void;
     emitMessage: (message: any) => void;
     emitClose: (event: any) => void;
     handlers: RallarRtcClientEventHandlers;
-};
+}
 
 export function createRallarRtcClientEventDispatcher(): RallarRtcClientEventDispatcher {
     const handlers: RallarRtcClientEventHandlers = {
@@ -71,11 +75,11 @@ export function createRallarRtcClientEventDispatcher(): RallarRtcClientEventDisp
     };
 }
 
-export type RallarRtcClientOperations = {
+export interface RallarRtcClientOperations {
     connect: (args: RallarRtcClientArgs, dispatcher: RallarRtcClientEventDispatcher) => Promise<void> | void;
     send: (message: any, args: RallarRtcClientArgs, dispatcher: RallarRtcClientEventDispatcher) => Promise<void> | void;
     close: (args: RallarRtcClientArgs, dispatcher: RallarRtcClientEventDispatcher) => Promise<void> | void;
-};
+}
 
 export function createRallarRtcClientFromOperations(
     args: RallarRtcClientArgs,
@@ -106,19 +110,19 @@ export function createRallarRtcClientFromOperations(
     };
 }
 
-export type RallarRtcRuntimeSession = {
+export interface RallarRtcRuntimeSession {
     send: (message: any) => Promise<any> | any;
     command?: (action: string, request: any) => Promise<any> | any;
     close: () => Promise<void> | void;
     connectDiagnostics?: any;
-};
+}
 
-export type RallarRtcRuntime = {
+export interface RallarRtcRuntime {
     connect: (
         args: RallarRtcClientArgs,
         dispatcher: RallarRtcClientEventDispatcher
     ) => Promise<RallarRtcRuntimeSession> | RallarRtcRuntimeSession;
-};
+}
 
 export function encodeRallarRtcMessage(message: any): string {
     if (typeof message === 'string') {
@@ -147,10 +151,10 @@ export function decodeRallarRtcMessage(data: any): any {
     }
 }
 
-export type RallarRtcMessageCodec = {
+export interface RallarRtcMessageCodec {
     encode?: (message: any) => string;
     decode?: (data: any) => any;
-};
+}
 
 function toMessageEncoder(factory: RallarRtcDataChannelFactory): (message: any) => string {
     return factory.codec?.encode || encodeRallarRtcMessage;
@@ -174,7 +178,7 @@ function toDataChannelOpenTimeoutMs(
     return factory.openTimeoutMs || args.openTimeoutMs || args.connectTimeoutMs || args.timeoutMs || 5000;
 }
 
-export type RallarRtcDataChannelLike = {
+export interface RallarRtcDataChannelLike {
     send: (data: string) => void;
     close: () => void;
     addEventListener?: (type: string, listener: (event: any) => void) => void;
@@ -183,9 +187,10 @@ export type RallarRtcDataChannelLike = {
     onclose?: ((event: any) => void) | null;
     onerror?: ((event: any) => void) | null;
     readyState?: string;
-};
+}
 
-export type RallarRtcDataChannelFactory = {
+export interface RallarRtcDataChannelFactory {
+    readonly now: () => number;
     connect: (
         args: RallarRtcClientArgs,
         dispatcher: RallarRtcClientEventDispatcher
@@ -193,7 +198,7 @@ export type RallarRtcDataChannelFactory = {
     waitForOpen?: boolean;
     openTimeoutMs?: number;
     codec?: RallarRtcMessageCodec;
-};
+}
 
 function chainDataChannelListener(
     existing: ((event: any) => void) | null | undefined,
@@ -245,7 +250,8 @@ function assertDataChannelOpen(dataChannel: RallarRtcDataChannelLike): void {
 
 function waitForDataChannelOpen(
     dataChannel: RallarRtcDataChannelLike,
-    timeoutMs: number
+    timeoutMs: number,
+    now: () => number
 ): Promise<void> {
     if (dataChannel.readyState === undefined || dataChannel.readyState === 'open') {
         return Promise.resolve();
@@ -254,7 +260,7 @@ function waitForDataChannelOpen(
     return new Promise((resolve, reject) => {
         let completed = false;
 
-        const startedAt = Date.now();
+        const startedAt = now();
 
         const interval = setInterval(() => {
             if (dataChannel.readyState === 'open') {
@@ -262,15 +268,12 @@ function waitForDataChannelOpen(
                 return;
             }
 
-            if (Date.now() - startedAt >= timeoutMs) {
-                complete(() =>
-                    reject(
-                        new Error(
-                            'Rallar RTC data channel did not open within ' + timeoutMs + 'ms. readyState=' +
-                                dataChannel.readyState
-                        )
-                    )
+            if (now() - startedAt >= timeoutMs) {
+                const error = new Error(
+                    'Rallar RTC data channel did not open within ' + timeoutMs + 'ms. readyState=' +
+                        dataChannel.readyState
                 );
+                complete(() => reject(error));
             }
         }, 25);
 
@@ -284,31 +287,67 @@ function waitForDataChannelOpen(
             callback();
         };
 
-        addDataChannelListener(dataChannel, 'open', () => {
-            complete(resolve);
-        });
+        addDataChannelListener(dataChannel, 'open', () => complete(resolve));
 
         addDataChannelListener(dataChannel, 'close', (event) => {
-            complete(() =>
-                reject(
-                    new Error(
-                        'Rallar RTC data channel closed before open. readyState=' + dataChannel.readyState +
-                            ', code=' + String(event?.code) +
-                            ', reason=' + String(event?.reason)
-                    )
-                )
+            const error = new Error(
+                'Rallar RTC data channel closed before open. readyState=' + dataChannel.readyState +
+                    ', code=' + String(event?.code) +
+                    ', reason=' + String(event?.reason)
             );
+            complete(() => reject(error));
         });
 
         addDataChannelListener(dataChannel, 'error', (event) => {
-            complete(() =>
-                reject(
-                    new Error(
-                        'Rallar RTC data channel failed before open. readyState=' + dataChannel.readyState +
-                            ', message=' + String(event?.message)
-                    )
-                )
+            const error = new Error(
+                'Rallar RTC data channel failed before open. readyState=' + dataChannel.readyState +
+                    ', message=' + String(event?.message)
             );
+            complete(() => reject(error));
+        });
+    });
+}
+
+interface DataChannelObservationInput {
+    readonly dataChannel: RallarRtcDataChannelLike;
+    readonly decode: (data: any) => any;
+    readonly dispatcher: RallarRtcClientEventDispatcher;
+}
+
+function registerDataChannelObservations(input: DataChannelObservationInput): void {
+    const { dataChannel, decode, dispatcher } = input;
+    addDataChannelListener(dataChannel, 'message', (event) => {
+        try {
+            dispatcher.emitMessage(decode(event?.data));
+        }
+        catch (e) {
+            dispatcher.emitClose({
+                event,
+                error: true,
+                phase: 'decode',
+                message: e instanceof Error ? e.message : String(e),
+                readyState: dataChannel.readyState
+            });
+        }
+    });
+
+    addDataChannelListener(dataChannel, 'close', (event) => {
+        dispatcher.emitClose({
+            event,
+            phase: 'close',
+            reason: event?.reason,
+            code: event?.code,
+            readyState: dataChannel.readyState
+        });
+    });
+
+    addDataChannelListener(dataChannel, 'error', (event) => {
+        dispatcher.emitClose({
+            event,
+            error: true,
+            phase: 'error',
+            message: event?.message,
+            readyState: dataChannel.readyState
         });
     });
 }
@@ -323,45 +362,13 @@ export function createRallarRtcRuntimeFromDataChannelFactory(
             const encode = toMessageEncoder(factory);
             const decode = toMessageDecoder(factory);
 
-            addDataChannelListener(dataChannel, 'message', (event) => {
-                try {
-                    dispatcher.emitMessage(decode(event?.data));
-                }
-                catch (e) {
-                    dispatcher.emitClose({
-                        event,
-                        error: true,
-                        phase: 'decode',
-                        message: e instanceof Error ? e.message : String(e),
-                        readyState: dataChannel.readyState
-                    });
-                }
-            });
-
-            addDataChannelListener(dataChannel, 'close', (event) => {
-                dispatcher.emitClose({
-                    event,
-                    phase: 'close',
-                    reason: event?.reason,
-                    code: event?.code,
-                    readyState: dataChannel.readyState
-                });
-            });
-
-            addDataChannelListener(dataChannel, 'error', (event) => {
-                dispatcher.emitClose({
-                    event,
-                    error: true,
-                    phase: 'error',
-                    message: event?.message,
-                    readyState: dataChannel.readyState
-                });
-            });
+            registerDataChannelObservations({ dataChannel, decode, dispatcher });
 
             if (shouldWaitForDataChannelOpen(factory, args)) {
                 await waitForDataChannelOpen(
                     dataChannel,
-                    toDataChannelOpenTimeoutMs(factory, args)
+                    toDataChannelOpenTimeoutMs(factory, args),
+                    factory.now
                 );
             }
 

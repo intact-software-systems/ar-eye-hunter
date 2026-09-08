@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
@@ -9,7 +13,11 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
-import { createAuthInboxTestRuntime, runAuthInboxCommand, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
+import {
+    createAuthInboxTestRuntime,
+    runAuthInboxCommand,
+    type AuthInboxTestRuntime
+} from './auth-app-inbox-test-runtime.ts';
 
 interface AuthHttpIdempotencyRuntime {
     readonly auth: AuthInboxTestRuntime;
@@ -21,7 +29,7 @@ const SHARED_REQUEST_ID = 'SharedLogoutRequest_0123456789abcdefghijklmnopqrstuv'
 describe('auth HTTP AppInbox idempotency security', () => {
     it('uses operation topics and collision-safe scoped contexts', async () => {
         const runtime = createRuntime();
-        const session = await putSession(runtime, 'client:a', 'session:a');
+        const session = await putSession(runtime, { clientId: 'client:a', sessionId: 'session:a', issuedAtEpochMs: Date.now() });
 
         await runAuthInboxCommand({
             pending: runtime.auth.service.logoutSession({
@@ -42,8 +50,8 @@ describe('auth HTTP AppInbox idempotency security', () => {
 
     it('replays each invalidated caller and denies cross-proof disclosure', async () => {
         const runtime = createRuntime();
-        const first = await putSession(runtime, 'client-first', 'session-first');
-        const second = await putSession(runtime, 'client-second', 'session-second');
+        const first = await putSession(runtime, { clientId: 'client-first', sessionId: 'session-first', issuedAtEpochMs: Date.now() });
+        const second = await putSession(runtime, { clientId: 'client-second', sessionId: 'session-second', issuedAtEpochMs: Date.now() });
 
         await logout(runtime.auth, first, 1);
         await logout(runtime.auth, second, 2);
@@ -103,7 +111,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         expect(runtime.auth.results.allEntries()).toHaveLength(1);
     });
 
-    it('samples login time and creates credential facts only for the atomic winner', async () => {
+    it('creates one session credential fact for equal login intent and preserves it on replay', async () => {
         const issuer = createHmacAuthCredentialIssuer(
             'auth-winner-fact-secret-0123456789abcdef'
         );
@@ -115,11 +123,8 @@ describe('auth HTTP AppInbox idempotency security', () => {
                 return await issuer.issueAccessToken(sessionId);
             }
         };
-        const sampledTimes: number[] = [];
-        const nowEpochMs = () => {
-            sampledTimes.push(5_000);
-            return 5_000;
-        };
+        let currentTime = 0;
+        const nowEpochMs = () => currentTime;
         const runtimeRepository = new FakeRuntimeStateRepository();
         const auth = createAuthInboxTestRuntime({
             runtimeRepository,
@@ -144,33 +149,50 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const second = auth.service.issueSession(input);
         await auth.queue.waitForEntryCount();
 
-        expect(sampledTimes).toEqual([]);
         expect(issuedAccessTokenSessionIds).toEqual([]);
+        expect(runtimeRepository.data.size).toBe(0);
 
+        currentTime = 5_000;
         await auth.reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             createAppInboxTestResilience()
         );
         const [firstResult, secondResult] = await Promise.all([first, second]);
 
-        expect(sampledTimes).toEqual([5_000]);
-        expect(issuedAccessTokenSessionIds).toHaveLength(3);
+        expect(firstResult.left).toBeUndefined();
+        expect(secondResult.left).toBeUndefined();
+        expect(firstResult.right).toMatchObject({ expiresAtEpochMs: 65_000 });
         expect(firstResult.right).toEqual(secondResult.right);
+        expect(issuedAccessTokenSessionIds).toEqual([
+            firstResult.right!.sessionId,
+            firstResult.right!.sessionId,
+            firstResult.right!.sessionId
+        ]);
+        expect(await auth.queue.readEntries()).toHaveLength(1);
+        expect(auth.results.allEntries()).toHaveLength(1);
+        const persistedSession = await runtimeRepository.findAllEntries('auth-sessions:by-session');
+        expect(persistedSession).toHaveLength(1);
+        expect(persistedSession[0].expireAtTimestamp).toBe(65_000);
+        const persistedState = [...runtimeRepository.data.entries()];
+        const persistedResults = auth.results.allEntries();
 
+        currentTime = 9_000;
         const replay = await auth.service.issueSession(input);
 
         expect(replay.right).toEqual(firstResult.right);
-        expect(sampledTimes).toEqual([5_000]);
-        expect(issuedAccessTokenSessionIds).toHaveLength(4);
+        expect(issuedAccessTokenSessionIds).toEqual([
+            firstResult.right!.sessionId,
+            firstResult.right!.sessionId,
+            firstResult.right!.sessionId,
+            firstResult.right!.sessionId
+        ]);
+        expect([...runtimeRepository.data.entries()]).toEqual(persistedState);
+        expect(auth.results.allEntries()).toEqual(persistedResults);
     });
 
     it('starts login TTL after winner execution rather than reservation queue delay', async () => {
         let currentTime = 0;
-        const sampledTimes: number[] = [];
-        const nowEpochMs = () => {
-            sampledTimes.push(currentTime);
-            return currentTime;
-        };
+        const nowEpochMs = () => currentTime;
         const runtimeRepository = new FakeRuntimeStateRepository();
         const auth = createAuthInboxTestRuntime({
             runtimeRepository,
@@ -191,7 +213,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         });
         await auth.queue.waitForEntryCount();
         const [queued] = await auth.queue.readEntries();
-        expect(sampledTimes).toEqual([]);
+        expect(runtimeRepository.data.size).toBe(0);
         expect(queued.resource).not.toContain('capturedAtEpochMs');
         expect(queued.resource).not.toContain('sessionId');
         expect(queued.resource).not.toContain('accessTokenDigest');
@@ -203,17 +225,16 @@ describe('auth HTTP AppInbox idempotency security', () => {
         );
         const result = await pending;
 
+        expect(result.left).toBeUndefined();
         expect(result.right?.expiresAtEpochMs).toBe(69_000);
-        expect(sampledTimes).toEqual([9_000]);
+        const sessions = await runtimeRepository.findAllEntries('auth-sessions:by-session');
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0].expireAtTimestamp).toBe(69_000);
     });
 
     it('timestamps registration at worker execution without persisting the password', async () => {
         let currentTime = 0;
-        const sampledTimes: number[] = [];
-        const nowEpochMs = () => {
-            sampledTimes.push(currentTime);
-            return currentTime;
-        };
+        const nowEpochMs = () => currentTime;
         const runtimeRepository = new FakeRuntimeStateRepository();
         const auth = createAuthInboxTestRuntime({
             runtimeRepository,
@@ -232,7 +253,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         await auth.queue.waitForEntryCount();
         const [queued] = await auth.queue.readEntries();
 
-        expect(sampledTimes).toEqual([]);
+        expect(runtimeRepository.data.size).toBe(0);
         expect(queued.resource).not.toContain(input.request.password);
         expect(queued.resource).not.toContain('capturedAtEpochMs');
         expect(queued.resource).not.toContain('createdAtEpochMs');
@@ -245,18 +266,27 @@ describe('auth HTTP AppInbox idempotency security', () => {
         );
         const result = await pending;
 
+        expect(result.left).toBeUndefined();
         expect(result.right?.registeredAtEpochMs).toBe(9_000);
-        expect(sampledTimes).toEqual([9_000]);
+        const persistedState = [...runtimeRepository.data.entries()];
+        expect(persistedState.length).toBeGreaterThan(0);
+        expect(JSON.stringify(persistedState)).not.toContain(input.request.password);
+        const persistedResults = auth.results.allEntries();
+        expect(persistedResults).toHaveLength(1);
+        expect(JSON.stringify(persistedResults)).not.toContain(input.request.password);
+        expect(JSON.stringify(await auth.queue.readEntries())).not.toContain(input.request.password);
 
+        currentTime = 18_000;
         const replay = await auth.service.registerUser(input);
 
         expect(replay.right).toEqual(result.right);
-        expect(sampledTimes).toEqual([9_000]);
+        expect([...runtimeRepository.data.entries()]).toEqual(persistedState);
+        expect(auth.results.allEntries()).toEqual(persistedResults);
     });
 
     it('replays a consumed agent ticket only with its original credential proof', async () => {
         const runtime = createRuntime();
-        const authority = await putSession(runtime, 'operator-client', 'operator-session');
+        const authority = await putSession(runtime, { clientId: 'operator-client', sessionId: 'operator-session', issuedAtEpochMs: Date.now() });
         const issued = await runAuthInboxCommand({
             pending: runtime.auth.service.issueAgentSessionTickets({
                 requestId: 'AgentTicketIssueRequest_0123',
@@ -303,10 +333,9 @@ function createRuntime(): AuthHttpIdempotencyRuntime {
 
 async function putSession(
     runtime: AuthHttpIdempotencyRuntime,
-    clientId: string,
-    sessionId: string
+    input: Pick<IssuedAuthSession, 'clientId' | 'sessionId' | 'issuedAtEpochMs'>
 ): Promise<IssuedAuthSession> {
-    const issuedAtEpochMs = Date.now();
+    const { clientId, sessionId, issuedAtEpochMs } = input;
     const session = {
         clientId,
         username: clientId,

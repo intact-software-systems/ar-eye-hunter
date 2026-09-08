@@ -1,9 +1,13 @@
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { ResilienceDto, type DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { type DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type {
+    OnQueuedMessageCallback,
+    OnRejectedQueuedMessageCallback
+} from '@shared/services/queue-message-callbacks.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
 export class InboxQueueReader {
@@ -27,7 +31,7 @@ export class InboxQueueReader {
         });
     }
 
-    onInboxMessageDo(type: string, callback: OnMessageCallback): this {
+    onInboxMessageDo(type: string, callback: OnQueuedMessageCallback): this {
         this.reader.onMessageDo(type, callback);
         return this;
     }
@@ -36,11 +40,15 @@ export class InboxQueueReader {
         return this.reader.removeMessageCallback(type);
     }
 
+    onRejectedInboxMessageDo(callback: OnRejectedQueuedMessageCallback): void {
+        this.reader.onRejectedMessageDo(callback);
+    }
+
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
         return await this.reader.enqueueIfAbsent(message);
     }
 
-    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
+    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<void> {
         await this.reader.dequeue(typesToDequeue, resilience);
     }
 }

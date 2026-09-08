@@ -1,31 +1,31 @@
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
-import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
-type AppInboxEvidence = Readonly<{
-    commandId: string;
-    operationId: string;
-    resourceId: string;
-    topicId: string;
-    contextId: string;
-}>;
+interface AppInboxEvidence {
+    readonly commandId: string;
+    readonly operationId: string;
+    readonly resourceId: string;
+    readonly topicId: string;
+    readonly contextId: string;
+}
 
-type RawCommand = Readonly<{
-    commandId: string;
-    status: 'accepted' | 'exhausted';
-}>;
+interface RawCommand {
+    readonly commandId: string;
+    readonly status: 'accepted' | 'exhausted';
+}
 
-export type AppInboxAttemptObservation = Readonly<{
-    commandId: string;
-    operationId: string;
-    attempt: number;
-    outcome: 'accepted' | 'conflicted' | 'transient-retry' | 'exhausted';
-    terminal: boolean;
-    source: 'resource_inbox.release.telemetry';
-    retryDelayMs: number;
-    dueAgeMs: number;
-    selectedLane: 'fast' | 'fairness' | 'timeout';
-    failure: ResourceInboxAttemptReleaseTelemetry['failure'];
-}>;
+export interface AppInboxAttemptObservation {
+    readonly commandId: string;
+    readonly operationId: string;
+    readonly attempt: number;
+    readonly outcome: 'accepted' | 'conflicted' | 'transient-retry' | 'exhausted';
+    readonly terminal: boolean;
+    readonly source: 'resource_inbox.release.telemetry';
+    readonly retryDelayMs: number;
+    readonly dueAgeMs: number;
+    readonly selectedLane: 'fast' | 'fairness' | 'timeout';
+    readonly failure: ResourceInboxAttemptReleaseTelemetry['failure'];
+}
 
 const OPTIMISTIC_CONFLICT_CODES = new Set([
     'app-inbox-reservation-conflict',

@@ -1,65 +1,31 @@
-import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import {
-    type ClientMutationAuthority,
-    type ClientMutationCommand,
-    type ClientMutationFacts,
-    type ClientMutationOperation,
-    type ClientMutationRead
+    type ClientMutationCommand
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
-import {
-    clientStatePrincipalStorageKey,
-    decodeClientPrincipalStorageKey
-} from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type {
-    RuntimeStateConditionalWriteResult,
-    RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/runtime-state-repository.ts';
-import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
-import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import {
     AggregateBarrierRepository,
-    AlwaysConflictingPrincipalRepository,
-    CLIENT_MUTATION_BASE_EPOCH_MS as BASE_EPOCH_MS,
+    CLIENT_MUTATION_BASE_EPOCH_MS,
     connect,
-    createService,
-    deepFreeze,
-    outboxFor,
-    PrincipalChangeAfterFirstReadRepository,
-    snapshot,
-    StatementRecordingRepository
+    createService
 } from './client-mutation-concurrency-test-runtime.ts';
 import {
-    CLIENT_MUTATION_TEST_SCOPE as SCOPE,
-    clientMutationPrincipalRef as principalRef,
+    CLIENT_MUTATION_TEST_SCOPE,
+    clientMutationPrincipalRef,
     emptyClientMutationRead,
     invalidSessionCommand,
     validAuthoritySession,
-    validFacts,
-    validPrincipalCommand,
-    validPrincipalValue
+    validFacts
 } from './client-mutation-validation-test-fixtures.ts';
-import {
-    createClientStateTestDriver as createClientStateService,
-    failNextClientStateTestOutboxWrite,
-    getClientStateTestOutbox
-} from './client-state-test-runtime.ts';
 
 describe('client mutation lifecycle validation', () => {
     it('rejects causally impossible lifecycle timestamps in commands, stored reads, and computed state', async () => {
@@ -71,7 +37,7 @@ describe('client mutation lifecycle validation', () => {
 });
 
 const lifecycleBase = {
-    aggregateRef: principalRef('alice'),
+    aggregateRef: clientMutationPrincipalRef('alice'),
     commandId: 'causal-command',
     requestId: 'causal-command',
     facts: validFacts()
@@ -171,7 +137,7 @@ function expectCorruptComputedRejection(
         }
     };
     expect(() =>
-        validateClientMutation({
+        assertClientMutation({
             command,
             read: emptyClientMutationRead(),
             computed: invalidSessionComputed
@@ -182,7 +148,7 @@ function expectCorruptComputedRejection(
 async function expectMalformedHeartbeatRejection(): Promise<void> {
     const runtime = new AggregateBarrierRepository();
     await expect(
-        createService(runtime, 1_000).heartbeatSession(SCOPE, 'alice', 'browser', 'session-1', {
+        createService(runtime, 1_000).heartbeatSession(CLIENT_MUTATION_TEST_SCOPE, 'alice', 'browser', 'session-1', {
             generationId: 'generation-1',
             lastHeartbeatAtEpochMs: 2_001,
             expiresAtEpochMs: 2_000,
@@ -194,7 +160,7 @@ async function expectMalformedHeartbeatRejection(): Promise<void> {
 
 async function expectCorruptStoredSessionRejection(): Promise<void> {
     const runtime = new AggregateBarrierRepository();
-    await connect({ runtime, sessionId: 'corrupt-session', generationId: 'corrupt-generation', nowEpochMs: BASE_EPOCH_MS });
+    await connect({ runtime, sessionId: 'corrupt-session', generationId: 'corrupt-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
     const storedSession = [...runtime.data.entries()].find(([, stored]) => {
         try {
             return JSON.parse(stored.value).generationId === 'corrupt-generation';
@@ -214,15 +180,15 @@ async function expectCorruptStoredSessionRejection(): Promise<void> {
     });
     const corruptBefore = structuredClone([...runtime.data.entries()]);
     await expect(
-        createService(runtime, BASE_EPOCH_MS + 1_000).heartbeatSession(
-            SCOPE,
+        createService(runtime, CLIENT_MUTATION_BASE_EPOCH_MS + 1_000).heartbeatSession(
+            CLIENT_MUTATION_TEST_SCOPE,
             'alice',
             'browser',
             'corrupt-session',
             {
                 generationId: 'corrupt-generation',
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_000,
-                expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                lastHeartbeatAtEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS + 1_000,
+                expiresAtEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS + 60_000,
                 requestId: 'reject-corrupt-stored-session'
             }
         )
@@ -248,7 +214,7 @@ function heartbeatCorruptCommand(): ClientMutationCommand {
     ) as ClientMutationCommand;
 }
 
-function storedEntry<Value>(value: Value) {
+function storedEntry<Value>(value: Value): RuntimeStateEntryValue<Value> {
     return {
         entry: {
             key: 'stored',

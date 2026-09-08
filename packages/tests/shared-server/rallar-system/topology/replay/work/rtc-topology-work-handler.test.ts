@@ -4,7 +4,11 @@ import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbo
 import { COALESCED_APP_OUTBOX_WORK_FIELD } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
@@ -25,11 +29,26 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { AuditStamp, GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
+import type {
+    AuditStamp,
+    GroupPresenceSummary,
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
+import {
+    EntityStatus,
+    InMemoryQueueBox,
+    type ALMessage
+} from '@shared/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
@@ -612,11 +631,11 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(submittedCommands).toEqual([]);
         expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
 
-        const redelivered = [...(await queue.reserveTimeoutEntries(
-            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            { maxToReserve: 1, maxAttempts: 2 },
-            Temporal.Duration.from({ milliseconds: 0 })
-        )).values()][0];
+        const redelivered = [...(await queue.reserveTimeoutEntries({
+            typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            timeSinceStartTs: Temporal.Duration.from({ milliseconds: 0 })
+        })).values()][0];
         if (!redelivered) {
             throw new Error('Expected the outer queue to redeliver RTC RTT work');
         }
@@ -748,11 +767,11 @@ async function enqueueAndReserveRtt(input: EnqueueAndReserveRttInput) {
         group,
         rtt('session-a', 'session-b', version)
     );
-    const reserved = await queue.reserveEntries(
-        OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-        new Set([EntityStatus.NEW]),
-        1
-    );
+    const reserved = await queue.reserveEntries({
+        typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1
+    });
     const entry = [...reserved.values()][0];
     if (!entry) {
         throw new Error('Expected reserved RTC RTT work');

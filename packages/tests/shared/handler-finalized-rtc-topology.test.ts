@@ -3,21 +3,30 @@
 import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
-type ReleaseAdapter = Readonly<{
-    name: string;
+interface ReleaseAdapter {
+    readonly name: string;
     release(
         reserved: ResourceEntry,
         current: ResourceEntry
     ): Promise<ResourceEntry>;
-}>;
+}
 
 const ADAPTERS: readonly ReleaseAdapter[] = [
     {
@@ -51,22 +60,24 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
     {
         name: 'PostgreSQL',
         release: async (reserved, current) => {
+            const observedReservation = { ...reserved, db: { id: '1' } };
+            const storedCurrent = { ...current, db: { id: '1' } };
             const transactionOwners = {
                 reservations: {
                     releaseReserved: vi.fn(async () => null)
                 },
                 entries: {
-                    findAnyByKey: vi.fn(async () => current)
+                    findAnyByKey: vi.fn(async () => storedCurrent)
                 }
             };
             const repository = {
                 transaction: vi.fn(
-                    async (work: (value: unknown) => Promise<unknown>) => await work(transactionOwners)
+                    async (work: (value: typeof transactionOwners) => Promise<Map<Key, ResourceEntry>>) => await work(transactionOwners)
                 )
             };
             const queue = new PSqlQueueBox(repository as never);
             return firstValue(
-                await queue.releaseEntries([reserved], {
+                await queue.releaseEntries([observedReservation], {
                     status: EntityStatus.COMPLETED,
                     delayMs: null
                 })
@@ -163,9 +174,9 @@ function complete(entry: ResourceEntry): ResourceEntry {
     };
 }
 
-function firstValue<T>(values: Map<unknown, T>): T {
+function firstValue(values: ReadonlyMap<Key, ResourceEntry>): ResourceEntry {
     const value = values.values().next().value;
-    if (!value) {
+    if (value === undefined) {
         throw new Error('Expected one released entry');
     }
     return value;

@@ -1,8 +1,12 @@
 import { isRtcTopologyPublicationOutboxEntry } from '@shared-server/rallar-system/topology/replay/work/is-rtc-topology-publication-outbox-entry.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createRtcTopologyReplayFixture } from './rtc-topology-replay-fixture.ts';
 
@@ -20,11 +24,11 @@ describe('RTC topology replay wake validation', () => {
             WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
         );
 
-        expect(isRtcTopologyPublicationOutboxEntry(fixture.outbox)).toBe(true);
+        expect(isRtcTopologyPublicationOutboxEntry(fixture.outbox[0])).toBe(true);
         expect(isRtcTopologyPublicationOutboxEntry(otherOutbox)).toBe(false);
         expect(
             isRtcTopologyPublicationOutboxEntry({
-                ...fixture.outbox,
+                ...fixture.outbox[0],
                 resource: JSON.stringify({ not: 'an AL message' })
             })
         ).toBe(false);

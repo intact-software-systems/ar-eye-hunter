@@ -3,8 +3,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import {
     requiresClientWrite,
     toClientStateWritten,
-    type ClientStateService,
-    type ClientStateWritten
+    type ClientStateService
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import {
     timeClientStateMutationCommit,
@@ -17,12 +16,18 @@ import {
     toClientMutationSystemAuthority
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type {
+    ClientMutationAuthority,
+    ClientMutationCommandInput,
+    ClientMutationComputed,
+    ClientMutationComputedWrite
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import {
-    ClientMutationIdempotencyConflictError,
-    validateClientMutation
-} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+    assertClientMutation,
+    ClientMutationIdempotencyConflictError
+} from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -45,7 +50,6 @@ import {
 const TEST_AUTH_ISSUED_AT_EPOCH_MS = 0;
 const TEST_AUTH_EXPIRES_AT_EPOCH_MS = 253_402_300_799_000;
 
-type ClientMutationInput = Parameters<typeof toClientMutationCommand>[0];
 interface ClientStateTestExecutorInput {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     readonly eventStore: TestClientStateEventStore;
@@ -64,9 +68,9 @@ interface ClientStateTestDriverDependencies {
     readonly timing?: RallarTimingSink;
 }
 
-type ClientStateTestRuntimeRepository =
-    & RuntimeStateOptimisticTransactionalRepositoryLike
-    & Readonly<{ clientStateEventStore: TestClientStateEventStore; }>;
+interface ClientStateTestRuntimeRepository extends RuntimeStateOptimisticTransactionalRepositoryLike {
+    readonly clientStateEventStore: TestClientStateEventStore;
+}
 
 export type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 export { failNextClientStateTestOutboxWrite, getClientStateTestOutbox };
@@ -121,7 +125,7 @@ function createClientStateTestMutationExecutor(
         const attempt = (attemptsByCommandId.get(commandInput.commandId) ?? 0) + 1;
         attemptsByCommandId.set(commandInput.commandId, attempt);
         try {
-            const computed = await computeClientStateTestMutation(input, commandInput, attempt);
+            const computed = await prepareClientStateTestMutation(input, commandInput, attempt);
             if (requiresClientWrite(computed)) {
                 await writeClientStateTestMutation(input, computed);
             }
@@ -144,9 +148,9 @@ function createClientStateTestMutationExecutor(
     };
 }
 
-async function computeClientStateTestMutation(
+async function prepareClientStateTestMutation(
     context: ClientStateTestExecutorInput,
-    input: ClientMutationInput,
+    input: ClientMutationCommandInput,
     attempt: number
 ): Promise<ClientMutationComputed> {
     const authority = await toTestAuthority(context.authSessions, input, context.serviceId);
@@ -169,7 +173,8 @@ async function computeClientStateTestMutation(
     timeClientStateMutationPhase(
         { timing: context.mutationTiming, command, operation: 'mutation.validate' },
         () => {
-            const issue = validateClientMutation({ command, read, computed })[0];
+            assertClientMutation({ command, read, computed });
+            const issue = validateClientMutationAuthorityPolicy(command, read)[0];
             if (issue !== undefined) {
                 throw issue.cause;
             }
@@ -180,7 +185,7 @@ async function computeClientStateTestMutation(
 
 async function writeClientStateTestMutation(
     context: ClientStateTestExecutorInput,
-    computed: Parameters<ClientStateService['write']>[1]
+    computed: ClientMutationComputedWrite
 ): Promise<void> {
     await timeClientStateMutationCommit(
         { timing: context.mutationTiming, writes: [computed] },
@@ -210,9 +215,9 @@ async function writeClientStateTestMutation(
 
 async function toTestAuthority(
     authSessions: AuthSessionRepository,
-    input: ClientMutationInput,
+    input: ClientMutationCommandInput,
     serviceId: string
-) {
+): Promise<ClientMutationAuthority> {
     if (input.operation === 'expireSession') {
         return toClientMutationSystemAuthority(serviceId);
     }

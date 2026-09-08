@@ -2,15 +2,15 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundPlanner } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     afterEach,
     beforeEach,
@@ -19,7 +19,7 @@ import {
     it,
     vi
 } from 'vitest';
-import { createTestGroup } from '../../create-test-group.ts';
+import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
 interface ReplayObservedState {
     snapshot: GroupSnapshot | undefined;
@@ -29,12 +29,12 @@ interface ReplayObservedState {
 interface ReplayFixture {
     readonly runtime: ALInboundMessageRuntime;
     readonly stores: ALInboundRuntimeStores;
+    readonly engine: InboxOutboxEngine;
     readonly observed: ReplayObservedState;
     readonly planner: ALInboundPlanner;
     readonly delivered: string[];
     readonly forwarded: string[];
     readonly controls: ALMessage[];
-    readonly inbox: InMemoryQueueBox;
 }
 
 interface ReplayMessageInput {
@@ -46,7 +46,7 @@ interface ReplayMessageInput {
 
 describe('RTC admitted-message consumption', () => {
     beforeEach(() => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_800_000_000_000);
     });
 
@@ -72,16 +72,23 @@ describe('RTC admitted-message consumption', () => {
             });
             const message = createMessage({ seq: 1, versioned: true, acknowledge: false });
             try {
-                await fixture.runtime.handleIncomingMessage(message, 'sender');
+                await fixture.runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
                 expect(fixture.delivered).toEqual([]);
                 expect(fixture.forwarded).toEqual([]);
 
                 fixture.observed.snapshot = createCurrentSnapshot();
                 fixture.observed.overloaded = false;
-                await vi.advanceTimersByTimeAsync(1_000);
-                expect(fixture.delivered).toEqual([message.id.msgId]);
+                await fixture.engine.executeOnce();
+                await expect.poll(async () => {
+                    await fixture.engine.executeOnce();
+                    return fixture.delivered;
+                }).toEqual([message.id.msgId]);
+                await expect.poll(async () => {
+                    await fixture.engine.executeOnce();
+                    return fixture.forwarded;
+                }).toEqual([message.id.msgId]);
                 expect(fixture.forwarded).toEqual([message.id.msgId]);
-                await fixture.runtime.handleIncomingMessage(message, 'sender');
+                await fixture.runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
                 expect(fixture.delivered).toEqual([message.id.msgId]);
             }
             finally {
@@ -94,24 +101,29 @@ describe('RTC admitted-message consumption', () => {
         const fixture = createReplayFixture(false);
         const second = createMessage({ seq: 2, versioned: true, acknowledge: true });
         const first = createMessage({ seq: 1, versioned: false, acknowledge: true });
-        const read = await fixture.stores.admissionStore.readIncomingMessage(second, 'sender', fixture.planner);
-        const trackKey = read.plan.orderingRuntime.trackKey;
+        const trackKey = toALOrderingTrackKey(second);
         if (!trackKey) {
             throw new Error('Ordered message must have an ordering track.');
         }
         try {
-            await fixture.runtime.handleIncomingMessage(second, 'sender');
-            fixture.observed.snapshot = undefined;
-            await fixture.runtime.handleIncomingMessage(first, 'sender');
+            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            fixture.observed.snapshot = { ...createCurrentSnapshot(), group: { ...createCurrentSnapshot().group, snapshotVersion: 4 } };
+            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).toEqual([first.id.msgId]);
-            expect(await fixture.stores.admissionStore.readBufferedRelease(trackKey, 2)).toBeDefined();
+            expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeDefined();
             expect(acknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
 
             fixture.observed.snapshot = createCurrentSnapshot();
-            await vi.advanceTimersByTimeAsync(1_000);
-            expect(fixture.delivered).toEqual([first.id.msgId, second.id.msgId]);
-            expect(acknowledgedIds(fixture.controls)).toContain(second.id.msgId);
-            expect(await fixture.stores.admissionStore.readBufferedRelease(trackKey, 2)).toBeUndefined();
+            await fixture.engine.executeOnce();
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.delivered;
+            }).toEqual([first.id.msgId, second.id.msgId]);
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return acknowledgedIds(fixture.controls);
+            }).toContain(second.id.msgId);
+            expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeUndefined();
         }
         finally {
             fixture.runtime.dispose();
@@ -129,14 +141,17 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
         try {
-            await fixture.runtime.handleIncomingMessage(first, 'sender');
+            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).toEqual([]);
             clearSnapshotAfterCommit.mockRestore();
             fixture.observed.snapshot = createCurrentSnapshot();
-            await fixture.runtime.handleIncomingMessage(second, 'sender');
+            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).not.toContain(second.id.msgId);
-            await vi.advanceTimersByTimeAsync(1_000);
-            expect(fixture.delivered).toEqual([first.id.msgId, second.id.msgId]);
+            await fixture.engine.executeOnce();
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.delivered;
+            }).toEqual([first.id.msgId, second.id.msgId]);
         }
         finally {
             fixture.runtime.dispose();
@@ -153,16 +168,17 @@ describe('RTC admitted-message consumption', () => {
             initial.observed.snapshot = undefined;
             return result;
         });
-        await initial.runtime.handleIncomingMessage(first, 'sender');
+        await initial.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
         expect(initial.delivered).toEqual([]);
         initial.runtime.dispose();
 
         const resumed = createReplayFixture(false, initial.stores);
         try {
-            await resumed.runtime.handleIncomingMessage(second, 'sender');
-            expect(resumed.delivered).not.toContain(second.id.msgId);
-            await vi.advanceTimersByTimeAsync(1_000);
-            expect(resumed.delivered).toEqual([first.id.msgId, second.id.msgId]);
+            await resumed.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            await expect.poll(async () => {
+                await resumed.engine.executeOnce();
+                return resumed.delivered;
+            }).toEqual([first.id.msgId, second.id.msgId]);
         }
         finally {
             resumed.runtime.dispose();
@@ -174,12 +190,14 @@ describe('RTC admitted-message consumption', () => {
         const second = createMessage({ seq: 2, versioned: true, acknowledge: true });
         const first = createMessage({ seq: 1, versioned: true, acknowledge: true });
         try {
-            await fixture.runtime.handleIncomingMessage(second, 'upstream-relay');
-            await fixture.runtime.handleIncomingMessage(first, 'upstream-relay');
-            const acknowledgements = fixture.controls.map(parseALControlMessage).filter((control) =>
-                control?.type === 'ack' && control.payload.ackedMsgId === second.id.msgId && control.payload.status === 'delivered'
-            );
-            expect(acknowledgements).toEqual([
+            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'upstream-relay' });
+            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'upstream-relay' });
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.controls.map(parseALControlMessage).filter((control) =>
+                    control?.type === 'ack' && control.payload.ackedMsgId === second.id.msgId && control.payload.status === 'delivered'
+                );
+            }).toEqual([
                 { type: 'ack', payload: expect.objectContaining({ toPeerId: 'upstream-relay' }) }
             ]);
         }
@@ -198,19 +216,19 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
 
-        await fixture.runtime.handleIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), 'sender');
+        await fixture.runtime.handleIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
 
         expect(vi.getTimerCount()).toBe(0);
         fixture.observed.snapshot = createCurrentSnapshot();
-        await vi.advanceTimersByTimeAsync(1_000);
+        await fixture.engine.executeOnce();
         expect(fixture.delivered).toEqual([]);
     });
 
-    it('releases a successor when its predecessor retry work has expired', async () => {
+    it('requests resynchronization when its predecessor retry work has expired', async () => {
         const fixture = createReplayFixture(
             false,
             createDefaultInMemoryALInboundRuntimeStores({
-                retention: { durableEffectTtlMs: 50, bufferedMessageTtlMs: 500 }
+                retention: { durableEffectTtlMs: 500, bufferedMessageTtlMs: 5_000 }
             })
         );
         const first = createMessage({ seq: 1, versioned: true, acknowledge: false });
@@ -222,59 +240,20 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
         try {
-            await fixture.runtime.handleIncomingMessage(first, 'sender');
-            vi.setSystemTime(Date.now() + 100);
+            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
+            vi.setSystemTime(Date.now() + 1_000);
             fixture.observed.snapshot = createCurrentSnapshot();
 
-            await fixture.runtime.handleIncomingMessage(second, 'sender');
+            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
 
-            expect(fixture.delivered).toEqual([second.id.msgId]);
-        }
-        finally {
-            fixture.runtime.dispose();
-        }
-    });
-
-    it.each(['active', 'failed', 'missing', 'replaced'] as const)('respects the actual %s queued predecessor rather than an orphaned marker', async (owner) => {
-        const fixture = createReplayFixture(false);
-        const first = createMessage({ seq: 1, versioned: true, acknowledge: false, persist: true });
-        const second = createMessage({ seq: 2, versioned: true, acknowledge: false, persist: true });
-        try {
-            await fixture.runtime.handleIncomingMessage(first, 'sender');
-            const firstEntry = await fixture.inbox.getItem(first.route);
-            if (!firstEntry) {
-                throw new Error('Expected the first admitted inbox entry');
-            }
-            if (owner === 'failed') {
-                await fixture.inbox.setItem(firstEntry.key, { ...firstEntry, status: EntityStatus.FAILED }, {
-                    expireAtTimestamp: firstEntry.audit.expiryTs.epochMilliseconds
-                });
-            }
-            else if (owner === 'missing') {
-                await fixture.inbox.removeItem(firstEntry.key);
-            }
-            else if (owner === 'replaced') {
-                const replacement = { ...first, id: { ...first.id, msgId: 'replacement-message' } };
-                await fixture.inbox.setItem(firstEntry.key, { ...firstEntry, resource: JSON.stringify(replacement) }, {
-                    expireAtTimestamp: firstEntry.audit.expiryTs.epochMilliseconds
-                });
-            }
-            await fixture.runtime.handleIncomingMessage(second, 'sender');
-            const secondEntry = await fixture.inbox.getItem(second.route);
-            if (!secondEntry) {
-                throw new Error('Expected the second admitted inbox entry');
-            }
-
-            expect(await fixture.runtime.dispatchStoredEntry(secondEntry)).toBe(owner === 'active' ? 'retry' : 'completed');
-            if (owner === 'active') {
-                expect(fixture.delivered).toEqual([]);
-                expect(await fixture.runtime.dispatchStoredEntry(firstEntry)).toBe('completed');
-                expect(await fixture.runtime.dispatchStoredEntry(secondEntry)).toBe('completed');
-                expect(fixture.delivered).toEqual([first.id.msgId, second.id.msgId]);
-            }
-            else {
-                expect(fixture.delivered).toEqual([second.id.msgId]);
-            }
+            expect(fixture.delivered).toEqual([]);
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.controls.map(parseALControlMessage);
+            }).toContainEqual({
+                type: 'nack',
+                payload: expect.objectContaining({ msgId: second.id.msgId, reason: 'resync-required', missingSeqs: [] })
+            });
         }
         finally {
             fixture.runtime.dispose();
@@ -297,29 +276,16 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
         try {
-            await fixture.runtime.handleIncomingMessage(first, 'sender');
+            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             vi.setSystemTime(Date.now() + 100);
-            await fixture.runtime.handleIncomingMessage(second, 'sender');
-            if (persist) {
-                const secondEntry = await fixture.inbox.getItem(second.route);
-                if (!secondEntry) {
-                    throw new Error('Expected the admitted successor inbox entry');
-                }
-                expect(await fixture.runtime.dispatchStoredEntry(secondEntry)).toBe('retry');
-                fixture.observed.snapshot = createCurrentSnapshot();
-                const firstEntry = await fixture.inbox.getItem(first.route);
-                if (!firstEntry) {
-                    throw new Error('Expected the admitted predecessor inbox entry');
-                }
-                expect(await fixture.runtime.dispatchStoredEntry(firstEntry)).toBe('completed');
-                expect(await fixture.runtime.dispatchStoredEntry(secondEntry)).toBe('completed');
-            }
-            else {
-                expect(fixture.delivered).toEqual([]);
-                fixture.observed.snapshot = createCurrentSnapshot();
-                await vi.advanceTimersByTimeAsync(1_000);
-            }
-            expect(fixture.delivered).toEqual([first.id.msgId, second.id.msgId]);
+            fixture.observed.snapshot = { ...createCurrentSnapshot(), group: { ...createCurrentSnapshot().group, snapshotVersion: 4 } };
+            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            expect(fixture.delivered).toEqual([]);
+            fixture.observed.snapshot = createCurrentSnapshot();
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.delivered;
+            }).toEqual([first.id.msgId, second.id.msgId]);
         }
         finally {
             fixture.runtime.dispose();
@@ -337,7 +303,7 @@ describe('RTC admitted-message consumption', () => {
             return effects;
         });
 
-        await fixture.runtime.handleIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), 'sender');
+        await fixture.runtime.handleIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
 
         expect(fixture.delivered).toEqual([]);
         expect(vi.getTimerCount()).toBe(0);
@@ -349,27 +315,44 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const controls: ALMessage[] = [];
-    const planner: ALInboundPlanner = (message, fromPeerId, runtimeStores) =>
+    const planner: ALInboundPlanner = (message, source, observations) =>
         planRtcRoomSnapshotAdmission({
             message,
             plan: planALMessageHandling(message, {
                 selfPeerId: 'receiver',
-                fromPeerId,
-                ...runtimeStores,
+                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+                ...observations,
                 overloaded: observed.overloaded,
                 connectedPeerIds: relay ? ['sender', 'downstream'] : ['sender'],
                 groupMemberPeerIds: ['sender', 'receiver', 'downstream'],
                 overlayNeighborPeerIds: relay ? ['sender', 'downstream'] : ['sender']
             }),
             snapshot: observed.snapshot,
-            fromPeerId,
-            nowMs: Date.now()
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            selfPeerId: 'receiver',
+            recipientPeerId: undefined,
+            overlay: {
+                overlayId: 'room',
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                provenance: 'server',
+                state: 'active',
+                topology: 'tree',
+                name: 'Room',
+                sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
+                nextHopSessionIds: ['sender', 'upstream-relay', 'downstream'],
+                degreeLimit: 3,
+                overlayVersion: 1,
+                createdByClientId: 'sender',
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 1
+            },
+            nowMs: observations.nowMs
         });
-    const inbox = new InMemoryQueueBox(new Map());
+    const engine = new InboxOutboxEngine();
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'receiver',
         stores,
-        inbox,
+        queueEngine: engine,
         planIncomingMessage: planner,
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
@@ -383,7 +366,7 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
             controls.push(message);
         }
     });
-    return { runtime, stores, observed, planner, delivered, forwarded, controls, inbox };
+    return { runtime, stores, engine, observed, planner, delivered, forwarded, controls };
 }
 
 function createMessage(input: ReplayMessageInput): ALMessage {
@@ -411,12 +394,15 @@ function acknowledgedIds(controls: readonly ALMessage[]): string[] {
 }
 
 function createCurrentSnapshot(): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'app',
+        workspaceId: 'workspace',
+        groupId: 'room',
+        sessionIds: ['sender', 'receiver', 'upstream-relay', 'downstream']
+    });
     return {
-        group: createTestGroup({ applicationId: 'app', workspaceId: 'workspace', groupId: 'room', snapshotVersion: 5 }),
-        causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        members: [],
-        activeSessions: [],
-        memberCount: 0,
-        onlineMemberCount: 0
+        ...snapshot,
+        group: { ...snapshot.group, snapshotVersion: 5 },
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
     };
 }

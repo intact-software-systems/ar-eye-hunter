@@ -1,98 +1,69 @@
-import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import {
-    type ClientMutationAuthority,
-    type ClientMutationCommand,
-    type ClientMutationFacts,
-    type ClientMutationOperation,
     type ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
-import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
-import {
-    clientStatePrincipalStorageKey,
-    decodeClientPrincipalStorageKey
-} from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import type {
-    RuntimeStateConditionalWriteResult,
-    RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
-import type { ClientEvent, ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
-import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import type {
+    ClientEvent
+} from '@shared/api/client-types.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import {
     AggregateBarrierRepository,
-    AlwaysConflictingPrincipalRepository,
-    CLIENT_MUTATION_BASE_EPOCH_MS as BASE_EPOCH_MS,
+    CLIENT_MUTATION_BASE_EPOCH_MS,
     connect,
-    createService,
-    deepFreeze,
-    outboxFor,
-    PrincipalChangeAfterFirstReadRepository,
-    snapshot,
-    StatementRecordingRepository
+    createService
 } from './client-mutation-concurrency-test-runtime.ts';
 import {
-    CLIENT_MUTATION_TEST_SCOPE as SCOPE,
-    clientMutationPrincipalRef as principalRef,
-    emptyClientMutationRead,
-    invalidSessionCommand,
+    CLIENT_MUTATION_TEST_SCOPE,
+    clientMutationPrincipalRef,
     validAuthoritySession,
-    validFacts,
     validPrincipalCommand,
     validPrincipalValue
 } from './client-mutation-validation-test-fixtures.ts';
-import {
-    createClientStateTestDriver as createClientStateService,
-    failNextClientStateTestOutboxWrite,
-    getClientStateTestOutbox
-} from './client-state-test-runtime.ts';
 
 describe('client mutation persisted-state validation', () => {
     it('fails closed when a direct persisted principal read omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect({ runtime, sessionId: 'principal-session', generationId: 'principal-generation', nowEpochMs: BASE_EPOCH_MS });
+        await connect({ runtime, sessionId: 'principal-session', generationId: 'principal-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
         await removePersistedWorkspaceId(runtime, 'client-state:principals');
 
         await expect(
-            createTestClientStateRepository(runtime).findPrincipal(principalRef('alice'))
+            createTestClientStateRepository(runtime).findPrincipal(clientMutationPrincipalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('fails closed when a persisted instance list entry omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect({ runtime, sessionId: 'instance-session', generationId: 'instance-generation', nowEpochMs: BASE_EPOCH_MS });
+        await connect({ runtime, sessionId: 'instance-session', generationId: 'instance-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
         await removePersistedWorkspaceId(runtime, 'client-state:instances');
 
         await expect(
-            createTestClientStateRepository(runtime).listInstances(principalRef('alice'))
+            createTestClientStateRepository(runtime).listInstances(clientMutationPrincipalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('fails closed when a persisted session snapshot entry omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect({ runtime, sessionId: 'snapshot-session', generationId: 'snapshot-generation', nowEpochMs: BASE_EPOCH_MS });
+        await connect({ runtime, sessionId: 'snapshot-session', generationId: 'snapshot-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
         await removePersistedWorkspaceId(runtime, 'client-state:sessions');
 
         await expect(
-            createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
+            createTestClientStateRepository(runtime).readSnapshot(clientMutationPrincipalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -100,14 +71,14 @@ describe('client mutation persisted-state validation', () => {
         const runtime = new AggregateBarrierRepository();
         const eventStore = new TestClientStateEventStore();
         eventStore.events.push({
-            applicationId: SCOPE.applicationId,
+            applicationId: CLIENT_MUTATION_TEST_SCOPE.applicationId,
             principalId: 'alice',
             eventId: 'event-without-workspace',
             eventType: 'session-connected',
             clientInstanceId: 'browser',
             sessionId: 'event-session',
             snapshotVersion: 1,
-            occurredAtEpochMs: BASE_EPOCH_MS,
+            occurredAtEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS,
             actor: { kind: 'service', serviceId: 'client-test' },
             reason: null,
             traceId: null,
@@ -117,13 +88,13 @@ describe('client mutation persisted-state validation', () => {
         vi.spyOn(eventStore, 'listClientEvents').mockResolvedValue(eventStore.events);
 
         await expect(
-            createTestClientStateRepository(runtime, eventStore).listEvents(principalRef('alice'))
+            createTestClientStateRepository(runtime, eventStore).listEvents(clientMutationPrincipalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('fails closed when an active persisted session has no matching instance', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect({ runtime, sessionId: 'orphan-session', generationId: 'orphan-generation', nowEpochMs: BASE_EPOCH_MS });
+        await connect({ runtime, sessionId: 'orphan-session', generationId: 'orphan-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
         const [instance] = await runtime.findAllEntries('client-state:instances');
         if (!instance) {
             throw new Error('Expected a stored client instance');
@@ -131,20 +102,20 @@ describe('client mutation persisted-state validation', () => {
         await runtime.deleteByKey('client-state:instances', instance.key);
 
         await expect(
-            createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
+            createTestClientStateRepository(runtime).readSnapshot(clientMutationPrincipalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('fails closed when persisted active session ids collide across instances', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect({ runtime, sessionId: 'shared-session', generationId: 'browser-generation', nowEpochMs: BASE_EPOCH_MS });
-        await createService(runtime, BASE_EPOCH_MS + 1).upsertInstance(SCOPE, 'alice', 'phone', {
+        await connect({ runtime, sessionId: 'shared-session', generationId: 'browser-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
+        await createService(runtime, CLIENT_MUTATION_BASE_EPOCH_MS + 1).upsertInstance(CLIENT_MUTATION_TEST_SCOPE, 'alice', 'phone', {
             platform: 'web',
             requestId: 'register-phone'
         });
         const repository = createTestClientStateRepository(runtime);
         const browserSession = await repository.findSession({
-            ...principalRef('alice'),
+            ...clientMutationPrincipalRef('alice'),
             clientInstanceId: 'browser',
             sessionId: 'shared-session'
         });
@@ -158,17 +129,17 @@ describe('client mutation persisted-state validation', () => {
             connectionId: null
         });
 
-        await expect(repository.readSnapshot(principalRef('alice'))).rejects.toBeInstanceOf(
+        await expect(repository.readSnapshot(clientMutationPrincipalRef('alice'))).rejects.toBeInstanceOf(
             ClientStateRepositoryInvariantCorruptionError
         );
     });
 
     it('fails closed when a persistence list repeats a client instance', async () => {
         const runtime = new DuplicatingClientInstanceRepository();
-        await connect({ runtime, sessionId: 'instance-session', generationId: 'instance-generation', nowEpochMs: BASE_EPOCH_MS });
+        await connect({ runtime, sessionId: 'instance-session', generationId: 'instance-generation', nowEpochMs: CLIENT_MUTATION_BASE_EPOCH_MS });
 
         await expect(
-            createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
+            createTestClientStateRepository(runtime).readSnapshot(clientMutationPrincipalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -189,10 +160,10 @@ describe('client mutation persisted-state validation', () => {
         ) {
             const runtime = new AggregateBarrierRepository();
             const service = createService(runtime, 1_000);
-            await service.upsertPrincipal(SCOPE, 'alice', request);
+            await service.upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', request);
             const repository = createTestClientStateRepository(runtime);
             const stored = await repository.findIdempotentClientMutationReceipt(
-                principalRef('alice'),
+                clientMutationPrincipalRef('alice'),
                 request.requestId
             );
             if (!stored) {
@@ -226,11 +197,11 @@ describe('client mutation persisted-state validation', () => {
             );
 
             await expect(
-                repository.findIdempotentClientMutationReceipt(principalRef('alice'), request.requestId),
+                repository.findIdempotentClientMutationReceipt(clientMutationPrincipalRef('alice'), request.requestId),
                 variant
             ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
             await expect(
-                service.upsertPrincipal(SCOPE, 'alice', request),
+                service.upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', request),
                 `replay ${variant}`
             ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
         }
@@ -240,14 +211,14 @@ describe('client mutation persisted-state validation', () => {
         for (const variant of malformedNoOpVariants) {
             const runtime = new AggregateBarrierRepository();
             const service = createService(runtime, 1_000);
-            await service.upsertPrincipal(SCOPE, 'alice', {
+            await service.upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', {
                 ...malformedNoOpRequest,
                 requestId: 'seed-malformed-no-op-replay'
             });
-            await service.upsertPrincipal(SCOPE, 'alice', malformedNoOpRequest);
+            await service.upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', malformedNoOpRequest);
             const repository = createTestClientStateRepository(runtime);
             const stored = await repository.findIdempotentClientMutationReceipt(
-                principalRef('alice'),
+                clientMutationPrincipalRef('alice'),
                 malformedNoOpRequest.requestId
             );
             expect(stored?.receipt).toMatchObject({
@@ -286,13 +257,13 @@ describe('client mutation persisted-state validation', () => {
 
             await expect(
                 repository.findIdempotentClientMutationReceipt(
-                    principalRef('alice'),
+                    clientMutationPrincipalRef('alice'),
                     malformedNoOpRequest.requestId
                 ),
                 variant
             ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
             await expect(
-                service.upsertPrincipal(SCOPE, 'alice', malformedNoOpRequest),
+                service.upsertPrincipal(CLIENT_MUTATION_TEST_SCOPE, 'alice', malformedNoOpRequest),
                 `replay ${variant}`
             ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
         }
@@ -301,7 +272,7 @@ describe('client mutation persisted-state validation', () => {
     it('rejects malformed read entries and computed authoritative candidates', () => {
         const command = validPrincipalCommand();
         expect(() =>
-            validateUntrustedClientMutationComputeInput({
+            assertUntrustedClientMutationComputeInput({
                 command,
                 read: []
             })
@@ -329,7 +300,7 @@ describe('client mutation persisted-state validation', () => {
             snapshot: null,
             receiptEvent: null
         };
-        expect(() => validateUntrustedClientMutationComputeInput({ command, read: invalidRead })).toThrow(ClientMutationRejectedError);
+        expect(() => assertUntrustedClientMutationComputeInput({ command, read: invalidRead })).toThrow(ClientMutationRejectedError);
 
         const read: ClientMutationRead = {
             authoritySession: validAuthoritySession(),
@@ -350,7 +321,7 @@ describe('client mutation persisted-state validation', () => {
             receipt: { ...computed.receipt, snapshotVersion: -1 }
         };
         expect(() =>
-            validateClientMutation({
+            assertClientMutation({
                 command,
                 read,
                 computed: invalidComputed
@@ -406,7 +377,7 @@ async function removePersistedWorkspaceId(
     );
 }
 
-function validateUntrustedClientMutationComputeInput(input: unknown): void {
+function assertUntrustedClientMutationComputeInput(input: unknown): void {
     Reflect.apply(computeClientMutation, undefined, [input]);
 }
 

@@ -8,7 +8,12 @@ import {
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
@@ -142,11 +147,11 @@ describe('RTC topology publication repository', () => {
         }
     );
 
-    it('rejects incomplete persisted topology envelopes before cleanup on every read surface', async () => {
+    it('rejects incomplete persisted topology publications before cleanup on every read surface', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {
-            const defects = ['id', 'route', 'typeId'] as const;
+            const defects = ['snapshot', 'expiresAtEpochMs', 'workId'] as const;
             const surfaces = ['direct', 'list', 'page'] as const;
             for (const defect of defects) {
                 for (const surface of surfaces) {
@@ -157,7 +162,7 @@ describe('RTC topology publication repository', () => {
                         createTopologySnapshot(groupRef, 1),
                         `work-envelope-${defect}-${surface}`
                     );
-                    const malformedPublication = omitPublicationMessageField(
+                    const malformedPublication = omitPublicationField(
                         publication,
                         defect
                     );
@@ -191,21 +196,6 @@ describe('RTC topology publication repository', () => {
     });
 });
 
-function omitPublicationMessageField(
-    publication: RtcTopologyPublication,
-    defect: 'id' | 'route' | 'typeId'
-) {
-    if (defect === 'typeId') {
-        const { typeId: _typeId, ...payload } = publication.message.payload;
-        return {
-            ...publication,
-            message: { ...publication.message, payload }
-        };
-    }
-    if (defect === 'id') {
-        const { id: _id, ...message } = publication.message;
-        return { ...publication, message };
-    }
-    const { route: _route, ...message } = publication.message;
-    return { ...publication, message };
+function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId') {
+    return Object.fromEntries(Object.entries(publication).filter(([key]) => key !== defect));
 }

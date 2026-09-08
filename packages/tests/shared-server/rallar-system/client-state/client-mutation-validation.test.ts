@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type {
     ClientMutationCommand,
@@ -8,13 +12,13 @@ import type {
 import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 
 import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
 import {
-    clientMutationPrincipalRef as principalRef,
+    clientMutationPrincipalRef,
     emptyClientMutationRead,
     validAuthority,
     validAuthoritySession,
@@ -89,7 +93,7 @@ describe('client mutation validation', () => {
     });
 
     it('keeps closed mutation inventories owned by the contract module', async () => {
-        const contracts = (await import('@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts')) as Record<string, unknown>;
+        const contracts = await import('@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts');
 
         for (
             const [inventory, values] of [
@@ -132,7 +136,7 @@ describe('client mutation validation', () => {
             ] as const
         ) {
             expect(contracts[inventory], inventory).toBeDefined();
-            expect([...(contracts[inventory] as ReadonlySet<string>)], inventory).toEqual(values);
+            expect([...contracts[inventory]], inventory).toEqual(values);
         }
     });
 });
@@ -168,7 +172,7 @@ describe('client mutation computation determinism', () => {
     it('keeps pure compute and validation deterministic and side-effect free', () => {
         const command: ClientMutationCommand = deepFreeze({
             operation: 'upsertPrincipal',
-            aggregateRef: principalRef('alice'),
+            aggregateRef: clientMutationPrincipalRef('alice'),
             commandId: 'pure-command',
             requestId: 'pure-command',
             authority: validAuthority('upsertPrincipal'),
@@ -201,8 +205,8 @@ describe('client mutation computation determinism', () => {
         });
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        expect(validateClientMutation({ command, read, computed: first })).toEqual([]);
-        expect(validateClientMutation({ command, read, computed: second })).toEqual([]);
+        assertClientMutation({ command, read, computed: first });
+        assertClientMutation({ command, read, computed: second });
         expect(second).toEqual(first);
         expect(command).toEqual(deepFreeze(structuredClone(command)));
         expect(read).toEqual(deepFreeze(structuredClone(read)));

@@ -2,7 +2,9 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
 // dprint-ignore
 import {
     DEFAULT_STATE_APPLICATION_ID,
@@ -57,6 +59,7 @@ export interface StateCacheInboxSource {
 }
 
 export interface BrowserStateCacheLifecyclePort {
+    cancelSnapshotAssemblies(): void;
     onChange(listener: StateCacheChangeListener): () => void;
     initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void;
     hydrate(input: BrowserStateCacheLifecycle.HydrateInput): Promise<void>;
@@ -95,6 +98,11 @@ export namespace BrowserStateCacheLifecycle {
 }
 
 export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePort {
+    readonly #snapshotAssembly = new StateSnapshotAssembly();
+
+    cancelSnapshotAssemblies(): void {
+        this.#snapshotAssembly.clear();
+    }
     readonly #changeListeners = new Set<StateCacheChangeListener>();
     readonly #observerTasks = new Set<Promise<void>>();
     #observersUnsubscribe: (() => void) | undefined;
@@ -108,6 +116,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void {
+        this.cancelSnapshotAssemblies();
         const {
             clientData: myOwnClientData,
             inbox: webSocketQueueBox,
@@ -127,19 +136,27 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             onMessage: async (message: ALMessage) => {
                 const scope = this.readActiveStateCacheScope(initialScope);
                 const lifecycleDispatch = {
-                    message,
                     scope,
                     rereadGroupSnapshots: this.#observerContext?.rereadGroupSnapshots,
                     waitForLifecycleObservers: async () => await this.waitForStateRepositoryObserverTasks()
                 };
-                if (
-                    await dispatchStateSnapshotMessage(lifecycleDispatch) ||
-                    await dispatchStateEventMessage(lifecycleDispatch)
-                ) {
+                if (!isStateSnapshotTopic(message.payload.typeId)) {
+                    await dispatchStateEventMessage({ ...lifecycleDispatch, message });
+                    return;
+                }
+                const result = this.#snapshotAssembly.accept({ message, scope, nowMs: Date.now() });
+                if (result.left) {
+                    throw new TypeError(result.left.message);
+                }
+                if (result.right!.kind !== 'complete') {
+                    return;
+                }
+                const snapshot = result.right!.snapshot;
+                if (await dispatchStateSnapshotMessage({ ...lifecycleDispatch, snapshot })) {
                     return;
                 }
                 await dispatchOverlayTopologyMessage({
-                    message,
+                    snapshot,
                     scope,
                     sessionId: myOwnClientData.sessionId,
                     webRtcGroupManager
@@ -185,6 +202,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             return;
         }
 
+        this.cancelSnapshotAssemblies();
         this.#observersUnsubscribe?.();
         this.#observerContext = next;
 

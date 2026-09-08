@@ -76,8 +76,11 @@ function validateClientMutationReceiptOutcome(
     if ((receipt.outcome === 'applied') !== (receipt.eventId !== null)) {
         rejectClientMutation(`${label}.eventId differs from outcome`);
     }
-    const expectedOutboxCount = receipt.outcome === 'applied' ? 2 : 0;
-    if (receipt.outboxIds.length !== expectedOutboxCount) {
+    // Applied writes publish an event and at least one snapshot carrier; paging can add more.
+    const hasRequiredOutbox = receipt.outcome === 'applied'
+        ? receipt.outboxIds.length >= 2
+        : receipt.outboxIds.length === 0;
+    if (!hasRequiredOutbox) {
         rejectClientMutation(`${label}.outboxIds differs from outcome`);
     }
     const outboxIds = receipt.outboxIds;

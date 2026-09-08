@@ -1,7 +1,13 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+import type { DirectResourceOutboxEntry } from '../direct-resource-outbox-lifecycle.ts';
 import { assertWorkerOutboxLifecycle } from './worker-outbox-lifecycle-assertions.ts';
 
 describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
@@ -13,13 +19,13 @@ describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
                         resourceId: 'client-snapshot',
                         topicId: AppTopics.clientStateSnapshot,
                         typeId: EnqueuedType.WS_OUTBOX,
-                        resource: '{"id":"client-snapshot:principal-state:snapshot"}'
+                        resource: clientMessageResource('client-snapshot', AppTopics.clientStateSnapshot, 'principal-state:snapshot')
                     }),
                     entry({
                         resourceId: 'client-event',
                         topicId: AppTopics.clientStateEvent,
                         typeId: EnqueuedType.WS_OUTBOX,
-                        resource: '{"id":"client-event:principal-state:event"}'
+                        resource: clientMessageResource('client-event', AppTopics.clientStateEvent, 'principal-state:event')
                     })
                 ],
                 outputs: [{ domainStatus: 'applied', outboxIds: ['client-snapshot', 'client-event'] }],
@@ -58,13 +64,13 @@ describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
                         resourceId: 'client-snapshot',
                         topicId: AppTopics.clientStateSnapshot,
                         typeId: EnqueuedType.APP_OUTBOX,
-                        resource: '{"id":"client-snapshot:principal-state:snapshot"}'
+                        resource: clientMessageResource('client-snapshot', AppTopics.clientStateSnapshot, 'principal-state:snapshot')
                     }),
                     entry({
                         resourceId: 'client-event',
                         topicId: AppTopics.clientStateEvent,
                         typeId: EnqueuedType.WS_OUTBOX,
-                        resource: '{"id":"client-event:principal-state:event"}'
+                        resource: clientMessageResource('client-event', AppTopics.clientStateEvent, 'principal-state:event')
                     })
                 ],
                 outputs: [{ domainStatus: 'applied', outboxIds: ['client-snapshot', 'client-event'] }],
@@ -85,7 +91,7 @@ interface EntryInput {
     readonly resource: string;
 }
 
-function entry(input: EntryInput) {
+function entry(input: EntryInput): DirectResourceOutboxEntry {
     const { resourceId, topicId, typeId, resource } = input;
     return {
         resourceId,
@@ -94,4 +100,13 @@ function entry(input: EntryInput) {
         status: EntityStatus.NEW,
         resource
     };
+}
+
+function clientMessageResource(resourceId: string, topicId: string, effect: string): string {
+    const message: ALMessage = {
+        id: { v: 2, msgId: resourceId, ts: 1_000, senderId: 'worker-test' },
+        route: { resourceId, topicId, contextId: 'worker-test' },
+        payload: { typeId: topicId, contentType: 'application/json', resource: JSON.stringify({ effect }) }
+    };
+    return JSON.stringify(message);
 }

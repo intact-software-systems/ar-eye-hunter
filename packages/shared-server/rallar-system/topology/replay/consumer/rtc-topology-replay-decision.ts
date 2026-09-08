@@ -22,13 +22,13 @@ import {
 export interface RtcTopologyReplayEntryDecisionInput {
     readonly entry: RtcTopologyDeliveryLogEntry;
     readonly publication?: RtcTopologyPublication;
-    readonly outbox?: ResourceEntry;
+    readonly outbox?: readonly (ResourceEntry | undefined)[];
     readonly currentSnapshot?: RallarOverlayTopologySnapshot;
     readonly databaseNowEpochMs: number;
 }
 
 export type RtcTopologyReplayEntryDecision =
-    | Readonly<{ status: 'deliver-publication'; message: ALMessage; }>
+    | { readonly status: 'deliver-publication'; readonly messages: readonly ALMessage[]; }
     | Readonly<{
         status: 'deliver-current';
         currentSnapshot: RallarOverlayTopologySnapshot;
@@ -62,8 +62,8 @@ export function decideRtcTopologyReplayEntry(
     }
     const expectedOutbox = computeRtcTopologyPublicationOutbox(publication);
     if (
-        !isKeysEqual(input.entry.outboxKey, expectedOutbox.key) ||
-        input.entry.retainUntilEpochMs !== expectedOutbox.audit.expiryTs.epochMilliseconds
+        !isKeysEqual(input.entry.outboxKey, expectedOutbox[0].key) ||
+        input.entry.retainUntilEpochMs !== expectedOutbox[0].audit.expiryTs.epochMilliseconds
     ) {
         throw corruption(input.entry, 'the log identity differs from its publication outbox');
     }
@@ -83,7 +83,7 @@ export function decideRtcTopologyReplayEntry(
         }
         return {
             status: 'deliver-publication',
-            message: decodePersistedALMessage(outbox.resource)
+            messages: outbox.map((page) => decodePersistedALMessage(page!.resource))
         };
     }
     if (comparison === 'dominates' || comparison === 'incomparable') {
@@ -99,7 +99,7 @@ function readPublicationSnapshot(
     try {
         return decodeRtcTopologySnapshot(
             decodeJsonWireValue(
-                JSON.parse(publication.message.payload.resource),
+                publication.snapshot,
                 'RTC topology publication snapshot'
             ),
             entry.groupRef

@@ -326,36 +326,62 @@ describe('live RTC delivery owner', () => {
             suffix: 'all'
         });
         expect(result.scenarios.map(({ senderAgentId, deliveryMode, expectedAgentIds }) => [senderAgentId, deliveryMode, expectedAgentIds])).toEqual([
-            ['A', 'direct', ['B']],
-            ['A', 'direct', ['C']],
+            ['A', 'direct', transport === 'messages.rtc' ? ['B', 'C'] : ['B']],
+            ['A', 'direct', transport === 'messages.rtc' ? ['B', 'C'] : ['C']],
             ['A', 'multicast', ['B', 'C']],
             ['A', 'broadcast', ['B', 'C']],
-            ['B', 'direct', ['A']],
-            ['B', 'direct', ['C']],
+            ['B', 'direct', transport === 'messages.rtc' ? ['A', 'C'] : ['A']],
+            ['B', 'direct', transport === 'messages.rtc' ? ['A', 'C'] : ['C']],
             ['B', 'multicast', ['A', 'C']],
             ['B', 'broadcast', ['A', 'C']],
-            ['C', 'direct', ['A']],
-            ['C', 'direct', ['B']],
+            ['C', 'direct', transport === 'messages.rtc' ? ['A', 'B'] : ['A']],
+            ['C', 'direct', transport === 'messages.rtc' ? ['A', 'B'] : ['B']],
             ['C', 'multicast', ['A', 'B']],
             ['C', 'broadcast', ['A', 'B']]
         ]);
         expect(result.timings.filter(({ kind }) => kind === 'peer-ready').map(({ senderAgentId }) => senderAgentId)).toEqual(['A', 'B', 'C']);
         expect(recording.milestones.indexOf('activate:3')).toBeLessThan(recording.milestones.indexOf('send'));
-        expect(recording.messageObservations).toHaveLength(18);
+        expect(recording.messageObservations).toHaveLength(transport === 'messages.rtc' ? 24 : 18);
         for (const scenario of result.scenarios) {
+            expect(scenario.allowedAgentIds).toEqual(
+                transport === 'messages.rtc' || scenario.deliveryMode === 'broadcast'
+                    ? ['A', 'B', 'C']
+                    : scenario.expectedAgentIds
+            );
             expect(recording.messageObservations.filter(({ matrixId }) => matrixId === scenario.matrixId).map(({ agentId }) => agentId)).toEqual(
                 scenario.expectedAgentIds
             );
         }
     });
-});
 
-namespace RecordingLiveRtcControl {
-    export interface InitialState {
-        readonly lifecycleState: 'forming' | 'active';
-        readonly acceptedSessions: readonly string[];
-    }
-}
+    it('requires the room relay recipient after sending through one initial peer', async () => {
+        const recording = new RecordingLiveRtcControl();
+        vi.spyOn(recording, 'waitForMessage').mockImplementation(async ({ agentId }) => {
+            if (agentId === 'C') {
+                throw new Error('Room relay did not reach C');
+            }
+            return 1;
+        });
+        await expect(
+            createLiveRtcDeliveryOperations(config).runAllDeliveryPermutations({
+                control: recording,
+                runId: 'run',
+                agents: recording.agents,
+                transport: 'messages.rtc',
+                groupId: 'room',
+                suffix: 'relay'
+            })
+        ).rejects.toThrow('Room relay did not reach C');
+        expect(recording.commands.filter(({ command }) => command.kind === 'rtc.send')).toEqual([
+            expect.objectContaining({
+                agentId: 'A',
+                command: expect.objectContaining({
+                    send: expect.objectContaining({ nextHopPeerIds: ['session-B-1'] })
+                })
+            })
+        ]);
+    });
+});
 
 async function waitForPendingReadiness(
     recording: RecordingLiveRtcControl,
@@ -366,6 +392,13 @@ async function waitForPendingReadiness(
             prefixes.map(() => 1)
         );
     });
+}
+
+namespace RecordingLiveRtcControl {
+    export interface InitialState {
+        readonly lifecycleState: 'forming' | 'active';
+        readonly acceptedSessions: readonly string[];
+    }
 }
 
 class RecordingLiveRtcControl implements LiveRtcControlPort {

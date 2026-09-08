@@ -1,12 +1,19 @@
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
-import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 
@@ -41,7 +48,6 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -86,7 +92,6 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -119,7 +124,6 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -166,7 +170,6 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
             connectTimeoutMs,
             signal: controller.signal
         });

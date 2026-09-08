@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { explainBlackBoxRunnerPlan } from '../../shared-test/black-box-runner/preflight/plan-preflight.ts';
@@ -7,7 +11,7 @@ function strictIssueCodes(step: ApiJsonObject): readonly string[] {
     const plan = explainBlackBoxRunnerPlan({
         rawConfig: { steps: [step] },
         profile: 'strict'
-    } as never);
+    });
 
     return (plan.issues ?? []).map((issue: { code: string; }) => issue.code);
 }

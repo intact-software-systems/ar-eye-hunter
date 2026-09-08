@@ -1,3 +1,4 @@
+import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { browserStateCacheLifecycle, type BrowserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { setBrowserStateReadDiagnosticsSink, type BrowserStateReadDiagnosticEvent } from '@shared-web/browser/state-read/diagnostics.ts';
@@ -6,6 +7,7 @@ import {
     newALEventRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
@@ -20,7 +22,7 @@ import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@share
 import { decideGroupSnapshotCausalRevision } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     afterEach,
     beforeEach,
@@ -408,19 +410,24 @@ class StateCacheRuntime {
         );
     };
     receiveSnapshotMessage = async (snapshot: GroupSnapshot): Promise<void> => {
-        await this.receiveMessage(
-            newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(
-                    AppTopics.groupStateSnapshot,
-                    snapshot.group.groupId,
-                    snapshot.group.groupId
-                ),
-                'all',
-                AppTopics.groupStateSnapshot,
-                snapshot
-            )
-        );
+        const createdAtEpochMs = Date.now();
+        const entries = computeGroupStateSyncEntries({
+            commandId: `snapshot-${snapshot.group.groupId}`,
+            aggregateRef: snapshot.group,
+            acceptedCausalRevision: snapshot.causalRevision,
+            audience: {
+                kind: 'group',
+                applicationId: snapshot.group.applicationId,
+                workspaceId: snapshot.group.workspaceId,
+                resourceId: snapshot.group.groupId
+            },
+            createdAtEpochMs,
+            expireAtEpochMs: createdAtEpochMs + 30_000,
+            effects: [{ effectKind: 'member-state', payloadKind: 'snapshot', payload: snapshot }]
+        }, 'server-1');
+        for (const entry of entries) {
+            await this.receiveMessage(decodePersistedALMessage(entry.resource));
+        }
     };
 }
 

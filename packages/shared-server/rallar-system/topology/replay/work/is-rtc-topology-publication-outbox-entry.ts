@@ -1,5 +1,6 @@
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
+import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -35,7 +36,7 @@ export function isRtcTopologyPublicationOutboxEntry(entry: ResourceEntry): boole
         ) {
             return false;
         }
-        return true;
+        return decodeStateSnapshotPage(message, targets.groupRef).right !== undefined;
     }
     catch {
         return false;

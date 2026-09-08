@@ -1,10 +1,11 @@
 import {
+    decodeALMessageValue,
     decodePersistedALMessage,
-    decodePersistedALMessageValue
+    decodePersistedALMessageValue,
+    type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey, type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { decodeALAdmissionResourceEntryKey } from '../al-admission-resource-entry-validation.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -12,13 +13,16 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
-import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
+import type {
+    ALInboundCommitBundle,
+    ALInboundDeliveryProgress,
+    ALInboundDurableEffect
+} from './al-inbound-admission-store.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
     readonly delivery?: {
         readonly effectId: string;
-        readonly inboxKey: ResourceEntry['key'] | undefined;
     };
 }
 
@@ -40,6 +44,14 @@ export function decodeALInboundOrderingSnapshot(value: unknown): ALOrderingTrack
         throw new TypeError('Persisted buffered sequences must be unique and above the contiguous sequence');
     }
     return { lastContiguousSeq, updatedAtMs, bufferedSeqs };
+}
+
+export function decodeALInboundDeliveryProgress(value: unknown): ALInboundDeliveryProgress {
+    const progress = decodeALAdmissionRecord(value, ['completedThrough', 'expireAtTimestamp']);
+    return {
+        completedThrough: decodeALAdmissionNumber(progress.completedThrough),
+        expireAtTimestamp: decodeALAdmissionNumber(progress.expireAtTimestamp)
+    };
 }
 
 export function decodeALInboundBufferedSnapshot(
@@ -64,19 +76,48 @@ export function decodeALInboundBufferedSnapshot(
         throw new TypeError('Persisted buffered plan does not match its sequence');
     }
     if (snapshot.delivery !== undefined) {
-        const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId'], ['inboxKey']);
+        const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId']);
         decodeALAdmissionString(delivery.effectId);
-        if (delivery.inboxKey !== undefined) {
-            const inboxKey = decodeALAdmissionResourceEntryKey(delivery.inboxKey);
-            if (
-                inboxKey.topicId !== msg.route.topicId || inboxKey.resourceId !== msg.route.resourceId ||
-                inboxKey.contextId !== msg.route.contextId
-            ) {
-                throw new TypeError('Persisted buffered inbox owner does not match its message route');
-            }
-        }
     }
     return value as ALInboundOrderedDeliverySnapshot;
+}
+
+export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {
+    const mutations = bundle.mutations.filter((mutation) =>
+        mutation.kind === 'set-buffered' || mutation.kind === 'delete-buffered'
+    );
+    if (mutations.length === 0) {
+        return [];
+    }
+    const observed = bundle.observations.ordering?.buffered ??
+        (bundle.observations.buffered === undefined ? [] : [bundle.observations.buffered]);
+    const buffered = new Map(observed.map((snapshot) => [snapshot.seq, snapshot.msg]));
+    const issues: ALMessageRejection[] = [];
+    for (const mutation of mutations) {
+        if (mutation.kind === 'delete-buffered') {
+            buffered.delete(mutation.seq);
+            continue;
+        }
+        const decoded = decodeALMessageValue(mutation.snapshot.msg);
+        if (decoded.left) {
+            issues.push(decoded.left);
+        }
+        buffered.set(mutation.snapshot.seq, mutation.snapshot.msg);
+    }
+    if (issues.length > 0) {
+        return issues;
+    }
+    const encoder = new TextEncoder();
+    let bytes = 0;
+    for (const msg of buffered.values()) {
+        bytes += encoder.encode(JSON.stringify(msg)).length;
+    }
+    if (
+        buffered.size > AL_MESSAGE_RESOURCE_LIMITS.bufferedMessages || bytes > AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes
+    ) {
+        issues.push({ code: 'oversized', message: 'Inbound admission candidate exceeds the ordered buffer budget' });
+    }
+    return issues;
 }
 
 /** A durable ordering fence must name the work that actually owns this buffered delivery. */
@@ -84,14 +125,13 @@ export function assertALInboundDeliveryOwner(
     effect: ALInboundDurableEffect,
     snapshot: ALInboundOrderedDeliverySnapshot
 ): void {
-    const inboxKey = snapshot.delivery?.inboxKey;
     if (effect.kind === 'release-buffered') {
-        if (effect.trackKey !== snapshot.trackKey || effect.seq !== snapshot.seq || inboxKey !== undefined) {
+        if (effect.trackKey !== snapshot.trackKey || effect.seq !== snapshot.seq) {
             throw new TypeError('Persisted release owner does not match its buffered ordering slot');
         }
         return;
     }
-    if (effect.kind !== 'dispatch-local' && effect.kind !== 'enqueue-inbox') {
+    if (effect.kind !== 'dispatch-local') {
         throw new TypeError('Persisted ordering fence does not name a delivery effect');
     }
     const effectMessage = decodePersistedALMessage(effect.entry.resource);
@@ -101,16 +141,5 @@ export function assertALInboundDeliveryOwner(
         toALOrderingTrackKey(effectMessage) !== snapshot.trackKey || effectMessage.ordering?.seq !== snapshot.seq
     ) {
         throw new TypeError('Persisted delivery owner does not match its buffered message');
-    }
-    if (effect.kind === 'enqueue-inbox') {
-        if (
-            !inboxKey || inboxKey.topicId !== effect.entry.key.topicId ||
-            inboxKey.resourceId !== effect.entry.key.resourceId || inboxKey.contextId !== effect.entry.key.contextId
-        ) {
-            throw new TypeError('Persisted queued delivery owner does not match its buffered inbox key');
-        }
-    }
-    else if (inboxKey !== undefined) {
-        throw new TypeError('Persisted direct delivery owner unexpectedly has a buffered inbox key');
     }
 }

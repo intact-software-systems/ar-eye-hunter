@@ -9,9 +9,9 @@ import { createRequire } from 'node:module';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
+import { createTestGroupStateRuntime, type TestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 
-import { createPostgresClientPhaseDriver } from '../../../rallar-system/client-state/postgres-client-mutation-test-driver.ts';
+import { createPostgresClientPhaseDriver, type PostgresClientPhaseDriver } from '../../../rallar-system/client-state/postgres-client-mutation-test-driver.ts';
 
 import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
 type PostgresSql =
@@ -47,21 +47,23 @@ export async function seedExpiredClientSession(
         atEpochMs: input.atEpochMs - 10_000,
         serviceId: 'postgres-expiry-test-setup'
     }).connectSession(
-        input.scope,
-        input.sessionRef.principalId,
-        input.sessionRef.clientInstanceId,
-        input.sessionRef.sessionId,
         {
-            generationId: 'generation-1',
-            presenceState: 'online',
-            transport: 'ws',
-            authenticatedAtEpochMs: input.atEpochMs - 20_000,
-            connectedAtEpochMs: input.atEpochMs - 20_000,
-            lastHeartbeatAtEpochMs: input.atEpochMs - 10_000,
-            expiresAtEpochMs: input.atEpochMs - 1_000,
-            actorPrincipalId: input.sessionRef.principalId,
-            actorSessionId: input.sessionRef.sessionId,
-            requestId: requestIdFor('seed-client-session')
+            scope: input.scope,
+            principalId: input.sessionRef.principalId,
+            clientInstanceId: input.sessionRef.clientInstanceId,
+            sessionId: input.sessionRef.sessionId,
+            request: {
+                generationId: 'generation-1',
+                presenceState: 'online',
+                transport: 'ws',
+                authenticatedAtEpochMs: input.atEpochMs - 20_000,
+                connectedAtEpochMs: input.atEpochMs - 20_000,
+                lastHeartbeatAtEpochMs: input.atEpochMs - 10_000,
+                expiresAtEpochMs: input.atEpochMs - 1_000,
+                actorPrincipalId: input.sessionRef.principalId,
+                actorSessionId: input.sessionRef.sessionId,
+                requestId: requestIdFor('seed-client-session')
+            }
         }
     );
 }
@@ -144,7 +146,7 @@ interface CreatePostgresClientServiceInput {
     readonly applicationId?: string;
 }
 
-export function createPostgresClientService(input: CreatePostgresClientServiceInput) {
+export function createPostgresClientService(input: CreatePostgresClientServiceInput): PostgresClientPhaseDriver {
     const runtimeRepository = new BarrierPSqlRuntimeStateRepository(
         input.sql,
         input.barrier,
@@ -167,14 +169,14 @@ interface CreatePostgresGroupRuntimeInput {
     readonly attemptCount?: number;
 }
 
-export function createPostgresGroupRuntime(input: CreatePostgresGroupRuntimeInput) {
+export function createPostgresGroupRuntime(input: CreatePostgresGroupRuntimeInput): TestGroupStateRuntime {
     return createTestGroupStateRuntime({
-        runtimeRepository: new BarrierGroupPSqlRuntimeStateRepository(
-            input.sql,
-            input.barrier,
-            input.barrierNamespace,
-            input.applicationId
-        ),
+        runtimeRepository: new BarrierGroupPSqlRuntimeStateRepository({
+            sql: input.sql,
+            barrier: input.barrier,
+            barrierNamespace: input.barrierNamespace,
+            applicationId: input.applicationId
+        }),
         groupStateEventStoreFor: createPostgresGroupStateEventStore,
         now: () => input.atEpochMs,
         attemptCount: input.attemptCount,
@@ -218,21 +220,25 @@ class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
     }
 }
 
+namespace BarrierGroupPSqlRuntimeStateRepository {
+    export interface Input {
+        readonly sql: PSqlSql;
+        readonly barrier: GroupPresenceReadBarrier;
+        readonly barrierNamespace?: string;
+        readonly applicationId?: string;
+    }
+}
+
 class BarrierGroupPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
     private readonly barrier: GroupPresenceReadBarrier;
     private readonly barrierNamespace: string;
     private readonly applicationId?: string;
 
-    constructor(
-        sql: PSqlSql,
-        barrier: GroupPresenceReadBarrier,
-        barrierNamespace = 'group-state:sessions',
-        applicationId?: string
-    ) {
-        super(sql);
-        this.barrier = barrier;
-        this.barrierNamespace = barrierNamespace;
-        this.applicationId = applicationId;
+    constructor(input: BarrierGroupPSqlRuntimeStateRepository.Input) {
+        super(input.sql);
+        this.barrier = input.barrier;
+        this.barrierNamespace = input.barrierNamespace ?? 'group-state:sessions';
+        this.applicationId = input.applicationId;
     }
 
     override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
@@ -296,19 +302,21 @@ export async function seedConnectedClientSession(
         atEpochMs: input.atEpochMs,
         serviceId: 'postgres-worker-client-setup'
     }).connectSession(
-        input.scope,
-        input.sessionRef.principalId,
-        input.sessionRef.clientInstanceId,
-        input.sessionRef.sessionId,
         {
-            generationId: 'generation-1',
-            connectionId: 'connection-1',
-            connectedAtEpochMs: input.atEpochMs,
-            lastHeartbeatAtEpochMs: input.atEpochMs,
-            expiresAtEpochMs: input.atEpochMs + 60_000,
-            actorPrincipalId: input.sessionRef.principalId,
-            actorSessionId: input.sessionRef.sessionId,
-            requestId: requestIdFor('worker-client-seed')
+            scope: input.scope,
+            principalId: input.sessionRef.principalId,
+            clientInstanceId: input.sessionRef.clientInstanceId,
+            sessionId: input.sessionRef.sessionId,
+            request: {
+                generationId: 'generation-1',
+                connectionId: 'connection-1',
+                connectedAtEpochMs: input.atEpochMs,
+                lastHeartbeatAtEpochMs: input.atEpochMs,
+                expiresAtEpochMs: input.atEpochMs + 60_000,
+                actorPrincipalId: input.sessionRef.principalId,
+                actorSessionId: input.sessionRef.sessionId,
+                requestId: requestIdFor('worker-client-seed')
+            }
         }
     );
 }

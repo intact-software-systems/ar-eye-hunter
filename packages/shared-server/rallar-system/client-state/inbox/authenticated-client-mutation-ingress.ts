@@ -1,25 +1,26 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import type {
     ClientMutationAuthority,
     ClientMutationCommand,
-    ClientMutationCommandInput
+    ClientMutationCommandInput,
+    ClientMutationIssuedSessionAuthority
 } from '../mutation/client-mutation-contracts.ts';
 
-export type AuthenticatedClientMutationIngress = Readonly<{
-    scope: StateScope;
-    operation: Exclude<ClientMutationCommand['operation'], 'expireSession'>;
-    topicId: AppInboxType;
-    requestId: string;
-    contextId: string;
-    principalId: string;
-    sessionId: string | null;
-    actorPrincipalId: string | null;
-    actorSessionId: string | null;
-    senderId: string;
-}>;
+export interface AuthenticatedClientMutationIngress {
+    readonly scope: StateScope;
+    readonly operation: Exclude<ClientMutationCommand['operation'], 'expireSession'>;
+    readonly topicId: AppInboxType;
+    readonly requestId: string;
+    readonly contextId: string;
+    readonly principalId: string;
+    readonly sessionId: string | null;
+    readonly actorPrincipalId: string | null;
+    readonly actorSessionId: string | null;
+    readonly senderId: string;
+}
 
 type ClientIngressPrimitive = string | number | boolean | null | undefined;
 type ClientIngressValue =
@@ -62,54 +63,40 @@ export function readAuthenticatedClientMutationIngress(
             'Client mutation AppInbox operation or request identity differs.'
         );
     }
-    switch (enqueue.type) {
+    const operation = readClientIngressOperation(enqueue.type, data);
+    return {
+        scope,
+        operation,
+        topicId: enqueue.type,
+        requestId,
+        contextId,
+        principalId,
+        sessionId: operation === 'upsertPrincipal' || operation === 'upsertInstance'
+            ? null
+            : requireClientIngressString(data.sessionId, 'Client mutation sessionId'),
+        actorPrincipalId,
+        actorSessionId,
+        senderId
+    };
+}
+
+function readClientIngressOperation(
+    type: AppInboxType,
+    data: ClientIngressRecord
+): AuthenticatedClientMutationIngress['operation'] {
+    switch (type) {
         case AppInboxType.CLIENT_PRINCIPAL_UPSERT:
-            return {
-                scope,
-                operation: 'upsertPrincipal',
-                topicId: enqueue.type,
-                requestId,
-                contextId,
-                principalId,
-                sessionId: null,
-                actorPrincipalId,
-                actorSessionId,
-                senderId
-            };
+            return 'upsertPrincipal';
         case AppInboxType.CLIENT_INSTANCE_UPSERT:
             requireClientIngressString(data.clientInstanceId, 'Client mutation clientInstanceId');
-            return {
-                scope,
-                operation: 'upsertInstance',
-                topicId: enqueue.type,
-                requestId,
-                contextId,
-                principalId,
-                sessionId: null,
-                actorPrincipalId,
-                actorSessionId,
-                senderId
-            };
+            return 'upsertInstance';
         case AppInboxType.CLIENT_SESSION_CONNECT:
         case AppInboxType.CLIENT_SESSION_HEARTBEAT:
         case AppInboxType.CLIENT_SESSION_DISCONNECT:
             requireClientIngressString(data.clientInstanceId, 'Client mutation clientInstanceId');
-            return {
-                scope,
-                operation: toSessionMutationOperation(enqueue.type),
-                topicId: enqueue.type,
-                requestId,
-                contextId,
-                principalId,
-                sessionId: requireClientIngressString(data.sessionId, 'Client mutation sessionId'),
-                actorPrincipalId,
-                actorSessionId,
-                senderId
-            };
+            return toSessionMutationOperation(type);
         default:
-            throw new NonRetryableException(
-                'App inbox type is not an authenticated client mutation.'
-            );
+            throw new NonRetryableException('App inbox type is not an authenticated client mutation.');
     }
 }
 
@@ -118,37 +105,7 @@ export function validateIssuedClientMutationIngress(
     ingress: AuthenticatedClientMutationIngress,
     nowEpochMs: number
 ): readonly IssuedClientMutationIngressValidationIssue[] {
-    const issues: IssuedClientMutationIngressValidationIssue[] = [];
-    if (!authority.accessToken) {
-        issues.push(toIngressValidationIssue(
-            'authority.accessToken',
-            'Authenticated client mutation access token is missing.'
-        ));
-    }
-    if (!authority.sessionId) {
-        issues.push(toIngressValidationIssue(
-            'authority.sessionId',
-            'Authenticated client mutation session id is missing.'
-        ));
-    }
-    if (!authority.clientId) {
-        issues.push(toIngressValidationIssue(
-            'authority.clientId',
-            'Authenticated client mutation client id is missing.'
-        ));
-    }
-    if (authority.issuedAtEpochMs >= authority.expiresAtEpochMs) {
-        issues.push(toIngressValidationIssue(
-            'authority.expiresAtEpochMs',
-            'Authenticated client mutation session expiry must follow issuance.'
-        ));
-    }
-    if (authority.expiresAtEpochMs <= nowEpochMs) {
-        issues.push(toIngressValidationIssue(
-            'authority.expiresAtEpochMs',
-            'Authenticated client mutation session is expired.'
-        ));
-    }
+    const issues = validateIssuedClientSession(authority, nowEpochMs);
     if (ingress.principalId !== authority.clientId) {
         issues.push(toIngressValidationIssue(
             'ingress.principalId',
@@ -194,6 +151,44 @@ export function validateIssuedClientMutationIngress(
     return issues;
 }
 
+function validateIssuedClientSession(
+    authority: IssuedAuthSession,
+    nowEpochMs: number
+): IssuedClientMutationIngressValidationIssue[] {
+    const issues: IssuedClientMutationIngressValidationIssue[] = [];
+    if (!authority.accessToken) {
+        issues.push(toIngressValidationIssue(
+            'authority.accessToken',
+            'Authenticated client mutation access token is missing.'
+        ));
+    }
+    if (!authority.sessionId) {
+        issues.push(toIngressValidationIssue(
+            'authority.sessionId',
+            'Authenticated client mutation session id is missing.'
+        ));
+    }
+    if (!authority.clientId) {
+        issues.push(toIngressValidationIssue(
+            'authority.clientId',
+            'Authenticated client mutation client id is missing.'
+        ));
+    }
+    if (authority.issuedAtEpochMs >= authority.expiresAtEpochMs) {
+        issues.push(toIngressValidationIssue(
+            'authority.expiresAtEpochMs',
+            'Authenticated client mutation session expiry must follow issuance.'
+        ));
+    }
+    if (authority.expiresAtEpochMs <= nowEpochMs) {
+        issues.push(toIngressValidationIssue(
+            'authority.expiresAtEpochMs',
+            'Authenticated client mutation session is expired.'
+        ));
+    }
+    return issues;
+}
+
 function toIngressValidationIssue(
     path: string,
     message: string
@@ -224,35 +219,7 @@ export function readClientMutationAuthority<Authority>(
 ): ClientMutationAuthority {
     const value = requireClientIngressRecord(authority, 'Client mutation authority');
     if (value.kind === 'issued-session') {
-        const proof: ClientMutationAuthority = {
-            kind: 'issued-session',
-            version: requireClientAuthorityVersion(value.version),
-            principalId: requireClientIngressString(
-                value.principalId,
-                'Client mutation authority principalId'
-            ),
-            sessionId: requireClientIngressString(
-                value.sessionId,
-                'Client mutation authority sessionId'
-            ),
-            sessionIssuedAtEpochMs: requireClientIngressTimestamp(
-                value.sessionIssuedAtEpochMs,
-                'Client mutation authority issuedAtEpochMs'
-            ),
-            sessionExpiresAtEpochMs: requireClientIngressTimestamp(
-                value.sessionExpiresAtEpochMs,
-                'Client mutation authority expiresAtEpochMs'
-            ),
-            applicationId: requireClientIngressString(
-                value.applicationId,
-                'Client mutation authority applicationId'
-            ),
-            workspaceId: requireClientIngressString(
-                value.workspaceId,
-                'Client mutation authority workspaceId'
-            ),
-            operation: readIssuedClientAuthorityOperation(value.operation)
-        };
+        const proof = readIssuedClientAuthority(value);
         if (proof.operation !== operation) {
             throw new NonRetryableException(
                 'Client mutation authority operation differs from command.'
@@ -280,6 +247,40 @@ export function readClientMutationAuthority<Authority>(
         return proof;
     }
     throw new NonRetryableException('Client mutation authority kind is invalid.');
+}
+
+function readIssuedClientAuthority(
+    value: ClientIngressRecord
+): ClientMutationIssuedSessionAuthority {
+    return {
+        kind: 'issued-session',
+        version: requireClientAuthorityVersion(value.version),
+        principalId: requireClientIngressString(
+            value.principalId,
+            'Client mutation authority principalId'
+        ),
+        sessionId: requireClientIngressString(
+            value.sessionId,
+            'Client mutation authority sessionId'
+        ),
+        sessionIssuedAtEpochMs: requireClientIngressTimestamp(
+            value.sessionIssuedAtEpochMs,
+            'Client mutation authority issuedAtEpochMs'
+        ),
+        sessionExpiresAtEpochMs: requireClientIngressTimestamp(
+            value.sessionExpiresAtEpochMs,
+            'Client mutation authority expiresAtEpochMs'
+        ),
+        applicationId: requireClientIngressString(
+            value.applicationId,
+            'Client mutation authority applicationId'
+        ),
+        workspaceId: requireClientIngressString(
+            value.workspaceId,
+            'Client mutation authority workspaceId'
+        ),
+        operation: readIssuedClientAuthorityOperation(value.operation)
+    };
 }
 
 function toSessionMutationOperation(

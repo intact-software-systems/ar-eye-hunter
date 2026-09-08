@@ -12,14 +12,14 @@ import {
 
 import type { RtcProvider } from './rtc-provider.ts';
 
-export type RallarWebRtcRuntimeOptions = {
+export interface RallarWebRtcRuntimeOptions {
     createSession?: (
         args: RallarRtcClientArgs,
         dispatcher: RallarRtcClientEventDispatcher
     ) => Promise<RallarRtcRuntimeSession> | RallarRtcRuntimeSession;
-};
+}
 
-export type RallarWebRtcSignalingTransportLike = {
+export interface RallarWebRtcSignalingTransportLike {
     send: (data: string) => void;
     close: () => void;
     addEventListener?: (type: string, listener: (event: any) => void) => void;
@@ -28,9 +28,10 @@ export type RallarWebRtcSignalingTransportLike = {
     onclose?: ((event: any) => void) | null;
     onerror?: ((event: any) => void) | null;
     readyState?: string | number;
-};
+}
 
-export type RallarWebRtcWebSocketSignalingFactoryOptions = {
+export interface RallarWebRtcWebSocketSignalingFactoryOptions {
+    readonly now: () => number;
     createTransport: (
         args: RallarRtcClientArgs
     ) => Promise<RallarWebRtcSignalingTransportLike> | RallarWebRtcSignalingTransportLike;
@@ -39,7 +40,7 @@ export type RallarWebRtcWebSocketSignalingFactoryOptions = {
     onConnectMessage?: (args: RallarRtcClientArgs) => any | undefined;
     waitForOpen?: boolean;
     openTimeoutMs?: number;
-};
+}
 
 export type RallarWebRtcWebSocketSignalingProviderOptions = Omit<
     RallarWebRtcWebSocketSignalingFactoryOptions,
@@ -106,7 +107,8 @@ function toSignalingTransportOpenTimeoutMs(
 
 function waitForSignalingTransportOpen(
     transport: RallarWebRtcSignalingTransportLike,
-    timeoutMs: number
+    timeoutMs: number,
+    now: () => number
 ): Promise<void> {
     if (isSignalingTransportOpen(transport)) {
         return Promise.resolve();
@@ -114,7 +116,7 @@ function waitForSignalingTransportOpen(
 
     return new Promise((resolve, reject) => {
         let completed = false;
-        const startedAt = Date.now();
+        const startedAt = now();
 
         const interval = setInterval(() => {
             if (isSignalingTransportOpen(transport)) {
@@ -122,15 +124,12 @@ function waitForSignalingTransportOpen(
                 return;
             }
 
-            if (Date.now() - startedAt >= timeoutMs) {
-                complete(() =>
-                    reject(
-                        new Error(
-                            'Rallar WebRTC signaling transport did not open within ' + timeoutMs + 'ms. readyState=' +
-                                String(transport.readyState)
-                        )
-                    )
+            if (now() - startedAt >= timeoutMs) {
+                const error = new Error(
+                    'Rallar WebRTC signaling transport did not open within ' + timeoutMs + 'ms. readyState=' +
+                        String(transport.readyState)
                 );
+                complete(() => reject(error));
             }
         }, 25);
 
@@ -144,34 +143,67 @@ function waitForSignalingTransportOpen(
             callback();
         };
 
-        addSignalingTransportListener(transport, 'open', () => {
-            complete(resolve);
-        });
+        addSignalingTransportListener(transport, 'open', () => complete(resolve));
 
         addSignalingTransportListener(transport, 'close', (event) => {
-            complete(() =>
-                reject(
-                    new Error(
-                        'Rallar WebRTC signaling transport closed before open. readyState=' +
-                            String(transport.readyState) +
-                            ', code=' + String(event?.code) +
-                            ', reason=' + String(event?.reason)
-                    )
-                )
+            const error = new Error(
+                'Rallar WebRTC signaling transport closed before open. readyState=' +
+                    String(transport.readyState) +
+                    ', code=' + String(event?.code) +
+                    ', reason=' + String(event?.reason)
             );
+            complete(() => reject(error));
         });
 
         addSignalingTransportListener(transport, 'error', (event) => {
-            complete(() =>
-                reject(
-                    new Error(
-                        'Rallar WebRTC signaling transport failed before open. readyState=' +
-                            String(transport.readyState) +
-                            ', message=' + String(event?.message)
-                    )
-                )
+            const error = new Error(
+                'Rallar WebRTC signaling transport failed before open. readyState=' +
+                    String(transport.readyState) +
+                    ', message=' + String(event?.message)
             );
+            complete(() => reject(error));
         });
+    });
+}
+
+interface SignalingTransportObservationInput {
+    readonly transport: RallarWebRtcSignalingTransportLike;
+    readonly decode: (data: any) => any;
+    readonly messageHandlers: Array<(message: any) => void>;
+    readonly closeHandlers: Array<(event: any) => void>;
+}
+
+function registerSignalingTransportObservations(input: SignalingTransportObservationInput): void {
+    const { transport, decode, messageHandlers, closeHandlers } = input;
+    addSignalingTransportListener(transport, 'message', (event) => {
+        try {
+            const decoded = decode(event?.data);
+            messageHandlers.forEach((handler) => handler(decoded));
+        }
+        catch (e) {
+            closeHandlers.forEach((handler) =>
+                handler({
+                    error: true,
+                    phase: 'signaling-decode',
+                    event,
+                    message: e instanceof Error ? e.message : String(e)
+                })
+            );
+        }
+    });
+
+    addSignalingTransportListener(transport, 'close', (event) => {
+        closeHandlers.forEach((handler) => handler(event));
+    });
+
+    addSignalingTransportListener(transport, 'error', (event) => {
+        closeHandlers.forEach((handler) =>
+            handler({
+                error: true,
+                event,
+                message: event?.message
+            })
+        );
     });
 }
 
@@ -198,41 +230,13 @@ export function createRallarWebRtcWebSocketSignalingFactory(
             const messageHandlers: Array<(message: any) => void> = [];
             const closeHandlers: Array<(event: any) => void> = [];
 
-            addSignalingTransportListener(transport, 'message', (event) => {
-                try {
-                    const decoded = decode(event?.data);
-                    messageHandlers.forEach((handler) => handler(decoded));
-                }
-                catch (e) {
-                    closeHandlers.forEach((handler) =>
-                        handler({
-                            error: true,
-                            phase: 'signaling-decode',
-                            event,
-                            message: e instanceof Error ? e.message : String(e)
-                        })
-                    );
-                }
-            });
-
-            addSignalingTransportListener(transport, 'close', (event) => {
-                closeHandlers.forEach((handler) => handler(event));
-            });
-
-            addSignalingTransportListener(transport, 'error', (event) => {
-                closeHandlers.forEach((handler) =>
-                    handler({
-                        error: true,
-                        event,
-                        message: event?.message
-                    })
-                );
-            });
+            registerSignalingTransportObservations({ transport, decode, messageHandlers, closeHandlers });
 
             if (shouldWaitForSignalingTransportOpen(options, args)) {
                 await waitForSignalingTransportOpen(
                     transport,
-                    toSignalingTransportOpenTimeoutMs(options, args)
+                    toSignalingTransportOpenTimeoutMs(options, args),
+                    options.now
                 );
                 opened = true;
             }
@@ -282,7 +286,7 @@ function toRequiredSignalingUrl(args: RallarRtcClientArgs): string {
  * a WebRTC peer connection or data channel has been established yet.
  */
 export function createRallarWebRtcWebSocketSignalingProvider(
-    options: RallarWebRtcWebSocketSignalingProviderOptions = {}
+    options: RallarWebRtcWebSocketSignalingProviderOptions
 ): RtcProvider {
     return createRallarWebRtcSignalingOnlyProvider({
         signalingFactory: createRallarWebRtcWebSocketSignalingFactory({
@@ -293,25 +297,25 @@ export function createRallarWebRtcWebSocketSignalingProvider(
     });
 }
 
-export type RallarWebRtcSignalingSession = {
+export interface RallarWebRtcSignalingSession {
     send?: (message: any) => Promise<void> | void;
     close: () => Promise<void> | void;
     onMessage?: (handler: (message: any) => void) => void;
     onClose?: (handler: (event: any) => void) => void;
     opened?: boolean;
     readyState?: string | number;
-};
+}
 
-export type RallarWebRtcSignalingFactory = {
+export interface RallarWebRtcSignalingFactory {
     connect: (
         args: RallarRtcClientArgs,
         dispatcher: RallarRtcClientEventDispatcher
     ) => Promise<RallarWebRtcSignalingSession> | RallarWebRtcSignalingSession;
-};
+}
 
-export type RallarWebRtcSignalingRuntimeOptions = {
+export interface RallarWebRtcSignalingRuntimeOptions {
     signalingFactory: RallarWebRtcSignalingFactory;
-};
+}
 
 function toMissingRuntimeImplementationError(args: RallarRtcClientArgs): Error {
     return new Error(
@@ -327,6 +331,44 @@ function toMissingRuntimeImplementationError(args: RallarRtcClientArgs): Error {
  * This is useful for testing and documenting Rallar signaling flows before the
  * real RTCPeerConnection/RTCDataChannel runtime exists.
  */
+interface SignalingSessionObservationInput {
+    readonly signalingSession: RallarWebRtcSignalingSession;
+    readonly args: RallarRtcClientArgs;
+    readonly dispatcher: RallarRtcClientEventDispatcher;
+}
+
+function registerSignalingSessionObservations(input: SignalingSessionObservationInput): void {
+    const { signalingSession, args, dispatcher } = input;
+    signalingSession.onMessage?.((message) => {
+        dispatcher.emitMessage({
+            topic: 'rallar.webrtc.signaling.message',
+            connection: args.connection,
+            actor: args.actor,
+            peerId: args.peerId,
+            roomId: args.roomId,
+            groupId: args.groupId,
+            overlayId: args.overlayId,
+            message
+        });
+    });
+
+    signalingSession.onClose?.((event) => {
+        dispatcher.emitClose({
+            phase: 'signaling-close',
+            reason: 'rallar WebRTC signaling session closed',
+            closedBy: 'rallar-webrtc-signaling-only-runtime',
+            connection: args.connection,
+            actor: args.actor,
+            peerId: args.peerId,
+            roomId: args.roomId,
+            groupId: args.groupId,
+            overlayId: args.overlayId,
+            transportEvent: event,
+            event
+        });
+    });
+}
+
 export function createRallarWebRtcSignalingOnlyRuntime(
     options: RallarWebRtcSignalingRuntimeOptions
 ): RallarRtcRuntime {
@@ -334,34 +376,7 @@ export function createRallarWebRtcSignalingOnlyRuntime(
         connect: async (args, dispatcher) => {
             const signalingSession = await options.signalingFactory.connect(args, dispatcher);
 
-            signalingSession.onMessage?.((message) => {
-                dispatcher.emitMessage({
-                    topic: 'rallar.webrtc.signaling.message',
-                    connection: args.connection,
-                    actor: args.actor,
-                    peerId: args.peerId,
-                    roomId: args.roomId,
-                    groupId: args.groupId,
-                    overlayId: args.overlayId,
-                    message
-                });
-            });
-
-            signalingSession.onClose?.((event) => {
-                dispatcher.emitClose({
-                    phase: 'signaling-close',
-                    reason: 'rallar WebRTC signaling session closed',
-                    closedBy: 'rallar-webrtc-signaling-only-runtime',
-                    connection: args.connection,
-                    actor: args.actor,
-                    peerId: args.peerId,
-                    roomId: args.roomId,
-                    groupId: args.groupId,
-                    overlayId: args.overlayId,
-                    transportEvent: event,
-                    event
-                });
-            });
+            registerSignalingSessionObservations({ signalingSession, args, dispatcher });
 
             dispatcher.emitMessage({
                 topic: 'rallar.webrtc.signaling.connected',

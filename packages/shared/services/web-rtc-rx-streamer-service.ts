@@ -1,49 +1,49 @@
-import { ALMessage } from '../al-contracts/al-contract.ts';
+import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
-    decodePersistedALMessage,
-    decodePersistedALMessageValue
+    decodePersistedALMessage
 } from '../al-contracts/al-message-persistence-validation.ts';
-import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
+import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     EnqueuedType,
-    PeerId,
-    RttMeasurementInfo
+    type PeerId,
+    type RttMeasurementInfo
 } from '../api/api-config.ts';
-import { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
-import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
-import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import type { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
+import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { toError } from '../resilience/to-error.ts';
-import { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
-import { QRtcClientCallbacks } from '../webrtc/QRtcClientCallbacks.ts';
-import { OnMessageCallback } from './queue-message-callbacks.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
-import { QRtcPeerDto } from './web-rtc-connection-service.ts';
+import type { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';
+import type { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
+import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from './queue-box-utilities.ts';
+import type { OnMessageCallback } from './queue-message-callbacks.ts';
+import type { QRtcPeerDto } from './web-rtc-connection-service.ts';
 import {
     defaultMaxMissedPings,
     defaultPingFrequencyMsecs,
-    PingResult,
-    WebRtcHeartbeatService
+    WebRtcHeartbeatService,
+    type PingResult
 } from './web-rtc-heartbeat-service.ts';
-
-interface WebRtcRxStreamerServiceStatus {
-    localMediaStream: MediaStream | undefined;
-    localAudioEnabled: boolean;
-    localVideoEnabled: boolean;
-    mediaPolicy: QRtcMediaPolicy | undefined;
-}
 
 export interface RttMeasurementCallbacks {
     readonly onHeartbeat: (rtt: RttMeasurementInfo) => Promise<void>;
 }
 
 export namespace WebRtcRxStreamerService {
+    export interface Status {
+        localMediaStream: MediaStream | undefined;
+        localAudioEnabled: boolean;
+        localVideoEnabled: boolean;
+        mediaPolicy: QRtcMediaPolicy | undefined;
+    }
+
     export interface Input {
-        readonly inbox: QueueBoxResourceEntryRepository;
+        readonly queueEngine?: InboxOutboxEngine;
         readonly multicast: WebRtcOverlayMulticastManager;
         readonly sessionId: string;
         readonly inboundStores?: ALInboundRuntimeStores;
@@ -52,7 +52,6 @@ export namespace WebRtcRxStreamerService {
     }
 
     export interface Dependencies {
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly multicast: WebRtcOverlayMulticastManager;
         readonly sessionId: string;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
@@ -67,9 +66,6 @@ export namespace WebRtcRxStreamerService {
 export class WebRtcRxStreamerService {
     private static readonly ALL_IN = '*';
 
-    public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_INBOX;
-    public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([this.ENQUEUE_TYPE]);
-
     private readonly onInboxMessageCallbacks = new Map<string, OnMessageCallback>();
     private readonly onRttMeasurementCallbacks = new Map<string, RttMeasurementCallbacks>();
 
@@ -78,7 +74,7 @@ export class WebRtcRxStreamerService {
         (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>
     > = new Map();
 
-    private readonly status: WebRtcRxStreamerServiceStatus = {
+    private readonly status: WebRtcRxStreamerService.Status = {
         localMediaStream: undefined,
         localAudioEnabled: false,
         localVideoEnabled: false,
@@ -89,28 +85,27 @@ export class WebRtcRxStreamerService {
     private readonly rttVersionByPeerId = new Map<PeerId, number>();
     private readonly peerDtoByPeerId = new Map<PeerId, QRtcPeerDto>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
+    private disposed = false;
     private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
 
-    public readonly inbox: QueueBoxResourceEntryRepository;
     public readonly multicast: WebRtcOverlayMulticastManager;
     public readonly sessionId: string;
     private readonly dependencies: WebRtcRxStreamerService.Dependencies;
 
     constructor(dependencies: WebRtcRxStreamerService.Dependencies) {
         this.dependencies = dependencies;
-        this.inbox = dependencies.inbox;
         this.multicast = dependencies.multicast;
         this.sessionId = dependencies.sessionId;
         this.inboundRuntime = new ALInboundMessageRuntime(
             {
                 ...dependencies.inboundRuntime,
-                inbox: this.inbox,
-                planIncomingMessage: (msg, fromPeerId, runtime) => {
-                    return this.multicast.planIncomingMessage(msg, fromPeerId, runtime);
+                planIncomingMessage: (msg, source, observations) => {
+                    return this.multicast.planIncomingMessage(msg, source, observations);
                 },
+                canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry, plan) => {
-                    await this.dispatchInboxEntry(entry, plan);
+                    return await this.dispatchInboxEntry(entry, plan);
                 },
                 sendControlMessage: async (msg) => {
                     await this.multicast.enqueueIfAbsent(msg);
@@ -145,9 +140,15 @@ export class WebRtcRxStreamerService {
             .onRtcMessageDo(
                 this.toRtcChannelSubscriptionId(peerDto.peerId),
                 {
+                    maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
                     onMessage: async (value) => {
-                        const message = decodePersistedALMessageValue(value);
-                        await this.receivePeerMessage(peerDto.peerId, message);
+                        const acceptance = await this.inboundRuntime.handleIncomingMessage(value, {
+                            kind: 'rtc-peer',
+                            peerId: peerDto.peerId
+                        });
+                        if (acceptance.left) {
+                            console.warn('Rejected RTC message', acceptance.left.code);
+                        }
                     }
                 }
             );
@@ -172,10 +173,6 @@ export class WebRtcRxStreamerService {
             )
                 .catch((error) => console.error('Error setting local media parameters', toError(error)));
         }
-    }
-
-    private async receivePeerMessage(peerId: PeerId, message: ALMessage): Promise<void> {
-        await this.inboundRuntime.handleIncomingMessage(message, peerId);
     }
 
     private async publishRemoteStream(peerId: PeerId, stream: MediaStream, event: RTCTrackEvent): Promise<void> {
@@ -211,6 +208,7 @@ export class WebRtcRxStreamerService {
     }
 
     dispose(): void {
+        this.disposed = true;
         this.inboundRuntime.dispose();
         this.stopAllHeartbeats();
     }
@@ -323,41 +321,37 @@ export class WebRtcRxStreamerService {
         return this.sessionId + '-' + peerId + '-rtc-datachannel-lifecycle';
     }
 
-    private async dispatchInboxEntry(
-        entry: ResourceEntry,
-        plan: ALMessageHandlingPlan | undefined
-    ): Promise<void> {
-        const message = decodePersistedALMessage(entry.resource);
-
-        let selectedCallback = this.onInboxMessageCallbacks.get(message.payload.typeId);
-        let wildcard: OnMessageCallback | undefined;
-
-        if (plan?.ownership.exclusive) {
-            selectedCallback ??= this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN);
-            await this.onMessageIfPresent(selectedCallback, message, entry);
-        }
-        else {
-            await this.onMessageIfPresent(selectedCallback, message, entry);
-
-            wildcard = this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN);
-            await this.onMessageIfPresent(wildcard, message, entry);
-        }
-
-        if (selectedCallback === undefined && wildcard === undefined) {
-            console.warn('No callback for typeId ', message.payload.typeId);
-        }
+    private hasInboxConsumer(message: ALMessage): boolean {
+        return this.onInboxMessageCallbacks.has(message.payload.typeId) ||
+            this.onInboxMessageCallbacks.has(WebRtcRxStreamerService.ALL_IN);
     }
 
-    private async onMessageIfPresent(
-        callback: OnMessageCallback | undefined,
-        message: ALMessage,
-        entry: ResourceEntry
-    ) {
-        try {
-            await callback?.onMessage(message, entry);
+    private async dispatchInboxEntry(
+        entry: ResourceEntry,
+        plan: ALMessageHandlingPlan
+    ): Promise<void | 'retry'> {
+        const message = decodePersistedALMessage(entry.resource);
+        if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+            throw new NonRetryableException('Inbound message expired before consumer delivery');
         }
-        catch (error) {
-            console.error('Error calling onMessage callback', toError(error));
+        const selected = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
+            (plan.ownership.exclusive ? this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN) : undefined);
+        await selected?.onMessage(message, entry);
+        if (this.disposed) {
+            return 'retry';
+        }
+        const wildcard = plan.ownership.exclusive
+            ? undefined
+            : this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN);
+        if (wildcard !== undefined) {
+            if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+                throw new NonRetryableException('Inbound message expired before wildcard delivery');
+            }
+            await wildcard.onMessage(message, entry);
+        }
+
+        if (selected === undefined && wildcard === undefined) {
+            return 'retry';
         }
     }
 
@@ -367,11 +361,13 @@ export class WebRtcRxStreamerService {
         }
 
         this.onInboxMessageCallbacks.set(WebRtcRxStreamerService.ALL_IN, callback);
+        this.dependencies.inboundRuntime.queueEngine.wake();
         return this;
     }
 
     onInboxMessageDo(id: string, callback: OnMessageCallback): WebRtcRxStreamerService {
         this.onInboxMessageCallbacks.set(id, callback);
+        this.dependencies.inboundRuntime.queueEngine.wake();
         return this;
     }
 
@@ -401,17 +397,6 @@ export class WebRtcRxStreamerService {
 
     async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         return await this.multicast.enqueueIfAbsent(msg);
-    }
-
-    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
-        await QueueBoxUtilities.defaultDequeue(
-            this.inbox,
-            typesToDequeue,
-            resilience,
-            QueueBoxUtilities.withRetryDisposition(
-                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry)
-            )
-        );
     }
 
     async setLocalMediaStream(stream: MediaStream): Promise<void> {
@@ -457,14 +442,13 @@ export class WebRtcRxStreamerService {
 
 export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerService.Input): WebRtcRxStreamerService {
     return new WebRtcRxStreamerService({
-        inbox: input.inbox,
         multicast: input.multicast,
         sessionId: input.sessionId,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WebRtcRxStreamerService.ENQUEUE_TYPE)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX)
         }),
         epochNow: input.nowEpochMs ?? Date.now,
         heartbeat: input.heartbeat ?? {
