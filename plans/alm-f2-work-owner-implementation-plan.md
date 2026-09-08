@@ -1489,7 +1489,7 @@ schema id), Follow-up (S1).
   `al-inbound-effect-worker-lifecycle.test.ts` in Task 5 if it is not already covered by the rewritten
   suite), reset with diagnostic (Task 10), zero warn-tier findings (Task 11 Step 1), no new disposition
   (Task 11 Step 2), storage snapshot (Task 11 Step 4).
-- Placeholder scan: discovery steps carry exact commands and expected results; no TBD.
+- Placeholder scan: discovery steps carry exact commands and expected results; nothing is left to fill in later.
 - Type consistency: `ALWorkQueuePort`, `ALWorkClaim`, `ALWorkOutcome`, `ALWorkAttemptResult`
   (Tasks 1, 2, 5, 6); `ALInboundMessageReference` (Task 3 used by Task 4's control reads and Task 5's
   delivery); `dequeue-message` payload and `Dependencies.dequeue` (Tasks 6, 7);

@@ -2199,7 +2199,7 @@ on its verdict; do not run `ready`.
   the family records counters as evidence without asserting zero, because every typed send still
   persists); bundle entry (Task 7); migration (Task 1); governance test (Task 15).
 - Placeholder scan: every code step shows code; discovery steps name the exact command and the
-  expected output.
+  expected output; nothing is left to fill in later.
 - Type consistency: `TransportFaultPort.decideSend` (Tasks 4, 5, 9); `IndexedDbOperationObserver.observe`
   and `createPassThroughIndexedDbOperationObserver` (Tasks 2, 3, 6, 9); `RallarDiagnosticsPorts`
   (Tasks 6, 9); `BlackBoxRallarMessageSendInput`, `BlackBoxRallarDeliveryObservation` (Tasks 9, 10);
