@@ -5,7 +5,10 @@ import {
     vi
 } from 'vitest';
 
-import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarDeliveryObservation,
+    BlackBoxRallarMessageSendDiagnostics
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import {
     createBlackBoxRallarRuntime,
@@ -107,14 +110,24 @@ function almSendResult(status: ALOutboundEnqueueStatus, msgId: string): RallarMe
 async function sendAlmMessage(
     nativeRuntime: BlackBoxRallarRuntime,
     handleId: string
-): Promise<void> {
-    await nativeRuntime.sendMessage({
+): Promise<BlackBoxRallarMessageSendDiagnostics> {
+    return await nativeRuntime.sendMessage({
         connection: 'aliceAlm',
         carrier: 'ws',
         typeId: 'alm.conformance',
         payload: { n: 1 },
         handleId
     });
+}
+
+const OVERSIZED_PAYLOAD_MESSAGE = '$.payload: Payload exceeds 65536 bytes.';
+
+function oversizedPayloadError(): RallarValidationError {
+    return new RallarValidationError(OVERSIZED_PAYLOAD_MESSAGE, [{
+        path: '$.payload',
+        code: 'payload-too-large',
+        message: 'Payload exceeds 65536 bytes.'
+    }]);
 }
 
 const almDeliveryStateCases: ReadonlyArray<readonly [ALOutboundEnqueueStatus, BlackBoxRallarDeliveryObservation['state'], boolean]> = [
@@ -316,6 +329,67 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 connection: 'aliceAlm',
                 handleId: 'missing-1'
             })).rejects.toThrow('Unknown delivery handle missing-1');
+        });
+    });
+
+    it('reports a facade-rejected oversized send as a rejected value', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            facade.behavior.typedSend.mockRejectedValue(oversizedPayloadError());
+            await nativeRuntime.connect(almConnectionConfig());
+
+            await expect(sendAlmMessage(nativeRuntime, 'h-oversized')).resolves.toEqual({
+                handleId: 'h-oversized',
+                msgId: undefined,
+                carrier: 'ws',
+                status: 'rejected',
+                reason: OVERSIZED_PAYLOAD_MESSAGE,
+                message: undefined
+            });
+
+            await expect(nativeRuntime.readReceipts({
+                connection: 'aliceAlm',
+                handleId: 'h-oversized'
+            })).resolves.toEqual({
+                handleId: 'h-oversized',
+                state: 'rejected',
+                submitted: false,
+                confirmedPeerIds: [],
+                unconfirmedPeerIds: [],
+                attempts: 1
+            });
+        });
+    });
+
+    it('emits the rejected send on the send_completed diagnostic', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            facade.behavior.typedSend.mockRejectedValue(oversizedPayloadError());
+            await nativeRuntime.connect(almConnectionConfig());
+
+            await sendAlmMessage(nativeRuntime, 'h-oversized');
+
+            expect(
+                events.find((event) => event.topic === 'rallar.browser.messages.send_completed')?.data
+            ).toEqual({
+                handleId: 'h-oversized',
+                msgId: undefined,
+                carrier: 'ws',
+                status: 'rejected',
+                reason: OVERSIZED_PAYLOAD_MESSAGE,
+                message: undefined
+            });
+        });
+    });
+
+    it('propagates a send failure that is not a facade validation rejection', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            facade.behavior.typedSend.mockRejectedValue(new Error('ws lane closed'));
+            await nativeRuntime.connect(almConnectionConfig());
+
+            await expect(sendAlmMessage(nativeRuntime, 'h-lane-closed')).rejects.toThrow('ws lane closed');
+            await expect(nativeRuntime.readReceipts({
+                connection: 'aliceAlm',
+                handleId: 'h-lane-closed'
+            })).rejects.toThrow('Unknown delivery handle h-lane-closed');
         });
     });
 });

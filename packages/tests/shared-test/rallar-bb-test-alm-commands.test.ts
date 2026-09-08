@@ -59,6 +59,15 @@ const SEND_DIAGNOSTICS = {
     message: { id: { msgId: 'msg-1' } }
 };
 
+const REJECTED_SEND_DIAGNOSTICS = {
+    handleId: 'handle-rejected',
+    msgId: undefined,
+    carrier: 'ws',
+    status: 'rejected',
+    reason: '$.payload: Payload exceeds 65536 bytes.',
+    message: undefined
+};
+
 const DELIVERY_OBSERVATION = {
     handleId: 'handle-1',
     state: 'acknowledged',
@@ -241,6 +250,42 @@ describe('ALM browser adapter execution', () => {
         expect(topicsOf(runtime.state())).toEqual(
             expect.arrayContaining(['rallar.bb.messages.sent', 'rallar.bb.messages.observed'])
         );
+    });
+
+    it('carries a rejected send through as a successful command value without a msgId', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(captures),
+                sendMessage: async (input) => {
+                    captures.sendMessage.push(decodeCapturedInput(input));
+                    return REJECTED_SEND_DIAGNOSTICS;
+                }
+            }
+        });
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'alm-configure-rejected',
+            config: { defaults: { connection: 'aliceRtc' } }
+        });
+
+        const sent = await runtime.execute({
+            kind: 'messages.send',
+            commandId: 'alm-send-rejected',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { oversized: true },
+            handleId: 'handle-rejected'
+        });
+
+        expect(sent.ok, sent.error?.message).toBe(true);
+        expect(sent.value).toEqual({
+            handleId: 'handle-rejected',
+            carrier: 'ws',
+            status: 'rejected',
+            reason: '$.payload: Payload exceeds 65536 bytes.'
+        });
+        expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.sent');
     });
 
     it('injects the connection, handle, and observe timeout the page runtime requires', async () => {

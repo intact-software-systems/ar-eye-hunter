@@ -9,6 +9,8 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { RallarValidationError } from '@shared/api/rallar-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
@@ -145,6 +147,8 @@ function toTypedSendOptions(
     };
 }
 
+type TypedSendAdmission = Either<string, RallarMessageSendResult>;
+
 function toDeliveryObservationState(
     status: RallarMessageSendResult['status']
 ): BlackBoxRallarDeliveryObservation['state'] {
@@ -167,18 +171,66 @@ function toDeliveryObservationState(
     }
 }
 
+async function readTypedSendAdmission(
+    sent: Promise<RallarMessageSendResult>
+): Promise<TypedSendAdmission> {
+    try {
+        return Either.ofRight(await sent);
+    }
+    catch (caught) {
+        if (!(caught instanceof RallarValidationError)) {
+            throw caught;
+        }
+        return Either.ofLeft(caught.message);
+    }
+}
+
 function toDeliveryObservationFromAdmission(
     handleId: string,
-    result: RallarMessageSendResult
+    admission: TypedSendAdmission
 ): BlackBoxRallarDeliveryObservation {
-    return {
-        handleId,
-        state: toDeliveryObservationState(result.status),
-        submitted: result.status === 'enqueued' || result.status === 'accepted',
-        confirmedPeerIds: [],
-        unconfirmedPeerIds: [],
-        attempts: 1
-    };
+    return admission.fold<BlackBoxRallarDeliveryObservation>(
+        () => ({
+            handleId,
+            state: 'rejected',
+            submitted: false,
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: [],
+            attempts: 1
+        }),
+        (result) => ({
+            handleId,
+            state: toDeliveryObservationState(result.status),
+            submitted: result.status === 'enqueued' || result.status === 'accepted',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: [],
+            attempts: 1
+        })
+    );
+}
+
+function toMessageSendDiagnostics(
+    send: BlackBoxRallarMessageSendInput,
+    admission: TypedSendAdmission
+): BlackBoxRallarMessageSendDiagnostics {
+    return admission.fold<BlackBoxRallarMessageSendDiagnostics>(
+        (reason) => ({
+            handleId: send.handleId,
+            msgId: undefined,
+            carrier: send.carrier,
+            status: 'rejected',
+            reason,
+            message: undefined
+        }),
+        (result) => ({
+            handleId: send.handleId,
+            msgId: result.message.id.msgId,
+            carrier: send.carrier,
+            status: result.status,
+            reason: result.reason,
+            message: result
+        })
+    );
 }
 
 function messageRoutingDiagnostics(
@@ -599,17 +651,12 @@ export class BlackBoxRallarMessagingController {
             roomId: config.roomId,
             roomRef
         });
-        const message = await channel.send(send.payload, toTypedSendOptions(send));
+        const admission = await readTypedSendAdmission(
+            channel.send(send.payload, toTypedSendOptions(send))
+        );
         this.#resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
-        this.#deliveries.set(send.handleId, toDeliveryObservationFromAdmission(send.handleId, message));
-        const diagnostics: BlackBoxRallarMessageSendDiagnostics = {
-            handleId: send.handleId,
-            msgId: message.message.id.msgId,
-            carrier: send.carrier,
-            status: message.status,
-            reason: message.reason,
-            message
-        };
+        this.#deliveries.set(send.handleId, toDeliveryObservationFromAdmission(send.handleId, admission));
+        const diagnostics = toMessageSendDiagnostics(send, admission);
         this.#options.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
     };

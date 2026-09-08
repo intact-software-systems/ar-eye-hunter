@@ -481,10 +481,11 @@ function decodeAlmMessagesSendResultValue(
     value: unknown
 ): RallarBlackBoxTestMessagesSendResultValue {
     const record = decodeAlmRuntimeRecord(value);
+    const msgId = toAlmStringField(record, 'msgId');
     const reason = toAlmStringField(record, 'reason');
     return {
         handleId: toAlmStringField(record, 'handleId'),
-        msgId: toAlmStringField(record, 'msgId'),
+        ...(msgId.length > 0 ? { msgId } : {}),
         carrier: toAlmCarrierField(record),
         status: toAlmStringField(record, 'status'),
         ...(reason.length > 0 ? { reason } : {})

@@ -260,11 +260,11 @@ export interface BlackBoxRallarMessageSendInput {
 
 export interface BlackBoxRallarMessageSendDiagnostics {
     readonly handleId: string;
-    readonly msgId: string;
+    readonly msgId: string | undefined;
     readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
     readonly status: string;
     readonly reason: string | undefined;
-    readonly message: RallarMessageSendResult;
+    readonly message: RallarMessageSendResult | undefined;
 }
 
 export interface BlackBoxRallarDeliveryObservation {

@@ -898,7 +898,7 @@ export type RallarBlackBoxTestAssertResultValue = Readonly<{
 
 export type RallarBlackBoxTestMessagesSendResultValue = Readonly<{
     handleId: string;
-    msgId: string;
+    msgId?: string;
     carrier: RallarBlackBoxTestMessagesCarrier;
     status: string;
     reason?: string;
