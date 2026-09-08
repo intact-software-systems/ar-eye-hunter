@@ -33,7 +33,10 @@ import type {
     RallarBlackBoxTestTransport
 } from './types.ts';
 
-export type RallarBlackBoxBrowserRallarTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+export type RallarBlackBoxBrowserRallarTransport = Extract<
+    RallarBlackBoxTestTransport,
+    'realtime' | 'messages.rtc' | 'messages.ws'
+>;
 
 export type RallarBlackBoxBrowserRallarConnectionConfig = Readonly<{
     connection: string;
@@ -526,7 +529,7 @@ function rtcSendFailureFromDiagnostics(diagnostics: unknown): RtcSendFailure | u
 function toRtcTransport(
     value: unknown
 ): RallarBlackBoxBrowserRallarTransport | undefined {
-    return value === 'realtime' || value === 'messages.rtc'
+    return value === 'realtime' || value === 'messages.rtc' || value === 'messages.ws'
         ? value
         : undefined;
 }
@@ -534,6 +537,7 @@ function toRtcTransport(
 function toEventTransport(value: unknown): RallarBlackBoxTestTransport | undefined {
     return value === 'realtime' ||
             value === 'messages.rtc' ||
+            value === 'messages.ws' ||
             value === 'ws' ||
             value === 'http'
         ? value

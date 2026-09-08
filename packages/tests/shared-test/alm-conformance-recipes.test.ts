@@ -16,9 +16,20 @@ import {
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe
+} from '@shared-test/rallar-bb-test/types.ts';
+
+type ConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
 
 const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
+
+const CARRIER_CONNECT_TRANSPORTS = {
+    ws: 'messages.ws',
+    rtc: 'messages.rtc',
+    'rtc-with-ws-fallback': 'messages.rtc'
+} as const;
 
 function conformanceInput(
     carrier: CreateAlmConformanceRecipesInput['carrier']
@@ -35,6 +46,28 @@ function conformanceInput(
 
 function recipesOf(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver]);
+}
+
+function connectCommandsOf(scenarios: readonly AlmConformanceScenario[]): readonly ConnectCommand[] {
+    return recipesOf(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ConnectCommand => command.kind === 'rtc.connect'));
+}
+
+/** Every field a scenario's commands route by, so one assertion can prove they share one typeId. */
+function routedTypeIdsOf(command: RallarBlackBoxTestCommand): readonly string[] {
+    switch (command.kind) {
+        case 'rtc.connect':
+            return [String(command.rallar?.typeId), String(command.rallar?.topicId)];
+        case 'messages.send':
+            return command.topicId === undefined
+                ? [command.typeId]
+                : [command.typeId, command.topicId];
+        case 'messages.received':
+            return [command.typeId];
+        case 'fault.inject':
+            return command.match.typeId === undefined ? [] : [command.match.typeId];
+        default:
+            return [];
+    }
 }
 
 describe('alm-conformance recipe family', () => {
@@ -69,6 +102,37 @@ describe('alm-conformance recipe family', () => {
                 }
             }
         }
+    });
+
+    it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = createAlmConformanceRecipes(conformanceInput(carrier));
+            const connects = connectCommandsOf(scenarios);
+
+            expect(connects).toHaveLength(scenarios.length * 2);
+            for (const connect of connects) {
+                expect(connect.transport).toBe(CARRIER_CONNECT_TRANSPORTS[carrier]);
+                expect(connect.rallar?.typeId).toMatch(/^alm\.conformance\./);
+            }
+        }
+    });
+
+    it('scopes every routed field of a scenario to that scenario typeId', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(conformanceInput(carrier))) {
+                const routed = recipesOf([scenario])
+                    .flatMap((recipe) => recipe.commands.flatMap(routedTypeIdsOf));
+
+                expect(routed.length).toBeGreaterThan(0);
+                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${scenario.scenarioId}`]));
+            }
+        }
+    });
+
+    it('rejects a deadline shorter than the longest observation window', () => {
+        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_499 }))
+            .toThrow(new RangeError('createAlmConformanceRecipes requires deadlineMs of at least 3500.'));
+        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_500 })).not.toThrow();
     });
 
     it('tags bounded-rejection and delivery-baseline as smoke', () => {

@@ -9,7 +9,7 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { RallarValidationError } from '@shared/api/rallar-validation.ts';
+import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -133,6 +133,12 @@ function typedSelectorKey(typeId: string, topicId: string | undefined): string {
     return JSON.stringify({ kind: 'typed', typeId, topicId });
 }
 
+interface TypedChannelRoute {
+    readonly typeId: string;
+    readonly topicId: string | undefined;
+    readonly roomRef: GroupRef | undefined;
+}
+
 function toTypedSendOptions(
     send: BlackBoxRallarMessageSendInput
 ): RallarTypedMessageSendOptions<unknown> {
@@ -178,7 +184,7 @@ async function readTypedSendAdmission(
         return Either.ofRight(await sent);
     }
     catch (caught) {
-        if (!(caught instanceof RallarValidationError)) {
+        if (!isRallarValidationError(caught)) {
             throw caught;
         }
         return Either.ofLeft(caught.message);
@@ -613,10 +619,15 @@ export class BlackBoxRallarMessagingController {
 
     private ensureTypedChannelSubscription = (
         config: BlackBoxRallarConnectionConfig,
-        channel: RallarTypedMessageChannel<unknown>,
-        send: BlackBoxRallarMessageSendInput
-    ): void => {
-        this.#resources.ensureWsSubscription(typedSelectorKey(send.typeId, send.topicId), () => {
+        route: TypedChannelRoute
+    ): RallarTypedMessageChannel<unknown> => {
+        const channel = this.#options.facade.messages.room<unknown>({
+            typeId: route.typeId,
+            topicId: route.topicId,
+            roomId: config.roomId,
+            roomRef: route.roomRef
+        });
+        this.#resources.ensureWsSubscription(typedSelectorKey(route.typeId, route.topicId), () => {
             const unsubscribeWs = channel.onWs((_payload, message) => {
                 this.emitTypedChannelMessage(config, 'rallar.browser.ws.message', 'ws', message);
             });
@@ -628,6 +639,16 @@ export class BlackBoxRallarMessagingController {
                 unsubscribeRtc();
             };
         });
+        return channel;
+    };
+
+    /** A receiver that only connects still needs the inbound topics a send would otherwise install. */
+    subscribeTypedChannel = (config: BlackBoxRallarConnectionConfig): void => {
+        this.ensureTypedChannelSubscription(config, {
+            typeId: this.#options.typeIdOf(config),
+            topicId: this.#options.topicIdOf(config),
+            roomRef: this.#options.roomRefOf(config)
+        });
     };
 
     private sendTypedMessage = async (
@@ -636,13 +657,11 @@ export class BlackBoxRallarMessagingController {
         lease: BlackBoxRallarMessagingLease
     ): Promise<BlackBoxRallarMessageSendDiagnostics> => {
         const roomRef = this.#options.roomRefOf(config, { roomRef: send.roomRef });
-        const channel = this.#options.facade.messages.room<unknown>({
+        const channel = this.ensureTypedChannelSubscription(config, {
             typeId: send.typeId,
             topicId: send.topicId,
-            roomId: config.roomId,
             roomRef
         });
-        this.ensureTypedChannelSubscription(config, channel, send);
         this.#options.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
             handleId: send.handleId,
             carrier: send.carrier,

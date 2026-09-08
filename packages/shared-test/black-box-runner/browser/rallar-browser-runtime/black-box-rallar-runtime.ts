@@ -7,6 +7,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import {
     DEFAULT_LANE_ID,
+    isBlackBoxRallarTypedMessagesTransport,
     resolveBlackBoxRallarLaneId,
     resolveBlackBoxRallarMessageSelector,
     resolveBlackBoxRallarTopicId,
@@ -410,8 +411,9 @@ class BlackBoxRallarConnectionRuntime {
         attempt.phase = 'transport-config';
         this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, { transport });
         const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
-        const typeId = transport === 'messages.rtc' ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = transport === 'messages.rtc' ? resolveBlackBoxRallarTopicId(config) : undefined;
+        const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
+        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
         this.#runtimeDiagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             transport,
             laneId,
@@ -493,6 +495,15 @@ class BlackBoxRallarConnectionRuntime {
             })
             : undefined;
     };
+    /**
+     * The connect cleanup drops every typed subscription the runtime holds, so the inbound topics a
+     * receiver needs are installed after it rather than inside #subscribeConnection.
+     */
+    #subscribeTypedMessages = (config: BlackBoxRallarConnectionConfig): void => {
+        if (isBlackBoxRallarTypedMessagesTransport(resolveBlackBoxRallarTransport(config))) {
+            this.#messagingController.subscribeTypedChannel(config);
+        }
+    };
     #subscribeMessages = (
         config: BlackBoxRallarConnectionConfig,
         session: BlackBoxRallarConnectionState.Session
@@ -527,9 +538,10 @@ class BlackBoxRallarConnectionRuntime {
         const { config } = attempt;
         const transport = resolveBlackBoxRallarTransport(config);
         const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
-        const typeId = transport === 'messages.rtc' ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = transport === 'messages.rtc' ? resolveBlackBoxRallarTopicId(config) : undefined;
-        attempt.phase = transport === 'realtime' ? 'subscribe-realtime' : 'subscribe-messages.rtc';
+        const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
+        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
+        attempt.phase = transport === 'realtime' ? 'subscribe-realtime' : `subscribe-${transport}`;
         this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, {
             laneId,
             typeId,
@@ -558,8 +570,9 @@ class BlackBoxRallarConnectionRuntime {
         const { config, session } = state;
         const transport = resolveBlackBoxRallarTransport(config);
         const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
-        const typeId = transport === 'messages.rtc' ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = transport === 'messages.rtc' ? resolveBlackBoxRallarTopicId(config) : undefined;
+        const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
+        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
         return {
             status: 'connected',
             connection: config.connection,
@@ -605,6 +618,7 @@ class BlackBoxRallarConnectionRuntime {
             await this.#openConnection(attempt);
             const state = this.#subscribeConnection(attempt, session);
             this.#cleanupRuntimeSubscriptions(previousState, config);
+            this.#subscribeTypedMessages(config);
             this.#connectionState.set(state);
             const diagnostics = this.#connectionDiagnostics(state);
             this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.connect_completed', diagnostics);

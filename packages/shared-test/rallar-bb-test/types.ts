@@ -64,6 +64,7 @@ export type RallarBlackBoxTestJsonValue =
 export type RallarBlackBoxTestTransport =
     | 'realtime'
     | 'messages.rtc'
+    | 'messages.ws'
     | 'ws'
     | 'http';
 
@@ -266,7 +267,8 @@ export type RallarBlackBoxTestRtcConnectCommand =
         scope?: RallarBlackBoxTestRecord;
         roomRef?: RallarBlackBoxTestRecord;
         minSnapshotVersion?: number;
-        transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+        // Only a connect names messages.ws: it subscribes the typed inbound channel with no RTC lane.
+        transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'messages.ws'>;
         rallar?: RallarBlackBoxTestRecord;
         readiness?: RallarBlackBoxTestRtcConnectReadiness;
     }>;

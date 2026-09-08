@@ -139,7 +139,7 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         password: optionalString(record.password),
         displayName: optionalString(record.displayName),
         register: registration(record.register),
-        transport: optionalChoice(record.transport, ['realtime', 'messages.rtc']),
+        transport: optionalChoice(record.transport, ['realtime', 'messages.rtc', 'messages.ws']),
         laneId: optionalString(record.laneId),
         openTimeoutMs: optionalNumber(record.openTimeoutMs),
         timeoutMs: optionalNumber(record.timeoutMs),

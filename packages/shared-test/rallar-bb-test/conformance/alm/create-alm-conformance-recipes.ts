@@ -78,6 +78,13 @@ interface AlmConformanceFaultInput extends AlmConformanceStepInput {
     readonly faultCarrier: AlmConformanceFaultCarrier;
 }
 
+interface AlmConformanceScenarioDefinition {
+    readonly scenarioId: AlmConformanceScenario['scenarioId'];
+    readonly tags: readonly ('smoke' | 'full')[];
+    readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+    readonly toReceiverCommands: (receiver: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+}
+
 const SMOKE_TAGS: readonly ('smoke' | 'full')[] = ['smoke', 'full'];
 const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 
@@ -90,9 +97,10 @@ const FAULT_TIMEOUT_MS = 3_000;
 const ASSERT_TIMEOUT_MS = 2_000;
 const STATS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
-const OBSERVE_WINDOW_MS = 2_000;
+const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 const RECEIVE_WINDOW_MS = 2_000;
 const EXPIRY_RECEIVE_WINDOW_MS = 2_500;
+const MINIMUM_DEADLINE_MS = EXPIRY_RECEIVE_WINDOW_MS + RESPONSE_MARGIN_MS;
 
 const OVERSIZED_PAYLOAD_BYTES = 70_000;
 const OVERSIZED_PAYLOAD_FILLER = 'x'.repeat(OVERSIZED_PAYLOAD_BYTES);
@@ -101,41 +109,76 @@ const EXPIRY_TTL_MS = 1_000;
 const FAULT_REMAINING = 100;
 const RESYNC_GAP_SEQ = 300;
 
+const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
+    {
+        scenarioId: 'bounded-rejection',
+        tags: SMOKE_TAGS,
+        toSenderCommands: toBoundedRejectionSenderCommands,
+        toReceiverCommands: toBoundedRejectionReceiverCommands
+    },
+    {
+        scenarioId: 'deadline-expiry',
+        tags: FULL_TAGS,
+        toSenderCommands: toDeadlineExpirySenderCommands,
+        toReceiverCommands: toDeadlineExpiryReceiverCommands
+    },
+    {
+        scenarioId: 'delivery-baseline',
+        tags: SMOKE_TAGS,
+        toSenderCommands: toDeliveryBaselineSenderCommands,
+        toReceiverCommands: toDeliveryBaselineReceiverCommands
+    },
+    {
+        scenarioId: 'ordering-resync',
+        tags: FULL_TAGS,
+        toSenderCommands: toOrderingResyncSenderCommands,
+        toReceiverCommands: toOrderingResyncReceiverCommands
+    }
+];
+
 export function createAlmConformanceRecipes(
     input: CreateAlmConformanceRecipesInput
 ): readonly AlmConformanceScenario[] {
-    return [
-        toBoundedRejectionScenario(input),
-        toDeadlineExpiryScenario(input),
-        toDeliveryBaselineScenario(input),
-        toOrderingResyncScenario(input)
-    ];
+    if (input.deadlineMs < MINIMUM_DEADLINE_MS) {
+        throw new RangeError(
+            `createAlmConformanceRecipes requires deadlineMs of at least ${MINIMUM_DEADLINE_MS}.`
+        );
+    }
+
+    return ALM_CONFORMANCE_SCENARIOS.map((definition) => toAlmConformanceScenario(input, definition));
 }
 
-function toBoundedRejectionScenario(
-    input: CreateAlmConformanceRecipesInput
+function toAlmConformanceScenario(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition
 ): AlmConformanceScenario {
-    const scenarioId = 'bounded-rejection';
+    const scenarioId = definition.scenarioId;
     const sender: AlmConformanceStepInput = { input, scenarioId, role: 'sender' };
     const receiver: AlmConformanceStepInput = { input, scenarioId, role: 'receiver' };
     return {
         scenarioId,
-        tags: SMOKE_TAGS,
+        tags: definition.tags,
         sender: toAlmConformanceRecipe({
             ...sender,
-            commands: toBoundedRejectionSenderCommands(sender)
+            commands: definition.toSenderCommands(sender)
         }),
         receiver: toAlmConformanceRecipe({
             ...receiver,
-            commands: [toReceivedCommand({
-                ...receiver,
-                index: 1,
-                count: 1,
-                absent: true,
-                windowMs: RECEIVE_WINDOW_MS
-            })]
+            commands: definition.toReceiverCommands(receiver)
         })
     };
+}
+
+function toBoundedRejectionReceiverCommands(
+    receiver: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return [toReceivedCommand({
+        ...receiver,
+        index: 1,
+        count: 1,
+        absent: true,
+        windowMs: RECEIVE_WINDOW_MS
+    })];
 }
 
 function toBoundedRejectionSenderCommands(
@@ -166,30 +209,16 @@ function toBoundedRejectionSenderCommands(
     ];
 }
 
-function toDeadlineExpiryScenario(
-    input: CreateAlmConformanceRecipesInput
-): AlmConformanceScenario {
-    const scenarioId = 'deadline-expiry';
-    const sender: AlmConformanceStepInput = { input, scenarioId, role: 'sender' };
-    const receiver: AlmConformanceStepInput = { input, scenarioId, role: 'receiver' };
-    return {
-        scenarioId,
-        tags: FULL_TAGS,
-        sender: toAlmConformanceRecipe({
-            ...sender,
-            commands: toDeadlineExpirySenderCommands(sender)
-        }),
-        receiver: toAlmConformanceRecipe({
-            ...receiver,
-            commands: [toReceivedCommand({
-                ...receiver,
-                index: 1,
-                count: 1,
-                absent: true,
-                windowMs: EXPIRY_RECEIVE_WINDOW_MS
-            })]
-        })
-    };
+function toDeadlineExpiryReceiverCommands(
+    receiver: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return [toReceivedCommand({
+        ...receiver,
+        index: 1,
+        count: 1,
+        absent: true,
+        windowMs: EXPIRY_RECEIVE_WINDOW_MS
+    })];
 }
 
 function toDeadlineExpirySenderCommands(
@@ -207,58 +236,30 @@ function toDeadlineExpirySenderCommands(
     ];
 }
 
-function toDeliveryBaselineScenario(
-    input: CreateAlmConformanceRecipesInput
-): AlmConformanceScenario {
-    const scenarioId = 'delivery-baseline';
-    const sender: AlmConformanceStepInput = { input, scenarioId, role: 'sender' };
-    const receiver: AlmConformanceStepInput = { input, scenarioId, role: 'receiver' };
-    return {
-        scenarioId,
-        tags: SMOKE_TAGS,
-        sender: toAlmConformanceRecipe({
+function toDeliveryBaselineSenderCommands(
+    sender: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toSendCommand({
             ...sender,
-            commands: [
-                toSendCommand({
-                    ...sender,
-                    index: 1,
-                    payload: { marker: scenarioId },
-                    delivery: {}
-                }),
-                toObserveCommand({ ...sender, index: 1, state: 'accepted' })
-            ]
+            index: 1,
+            payload: { marker: sender.scenarioId },
+            delivery: {}
         }),
-        receiver: toAlmConformanceRecipe({
-            ...receiver,
-            commands: [toReceivedCommand({
-                ...receiver,
-                index: 1,
-                count: 1,
-                absent: false,
-                windowMs: RECEIVE_WINDOW_MS
-            })]
-        })
-    };
+        toObserveCommand({ ...sender, index: 1, state: 'accepted' })
+    ];
 }
 
-function toOrderingResyncScenario(
-    input: CreateAlmConformanceRecipesInput
-): AlmConformanceScenario {
-    const scenarioId = 'ordering-resync';
-    const sender: AlmConformanceStepInput = { input, scenarioId, role: 'sender' };
-    const receiver: AlmConformanceStepInput = { input, scenarioId, role: 'receiver' };
-    return {
-        scenarioId,
-        tags: FULL_TAGS,
-        sender: toAlmConformanceRecipe({
-            ...sender,
-            commands: toOrderingResyncSenderCommands(sender)
-        }),
-        receiver: toAlmConformanceRecipe({
-            ...receiver,
-            commands: toOrderingResyncReceiverCommands(receiver)
-        })
-    };
+function toDeliveryBaselineReceiverCommands(
+    receiver: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return [toReceivedCommand({
+        ...receiver,
+        index: 1,
+        count: 1,
+        absent: false,
+        windowMs: RECEIVE_WINDOW_MS
+    })];
 }
 
 function toOrderingResyncSenderCommands(
@@ -383,6 +384,7 @@ function toEnsureMemberCommand(step: AlmConformanceStepInput): RallarBlackBoxTes
 
 function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const input = step.input;
+    const typeId = toScenarioTypeId(step);
     return {
         kind: 'rtc.connect',
         commandId: toCommandId(step, 'connect'),
@@ -392,7 +394,8 @@ function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestComm
         applicationId: input.group.applicationId,
         workspaceId: input.group.workspaceId,
         roomRef: toRoomRef(input.group),
-        transport: 'realtime',
+        transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
+        rallar: { typeId, topicId: typeId },
         timeoutMs: toBudgetMs(CONNECT_TIMEOUT_MS, input.deadlineMs),
         ...(input.carrier === 'ws' ? {} : {
             readiness: {
@@ -406,12 +409,14 @@ function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestComm
 
 function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand {
     const input = send.input;
+    const typeId = toScenarioTypeId(send);
     return {
         kind: 'messages.send',
         commandId: toCommandId(send, `send-${send.index}`),
         connection: input.senderConnection,
         carrier: input.carrier,
-        typeId: input.typeId,
+        typeId,
+        topicId: typeId,
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, input.deadlineMs),
@@ -428,7 +433,7 @@ function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTe
         handleId: toSendHandleId(observe),
         state: [observe.state],
         timeoutMs: toBudgetMs(
-            OBSERVE_WINDOW_MS + RESPONSE_MARGIN_MS,
+            OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS,
             observe.input.deadlineMs
         )
     };
@@ -451,7 +456,7 @@ function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBo
         kind: 'messages.received',
         commandId: toCommandId(received, `received-${received.index}`),
         connection: received.input.receiverConnection,
-        typeId: received.input.typeId,
+        typeId: toScenarioTypeId(received),
         count: received.count,
         absent: received.absent,
         windowMs: received.windowMs,
@@ -463,7 +468,7 @@ function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBo
 }
 
 function toFaultCommand(fault: AlmConformanceFaultInput): RallarBlackBoxTestCommand {
-    const typeId = fault.input.typeId;
+    const typeId = toScenarioTypeId(fault);
     return {
         kind: 'fault.inject',
         commandId: toCommandId(fault, `fault-${fault.faultCarrier}`),
@@ -488,6 +493,10 @@ function toFaultCarriers(
     carrier: AlmConformanceCarrier
 ): readonly AlmConformanceFaultCarrier[] {
     return carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
+}
+
+function toScenarioTypeId(step: AlmConformanceStepInput): string {
+    return `${step.input.typeId}.${step.scenarioId}`;
 }
 
 function toCommandId(step: AlmConformanceStepInput, name: string): string {

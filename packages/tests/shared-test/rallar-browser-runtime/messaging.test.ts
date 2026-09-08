@@ -286,8 +286,56 @@ it('emits typed channel deliveries once per selector and releases their subscrip
     expect(facade.records.typedUnsubscribeCount).toBe(2);
 });
 
+it.each(['messages.rtc', 'messages.ws'] as const)(
+    'subscribes the typed inbound channel at connect over %s so a receiver never has to send',
+    async (transport) => {
+        const { runtime } = await loadConnectedMessageRuntime(transport);
+
+        expect(facade.records.typedChannelOpens).toEqual([{
+            typeId: 'chat.message',
+            topicId: 'chat',
+            roomId: 'bb-group',
+            roomRef
+        }]);
+        const wsHandler = facade.records.typedWsHandlers[0];
+        const rtcHandler = facade.records.typedRtcHandlers[0];
+        if (wsHandler === undefined || rtcHandler === undefined) {
+            throw new Error('The connect-time typed channel subscriptions were not recorded.');
+        }
+
+        const deliveredOverWs = connectedTypedInboundMessage();
+        const deliveredOverRtc: RallarMessage<ChatMessagePayload> = { ...deliveredOverWs, transport: 'rtc' };
+        await wsHandler(deliveredOverWs.payload, deliveredOverWs);
+        await rtcHandler(deliveredOverRtc.payload, deliveredOverRtc);
+
+        expect(events).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: 'message',
+                topic: 'rallar.browser.ws.message',
+                data: expect.objectContaining({ typeId: 'chat.message', payload: { text: 'received over ws' } })
+            }),
+            expect.objectContaining({
+                kind: 'message',
+                topic: 'rallar.browser.messages.rtc.message',
+                data: expect.objectContaining({ typeId: 'chat.message', payload: { text: 'received over ws' } })
+            })
+        ]));
+
+        await runtime.close();
+        expect(facade.records.typedUnsubscribeCount).toBe(2);
+    }
+);
+
+it('leaves a realtime connection without any typed inbound subscription', async () => {
+    await loadConnectedMessageRuntime();
+
+    expect(facade.records.typedChannelOpens).toEqual([]);
+    expect(facade.records.typedWsHandlers).toEqual([]);
+    expect(facade.records.typedRtcHandlers).toEqual([]);
+});
+
 async function loadConnectedMessageRuntime(
-    transport?: 'messages.rtc'
+    transport?: 'messages.rtc' | 'messages.ws'
 ): Promise<ConnectedMessageRuntime> {
     const runtime = await loadRuntime();
     const connection = await runtime.connect({
@@ -340,6 +388,14 @@ function typedInboundMessage(): RallarMessage<ChatMessagePayload> {
         ...inboundMessage(),
         typeId: 'alm.conformance',
         topicId: 'alm'
+    };
+}
+
+function connectedTypedInboundMessage(): RallarMessage<ChatMessagePayload> {
+    return {
+        ...inboundMessage(),
+        typeId: 'chat.message',
+        topicId: 'chat'
     };
 }
 

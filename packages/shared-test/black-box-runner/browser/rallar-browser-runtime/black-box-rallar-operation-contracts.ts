@@ -41,7 +41,7 @@ import type {
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 
-export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc';
+export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc' | 'messages.ws';
 
 export interface BlackBoxRallarScope {
     readonly applicationId?: string;

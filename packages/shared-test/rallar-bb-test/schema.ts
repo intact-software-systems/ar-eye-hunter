@@ -177,6 +177,10 @@ const configSchema: JsonSchema = {
 };
 
 const rtcTransportSchema: JsonSchema = { type: 'string', enum: ['realtime', 'messages.rtc'] };
+const rtcConnectTransportSchema: JsonSchema = {
+    type: 'string',
+    enum: ['realtime', 'messages.rtc', 'messages.ws']
+};
 const rtcConnectReadinessSchema: JsonSchema = {
     type: 'object',
     properties: {
@@ -605,7 +609,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         scope: recordSchema,
         roomRef: recordSchema,
         minSnapshotVersion: numberSchema,
-        transport: rtcTransportSchema,
+        transport: rtcConnectTransportSchema,
         rallar: recordSchema,
         readiness: rtcConnectReadinessSchema
     }),
