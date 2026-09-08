@@ -2,27 +2,26 @@
 
 Review date: 2026-09-05
 
-Reviewed source: `02d65ac4a458b98b92ebda22cf3ff84041027eb9`
+Reviewed source: `a28e61b61` (`main` after PR #521; markers refreshed 2026-09-08, originally
+written against `02d65ac4a`)
 
-Related documents: [current implementation audit](./alm-static-audit.md) and
-[delivery roadmap](./alm-improvement-plan.md).
+Related documents: [current implementation audit](./alm-static-audit.md),
+[delivery roadmap](./alm-improvement-plan.md), and
+[PR #521 code assessment](./pr-521-code-assessment.md).
 
 Status markers in this document describe the current implementation:
 
 - **CURRENT** — the capability exists end to end.
 - **PARTIAL** — important behavior exists, but the product guarantee is not
   complete or is transport-specific.
-- **MISSING TODAY** — the contract declares the capability or the complete
-  product requires it, but the current implementation has no dependable
-  end-to-end behavior.
+- **PLANNED — release** — the roadmap's release map owns the remainder; the
+  named PR delivers it.
 
-Unmarked normative prose describes the intended complete product. The markers
-describe the implementation at the reviewed source revision. This is a product
-description and completion contract; the roadmap owns sequencing.
-Missing capability is not by itself proof of product demand: broader audience,
-leader, and distributed ownership features require concrete consumers and a user
-scope decision as described in the roadmap. Source facts remain tied to the
-reviewed revision; intended behavior below incorporates the later product review.
+Unmarked normative prose describes the intended complete product. This is a
+product description and completion contract; the roadmap owns sequencing. By
+roadmap decision D5 every capability declared here is in scope, including the
+broader audience, leader, fencing, and ownership features; none waits for a
+consumer decision.
 
 ## Product proposition
 
@@ -114,9 +113,10 @@ A lost receipt does not establish non-delivery. Cancellation stops remaining
 owned attempts; it does not retract remote delivery or undo application work.
 An expired or cancelled room notification can still have confirmed recipients.
 
-**MISSING TODAY — result stages:** The current API uses statuses such as
-`sent-immediate` before a durable send effect has necessarily succeeded and does
-not expose an observable logical delivery lifecycle.
+**PLANNED — S1, result stages:** Transport settlement is truthful since the
+first release, but the public send result is still an admission snapshot with
+statuses such as `enqueued` and `sent-immediate`, and no observable delivery
+lifecycle or cancellation exists. S1 replaces it with the delivery handle.
 
 ## Envelope and compatibility
 
@@ -138,15 +138,15 @@ extensions are introduced only through a versioned compatibility rule. All
 identifiers, arrays, payloads, gap windows, and total envelopes have documented
 byte/count bounds.
 
-**PARTIAL — compatibility:** The v2 envelope and structural decoders exist.
-Browser [RTC](../../packages/shared/services/web-rtc-rx-streamer-service.ts) and
-[WS](../../packages/shared/services/ws-queue-box-client-service.ts) decode live
-objects with `decodePersistedALMessageValue` and queue replay with
-`decodePersistedALMessage`. These checks do not yet provide the complete
-resource limits, control-payload validation, or authenticated RTC provenance
-required by the product.
+**CURRENT — bounded envelope:** The v2 envelope, one decoder, the resource
+ceilings in
+[`al-message-resource-limits.ts`](../../packages/shared/al-contracts/al-message-resource-limits.ts)
+with UTF-8 byte accounting, and validated control payloads exist since the first
+release. Authenticated RTC relay provenance remains PARTIAL (S2). The
+membership-epoch field is renamed to the group-state roster version it fences on
+in R2, with an envelope version bump and explicit rejection of older versions.
 
-**MISSING TODAY — session and trace identity:** Builders do not populate AL
+**PLANNED — I1, session and trace identity:** Builders do not populate AL
 `sessionId`/`traceId`, and no end-to-end trace propagation behavior exists.
 
 ## Validation, trust, and authorization
@@ -180,13 +180,13 @@ cannot deliver, forward, grant authority, or reserve a claimed dedup identity.
 Authenticated server state/topology bootstrap has its own explicit authority so
 receiving a snapshot does not require already possessing that snapshot.
 
-**PARTIAL — live trust boundaries:** Server WS has envelope decoding and room
-authorization, while browser RTC/WS now structurally decode live messages. The
-old RTC mismatch warning and full-envelope receive logs are gone. Structural
-decoding alone does not authenticate relay provenance or prove room authority.
-[Control parsing](../../packages/shared/al-contracts/al-control.ts) still uses
-unchecked JSON casts, and inbound control dispatch bypasses the ordinary
-planner.
+**PARTIAL — live trust boundaries:** Server WS decodes envelopes, authorizes
+rooms with and without a snapshot floor, and answers with an advisory NACK;
+browser RTC and WS decode live messages once at ingress; control payloads are
+validated by
+[`al-control-value-codec.ts`](../../packages/shared/al-contracts/al-control-value-codec.ts)
+before dispatch; unknown controls cannot create pending work. Relay provenance
+for far-origin ACKs and the frozen logical audience land in S2.
 
 ## Logical audiences
 
@@ -213,19 +213,15 @@ reliable send, the logical audience is frozen at admission: joins do not expand
 it, and departures do not silently reduce the success requirement.
 
 **PARTIAL:** RTC uses current group peers and overlay next hops when its
-group/overlay context resolves; WS has room snapshot authorization.
+group/overlay context resolves; WS has room snapshot authorization with and
+without a supplied floor; a message that lacks fresh authority is retained as
+pending work and replayed against current authority rather than dropped.
 
-**PARTIAL — RTC snapshot admission:**
-[RTC snapshot admission](../../packages/shared/multicast/rtc-room-snapshot-admission.ts)
-checks a supplied `minSnapshotVersion` against exact scope, active status,
-expiry, and version. Unversioned room messages and originating plans bypass the
-check, and [shared AL policy](../../packages/shared/al-contracts/al-policy.ts)
-still permits local multicast when the resolved member set is empty. Insufficient
-authority must prevent delivery, forwarding, success ACKs, and admitted control
-mutation; bounded evidence recovery remains possible. Mismatched or known-removed
-authority rejects rather than waiting indefinitely. The builder also copies
-`membershipEpoch` into `ordering.epoch`; that runtime use must not be mistaken
-for an authoritative membership fence.
+**PLANNED — S2 and R2, frozen audience and fencing:** The logical audience is
+not yet frozen at admission and `expectedPeerIds` are physical next hops (S2).
+Membership fencing is explicitly rejected as unsupported today; R2 defines it on
+group-state's roster version supplied by the sender's snapshot, never on a
+caller-invented epoch.
 
 ### Broadcast
 
@@ -244,9 +240,12 @@ cannot use that field to expand authority.
 **PARTIAL:** Server WS implements room routing and application-specific
 principal/state-sync and fixed-topology cases.
 
-**MISSING TODAY — general scope semantics:** The shared planner treats broadcast
+**PLANNED — A1, general scope semantics:** The shared planner treats broadcast
 as “not excluded,” does not interpret scope/principal/fixed recipients, and the
-public builder cannot create principal or fixed-recipient broadcasts.
+public builder cannot create principal or fixed-recipient broadcasts. A1 gives
+every scope one semantic with RTC and WS parity; world and all take the WS route
+automatically when fallback is allowed and are typed carrier-unsupported over
+RTC otherwise.
 
 ## Transport selection and parity
 
@@ -266,17 +265,16 @@ ALM supports RTC and WS as first-class carriers.
 
 **CURRENT:** Both RTC and WS use the AL envelope and core admission runtimes.
 
-**MISSING TODAY — one fallback lifecycle:** Browser typed channels expose RTC↔WS
-fallback, but each carrier attempt constructs a new message ID and admission-like
-statuses such as `enqueued`, `sent-immediate`, `skipped`, or `superseded` stop
-fallback. Attempts therefore do not share one deduplication domain,
-acknowledgement obligation, attempt history, or terminal outcome. Browser RTC
-and WS also use separate admission scopes, so merely sharing an outgoing message
-ID would not provide cross-carrier receiver deduplication.
+**PARTIAL — one fallback lifecycle:** Since the first release the browser
+sender reuses one envelope, identity, and deadline for the fallback carrier, and
+fallback fires on `no-route` and `circuit-open` within the deadline. Inbound
+stores remain carrier-scoped, so a duplicate through the other carrier is not
+yet deduplicated (S2), and fallback on a receipt timeout lands with S3.
 
-**MISSING TODAY — conformance contract:** There is no cross-transport suite or
+**PLANNED — F1, conformance contract:** There is no cross-transport suite or
 public outcome model proving that the same QoS request has the same meaning on
-RTC and WS.
+RTC and WS. F1 adds the conformance lane; every later PR adds its scenario
+family.
 
 ## QoS negotiation
 
@@ -291,9 +289,11 @@ unsupported guarantee.
 
 **PARTIAL:** Normalization and provider hooks exist.
 
-**MISSING TODAY — production providers:** Browser composition does not install
+**PLANNED — S3, production providers:** Browser composition does not install
 transport-aware capability, authorization, or live-congestion providers; the
-default capability set claims every declared algorithm.
+default capability set claims every declared algorithm, and `ack: 'receiver'`
+normalizes to the transport `hop` algorithm. S3 installs carrier-aware
+capabilities and S2 adds the logical `receiver` algorithm.
 
 ## Reliability and acknowledgement
 
@@ -352,14 +352,17 @@ ACKs the admitted upstream relay. Current coverage includes
 [room snapshot admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
 and [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts).
 
-**MISSING TODAY — truthful at-least-once:** Default browser RTC and WS send paths
-request at-least-once with no ACK. WS submission is not a logical receipt, and
-the RTC adapter calls `peer.channel.send(msg)`, returns `sent`, and loses the
-structured flow-control result. Typed fallback treats `skipped`, `superseded`,
-and `enqueued` as successes while building a separate message per carrier.
+**PLANNED — S1 to S3, truthful at-least-once:** Default browser RTC and WS send
+paths still request at-least-once with no ACK. The RTC adapter now preserves the
+structured settlement (`sent`, `dropped`, `superseded`, `expired`, `closed`,
+`failed`, `cancelled` with `submissionAttempted`) and WS records its outbox
+delivery outcome, but neither reaches the caller as a lifecycle. S1 exposes the
+lifecycle, S2 makes the receiver receipt real, and S3 sets the reliable,
+receipted, volatile default (roadmap decision D2).
 
-**MISSING TODAY — distinct leader/all-recipient ACK:** Both modes currently map
-to the same subtree behavior.
+**PLANNED — A2, distinct leader and all-recipient ACK:** Both modes currently
+map to the same subtree behavior. A2 defines the leader as the group's appointed
+director session and S2 defines all-recipient as the frozen logical audience.
 
 ## Ordering and gap recovery
 
@@ -376,10 +379,14 @@ ordering track.
 repair, release, expiry, and restart behavior exist. Outbound ACK history uses
 `appendUniqueALAck`, while inbound ACK history can still append duplicates.
 
-**MISSING TODAY — bounded gaps:**
+**CURRENT — bounded gaps:**
 [`compute-al-ordering-observation.ts`](../../packages/shared/alm/compute-al-ordering-observation.ts)
-enumerates missing sequences individually with no maximum gap/window, allowing
-unbounded CPU, memory, control-payload, and effect-ID work.
+applies the 256-sequence repair window and the 256-message, 1 MiB buffered-track
+ceilings and returns `resync-required` without enumerating an oversized gap.
+
+**PLANNED — R1, range repair and resync integration:** Repair controls still
+carry individual sequence lists; R1 replaces them with compact ranges and pages
+and invokes the topic's declared recovery owner with bounded cursor information.
 
 ## Deduplication and supersedence
 
@@ -399,12 +406,12 @@ reporting the replaced message as delivered.
 
 **PARTIAL:** Dedup and latest-wins behavior are implemented and persisted.
 
-**MISSING TODAY — shared arbitration:** Optimistic versions are sender-scoped
-even when a dedup/supersedence key is cross-sender. Code inspection shows that
-two stale cross-sender reads followed by sequential commits can both win. The
-IndexedDB revision read at commit start fences a global revision but does not
-validate the earlier shared-key decision. This is a code-derived risk, not
-measured race evidence.
+**PLANNED — R1, shared arbitration proof:** Since the first release both
+admission stores re-read the dedup and supersedence observations inside the
+write transaction and return `conflict` when they changed, so two stale
+cross-sender reads cannot both win. The cross-backend proof (memory, IndexedDB,
+PostgreSQL, A/B stale-read then sequential-commit schedule with one winner) lands
+in R1.
 
 ## Congestion and RTC flow control
 
@@ -426,8 +433,10 @@ alternate route without violating audience/epoch constraints.
 **PARTIAL:** `QRtcDataChannel` has bounded flow control and counters; AL QoS has
 congestion/fanout/supersedence concepts.
 
-**MISSING TODAY — integration:** The legacy `send()` API discards the structured
-flow-control result, and production AL QoS receives no live backpressure signal.
+**PLANNED — S3, integration:** The data-channel settlement now reaches the
+outbound runtime as a queued-then-settled result, but production AL QoS still
+receives no live backpressure signal and the caller sees no lifecycle. S1
+exposes the lifecycle; S3 feeds channel backpressure into policy.
 
 ## Durability and browser-local storage
 
@@ -457,24 +466,24 @@ use readonly transactions, lower-bound prefix cursors that stop when leaving
 the prefix, and an expiry index. Snapshot assembly still uses separate reads,
 so it is not one atomic snapshot.
 
-[Browser QueueBox persistence at the reviewed revision](https://github.com/intact-software-systems/ar-eye-hunter/blob/02d65ac4a458b98b92ebda22cf3ff84041027eb9/packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
-creates one database per session queue and validates the current schema instead
-of adding stores through upgrades. The
+Since the first release one fixed-schema database holds the admission store
+and the `alm-work` store; the per-session queue databases and their owner are
+deleted; the
 [session lifecycle](../../packages/shared-web/browser/session/session-auth-lifecycle.ts)
-deletes the four queue databases for an ended session, and cleanup enumerates
-remaining queue databases. `InboxOutboxEngine.wake()` exists and the browser
-sender invokes it.
+deletes an ended session's entries by key prefix; admission and QueueBox work
+commit in one IndexedDB transaction; outbound messages have one canonical
+envelope that sent metadata, recipient actions, and repair work reference.
 
-**MISSING TODAY — volatile semantics:** Volatile RTC/WS still persists admission
-state and durable effects.
+**PLANNED — S3, volatile semantics:** Volatile RTC/WS still persists admission
+state and work because the browser selects the IndexedDB backend whenever it is
+supported. S3 routes each channel to one backend by its declared durability.
 
-**MISSING TODAY — bounded IndexedDB and canonical durable work:** Effect
-selection still lists and sorts every matching effect instead of using a bounded
-due-time query. QueueBox still polls and performs full-queue `getAll` reads, and
-the default durable path still traverses both ALM admission/effects and
-QueueBox, copying full envelopes across the two queues. Bounds for abandoned
-session databases and remaining queue databases still need evidence. No current
-latency or operation-count measurements support a stronger performance claim.
+**PLANNED — F2 and I2, bounded IndexedDB and one durable owner:** Seven
+`getAll()` call sites remain in the IndexedDB queue box, browser cleanup scans
+the whole AL work range before filtering by session, inbound effects still copy
+envelopes, and the server still runs two consumers on one work queue (F2). No
+reset mechanism, multi-tab claim, quota, or blocked-upgrade outcome exists (F2,
+I2).
 
 ## Correlation and actions
 
@@ -485,8 +494,10 @@ Duplicate replies are deduplicated; late replies receive an explicit late/
 expired outcome. Correlation identity and trace identity survive fallback and
 repair.
 
-**MISSING TODAY — correlation behavior:** The fields are only decoded/persisted;
-there is no builder support, registry, matching, timeout, or response API.
+**PLANNED — I1, correlation behavior:** The fields are only decoded and
+persisted; there is no builder support, matching, timeout, or reply API. I1
+puts `corrId` and `replyToMsgId` on the delivery handle with
+`awaitReply({ timeoutMs })` and bridges the AppInbox trace id.
 
 ## Repair and resynchronization
 
@@ -502,9 +513,10 @@ Repair is receiver-driven and bounded:
 **PARTIAL:** Durable ACK timeout, targeted retransmission, ordered-message lookup,
 and RTC alternate-parent repair exist.
 
-**MISSING TODAY — complete resync contract:** There is no generic snapshot/cursor
-resync outcome after repair-window exhaustion, and server/client transport parity
-is not specified.
+**PLANNED — R1, complete resync contract:** `resync-required` exists as an
+outcome since the first release, but no generic snapshot/cursor recovery owner is
+invoked after repair-window exhaustion, and server/client transport parity is
+proven only by the conformance lane (F1 onward).
 
 ## Ownership
 
@@ -513,13 +525,17 @@ is not specified.
 scope may claim it. The scope is explicit: local process, browser session,
 principal, group, or server consumer group. Durable exclusive claims use leases
 and redelivery from existing QueueBox/ResourceInbox; volatile exclusive selection
-is deterministic and observable. Distributed ownership requires a demonstrated
-consumer and an explicit product scope decision, rather than a new generic claim system.
+is deterministic and observable. Distributed ownership reuses the existing
+ResourceInbox reservation with lease, expiry, and redelivery; no generic claim
+system is added.
 
 **PARTIAL:** Current services use `exclusive` to select one local callback.
 
-**MISSING TODAY — ownership scope:** The contract does not say whether exclusive
-is local or distributed, and no distributed exclusive-consumer claim exists.
+**PLANNED — A2, ownership scope:** The contract does not say whether exclusive
+is local or distributed, and no distributed exclusive-consumer claim exists. A2
+defines `exclusive` as a claim on the message's resource key backed by the
+existing ResourceInbox reservation with lease, expiry, and redelivery, surfaced
+as `claimed`, `held-by-other`, or `expired`.
 
 ## Observability and privacy
 
@@ -540,9 +556,11 @@ without polling internal stores.
 **PARTIAL:** Outbound queue/lock/effect-drain diagnostics and RTC counters exist.
 Full RTC envelopes are no longer logged by the receive service.
 
-**MISSING TODAY — end-to-end observability:** There is no shared lifecycle event
-stream, IndexedDB cost telemetry, trace propagation, or payload-safe logging
-contract.
+**PLANNED — F1, S1, and I1, end-to-end observability:** There is no shared
+lifecycle event stream, IndexedDB cost telemetry, trace propagation, or
+payload-safe logging contract. F1 adds the AL-owned IndexedDB counter and ALM
+metrics in the lanes, S1 the lifecycle events, I1 trace propagation and the
+payload-free diagnostics contract.
 
 ## Resource and abuse limits
 
@@ -575,9 +593,12 @@ owner gains bounded sequence-window behavior; no general-purpose message-buffer
 library is currently required. Rate-window counters and Motion interpolation
 buffers retain their separate responsibilities.
 
-**MISSING TODAY — complete bounds:** Payload input validation exists but is not
-called by AL builders, persisted/live envelope validation does not impose the
-full resource budget, and ordering gaps are unbounded.
+**CURRENT — protocol bounds:** The seven ceilings (64 KiB payload, 128-character
+route identifier, 128 KiB envelope, 256-entry collection or page, 64 hops,
+256-sequence repair window, 256 messages and 1 MiB per ordered track) live in one
+contract and apply to live and persisted envelopes and to control payloads.
+Aggregate per-session budgets (count, bytes, age, active tracks) land in S3 and
+V1.
 
 ## Lifecycle and multi-context behavior
 
@@ -591,9 +612,10 @@ definition.
 owner have disposal fences. Tests cover disposal during commit/read and retry
 cancellation. Web Locks, versioned commits, and effect leases also exist.
 
-**MISSING TODAY — complete lifecycle outcomes:** Disposal fences do not provide
-the staged caller-visible result model described above, and polling remains in
-browser durable delivery.
+**PLANNED — S1 and I2, complete lifecycle outcomes:** Disposal fences do not
+provide the staged caller-visible result model described above (S1), and
+multi-tab claims, quota, eviction, blocked upgrades, and restart have no typed
+outcomes (I2).
 
 ## Public product surface
 
@@ -616,10 +638,10 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**MISSING TODAY — complete safe surface:** Principal/fixed-recipient/correlation/
-trace builders are absent, builders bypass `assertValidALMessageInput`, and the
-public surface does not yet provide the complete bounded envelope/control
-validation or staged result lifecycle.
+**PLANNED — S1, A1, and I1, complete safe surface:** The delivery handle and
+channel purpose (S1, S3), principal and fixed-recipient builders (A1), and
+correlation and trace builders (I1) are absent. F1 adds
+`browser/rallar-messages.ts` as the narrow entry point that carries them.
 
 ## Delivery and compatibility posture
 
@@ -628,15 +650,13 @@ two independently verifiable slices detailed. Later stages remain expressed as
 product outcomes until current evidence justifies their implementation shape.
 
 The approved transition is a coordinated clean cutover. Repository consumers
-move with the new surface, obsolete APIs are removed, and incompatible browser
-queues are reset explicitly. ALM does not silently fall back to the obsolete API
-or migrate incompatible queue records. Later roadmap outcomes still include
-consumer-backed audiences and leader ACKs, correlation, distributed traces,
-ownership scope, and further QoS/recovery/diagnostic integration. Basic zero-IDB
-volatile handling and practical purpose-specific policy land with slice 2;
-later milestones harden them. Prospective capabilities without a demonstrated
-consumer return to the user for a scope decision rather than becoming automatic
-requirements for a general-purpose messaging system.
+move with the new surface, obsolete APIs are removed in the same PR, and
+incompatible ALM browser storage is deleted on schema mismatch (roadmap
+decision D3). ALM never falls back to an obsolete API, migrates incompatible
+records, or keeps a compatibility window (decision D8). Every capability in
+this document is in scope (decision D5); the roadmap's release map owns the
+order, and the two games are changed wherever that proves a capability in a
+real UI (decision D4).
 
 ## Current validation baseline
 
@@ -645,12 +665,14 @@ anchored by
 [`live-rtc-three-browser-coverage.test.ts`](../../packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts).
 The current browser workload is a base for extending ALM storage and lifecycle
 instrumentation, not evidence that those completion requirements already pass.
+The conformance lane (roadmap F1) becomes the acceptance authority: one scenario
+catalog run over both carriers in the per-push Playwright lane, the Release
+Gate's Postgres lane, and the Hetzner manifests on `main`.
 
 ## Product completion criteria
 
-ALM is product-complete for the committed consumer scope when all of the following
-are true. Unresolved roadmap capabilities still require an explicit user scope
-decision; this criterion does not authorize silently dropping them.
+ALM is product-complete when all of the following are true. Every capability is
+in scope by roadmap decision D5.
 
 1. The same scenario suite runs over RTC and WS and produces equivalent logical
    admission, ordering, reliability, ACK, repair, expiry, and terminal outcomes.
@@ -669,9 +691,10 @@ decision; this criterion does not authorize silently dropping them.
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
    authoritative membership fencing when requested and supported, respects required
    snapshot floors, and freezes the reliable intended audience at admission.
-7. Every supported target/ACK mode has one documented, tested semantic and a
-   concrete consumer. Unimplemented required guarantees reject explicitly;
-   principal/world/fixed audiences and leader modes remain subject to that rule.
+7. Every target/ACK mode, including principal, world, all, and fixed audiences
+   and the group-leader mode, has one documented semantic proven by the
+   conformance lane over both carriers and exercised by one of the two games. A
+   guarantee a carrier cannot provide rejects explicitly.
 8. Ordering, diagnostic, control, retry, repair, and storage work is bounded and
    has clean resync/terminal behavior, aggregate memory bounds, and bounded
    audience/snapshot paging without an accidental room-size restriction.
