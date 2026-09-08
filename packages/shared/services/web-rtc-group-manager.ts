@@ -79,6 +79,7 @@ export class WebRtcGroupManager {
     private reconcilePassRunning = false;
     private reconcileWakesActive = false;
     private scheduledWake: Promise<void> | undefined;
+    private retainedExpiryWake: ReturnType<typeof setTimeout> | undefined;
     private waitingDialCount = 0;
     private retainedOrder = 0;
     private readonly diagnostics = emptyGroupManagerDiagnostics();
@@ -104,11 +105,11 @@ export class WebRtcGroupManager {
     }
 
     /**
-     * A completed setup frees an in-flight slot, while a deleted desired setup
-     * needs another attempt. The composition root starts these wakes once the
-     * service and manager exist; shutdown stops them before tearing peers down,
-     * because shutdown removes peers their groups still want and every removal
-     * would otherwise dial them back.
+     * Setup completion frees an in-flight slot, deleting a desired setup needs
+     * another attempt, and retained peers expire without an external event. The
+     * composition root starts these wakes once the service and manager exist;
+     * shutdown stops them before tearing peers down so removal cannot dial them
+     * back.
      */
     startReconcileWakes(): void {
         this.reconcileWakesActive = true;
@@ -117,10 +118,12 @@ export class WebRtcGroupManager {
             onDeleted: (peer) => this.wakeAfterSetupEnded(peer.peerId),
             onEstablished: () => this.wakeAfterSetupEnded()
         });
+        this.startRetainedExpiryWake();
     }
 
     stopReconcileWakes(): void {
         this.reconcileWakesActive = false;
+        this.stopRetainedExpiryWake();
         this.rtcQBox.removeRtcPeerLifecycleById(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID);
         // A wake already on the microtask queue observes the inactive latch and stands down.
         this.waitingDialCount = 0;
@@ -433,6 +436,7 @@ export class WebRtcGroupManager {
         this.retainUndesiredKnownPeers(desiredPeerIds, reconciledKnownPeerIds);
         this.disconnectExpiredRetainedPeers(reconciledKnownPeerIds);
         this.evictRetainedPeers(desiredPeerIds, reconciledKnownPeerIds);
+        this.startRetainedExpiryWake();
 
         this.options.onDesiredPeerIdsChanged?.({
             desiredPeerIds: [...desiredPeerIds],
@@ -512,6 +516,39 @@ export class WebRtcGroupManager {
                 console.error(`Failed to disconnect retained peer ${retained.peerId}`, toError(error));
             }
         }
+    }
+
+    private startRetainedExpiryWake(): void {
+        this.stopRetainedExpiryWake();
+        if (!this.reconcileWakesActive) {
+            return;
+        }
+
+        const expiresAtEpochMs = this.resolveEarliestRetainedExpiryAtEpochMs();
+        if (expiresAtEpochMs === undefined) {
+            return;
+        }
+
+        this.retainedExpiryWake = setTimeout(() => {
+            this.retainedExpiryWake = undefined;
+            void this.reconcileAllGroups().catch((caught) => {
+                console.error('Failed to reconcile groups after a retention expired', toError(caught));
+            });
+        }, Math.max(0, expiresAtEpochMs - this.now()));
+    }
+
+    private stopRetainedExpiryWake(): void {
+        if (this.retainedExpiryWake !== undefined) {
+            clearTimeout(this.retainedExpiryWake);
+            this.retainedExpiryWake = undefined;
+        }
+    }
+
+    private resolveEarliestRetainedExpiryAtEpochMs(): number | undefined {
+        const expiries = Array.from(this.retainedPeerConnections.values())
+            .map((retained) => retained.expiresAtEpochMs)
+            .filter((expiresAtEpochMs): expiresAtEpochMs is number => expiresAtEpochMs !== null);
+        return expiries.length === 0 ? undefined : Math.min(...expiries);
     }
 
     notifyClientPresenceChanged(): Promise<void> {

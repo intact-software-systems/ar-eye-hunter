@@ -140,12 +140,16 @@ lock and its proposed lock-replacement plan are therefore obsolete and have
 been removed; no lock compatibility path remains. This does not resolve the
 separate RTC lifecycle defect: applying the desired-peer deletion regression
 to main without the PR's manager correction still leaves the peer absent. The
-rebased PR retains only that RTC correction, the exact-membership barrier,
+rebased PR retains that RTC correction, the exact-membership barrier,
 diagnostic failure capture, and the non-publishing branch workflow needed to
-prove them. Rebase changed the candidate head, so its same-head diagnostic
-proof count is zero. There is not yet a valid B06 E3 result. B07 remains held,
-and evidence ranking cannot start until a valid B06 primary and any required
-repeat are archived.
+prove them. It also absorbs PR #546's complementary retained-peer expiry fix:
+the same manager lifecycle now wakes at the earliest transition-grace expiry,
+re-arms for later retentions, and cancels or adopts the timer across stop/start.
+One lifecycle flag owns both wake sources; no parallel manager, lock, or legacy
+path remains. Because this consolidation changes the candidate head, its
+same-head diagnostic proof count is zero. There is not yet a valid B06 E3
+result. B07 remains held, and evidence ranking cannot start until a valid B06
+primary and any required repeat are archived.
 
 ### Current execution horizon
 
