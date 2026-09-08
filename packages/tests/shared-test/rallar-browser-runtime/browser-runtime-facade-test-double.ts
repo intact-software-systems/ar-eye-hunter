@@ -17,6 +17,8 @@ import type {
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -110,6 +112,7 @@ export const facadeBehavior = {
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
     roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refresh']>(),
+    roomFormation: vi.fn<BlackBoxBrowserRoomsDependency['formation']>(),
     realtimeHealth: vi.fn<BlackBoxBrowserRealtimeDependency['health']>(),
     realtimeSend: vi.fn<BlackBoxBrowserRealtimeDependency['sendJson']>(),
     realtimeOnJson: vi.fn<
@@ -119,6 +122,8 @@ export const facadeBehavior = {
         ) => () => void
     >(),
     rtcStatus: vi.fn<BlackBoxBrowserRtcDependency['status']>(),
+    rtcOnStatus: vi.fn<BlackBoxBrowserRtcDependency['onStatus']>(),
+    rtcRoomStatus: vi.fn<BlackBoxBrowserRtcDependency['roomStatus']>(),
     rtcOnLifecycle: vi.fn<BlackBoxBrowserRtcDependency['onLifecycle']>(),
     wsOnLifecycle: vi.fn<BlackBoxBrowserWsDependency['onLifecycle']>(),
     rtcDiagnostics: vi.fn<BlackBoxBrowserRtcDependency['diagnostics']>(),
@@ -190,7 +195,8 @@ const rooms: BlackBoxBrowserRoomsDependency = {
     refresh: async (input) => {
         records.roomRefreshes.push([input]);
         return await facadeBehavior.roomRefresh(input);
-    }
+    },
+    formation: (room) => facadeBehavior.roomFormation(room)
 };
 
 const realtime: BlackBoxBrowserRealtimeDependency = {
@@ -245,6 +251,8 @@ const messages: BlackBoxBrowserMessagesDependency = {
 
 const rtc: BlackBoxBrowserRtcDependency = {
     onLifecycle: (listener, options) => facadeBehavior.rtcOnLifecycle(listener, options),
+    onStatus: (listener, options) => facadeBehavior.rtcOnStatus(listener, options),
+    roomStatus: (room, options) => facadeBehavior.rtcRoomStatus(room, options),
     status: (options) => facadeBehavior.rtcStatus(options),
     diagnostics: async (options) => {
         records.rtcDiagnosticsReads.push([options]);
@@ -328,6 +336,11 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);
     facadeBehavior.roomRefresh.mockResolvedValue(undefined);
+    // The runtime installs the formation diagnostics on every room-scoped connect, so the double
+    // answers with a handle that holds no room and subscribes to nothing.
+    facadeBehavior.roomFormation.mockImplementation(() => createIdleRoomFormation());
+    facadeBehavior.rtcOnStatus.mockImplementation(() => () => {});
+    facadeBehavior.rtcRoomStatus.mockImplementation(() => createIdleRoomTransportStatus());
     facadeBehavior.realtimeHealth.mockReturnValue([]);
     facadeBehavior.rtcOnLifecycle.mockImplementation((listener, options) => {
         if (options?.emitCurrent) {
@@ -409,4 +422,46 @@ function toRecordedMessageHandler<T>(
     handler: RallarMessageHandler<T>
 ): RallarMessageHandler<RallarMessagePayload> {
     return handler as RallarMessageHandler<RallarMessagePayload>;
+}
+
+function createIdleRoomFormation(): RallarRoomFormation {
+    const unsupported = (): never => {
+        throw new Error('The facade test double does not drive room formation.');
+    };
+    return {
+        roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+        status: () => undefined,
+        readView: unsupported,
+        plan: unsupported,
+        connect: unsupported,
+        activate: unsupported,
+        reconfigure: unsupported,
+        pause: unsupported,
+        resume: unsupported,
+        reset: unsupported,
+        start: unsupported,
+        waitForStage: unsupported,
+        waitForCondition: unsupported,
+        waitForLayout: unsupported,
+        onChange: () => () => {},
+        onLayout: () => () => {}
+    };
+}
+
+function createIdleRoomTransportStatus(): RallarRoomTransportStatus {
+    return {
+        ws: ws.status(),
+        rtc: {
+            desired: false,
+            mode: 'off',
+            state: 'off',
+            desiredPeerIds: [],
+            knownPeerIds: [],
+            activePeerIds: [],
+            readyPeerIds: [],
+            failedPeerIds: [],
+            peers: [],
+            laneId: 'lane'
+        }
+    };
 }

@@ -9,6 +9,7 @@ import {
 const repoRoot = process.cwd();
 const scripts = readPackageScripts();
 const liveMatrixSpec = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
+const liveLifecycleSpec = 'tests/playwright/rallar-black-box/full-stack-live-rtc-lifecycle-acceptance.spec.ts';
 
 const REQUIRED_LIVE_RTC_GATE_ENV = [
     'RALLAR_BLACK_BOX_FULL_STACK=1',
@@ -27,17 +28,32 @@ describe('live three-browser RTC npm script gates', () => {
         [
             'test:rallar:full-stack:memory:live-rtc-3',
             'VITE_RALLAR_API_BASE_URL=${VITE_RALLAR_API_BASE_URL:-http://localhost:18080}',
-            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5177}'
+            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5177}',
+            liveMatrixSpec
         ],
         [
             'test:rallar:full-stack:postgres:live-rtc-3',
             'VITE_RALLAR_API_BASE_URL=${VITE_RALLAR_API_BASE_URL:-http://localhost:18081}',
-            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5178}'
+            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5178}',
+            liveMatrixSpec
+        ],
+        [
+            'test:rallar:full-stack:memory:live-rtc-3:lifecycle',
+            'VITE_RALLAR_API_BASE_URL=${VITE_RALLAR_API_BASE_URL:-http://localhost:18080}',
+            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5177}',
+            liveLifecycleSpec
+        ],
+        [
+            'test:rallar:full-stack:postgres:live-rtc-3:lifecycle',
+            'VITE_RALLAR_API_BASE_URL=${VITE_RALLAR_API_BASE_URL:-http://localhost:18081}',
+            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5178}',
+            liveLifecycleSpec
         ]
     ])('%s sets every env value required for a non-skipped baseline', (
         scriptName,
         apiBaseUrl,
-        spaBaseUrl
+        spaBaseUrl,
+        specPath
     ) => {
         const script = scripts[scriptName] ?? '';
 
@@ -51,7 +67,7 @@ describe('live three-browser RTC npm script gates', () => {
         for (const requiredEnv of REQUIRED_LIVE_RTC_GATE_ENV) {
             expect(script).toContain(requiredEnv);
         }
-        expect(script).toContain(liveMatrixSpec);
+        expect(script).toContain(specPath);
     });
 
     it('keeps exhaustive and retention selectors owned by the invoking attempt', () => {

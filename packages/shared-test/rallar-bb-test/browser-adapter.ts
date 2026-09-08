@@ -40,27 +40,39 @@ export type RallarBlackBoxBrowserRallarConnectionConfig = Readonly<{
     rallar: Readonly<Record<string, unknown>>;
 }>;
 
+/**
+ * Every browser sub-runtime method takes the wire record the adapter merged with the
+ * connection's defaults and answers with the evidence the runtime recorded. The shapes are
+ * named on the bridge, which is the side that owns the browser runtime types.
+ */
+export type RallarBlackBoxBrowserRallarRuntimeMethod = (input: unknown) => Promise<unknown>;
+
 export type RallarBlackBoxBrowserRallarCrdtRuntime = Readonly<{
-    open(input: unknown): Promise<unknown>;
-    apply(input: unknown): Promise<unknown>;
-    read(input: unknown): Promise<unknown>;
-    sync(input: unknown): Promise<unknown>;
-    health(input: unknown): Promise<unknown>;
-    wait(input: unknown): Promise<unknown>;
-    undo(input: unknown): Promise<unknown>;
-    redo(input: unknown): Promise<unknown>;
-    close(input: unknown): Promise<unknown>;
-    destroy(input: unknown): Promise<unknown>;
+    open: RallarBlackBoxBrowserRallarRuntimeMethod;
+    apply: RallarBlackBoxBrowserRallarRuntimeMethod;
+    read: RallarBlackBoxBrowserRallarRuntimeMethod;
+    sync: RallarBlackBoxBrowserRallarRuntimeMethod;
+    health: RallarBlackBoxBrowserRallarRuntimeMethod;
+    wait: RallarBlackBoxBrowserRallarRuntimeMethod;
+    undo: RallarBlackBoxBrowserRallarRuntimeMethod;
+    redo: RallarBlackBoxBrowserRallarRuntimeMethod;
+    close: RallarBlackBoxBrowserRallarRuntimeMethod;
+    destroy: RallarBlackBoxBrowserRallarRuntimeMethod;
+}>;
+
+export type RallarBlackBoxBrowserRallarFormationRuntime = Readonly<{
+    command: RallarBlackBoxBrowserRallarRuntimeMethod;
+    readiness: RallarBlackBoxBrowserRallarRuntimeMethod;
 }>;
 
 export type RallarBlackBoxBrowserRallarDirectorRuntime = Readonly<{
-    appoint(input: unknown): Promise<unknown>;
-    resign(input: unknown): Promise<unknown>;
-    status(input: unknown): Promise<unknown>;
-    relayStart(input: unknown): Promise<unknown>;
-    intent(input: unknown): Promise<unknown>;
-    syncRequest(input: unknown): Promise<unknown>;
-    relayStop(input: unknown): Promise<unknown>;
+    appoint: RallarBlackBoxBrowserRallarRuntimeMethod;
+    resign: RallarBlackBoxBrowserRallarRuntimeMethod;
+    status: RallarBlackBoxBrowserRallarRuntimeMethod;
+    relayStart: RallarBlackBoxBrowserRallarRuntimeMethod;
+    intent: RallarBlackBoxBrowserRallarRuntimeMethod;
+    syncRequest: RallarBlackBoxBrowserRallarRuntimeMethod;
+    relayStop: RallarBlackBoxBrowserRallarRuntimeMethod;
 }>;
 
 export interface RallarBlackBoxBrowserRoomRefreshOptions {
@@ -71,11 +83,12 @@ export interface RallarBlackBoxBrowserRoomRefreshOptions {
 export interface RallarBlackBoxBrowserRallarRuntime {
     authenticate?(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
-    send(input: unknown): Promise<unknown>;
-    sendWs?(input: unknown): Promise<unknown>;
+    send: RallarBlackBoxBrowserRallarRuntimeMethod;
+    sendWs?: RallarBlackBoxBrowserRallarRuntimeMethod;
     refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     readonly director?: RallarBlackBoxBrowserRallarDirectorRuntime;
+    readonly formation?: RallarBlackBoxBrowserRallarFormationRuntime;
     close(): Promise<unknown>;
     health(input?: unknown): Promise<unknown>;
 }
@@ -1102,6 +1115,20 @@ class BrowserCommandAdapter {
                     'destroy',
                     'rallar.bb.crdt.destroyed'
                 );
+            case 'formation.command':
+                return await this.executeFormation(
+                    command,
+                    context,
+                    'command',
+                    'rallar.bb.formation.commanded'
+                );
+            case 'formation.readiness':
+                return await this.executeFormation(
+                    command,
+                    context,
+                    'readiness',
+                    'rallar.bb.formation.ready'
+                );
             case 'director.appoint':
                 return await this.executeDirector(
                     command,
@@ -1628,7 +1655,7 @@ class BrowserCommandAdapter {
         return resolved;
     }
 
-    private toDirectorRuntimeInput(
+    private toRoomScopedRuntimeInput(
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext
     ): Record<string, unknown> {
@@ -1759,6 +1786,93 @@ class BrowserCommandAdapter {
         };
     }
 
+    private requireRallarFormationRuntime(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext
+    ): RallarBlackBoxBrowserRallarFormationRuntime {
+        const formation = this.rallarRuntime?.formation;
+        if (formation) {
+            return formation;
+        }
+
+        const message = 'Browser Rallar runtime does not support formation commands.';
+        const payload = normalizeRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.bb.formation.failed',
+            severity: 'error',
+            commandId: command.commandId,
+            message,
+            data: { kind: command.kind },
+            payload: { kind: command.kind },
+            source: 'browser-adapter'
+        });
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.bb.formation.failed',
+            commandId: command.commandId,
+            severity: 'error',
+            payload
+        });
+        throw new Error(message);
+    }
+
+    private async executeFormation(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+        method: 'command' | 'readiness',
+        successTopic: string
+    ): Promise<RallarBlackBoxTestCommandOutcome> {
+        const formation = this.requireRallarFormationRuntime(command, context);
+        const input = this.toRoomScopedRuntimeInput(command, context);
+        const abort = this.commandAbortSignal(command, context);
+        let value: unknown;
+        try {
+            value = await this.withAbort(formation[method](input), abort.signal);
+        }
+        catch (error) {
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.formation.failed',
+                commandId: command.commandId,
+                severity: 'error',
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.formation.failed',
+                    severity: 'error',
+                    commandId: command.commandId,
+                    message: error instanceof Error ? error.message : String(error),
+                    data: { method, kind: command.kind },
+                    payload: { method, kind: command.kind },
+                    error,
+                    source: 'browser-adapter'
+                })
+            });
+            throw error;
+        }
+        finally {
+            abort.cleanup();
+        }
+
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: successTopic,
+            commandId: command.commandId,
+            severity: 'info',
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: successTopic,
+                severity: 'info',
+                commandId: command.commandId,
+                data: value,
+                payload: value,
+                source: 'browser-adapter'
+            })
+        });
+
+        return {
+            status: 'ok',
+            value,
+            nextStatus: context.state().status
+        };
+    }
+
     private async executeDirector(
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext,
@@ -1766,7 +1880,7 @@ class BrowserCommandAdapter {
         successTopic: string
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const director = this.requireRallarDirectorRuntime(command, context);
-        const input = this.toDirectorRuntimeInput(command, context);
+        const input = this.toRoomScopedRuntimeInput(command, context);
         const abort = this.commandAbortSignal(command, context);
         let value: unknown;
         try {

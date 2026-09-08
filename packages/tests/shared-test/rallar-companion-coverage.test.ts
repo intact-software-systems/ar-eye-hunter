@@ -56,6 +56,8 @@ describe('Rallar companion coverage boundaries', () => {
             'director.intent',
             'director.sync.request',
             'director.relay.stop',
+            'formation.command',
+            'formation.readiness',
             'health',
             'stats',
             'close',

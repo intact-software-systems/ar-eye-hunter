@@ -900,7 +900,7 @@ a set — a scenario that disappears from either side fails.
 | Scenario                   | Pinned by                                                                                                                                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `held-layout`              | `api-v1-group-lifecycle-transitions` (`topologyHeldWhileForming`, `managerPlans*`, `acceptedLayoutPromotedAfterActivate`)                                                                                                                   |
-| `discovery-holds-dials`    | `packages/tests/shared/webrtc-group-dial-policy.test.ts` — the stage gate and the provenance gate, each shown load-bearing without the other; end-to-end browser behaviour is still uncovered                                               |
+| `discovery-holds-dials`    | `packages/tests/shared/webrtc-group-dial-policy.test.ts` for the stage and provenance gates, and `full-stack-live-rtc-lifecycle-acceptance.spec.ts` end to end in three browsers                                                            |
 | `connect-names-its-layout` | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`; `api-v1-group-connect-fence` drives two of the three `409`s off a real replan |
 | `connect-trigger-handoff`  | `api-v1-automatic-formation-triggers` (the commanded replan is dialed, never the candidate it replaced)                                                                                                                                     |
 | `dialing-layout-frozen`    | `api-v1-automatic-formation-triggers` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`                                                                                          |
@@ -933,9 +933,18 @@ headless parallelism sweep (`pacing-sweep`), and the browser readiness barrier
 
 Two rows still name a half that is unpinned inside an otherwise covered scenario, and they are the
 honest residue rather than an oversight: `apply-landing`'s restart-convergence leg, and the
-end-to-end browser behaviour behind `discovery-holds-dials` and `member-progress`. Each of those is
-pinned where the decision is actually made — the pure function — and unpinned where a browser would
-exercise it.
+end-to-end browser behaviour behind `member-progress`. Each of those is pinned where the decision is
+actually made — the pure function — and unpinned where a browser would exercise it.
+`discovery-holds-dials` no longer belongs in that list: the live three-browser lane now holds a
+managed lobby for five seconds, proves no agent dialed, and then proves the dials start on `connect`.
+
+The remaining live-RTC rows have a written pin that does not yet run.
+`full-stack-live-rtc-lifecycle-acceptance.spec.ts` carries all five
+scenarios, but four are declared blocked on two candidate defects the spec itself found: a page
+reopened with a restored session reports itself unconnected, and a group `reset` leaves the browser's
+facade-level peer lists naming both peers a minute later. They stay counted as unpinned here, because
+a scenario a defect prevents from running is not pinned. The evidence for both is in
+`playground/rtc-design/2026-09-06-browser-acceptance-pins-implementation-plan.md`.
 
 The count in this paragraph is checked against the table itself, so it cannot drift as rows change.
 

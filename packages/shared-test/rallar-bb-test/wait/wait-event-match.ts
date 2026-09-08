@@ -90,6 +90,9 @@ export function waitEventMatches(
     event: RallarBlackBoxTestEvent,
     match: RallarBlackBoxTestWaitMatch
 ): boolean {
+    if (match.sinceEpochMs !== undefined && event.atEpochMs < match.sinceEpochMs) {
+        return false;
+    }
     if (match.kind !== undefined && event.kind !== match.kind) {
         return false;
     }
