@@ -502,6 +502,37 @@
       "connection": "wsAlpha1"
     },
     {
+      "name": "theClosedSocketLeavesOnlyBetaInTheTopology",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "activeSessionIds": [
+              "{betaSessionId}"
+            ]
+          }
+        }
+      }
+    },
+    {
       "name": "updateGroupWhileAlphaOffline",
       "type": "http",
       "connection": "api",
@@ -589,6 +620,64 @@
         "body": {
           "group": {
             "displayName": "Reconnect group updated {runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "restoreAlphaPresenceBeforeSocketHydration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-second-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "generationId": "generation-reconnect-alpha-second-{runId}",
+          "principalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "onlineMemberCount": 2
+        }
+      }
+    },
+    {
+      "name": "theAuthoritativeTopologyIncludesBothSessionsBeforeReconnect",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "activeSessionIds": [
+              "{alphaSessionId}",
+              "{betaSessionId}"
+            ]
           }
         }
       }
@@ -709,6 +798,10 @@
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "resyncGroupRevision": "body.causalRevision.groupRevision",
+          "resyncPresenceRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -718,9 +811,31 @@
             "displayName": "Reconnect group updated {runId}"
           },
           "causalRevision": {
-            "groupRevision": "{updatedGroupRevision}"
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
           }
         }
+      }
+    },
+    {
+      "name": "theReconnectReadHonorsBothCapturedRevisionFloors",
+      "type": "assert",
+      "actual": {
+        "groupRevision": "{resyncGroupRevision}",
+        "presenceRevision": "{resyncPresenceRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "groupRevision",
+            "gte": "{updatedGroupRevision}"
+          },
+          {
+            "path": "presenceRevision",
+            "gte": "{updatedPresenceRevision}"
+          }
+        ]
       }
     },
     {

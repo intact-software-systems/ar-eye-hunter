@@ -1,5 +1,5 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
-import { newALNackControlMessage } from '../../al-contracts/al-control.ts';
+import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -412,30 +412,42 @@ export class WsQueueBoxServerService {
         message: ALMessage,
         authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+        await this.sendAdvisoryNack(message, authorization);
         if (authorization.reason !== 'not-yet-in-sync') {
             return Either.ofLeft({
                 code: authorization.rejectionCode ?? 'unauthorized',
                 message: authorization.logMessage
             });
         }
-        if (authorization.sendNack) {
-            const observedAtEpochMs = this.clock.nowMs();
-            const nack = newALNackControlMessage(
-                { v: 2, msgId: this.newControlId(), senderId: this.name, ts: observedAtEpochMs },
-                {
-                    fromPeerId: this.name,
-                    toPeerId: message.id.senderId,
-                    msgId: message.id.msgId,
-                    reason: authorization.reason,
-                    observedAtEpochMs,
-                    ...(authorization.serverSnapshotVersion === undefined
-                        ? {}
-                        : { serverSnapshotVersion: authorization.serverSnapshotVersion })
-                }
-            );
-            await this.sendControlMessage(nack);
-        }
         return Either.ofRight({ kind: 'not-admitted', reason: authorization.reason });
+    }
+
+    private async sendAdvisoryNack(
+        message: ALMessage,
+        authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
+    ): Promise<void> {
+        if (!authorization.sendNack) {
+            return;
+        }
+        const observedAtEpochMs = this.clock.nowMs();
+        const payload: ALNackPayload = {
+            fromPeerId: this.name,
+            toPeerId: message.id.senderId,
+            msgId: message.id.msgId,
+            reason: authorization.reason,
+            observedAtEpochMs,
+            ...(authorization.serverSnapshotVersion === undefined
+                ? {}
+                : { serverSnapshotVersion: authorization.serverSnapshotVersion })
+        };
+        const prepared = prepareALNackControlMessage(
+            { v: 2, msgId: this.newControlId(), senderId: this.name, ts: observedAtEpochMs },
+            payload
+        );
+        if (!prepared.right) {
+            return;
+        }
+        await this.sendControlMessage(prepared.right);
     }
 
     private planIncomingMessage(

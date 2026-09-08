@@ -421,8 +421,11 @@
             "senderId": "default-qbox-server"
           },
           "route": {
-            "topicId": "al-control",
-            "resourceId": "data-policy-blocked-{runId}:al.control.nack.v1"
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{bobSessionId}"
           },
           "payload": {
             "typeId": "al.control.nack.v1"
@@ -1205,8 +1208,11 @@
             "senderId": "default-qbox-server"
           },
           "route": {
-            "topicId": "al-control",
-            "resourceId": "data-policy-paused-{runId}:al.control.nack.v1"
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{bobSessionId}"
           },
           "payload": {
             "typeId": "al.control.nack.v1"

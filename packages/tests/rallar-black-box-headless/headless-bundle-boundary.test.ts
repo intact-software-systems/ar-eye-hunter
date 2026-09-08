@@ -51,11 +51,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // The ALM cutover and browser formation commands measure 245.9169921875
-        // KiB with these build settings and all operator exclusions intact.
-        // The maintainer approved necessary bundle growth; keep the smallest
-        // whole-KiB strict limit containing the measured behavior.
-        expect(result.brotliKiB).toBeLessThan(246);
+        // The maintainer approved necessary ALM and formation-command growth.
+        // Keep the smallest whole-KiB strict limit containing the measured
+        // behavior, with all operator dependency exclusions intact.
+        expect(result.brotliKiB).toBeLessThan(247);
     });
 });
 

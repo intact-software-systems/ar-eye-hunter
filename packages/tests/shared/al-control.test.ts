@@ -14,6 +14,7 @@ import {
     newALNackControlMessage,
     newALRepairControlMessage,
     parseALControlMessage,
+    prepareALNackControlMessage,
     type ALAckPayload,
     type ALControlPayload,
     type ALNackPayload,
@@ -94,6 +95,31 @@ describe('AL control message codec', () => {
             expect(decoded.left).toBeUndefined();
             expect(decoded.right?.payload).toMatchObject(decoded.right?.type === 'ack' ? { ackedMsgId: msgId } : { msgId, orderingKey });
         }
+    });
+
+    it('returns advisory size rejection while strict NACK construction still throws', () => {
+        for (const msgId of ['m'.repeat(65536), '"'.repeat(32700)]) {
+            const payload = { ...nack, msgId };
+            expect(prepareALNackControlMessage(controlId, payload).left?.code).toBe('oversized');
+            expect(() => newALNackControlMessage(controlId, payload)).toThrow(TypeError);
+        }
+        expect(prepareALNackControlMessage(controlId, nack).right).toEqual(newALNackControlMessage(controlId, nack));
+    });
+
+    it('bounds advisory receivers without weakening strict receiver or trusted sender invariants', () => {
+        const receiver = 'p'.repeat(129);
+        expect(prepareALNackControlMessage(controlId, { ...nack, toPeerId: receiver }).left?.code).toBe('oversized');
+        expect(() => newALNackControlMessage(controlId, { ...nack, toPeerId: receiver })).toThrow(TypeError);
+        expect(() => prepareALNackControlMessage(controlId, { ...nack, fromPeerId: receiver })).toThrow(TypeError);
+        expect(() => prepareALNackControlMessage(controlId, { ...nack, toPeerId: '' })).toThrow(TypeError);
+        const boundary = { ...nack, toPeerId: 'p'.repeat(128) };
+        expect(prepareALNackControlMessage(controlId, boundary).right).toEqual(newALNackControlMessage(controlId, boundary));
+    });
+
+    it('surfaces malformed advisory payload and clock invariants', () => {
+        expect(() => prepareALNackControlMessage(controlId, { ...nack, observedAtEpochMs: Number.NaN })).toThrow(TypeError);
+        expect(() => prepareALNackControlMessage({ ...controlId, ts: Number.NaN }, nack)).toThrow(TypeError);
+        expect(() => prepareALNackControlMessage({ ...controlId, senderId: 'other' }, nack)).toThrow(TypeError);
     });
 
     it('returns undefined for application messages and unknown control type identifiers', () => {

@@ -151,27 +151,68 @@ export function newALRepairControlMessage(id: ALMessage['id'], payload: ALRepair
     return newALControlMessage(id, AL_CONTROL_REPAIR_TYPE_ID, decodeALRepairPayload(payload));
 }
 
+/** Advisory NACKs may be unrepresentable even when their referenced envelope was valid. */
+export function prepareALNackControlMessage(
+    id: ALMessage['id'],
+    payload: ALNackPayload
+): Either<ALMessageRejection, ALMessage> {
+    if (
+        typeof payload.toPeerId === 'string' && payload.toPeerId.length > AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters
+    ) {
+        return Either.ofLeft({ code: 'oversized', message: 'Control receiver exceeds the character limit' });
+    }
+    if (utf8Length(JSON.stringify(payload)) > AL_MESSAGE_RESOURCE_LIMITS.payloadBytes) {
+        return Either.ofLeft({ code: 'oversized', message: 'Control payload exceeds the byte limit' });
+    }
+    const decodedPayload = decodeALNackPayload(payload);
+    const message = computeALControlMessage({
+        id,
+        typeId: AL_CONTROL_NACK_TYPE_ID,
+        payload: decodedPayload,
+        resource: JSON.stringify(decodedPayload)
+    });
+    const rejection = decodeALControlMessage(message).left;
+    if (rejection?.code === 'oversized') {
+        return Either.ofLeft(rejection);
+    }
+    if (rejection) {
+        throw new TypeError(rejection.message);
+    }
+    return Either.ofRight(message);
+}
+
 function newALControlMessage(id: ALMessage['id'], typeId: string, payload: ALControlPayload): ALMessage {
     const resource = JSON.stringify(payload);
     if (utf8Length(resource) > AL_MESSAGE_RESOURCE_LIMITS.payloadBytes) {
         throw new TypeError('Control payload exceeds the byte limit');
     }
-    const message: ALMessage = {
-        id,
-        route: toALControlRoute(payload),
-        targets: { mode: 'unicast', toPeerId: payload.toPeerId },
-        qos: {
-            delivery: { algo: 'best-effort' },
-            durability: { algo: 'volatile' },
-            ack: { algo: 'none', opts: { timeoutMs: 250 } }
-        },
-        payload: { typeId, contentType: 'application/json', resource }
-    };
+    const message = computeALControlMessage({ id, typeId, payload, resource });
     const rejection = decodeALControlMessage(message).left;
     if (rejection) {
         throw new TypeError(rejection.message);
     }
     return message;
+}
+
+interface ALControlMessageInput {
+    readonly id: ALMessage['id'];
+    readonly typeId: string;
+    readonly payload: ALControlPayload;
+    readonly resource: string;
+}
+
+function computeALControlMessage(input: ALControlMessageInput): ALMessage {
+    return {
+        id: input.id,
+        route: toALControlRoute(input.payload),
+        targets: { mode: 'unicast', toPeerId: input.payload.toPeerId },
+        qos: {
+            delivery: { algo: 'best-effort' },
+            durability: { algo: 'volatile' },
+            ack: { algo: 'none', opts: { timeoutMs: 250 } }
+        },
+        payload: { typeId: input.typeId, contentType: 'application/json', resource: input.resource }
+    };
 }
 
 function validateControlEnvelope(msg: ALMessage, payload: ALControlPayload): readonly string[] {

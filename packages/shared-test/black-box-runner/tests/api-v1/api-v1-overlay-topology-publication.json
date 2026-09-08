@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 overlay topology publication: nothing in the corpus reads an overlay frame body. A published overlay.topology broadcast is compared field for field against the authoritative HTTP topology read at the same version -- the row is written in the transaction that publishes, so the equality is a real invariant. The frame is selected by its own degreeLimit through expect.decodeJsonPaths, which is what separates it from the unicast hydration frame every socket receives on connect, and both members are required to receive the same body rather than a body each.",
+  "description": "No-browser API-v1 overlay topology publication. Both scoped WebSocket observers must assemble the same room-broadcast topology snapshot with degreeLimit 4, distinct from connect-time unicast hydration. Compare the completed snapshot fields with the authoritative HTTP topology at the same version.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -389,6 +389,14 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -399,7 +407,11 @@
       "connection": "wsAlice",
       "request": {
         "url": "{aliceWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -444,6 +456,14 @@
             "urlEncode": {
               "path": "outputs.bobWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
           }
         ]
       }
@@ -454,7 +474,11 @@
       "connection": "wsBob",
       "request": {
         "url": "{bobWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -485,41 +509,39 @@
       "connection": "wsAlice",
       "request": {
         "outputs": {
-          "aliceOverlayResource": "matchedMessage.data.payload.resource"
+          "aliceOverlay": "matchedMessage.data.completedSnapshot.snapshot"
         }
       },
       "expect": {
         "connection": "wsAlice",
         "withinMs": 20000,
         "consume": true,
-        "decodeJsonPaths": [
-          "payload.resource"
-        ],
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "targets": {
-            "mode": "broadcast",
-            "scope": "room"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
+            "targets": {
+              "mode": "broadcast",
+              "scope": "room"
+            },
+            "scope": {
+              "kind": "group",
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "resourceId": "{groupId}"
+            },
             "typeId": "overlay.topology",
-            "resource": {
+            "snapshot": {
+              "groupRef": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{groupId}"
+              },
               "degreeLimit": 4,
               "state": "active"
             }
           }
-        }
-      }
-    },
-    {
-      "name": "parseTheOverlayAlicereceived",
-      "type": "set",
-      "output": "aliceOverlay",
-      "transform": {
-        "jsonParse": {
-          "path": "outputs.aliceOverlayResource"
         }
       }
     },
@@ -529,41 +551,39 @@
       "connection": "wsBob",
       "request": {
         "outputs": {
-          "bobOverlayResource": "matchedMessage.data.payload.resource"
+          "bobOverlay": "matchedMessage.data.completedSnapshot.snapshot"
         }
       },
       "expect": {
         "connection": "wsBob",
         "withinMs": 20000,
         "consume": true,
-        "decodeJsonPaths": [
-          "payload.resource"
-        ],
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
-          },
-          "targets": {
-            "mode": "broadcast",
-            "scope": "room"
-          },
-          "payload": {
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            },
+            "targets": {
+              "mode": "broadcast",
+              "scope": "room"
+            },
+            "scope": {
+              "kind": "group",
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "resourceId": "{groupId}"
+            },
             "typeId": "overlay.topology",
-            "resource": {
+            "snapshot": {
+              "groupRef": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{groupId}"
+              },
               "degreeLimit": 4,
               "state": "active"
             }
           }
-        }
-      }
-    },
-    {
-      "name": "parseTheOverlayBobReceived",
-      "type": "set",
-      "output": "bobOverlay",
-      "transform": {
-        "jsonParse": {
-          "path": "outputs.bobOverlayResource"
         }
       }
     },

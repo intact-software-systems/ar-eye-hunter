@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -7,6 +8,8 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     createInMemoryALAdmissionState,
@@ -42,6 +45,7 @@ describe('WS server bounded and authorized admission', () => {
         expect((await fixture.service.acceptIncomingMessage(forged, 'session-1')).left?.code).toBe('unauthorized');
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
+        expect(fixture.socket.sent).toEqual([]);
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
         expect(fixture.delivered).toEqual([message]);
@@ -163,14 +167,7 @@ describe('WS server bounded and authorized admission', () => {
         expect(authorityReads).toBe(2);
         const observed = effect === 'local' ? fixture.delivered : recipient.sent;
         expect(observed).toHaveLength(offsetMs < 0 ? 1 : 0);
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
-        const work = await Promise.all(keys.map((key) => fixture.admissionStore.workQueue.getItem(key)));
-        if (offsetMs < 0) {
-            expect(work.filter((entry) => entry?.dequeueAudit.attempts === 1)).toMatchObject([{ status: 'COMPLETED' }]);
-        }
-        else {
-            expect(work.every((entry) => entry === undefined)).toBe(true);
-        }
+        expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
     });
 
     it.each(['unauthorized', 'not-yet-in-sync'] as const)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
@@ -233,21 +230,99 @@ describe('WS server bounded and authorized admission', () => {
         }
     });
 
-    it('does not acknowledge or retain denied room traffic', async () => {
+    it.each([true, false])('returns configured denial NACKs without accepting room traffic (sendNack=%s)', async (sendNack) => {
         const fixture = await createServerIngressFixture();
         fixture.service.authorizeInboundMessagesWith({
             authorize: async () => ({
                 authorized: false,
                 reason: 'unauthorized',
                 logMessage: 'Sender is no longer a room member',
-                sendNack: true
+                sendNack
             })
         });
 
-        expect((await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1')).left?.code).toBe('unauthorized');
+        const message: ALMessage = { ...roomMessage(), qos: { ack: { algo: 'hop' }, durability: { algo: 'local-inbox' } } };
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left?.code).toBe('unauthorized');
         expect(fixture.admission.data.size).toBe(0);
         expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        if (sendNack) {
+            const controls = fixture.socket.sent.map((frame) => decodePersistedALMessage(String(frame)));
+            expect(controls).toMatchObject([{
+                id: { senderId: 'server' },
+                targets: { mode: 'unicast', toPeerId: 'session-1' },
+                qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' }, ack: { algo: 'none' } },
+                payload: { typeId: 'al.control.nack.v1' }
+            }]);
+            expect(decodeALNackPayload(JSON.parse(controls[0].payload.resource))).toMatchObject({
+                fromPeerId: 'server',
+                toPeerId: 'session-1',
+                msgId: 'message-1',
+                reason: 'unauthorized'
+            });
+        }
+        else {
+            expect(fixture.socket.sent).toEqual([]);
+        }
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it.each(['unauthorized', 'not-yet-in-sync'] as const)('preserves %s denial when its advisory NACK exceeds the payload ceiling', async (reason) => {
+        const fixture = await createServerIngressFixture();
+        fixture.service.authorizeInboundMessagesWith({
+            authorize: async () => ({ authorized: false, reason, logMessage: 'Room policy denied', sendNack: true })
+        });
+        for (const msgId of ['x'.repeat(65536), 'é'.repeat(32768), '"'.repeat(32768), '"'.repeat(32700)]) {
+            const message: ALMessage = { ...roomMessage(), id: { ...roomMessage().id, msgId } };
+            const result = await fixture.service.acceptIncomingMessage(message, 'session-1');
+            if (reason === 'unauthorized') {
+                expect(result.left).toEqual({ code: 'unauthorized', message: 'Room policy denied' });
+            }
+            else {
+                expect(result.right).toEqual({ kind: 'not-admitted', reason });
+            }
+        }
         expect(fixture.socket.sent).toEqual([]);
+        expect(fixture.admission.data.size).toBe(0);
+        expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it.each(['unauthorized', 'not-yet-in-sync'] as const)(
+        'preserves %s denial for an authenticated peer outside the control receiver limit',
+        async (reason) => {
+            const peerId = 'p'.repeat(129);
+            const fixture = await createServerIngressFixture(undefined, peerId);
+            fixture.service.authorizeInboundMessagesWith({
+                authorize: async () => ({ authorized: false, reason, logMessage: 'Room policy denied', sendNack: true })
+            });
+            const message: ALMessage = { ...roomMessage(), id: { ...roomMessage().id, senderId: peerId } };
+            const result = await fixture.service.acceptIncomingMessage(message, peerId);
+            if (reason === 'unauthorized') {
+                expect(result.left).toEqual({ code: 'unauthorized', message: 'Room policy denied' });
+            }
+            else {
+                expect(result.right).toEqual({ kind: 'not-admitted', reason });
+            }
+            expect(fixture.socket.sent).toEqual([]);
+            expect(fixture.admission.data.size).toBe(0);
+            expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+            expect(fixture.delivered).toEqual([]);
+        }
+    );
+
+    it('preserves advisory NACK transport error diagnostics', async () => {
+        const fixture = await createServerIngressFixture();
+        fixture.service.authorizeInboundMessagesWith({
+            authorize: async () => ({ authorized: false, reason: 'unauthorized', logMessage: 'Denied', sendNack: true })
+        });
+        const failure = new Error('Native send failed');
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(fixture.socket, 'send').mockImplementation(() => {
+            throw failure;
+        });
+        expect((await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1')).left?.code).toBe('unauthorized');
+        expect(errors.mock.calls).toEqual([['Error sending WS server message to session-1', failure]]);
+        expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
     });
 
@@ -447,17 +522,20 @@ describe('WS server bounded and authorized admission', () => {
 });
 
 async function createServerIngressFixture(
-    validateInboundMessage?: WsQueueBoxServerService.Input['validateInboundMessage']
+    validateInboundMessage?: WsQueueBoxServerService.Input['validateInboundMessage'],
+    peerId = 'session-1'
 ): Promise<ServerIngressFixture> {
     const server = new JsonWebSocketServer();
     const socket = new SimulatedWebSocket('ws://server');
     await socket.open();
-    server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
-    const admission = createInMemoryALAdmissionState();
+    server.addConnection(new ConnectionContext({ id: peerId, socket }));
+    const nowMs = Date.now;
+    const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs())));
     const engine = new InboxOutboxEngine();
     const admissionStore = createALInboundAdmissionStore({
         namespace: 'ws-server-ingress',
-        backend: new InMemoryAdmissionBackend(admission, Date.now),
+        nowMs,
+        backend: new InMemoryAdmissionBackend(admission, nowMs),
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention()

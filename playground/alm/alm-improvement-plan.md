@@ -756,6 +756,18 @@ from worker-created auth facts. Use live message timestamps and stored retry eli
 NACK-triggered repair separately from an independently scheduled ACK timeout. These test repairs
 must preserve identity, authority, original expiry, and observable delivery assertions.
 
+Configured policy-denial NACKs must preserve the original admission rejection and create no
+accepted-message work. Treat them as advisory controls: reflect the complete message identity only
+when both the control payload and envelope fit their existing limits and the authenticated receiver
+can be represented. Do not truncate identities or let an unrepresentable advisory replace the
+rejection with an exception. Strict builder invariant failures must remain visible.
+
+Observe topology through scoped, assembled snapshot pages, keeping room broadcasts distinct from
+unicast reconnect hydration. Restore current presence and authoritative topology before expecting
+reconnect hydration. Live HTTP observations may include concurrent worker writes and therefore
+require monotonic revision floors; prove read-only projection preserves the exact observed causal
+tuple in controlled snapshot tests. Preserve the named expiry event as evidence of lease cleanup.
+
 For state-write performance acceptance, preserve the original pre-cutover baseline and
 unchanged workload, thresholds, and controlled database environment. Reuse a locally computed
 expected mutation when validating the enclosing operation; validate the complete inert candidate
