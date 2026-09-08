@@ -2,15 +2,23 @@
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxControlAgentAssertionsCapability,
-    RallarBlackBoxControlAgentCapabilities
+    RallarBlackBoxControlAgentCapabilities,
+    RallarBlackBoxControlAgentMessagingCapability
 } from '../distributed-run.ts';
 import type {
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestCrdtTransport,
+    RallarBlackBoxTestMessagesCarrier,
     RallarBlackBoxTestRecipe
 } from '../types.ts';
+
+const CONTROL_AGENT_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
+    'ws',
+    'rtc',
+    'rtc-with-ws-fallback'
+];
 
 const CONTROL_AGENT_CRDT_TRANSPORTS = [
     'local-only',
@@ -64,6 +72,13 @@ export function toControlAgentCapabilities(
             absence: true,
             untilLoop: true,
             operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+        },
+        messaging: {
+            supported: true,
+            carriers: CONTROL_AGENT_MESSAGES_CARRIERS,
+            faults: true,
+            storageCounters: true,
+            reload: true
         }
     };
 }
@@ -76,6 +91,10 @@ export function parseControlAgentCapabilities(
     }
     const crdt = isRecord(value.crdt) ? value.crdt : undefined;
     if (!crdt || typeof crdt.supported !== 'boolean') {
+        return undefined;
+    }
+    const messaging = parseMessagingCapability(value.messaging);
+    if (!messaging) {
         return undefined;
     }
 
@@ -96,6 +115,7 @@ export function parseControlAgentCapabilities(
                 ? crdt.apiBaseUrlConfigured
                 : undefined
         },
+        messaging,
         ...(assertions ? { assertions } : {})
     };
 }
@@ -184,6 +204,37 @@ function parseAssertionsCapability(
         untilLoop: value.untilLoop,
         operators
     };
+}
+
+function parseMessagingCapability(
+    value: unknown
+): RallarBlackBoxControlAgentMessagingCapability | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    if (
+        typeof value.supported !== 'boolean' ||
+        typeof value.faults !== 'boolean' ||
+        typeof value.storageCounters !== 'boolean' ||
+        typeof value.reload !== 'boolean'
+    ) {
+        return undefined;
+    }
+    if (!Array.isArray(value.carriers) || !value.carriers.every(isMessagesCarrier)) {
+        return undefined;
+    }
+
+    return {
+        supported: value.supported,
+        carriers: value.carriers,
+        faults: value.faults,
+        storageCounters: value.storageCounters,
+        reload: value.reload
+    };
+}
+
+function isMessagesCarrier(value: unknown): value is RallarBlackBoxTestMessagesCarrier {
+    return value === 'ws' || value === 'rtc' || value === 'rtc-with-ws-fallback';
 }
 
 function isCrdtCapableProvider(providerMode: string | undefined): boolean {

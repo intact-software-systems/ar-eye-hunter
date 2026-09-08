@@ -10,6 +10,14 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'rtc.connect',
     'rtc.send',
     'rtc.stream',
+    'messages.send',
+    'messages.observe',
+    'messages.cancel',
+    'messages.received',
+    'messages.receipts',
+    'fault.inject',
+    'storage.counters',
+    'agent.reload',
     'ws.open',
     'ws.send',
     'ws.close',
@@ -267,6 +275,73 @@ export type RallarBlackBoxTestRtcSendCommand =
         minSnapshotVersion?: number;
         transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
     }>;
+
+export type RallarBlackBoxTestMessagesCarrier = 'ws' | 'rtc' | 'rtc-with-ws-fallback';
+
+export type RallarBlackBoxTestMessagesSendCommand =
+    & RallarBlackBoxTestCommandBase<'messages.send'>
+    & Readonly<{
+        connection?: string;
+        carrier: RallarBlackBoxTestMessagesCarrier;
+        typeId: string;
+        topicId?: string;
+        payload: unknown;
+        roomRef?: RallarBlackBoxTestRecord;
+        scope?: RallarBlackBoxTestRecord;
+        reliability?: 'best-effort' | 'at-least-once';
+        ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
+        ttlMs?: number;
+        orderingKey?: string;
+        seq?: number;
+        key?: string;
+        toPeerId?: string;
+        handleId?: string;
+    }>;
+
+export type RallarBlackBoxTestMessagesObserveCommand =
+    & RallarBlackBoxTestCommandBase<'messages.observe'>
+    & Readonly<{
+        connection?: string;
+        handleId: string;
+        state: readonly string[];
+    }>;
+
+export type RallarBlackBoxTestMessagesCancelCommand =
+    & RallarBlackBoxTestCommandBase<'messages.cancel'>
+    & Readonly<{ connection?: string; handleId: string; }>;
+
+export type RallarBlackBoxTestMessagesReceivedCommand =
+    & RallarBlackBoxTestCommandBase<'messages.received'>
+    & Readonly<{
+        connection?: string;
+        typeId: string;
+        msgId?: string;
+        count: number;
+        absent?: boolean;
+        windowMs: number;
+    }>;
+
+export type RallarBlackBoxTestMessagesReceiptsCommand =
+    & RallarBlackBoxTestCommandBase<'messages.receipts'>
+    & Readonly<{ connection?: string; handleId: string; }>;
+
+export type RallarBlackBoxTestFaultInjectCommand =
+    & RallarBlackBoxTestCommandBase<'fault.inject'>
+    & Readonly<{
+        faultId: string;
+        carrier: 'ws' | 'rtc';
+        match: Readonly<{ controlType?: 'ack' | 'nack' | 'repair'; typeId?: string; msgId?: string; }>;
+        action: 'drop' | Readonly<{ delayMs: number; }>;
+        remaining: number;
+    }>;
+
+export type RallarBlackBoxTestStorageCountersCommand =
+    & RallarBlackBoxTestCommandBase<'storage.counters'>
+    & Readonly<{ reset?: boolean; }>;
+
+export type RallarBlackBoxTestAgentReloadCommand =
+    & RallarBlackBoxTestCommandBase<'agent.reload'>
+    & Readonly<{ readyTimeoutMs: number; }>;
 
 export type RallarBlackBoxTestRtcStreamThresholds = Readonly<{
     minSendSuccessRatio?: number;
@@ -569,6 +644,14 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestRtcConnectCommand
     | RallarBlackBoxTestRtcSendCommand
     | RallarBlackBoxTestRtcStreamCommand
+    | RallarBlackBoxTestMessagesSendCommand
+    | RallarBlackBoxTestMessagesObserveCommand
+    | RallarBlackBoxTestMessagesCancelCommand
+    | RallarBlackBoxTestMessagesReceivedCommand
+    | RallarBlackBoxTestMessagesReceiptsCommand
+    | RallarBlackBoxTestFaultInjectCommand
+    | RallarBlackBoxTestStorageCountersCommand
+    | RallarBlackBoxTestAgentReloadCommand
     | RallarBlackBoxTestWsOpenCommand
     | RallarBlackBoxTestWsSendCommand
     | RallarBlackBoxTestWsCloseCommand
@@ -802,6 +885,29 @@ export type RallarBlackBoxTestAssertResultValue = Readonly<{
     actual?: unknown;
     exists: boolean;
     passed: boolean;
+}>;
+
+export type RallarBlackBoxTestMessagesSendResultValue = Readonly<{
+    handleId: string;
+    msgId: string;
+    carrier: RallarBlackBoxTestMessagesCarrier;
+    status: string;
+    reason?: string;
+}>;
+
+export type RallarBlackBoxTestMessagesObserveResultValue = Readonly<{
+    handleId: string;
+    state: string;
+    submitted: boolean;
+    confirmedPeerIds: readonly string[];
+    unconfirmedPeerIds: readonly string[];
+    attempts: number;
+}>;
+
+export type RallarBlackBoxTestStorageCountersResultValue = Readonly<{
+    total: number;
+    byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;
+    byKind: Readonly<Record<string, number>>;
 }>;
 
 export type RallarBlackBoxTestEventKind =

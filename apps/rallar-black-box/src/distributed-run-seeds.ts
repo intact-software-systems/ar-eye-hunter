@@ -596,6 +596,13 @@ function agentSnapshot(
                     transports: ['rtc', 'ws-then-rtc'],
                     runtimeSurface: 'browser-rallar',
                     apiBaseUrlConfigured: true
+                },
+                messaging: {
+                    supported: true,
+                    carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
+                    faults: true,
+                    storageCounters: true,
+                    reload: true
                 }
             }
         },

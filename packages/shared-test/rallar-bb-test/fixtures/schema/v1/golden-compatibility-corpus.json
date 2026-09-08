@@ -131,6 +131,77 @@
           "timeoutMs": 10000
         },
         {
+          "kind": "messages.send",
+          "commandId": "messages-send-v1",
+          "connection": "goldenWs",
+          "carrier": "ws",
+          "typeId": "room.golden.compatibility.alm",
+          "topicId": "golden-topic",
+          "payload": {
+            "text": "golden compatibility payload"
+          },
+          "roomRef": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "golden-room"
+          },
+          "reliability": "at-least-once",
+          "ack": "receiver",
+          "ttlMs": 30000,
+          "handleId": "messages-send-v1-handle"
+        },
+        {
+          "kind": "messages.observe",
+          "commandId": "messages-observe-v1",
+          "connection": "goldenWs",
+          "handleId": "messages-send-v1-handle",
+          "state": [
+            "submitted",
+            "confirmed"
+          ]
+        },
+        {
+          "kind": "messages.cancel",
+          "commandId": "messages-cancel-v1",
+          "connection": "goldenWs",
+          "handleId": "messages-send-v1-handle"
+        },
+        {
+          "kind": "messages.received",
+          "commandId": "messages-received-v1",
+          "connection": "goldenWs",
+          "typeId": "room.golden.compatibility.alm",
+          "count": 1,
+          "windowMs": 5000
+        },
+        {
+          "kind": "messages.receipts",
+          "commandId": "messages-receipts-v1",
+          "connection": "goldenWs",
+          "handleId": "messages-send-v1-handle"
+        },
+        {
+          "kind": "fault.inject",
+          "commandId": "fault-inject-v1",
+          "faultId": "golden-drop-one-nack",
+          "carrier": "ws",
+          "match": {
+            "controlType": "nack"
+          },
+          "action": "drop",
+          "remaining": 1
+        },
+        {
+          "kind": "storage.counters",
+          "commandId": "storage-counters-v1",
+          "reset": false
+        },
+        {
+          "kind": "agent.reload",
+          "commandId": "agent-reload-v1",
+          "readyTimeoutMs": 10000
+        },
+        {
           "kind": "ws.open",
           "commandId": "ws-open-v1",
           "connection": "goldenWs",

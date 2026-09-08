@@ -13,6 +13,14 @@ import {
 } from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
 
+const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {
+    supported: true,
+    carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
+    faults: true,
+    storageCounters: true,
+    reload: true
+};
+
 const NEW_FEATURE_RECIPE: RallarBlackBoxTestRecipe = {
     schemaVersion: 1,
     recipeId: 'gate-new-features',
@@ -118,7 +126,7 @@ describe('rallar-bb-test assertion capability gate', () => {
     it('blocks staging targets for old-capability agents with a named reason', () => {
         const resolution = resolveDistributedRunTargets({
             manifest: manifestWith(NEW_FEATURE_RECIPE),
-            agents: [agentWith({ crdt: { supported: true } })],
+            agents: [agentWith({ crdt: { supported: true }, messaging: FULL_MESSAGING_CAPABILITY })],
             nowEpochMs: 1_500
         });
 
@@ -152,7 +160,7 @@ describe('rallar-bb-test assertion capability gate', () => {
 
         const baseline = resolveDistributedRunTargets({
             manifest: manifestWith(BASELINE_RECIPE),
-            agents: [agentWith({ crdt: { supported: true } })],
+            agents: [agentWith({ crdt: { supported: true }, messaging: FULL_MESSAGING_CAPABILITY })],
             nowEpochMs: 1_500
         });
         expect(baseline.targetAgentIds).toEqual(['gate-agent']);
@@ -178,7 +186,8 @@ describe('rallar-bb-test assertion capability gate', () => {
         expect(parsed?.crdt?.supported).toBe(true);
 
         const legacyParsed = parseControlAgentCapabilities({
-            crdt: { supported: true }
+            crdt: { supported: true },
+            messaging: FULL_MESSAGING_CAPABILITY
         });
         expect(legacyParsed?.assertions).toBeUndefined();
         expect(validateAgentAssertionCapability(
