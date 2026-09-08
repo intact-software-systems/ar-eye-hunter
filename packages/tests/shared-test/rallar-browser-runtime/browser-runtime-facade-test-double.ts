@@ -71,9 +71,12 @@ export interface BrowserRuntimeFacadeRecords {
     wsMessageUnsubscribeCount: number;
     readonly wsMessageSends: Array<Parameters<BlackBoxBrowserMessagesDependency['ws']['send']>>;
     readonly typedChannelOpens: RallarRoomMessageChannelDefinition[];
-    readonly typedSends: Array<[unknown, RallarTypedMessageSendOptions<unknown> | undefined]>;
-    readonly typedWsHandlers: Array<RallarTypedPayloadHandler<unknown>>;
-    readonly typedRtcHandlers: Array<RallarTypedPayloadHandler<unknown>>;
+    readonly typedSends: Array<[
+        RallarMessagePayload,
+        RallarTypedMessageSendOptions<RallarMessagePayload> | undefined
+    ]>;
+    readonly typedWsHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
+    readonly typedRtcHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
     typedUnsubscribeCount: number;
     readonly rtcDiagnosticsReads: Array<Parameters<BlackBoxBrowserRtcDependency['diagnostics']>>;
     readonly crdtOpens: Array<Parameters<BlackBoxBrowserCrdtDependency['open']>>;
@@ -166,8 +169,8 @@ export const facadeBehavior = {
     >(),
     typedSend: vi.fn<
         (
-            payload: unknown,
-            options: RallarTypedMessageSendOptions<unknown> | undefined
+            payload: RallarMessagePayload,
+            options: RallarTypedMessageSendOptions<RallarMessagePayload> | undefined
         ) => Promise<RallarMessageSendResult>
     >(),
     crdtOpen: vi.fn<BlackBoxBrowserCrdtDependency['open']>(),
@@ -461,19 +464,20 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
     };
     return {
         send: async (payload, options) => {
-            records.typedSends.push([payload, options as RallarTypedMessageSendOptions<unknown> | undefined]);
-            return await facadeBehavior.typedSend(payload, options as RallarTypedMessageSendOptions<unknown>);
+            const sendOptions = options as RallarTypedMessageSendOptions<RallarMessagePayload> | undefined;
+            records.typedSends.push([payload as RallarMessagePayload, sendOptions]);
+            return await facadeBehavior.typedSend(payload as RallarMessagePayload, sendOptions);
         },
         sendRtc: unsupported,
         sendWs: unsupported,
         onWs: (handler) => {
-            records.typedWsHandlers.push(handler as RallarTypedPayloadHandler<unknown>);
+            records.typedWsHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
             return () => {
                 records.typedUnsubscribeCount += 1;
             };
         },
         onRtc: (handler) => {
-            records.typedRtcHandlers.push(handler as RallarTypedPayloadHandler<unknown>);
+            records.typedRtcHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
             return () => {
                 records.typedUnsubscribeCount += 1;
             };

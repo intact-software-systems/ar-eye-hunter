@@ -5,6 +5,7 @@ import {
     vi
 } from 'vitest';
 
+import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import {
     createBlackBoxRallarRuntime,
@@ -18,21 +19,44 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/browser-adapter.ts';
 import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
+import type { RallarMessageSendResult } from '../../../packages/shared-web/browser/messages/rallar-message-contracts.ts';
+import type { ALOutboundEnqueueStatus } from '../../../packages/shared/alm/outbound/al-outbound-message-runtime.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 
 import { createBrowserRallarAlmMethodsTestDouble } from '../shared-test/browser-rallar-alm-methods-test-double.ts';
-import { facade, resetFacade } from '../shared-test/rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
+import {
+    events,
+    facade,
+    resetFacade,
+    topics
+} from '../shared-test/rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
+
+interface BrowserRuntimeTiming {
+    readonly now: () => number;
+    readonly delay: (milliseconds: number) => Promise<void>;
+}
 
 async function withBrowserRuntime(
     run: (nativeRuntime: BlackBoxRallarRuntime) => Promise<void>
 ): Promise<void> {
+    await withBrowserRuntimeTiming({ now: Date.now, delay: async () => undefined }, run);
+}
+
+async function withBrowserRuntimeTiming(
+    timing: BrowserRuntimeTiming,
+    run: (nativeRuntime: BlackBoxRallarRuntime) => Promise<void>
+): Promise<void> {
     resetFacade();
-    const targetWindow: BlackBoxRallarRuntimeInstallationTarget = {};
+    const targetWindow: BlackBoxRallarRuntimeInstallationTarget = {
+        __blackBoxRallarEmit: (event) => {
+            events.push(event);
+        }
+    };
     const nativeRuntime = createBlackBoxRallarRuntime({
         facade: facade.rallar,
         targetWindow,
-        clock: { now: Date.now },
-        delay: async () => undefined
+        clock: { now: timing.now },
+        delay: timing.delay
     });
     targetWindow.__blackBoxRallar = nativeRuntime;
     vi.stubGlobal('window', targetWindow);
@@ -66,6 +90,46 @@ function almConnectionConfig(): Parameters<BlackBoxRallarRuntime['connect']>[0] 
 }
 
 const almRoomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+
+function almSendResult(status: ALOutboundEnqueueStatus, msgId: string): RallarMessageSendResult {
+    return {
+        transport: 'ws',
+        status,
+        message: {
+            id: { v: 2, msgId, ts: 0, senderId: 'client-1' },
+            route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+            payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' }
+        },
+        entries: []
+    };
+}
+
+async function sendAlmMessage(
+    nativeRuntime: BlackBoxRallarRuntime,
+    handleId: string
+): Promise<void> {
+    await nativeRuntime.sendMessage({
+        connection: 'aliceAlm',
+        carrier: 'ws',
+        typeId: 'alm.conformance',
+        payload: { n: 1 },
+        handleId
+    });
+}
+
+const almDeliveryStateCases: ReadonlyArray<readonly [ALOutboundEnqueueStatus, BlackBoxRallarDeliveryObservation['state'], boolean]> = [
+    ['enqueued', 'accepted', true],
+    ['accepted', 'accepted', true],
+    ['skipped', 'accepted', false],
+    ['duplicate', 'accepted', false],
+    ['pending-admission', 'queued', false],
+    ['superseded', 'superseded', false],
+    ['expired', 'expired', false],
+    ['rate-limited', 'rejected', false],
+    ['no-route', 'failed', false],
+    ['circuit-open', 'failed', false],
+    ['failed', 'failed', false]
+];
 
 describe('rallar-black-box browser-rallar ALM operations', () => {
     it('sends a typed message over the requested carrier and records a delivery observation', async () => {
@@ -155,6 +219,103 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 byOwner: { 'al-admission': 1, 'al-work': 0 },
                 byKind: { write: 1 }
             });
+        });
+    });
+
+    it.each(almDeliveryStateCases)(
+        'maps the %s admission status to a %s observation',
+        async (status, state, submitted) => {
+            await withBrowserRuntime(async (nativeRuntime) => {
+                facade.behavior.typedSend.mockResolvedValue(almSendResult(status, `msg-${status}`));
+                await nativeRuntime.connect(almConnectionConfig());
+
+                await sendAlmMessage(nativeRuntime, `h-${status}`);
+
+                await expect(nativeRuntime.readReceipts({
+                    connection: 'aliceAlm',
+                    handleId: `h-${status}`
+                })).resolves.toEqual({
+                    handleId: `h-${status}`,
+                    state,
+                    submitted,
+                    confirmedPeerIds: [],
+                    unconfirmedPeerIds: [],
+                    attempts: 1
+                });
+            });
+        }
+    );
+
+    it('times out observing a delivery state the handle never reaches', async () => {
+        let clockEpochMs = 0;
+        const timing = {
+            now: () => clockEpochMs,
+            delay: async (milliseconds: number) => {
+                clockEpochMs += milliseconds;
+            }
+        };
+
+        await withBrowserRuntimeTiming(timing, async (nativeRuntime) => {
+            facade.behavior.typedSend.mockResolvedValue(almSendResult('enqueued', 'msg-1'));
+            await nativeRuntime.connect(almConnectionConfig());
+            await sendAlmMessage(nativeRuntime, 'h-1');
+
+            await expect(nativeRuntime.observeDelivery({
+                connection: 'aliceAlm',
+                handleId: 'h-1',
+                state: ['acknowledged'],
+                timeoutMs: 100
+            })).rejects.toThrow(
+                new TypeError('Delivery handle h-1 did not reach [acknowledged]; last state accepted')
+            );
+            expect(clockEpochMs).toBeGreaterThanOrEqual(100);
+        });
+    });
+
+    it('rejects messages.send fields this runtime release does not support', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            facade.behavior.typedSend.mockResolvedValue(almSendResult('enqueued', 'msg-1'));
+            await nativeRuntime.connect(almConnectionConfig());
+            const send = {
+                connection: 'aliceAlm',
+                carrier: 'ws',
+                typeId: 'alm.conformance',
+                payload: { n: 1 },
+                handleId: 'h-1'
+            };
+
+            await expect(nativeRuntime.sendMessage({ ...send, key: 'ordering-key' })).rejects.toThrow(
+                'messages.send.key is not supported by this runtime release'
+            );
+            await expect(nativeRuntime.sendMessage({ ...send, toPeerId: 'peer-1' })).rejects.toThrow(
+                'messages.send.toPeerId is not supported by this runtime release'
+            );
+            expect(facade.records.typedSends).toEqual([]);
+        });
+    });
+
+    it('emits the send_started and send_completed diagnostics topics', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            facade.behavior.typedSend.mockResolvedValue(almSendResult('enqueued', 'msg-1'));
+            await nativeRuntime.connect(almConnectionConfig());
+
+            await sendAlmMessage(nativeRuntime, 'h-1');
+
+            expect(topics()).toEqual(expect.arrayContaining([
+                'rallar.browser.messages.send_started',
+                'rallar.browser.messages.send_completed'
+            ]));
+        });
+    });
+
+    it('rejects a delivery read for a handle no send registered', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            await nativeRuntime.connect(almConnectionConfig());
+
+            await expect(nativeRuntime.readReceipts({
+                connection: 'aliceAlm',
+                handleId: 'missing-1'
+            })).rejects.toThrow('Unknown delivery handle missing-1');
         });
     });
 });

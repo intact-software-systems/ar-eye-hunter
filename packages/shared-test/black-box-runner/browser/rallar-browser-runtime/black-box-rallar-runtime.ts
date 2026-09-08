@@ -48,12 +48,6 @@ import {
     createBlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
-import {
-    decodeBlackBoxRallarDeliveryHandleInput,
-    decodeBlackBoxRallarDeliveryObserveInput,
-    decodeBlackBoxRallarFaultInput,
-    decodeBlackBoxRallarStorageCountersInput
-} from './decode-black-box-rallar-command-input.ts';
 import { BlackBoxRallarDirectorController } from './director-controller.ts';
 import { BlackBoxRallarFormationController } from './formation/formation-controller.ts';
 import {
@@ -61,6 +55,12 @@ import {
     type BlackBoxRallarLifecycleOperationContext
 } from './lifecycle-controller.ts';
 import { BlackBoxRallarMessagingController } from './messaging-controller.ts';
+import {
+    decodeBlackBoxRallarDeliveryHandleInput,
+    decodeBlackBoxRallarDeliveryObserveInput,
+    decodeBlackBoxRallarFaultInput,
+    decodeBlackBoxRallarStorageCountersInput
+} from './messaging/decode-black-box-rallar-messaging-input.ts';
 
 export type {
     BlackBoxRallarAuthenticateDiagnostics,

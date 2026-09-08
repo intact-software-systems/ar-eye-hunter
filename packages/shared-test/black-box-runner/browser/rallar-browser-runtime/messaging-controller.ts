@@ -6,7 +6,6 @@ import type {
     RallarRtcSendInput,
     RallarTypedMessageChannel,
     RallarTypedMessageSendOptions,
-    RallarTypedMessageSendStrategy,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -30,10 +29,10 @@ import type {
     BlackBoxBrowserRealtimeDependency
 } from './browser-rallar-runtime-composition.ts';
 import {
-    decodeBlackBoxRallarMessageSendInput,
     decodeBlackBoxRallarSendInput,
     decodeBlackBoxRallarWsSendInput
 } from './decode-black-box-rallar-command-input.ts';
+import { decodeBlackBoxRallarMessageSendInput } from './messaging/decode-black-box-rallar-messaging-input.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
 
 export interface BlackBoxRallarMessagingLease {
@@ -132,17 +131,11 @@ function typedSelectorKey(typeId: string, topicId: string | undefined): string {
     return JSON.stringify({ kind: 'typed', typeId, topicId });
 }
 
-function toTypedSendStrategy(
-    carrier: BlackBoxRallarMessageSendInput['carrier']
-): RallarTypedMessageSendStrategy {
-    return carrier;
-}
-
 function toTypedSendOptions(
     send: BlackBoxRallarMessageSendInput
 ): RallarTypedMessageSendOptions<unknown> {
     return {
-        strategy: toTypedSendStrategy(send.carrier),
+        strategy: send.carrier,
         ...(send.reliability === undefined ? {} : { reliability: send.reliability }),
         ...(send.ack === undefined ? {} : { ack: send.ack }),
         ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
@@ -645,5 +638,8 @@ export class BlackBoxRallarMessagingController {
         return cancelled;
     };
 
-    cleanupWsSubscriptions = (): number => this.#resources.cleanupWsSubscriptions();
+    cleanupWsSubscriptions = (): number => {
+        this.#deliveries.clear();
+        return this.#resources.cleanupWsSubscriptions();
+    };
 }

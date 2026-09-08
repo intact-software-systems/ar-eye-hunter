@@ -506,6 +506,7 @@ const loopThresholdsSchema: JsonSchema = {
 
 const messagesCarrierSchema: JsonSchema = { type: 'string', enum: ['ws', 'rtc', 'rtc-with-ws-fallback'] };
 const messagesReliabilitySchema: JsonSchema = { type: 'string', enum: ['best-effort', 'at-least-once'] };
+const messagesScopeSchema: JsonSchema = { type: 'string', enum: ['room', 'world', 'all'] };
 const messagesAckSchema: JsonSchema = {
     type: 'string',
     enum: ['none', 'receiver', 'all-logical-recipients', 'group-leader']
@@ -663,7 +664,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         topicId: stringSchema,
         payload: anySchema,
         roomRef: recordSchema,
-        scope: recordSchema,
+        scope: messagesScopeSchema,
         reliability: messagesReliabilitySchema,
         ack: messagesAckSchema,
         ttlMs: { type: 'integer', minimum: 0 },

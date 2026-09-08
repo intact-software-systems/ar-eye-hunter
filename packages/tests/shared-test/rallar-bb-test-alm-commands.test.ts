@@ -5,7 +5,10 @@ import {
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     validateJsonSchema
 } from '../../shared-test/rallar-bb-test/schema.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS } from '../../shared-test/rallar-bb-test/types.ts';
+import {
+    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
+    type RallarBlackBoxTestRecord
+} from '../../shared-test/rallar-bb-test/types.ts';
 
 const ALM_COMMAND_KINDS = [
     'messages.send',
@@ -18,7 +21,7 @@ const ALM_COMMAND_KINDS = [
     'agent.reload'
 ] as const;
 
-function recipeWithCommand(commandId: string, command: Record<string, unknown>) {
+function recipeWithCommand(commandId: string, command: RallarBlackBoxTestRecord) {
     return {
         recipeId: 'alm-send',
         name: 'alm send',

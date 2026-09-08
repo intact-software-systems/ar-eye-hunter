@@ -52,6 +52,15 @@ export type RallarBlackBoxTestCommandKind = typeof RALLAR_BLACK_BOX_TEST_COMMAND
 /** An object a command carries verbatim to the runtime; the boundary decoders narrow it. */
 export type RallarBlackBoxTestRecord = Readonly<Record<string, unknown>>;
 
+/** The JSON a command carries as a message payload. */
+export type RallarBlackBoxTestJsonValue =
+    | RallarBlackBoxTestRecord
+    | readonly RallarBlackBoxTestJsonValue[]
+    | string
+    | number
+    | boolean
+    | null;
+
 export type RallarBlackBoxTestTransport =
     | 'realtime'
     | 'messages.rtc'
@@ -285,9 +294,9 @@ export type RallarBlackBoxTestMessagesSendCommand =
         carrier: RallarBlackBoxTestMessagesCarrier;
         typeId: string;
         topicId?: string;
-        payload: unknown;
+        payload: RallarBlackBoxTestJsonValue;
         roomRef?: RallarBlackBoxTestRecord;
-        scope?: RallarBlackBoxTestRecord;
+        scope?: 'room' | 'world' | 'all';
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         ttlMs?: number;

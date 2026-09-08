@@ -4,6 +4,7 @@ import {
     type RallarValidationIssue,
     type RallarValidationResult
 } from '@shared/api/rallar-validation.ts';
+import { validateAlmControlCommand } from './alm/control-protocol-alm-commands.ts';
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from './distributed-run.ts';
 import { parseControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
 import {
@@ -257,41 +258,6 @@ function validateEnumField(
     return typeof value[key] === 'string' && allowed.includes(value[key])
         ? { ok: true }
         : fail(`${path}.${key} must be one of ${allowed.join(', ')}.`);
-}
-
-function validateRequiredEnumField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    allowed: readonly string[]
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return fail(`${path}.${key} is required.`);
-    }
-    return validateEnumField(value, key, path, allowed);
-}
-
-function validateRequiredNumberField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return fail(`${path}.${key} is required.`);
-    }
-    return validateNumberField(value, key, path);
-}
-
-function validateRequiredIntegerField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    options: Readonly<{ minimum?: number; maximum?: number; }> = {}
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return fail(`${path}.${key} is required.`);
-    }
-    return validateIntegerField(value, key, path, options);
 }
 
 function validateObjectField(
@@ -935,182 +901,6 @@ function validateRtcStreamCommand(command: Record<string, unknown>): ControlComm
     return validateRtcStreamThresholds(command.thresholds);
 }
 
-const MESSAGES_CARRIERS = ['ws', 'rtc', 'rtc-with-ws-fallback'] as const;
-const MESSAGES_RELIABILITIES = ['best-effort', 'at-least-once'] as const;
-const MESSAGES_ACKS = ['none', 'receiver', 'all-logical-recipients', 'group-leader'] as const;
-
-const MESSAGES_SEND_FIELDS = [
-    'connection',
-    'carrier',
-    'typeId',
-    'topicId',
-    'payload',
-    'roomRef',
-    'scope',
-    'reliability',
-    'ack',
-    'ttlMs',
-    'orderingKey',
-    'seq',
-    'key',
-    'toPeerId',
-    'handleId'
-] as const;
-
-function validateMessagesSendCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    let result = validateStringField(command, 'connection', 'messages.send');
-    if (!result.ok) {
-        return result;
-    }
-    result = validateRequiredEnumField(command, 'carrier', 'messages.send', MESSAGES_CARRIERS);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateStringField(command, 'typeId', 'messages.send', true);
-    if (!result.ok) {
-        return result;
-    }
-    if (command.payload === undefined) {
-        return fail('messages.send.payload is required.');
-    }
-    return validateMessagesSendOptionalFields(command);
-}
-
-function validateMessagesSendOptionalFields(
-    command: Record<string, unknown>
-): ControlCommandValidationResult {
-    for (const field of ['topicId', 'orderingKey', 'key', 'toPeerId', 'handleId']) {
-        const result = validateStringField(command, field, 'messages.send');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (const field of ['roomRef', 'scope']) {
-        const result = validateObjectField(command, field, 'messages.send');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    let result = validateEnumField(command, 'reliability', 'messages.send', MESSAGES_RELIABILITIES);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateEnumField(command, 'ack', 'messages.send', MESSAGES_ACKS);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'ttlMs', 'messages.send', { minimum: 0 });
-    if (!result.ok) {
-        return result;
-    }
-    return validateNumberField(command, 'seq', 'messages.send');
-}
-
-function validateMessagesObserveCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    const result = validateStringField(command, 'connection', 'messages.observe');
-    if (!result.ok) {
-        return result;
-    }
-    const handleId = validateStringField(command, 'handleId', 'messages.observe', true);
-    if (!handleId.ok) {
-        return handleId;
-    }
-    return Array.isArray(command.state) && command.state.every((entry) => typeof entry === 'string')
-        ? { ok: true }
-        : fail('messages.observe.state must be a string array.');
-}
-
-function validateMessagesHandleCommand(
-    command: Record<string, unknown>,
-    path: string
-): ControlCommandValidationResult {
-    const result = validateStringField(command, 'connection', path);
-    if (!result.ok) {
-        return result;
-    }
-    return validateStringField(command, 'handleId', path, true);
-}
-
-function validateMessagesReceivedCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    let result = validateStringField(command, 'connection', 'messages.received');
-    if (!result.ok) {
-        return result;
-    }
-    result = validateStringField(command, 'typeId', 'messages.received', true);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateStringField(command, 'msgId', 'messages.received');
-    if (!result.ok) {
-        return result;
-    }
-    result = validateRequiredIntegerField(command, 'count', 'messages.received', { minimum: 0 });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateBooleanField(command, 'absent', 'messages.received');
-    if (!result.ok) {
-        return result;
-    }
-    return validateRequiredIntegerField(command, 'windowMs', 'messages.received', { minimum: 0 });
-}
-
-function validateFaultMatch(value: unknown, path: string): ControlCommandValidationResult {
-    if (!isRecord(value)) {
-        return fail(`${path}.match must be an object.`);
-    }
-    const result = validateKeys(value, ['controlType', 'typeId', 'msgId'], `${path}.match`);
-    if (!result.ok) {
-        return result;
-    }
-    const controlType = validateEnumField(value, 'controlType', `${path}.match`, ['ack', 'nack', 'repair']);
-    if (!controlType.ok) {
-        return controlType;
-    }
-    const typeId = validateStringField(value, 'typeId', `${path}.match`);
-    if (!typeId.ok) {
-        return typeId;
-    }
-    return validateStringField(value, 'msgId', `${path}.match`);
-}
-
-function validateFaultAction(value: unknown, path: string): ControlCommandValidationResult {
-    if (value === undefined) {
-        return fail(`${path}.action is required.`);
-    }
-    if (value === 'drop') {
-        return { ok: true };
-    }
-    if (!isRecord(value)) {
-        return fail(`${path}.action must be "drop" or an object with delayMs.`);
-    }
-    const result = validateKeys(value, ['delayMs'], `${path}.action`);
-    if (!result.ok) {
-        return result;
-    }
-    return validateRequiredNumberField(value, 'delayMs', `${path}.action`);
-}
-
-function validateFaultInjectCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    let result = validateStringField(command, 'faultId', 'fault.inject', true);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateRequiredEnumField(command, 'carrier', 'fault.inject', ['ws', 'rtc']);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateFaultMatch(command.match, 'fault.inject');
-    if (!result.ok) {
-        return result;
-    }
-    result = validateFaultAction(command.action, 'fault.inject');
-    if (!result.ok) {
-        return result;
-    }
-    return validateRequiredNumberField(command, 'remaining', 'fault.inject');
-}
-
 function validateRoomFields(
     command: Record<string, unknown>,
     path: string
@@ -1525,39 +1315,14 @@ export function validateRallarBlackBoxTestCommand(
             result = validateRtcCommand(command);
             return !result.ok ? result : validateRtcStreamCommand(command);
         case 'messages.send':
-            result = validateKeys(command, [...base, ...MESSAGES_SEND_FIELDS], 'messages.send');
-            return !result.ok ? result : validateMessagesSendCommand(command);
         case 'messages.observe':
-            result = validateKeys(command, [...base, 'connection', 'handleId', 'state'], 'messages.observe');
-            return !result.ok ? result : validateMessagesObserveCommand(command);
         case 'messages.cancel':
-            result = validateKeys(command, [...base, 'connection', 'handleId'], 'messages.cancel');
-            return !result.ok ? result : validateMessagesHandleCommand(command, 'messages.cancel');
         case 'messages.received':
-            result = validateKeys(
-                command,
-                [...base, 'connection', 'typeId', 'msgId', 'count', 'absent', 'windowMs'],
-                'messages.received'
-            );
-            return !result.ok ? result : validateMessagesReceivedCommand(command);
         case 'messages.receipts':
-            result = validateKeys(command, [...base, 'connection', 'handleId'], 'messages.receipts');
-            return !result.ok ? result : validateMessagesHandleCommand(command, 'messages.receipts');
         case 'fault.inject':
-            result = validateKeys(
-                command,
-                [...base, 'faultId', 'carrier', 'match', 'action', 'remaining'],
-                'fault.inject'
-            );
-            return !result.ok ? result : validateFaultInjectCommand(command);
         case 'storage.counters':
-            result = validateKeys(command, [...base, 'reset'], 'storage.counters');
-            return !result.ok ? result : validateBooleanField(command, 'reset', 'storage.counters');
         case 'agent.reload':
-            result = validateKeys(command, [...base, 'readyTimeoutMs'], 'agent.reload');
-            return !result.ok
-                ? result
-                : validateRequiredIntegerField(command, 'readyTimeoutMs', 'agent.reload', { minimum: 0 });
+            return validateAlmControlCommand({ command, kind: value.kind, baseFields: base });
         case 'ws.open':
             result = validateKeys(command, [...base, 'connection', 'url', 'protocols', 'headers'], 'ws.open');
             return !result.ok ? result : validateWsCommand(command);
