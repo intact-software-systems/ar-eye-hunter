@@ -2,12 +2,15 @@
 
 Reviewed: 2026-09-05\
 Source: `02d65ac4a458b98b92ebda22cf3ff84041027eb9`\
-Original audit: 2026-08-29
+Original audit: 2026-08-29\
+Status refreshed: 2026-09-08 against `a28e61b61` (`main` after PR #521)
 
 This review supersedes the original audit's current-state claims. Finding IDs F1–F17 remain
 stable so the [improvement roadmap](alm-improvement-plan.md) can connect each remaining gap
 to implementation and validation. The [product description](alm-complete-product-description.md)
-distinguishes current capabilities from the intended product.
+distinguishes current capabilities from the intended product. The finding bodies below describe
+the reviewed source `02d65ac4a`; the [status table](#status-after-the-first-release) records what
+the first release changed and which roadmap release owns the remainder.
 
 ## Executive summary
 
@@ -38,6 +41,32 @@ The highest-priority remaining gaps are:
 
 These are code-derived findings. No current browser latency profile or ALM transaction-count
 measurement was captured. The original numeric transaction baseline is withdrawn.
+
+## Status after the first release
+
+PR #521 merged as `a28e61b61` on 2026-09-08. The
+[code assessment](pr-521-code-assessment.md) records how it was verified. Releases are the
+roadmap's [release map](alm-improvement-plan.md#release-map).
+
+| Finding | State on `a28e61b61`                                                                                                                | Remainder owned by |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| F1      | Open. Transport settlement is truthful, but the public send result is an admission snapshot and `receiver` normalizes to `hop`.     | S1, S2, S3         |
+| F2      | Resolved. One decoder, resource ceilings with UTF-8 accounting, validated control payloads, advisory NACK as a value.               | done               |
+| F3      | Partial. Snapshot floors and server no-floor authorization exist; frozen audience and membership fencing remain.                    | S2, R2             |
+| F4      | Open. One envelope is reused across carriers, but inbound stores stay carrier-scoped.                                               | S2, S3             |
+| F5      | Open. Every typed send still persists by default.                                                                                   | S3, V1             |
+| F6      | Partial. Exact observation compare-and-set exists; two dequeue owners and whole-store reads remain.                                 | F2, R1             |
+| F7      | Partial. Outbound has one canonical envelope; inbound effects still copy envelopes; the server has two consumers on one work queue. | F2                 |
+| F8      | Partial. An indexed page reader exists; seven `getAll()` call sites and a full-range cleanup scan remain.                           | F2                 |
+| F9      | Partial. Per-session queue databases are gone; one fixed-schema database exists; no reset mechanism; multi-tab and quota untested.  | F2, I2             |
+| F10     | Resolved for wakes and readiness; polling bounds are measured in V1.                                                                | V1                 |
+| F11     | Partial. Outbound one copy; inbound copies.                                                                                         | F2                 |
+| F12     | Resolved for bounds (256-sequence window, `resync-required`); range repair remains.                                                 | R1                 |
+| F13     | Resolved for ceilings; aggregate budgets remain.                                                                                    | S3, V1             |
+| F14     | Mechanism present in both directions; cross-backend proof remains.                                                                  | R1                 |
+| F15     | Resolved for the first release's scope; roadmap decision D8 governs the series.                                                     | every PR           |
+| F16     | Open. Audiences, leader ACK, fencing, correlation, ownership.                                                                       | R2, A1, A2, I1     |
+| F17     | Partial. Settlement truthful; handle and disposal outcomes remain.                                                                  | S1, I2             |
 
 ## Scope and evidence
 
@@ -270,6 +299,10 @@ record the baseline behavior; the roadmap links to maintained cleanup coverage.
 The future fixed schema uses a coordinated explicit reset. Do not add silent schema rewrites
 or assume normal sign-out proves crash cleanup.
 
+Since `a28e61b61`: the per-session queue databases and their persistence owner are deleted; one
+database holds the admission store and the `alm-work` store; session cleanup deletes entries by
+key prefix. The reset mechanism, multi-tab claims, and quota outcomes remain (F2, I2).
+
 ### F10 — Wakeups exist, but polling and whole-queue reads remain
 
 **Status:** Partly resolved. **Severity:** Medium. **Confidence:** Proven from code;
@@ -456,13 +489,16 @@ counts from this source review.
 ## Product priorities
 
 1. Close bounded-input/control-trust gaps and require room authority while preserving bounded
-   evidence recovery, duplicate no-ops, and optimistic room progress.
-2. Establish truthful purpose-specific receipts, one fallback lifecycle, and the zero-IDB volatile path.
-3. Correct shared-key arbitration and finish bounded recovery/membership fencing.
-4. Harden volatile scale and consolidate durable work into existing QueueBox, with bounded storage.
-5. Complete consumer-backed audiences, QoS, correlation, ownership, and diagnostics; return
-   unproven general-purpose capabilities to the user for a scope decision.
+   evidence recovery, duplicate no-ops, and optimistic room progress. Delivered by the first
+   release except the frozen audience and fencing (roadmap S2, R2).
+2. Establish truthful purpose-specific receipts, one fallback lifecycle, and the zero-IDB volatile
+   path (roadmap release 3).
+3. Correct shared-key arbitration and finish bounded recovery and membership fencing (release 4).
+4. Consolidate durable work into one QueueBox owner with bounded storage (release 2), then harden
+   volatile scale (release 6).
+5. Complete audiences, leader ACK, ownership, correlation, and diagnostics (releases 5 and 7). By
+   roadmap decision D5 every declared capability is implemented; none returns for a scope decision.
 
 The [roadmap evidence matrix](alm-improvement-plan.md#requirement-to-evidence-matrix) maps
-every finding and product completion criterion to current coverage, missing proof, and a
-milestone. Tests accompany each behavior change; coverage is not a final cleanup phase.
+every finding and product completion criterion to its state on `a28e61b61` and its release.
+Tests accompany each behavior change; coverage is not a final cleanup phase.

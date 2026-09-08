@@ -1,94 +1,103 @@
 # ALM improvement roadmap
 
 Prepared: 2026-09-05\
-Reviewed source: `02d65ac4a458b98b92ebda22cf3ff84041027eb9`
+Revised: 2026-09-08 (re-baselined after the first release)\
+Reviewed source: `a28e61b61` (`main` after [PR #521](https://github.com/intact-software-systems/ar-eye-hunter/pull/521))
 
 ## Summary and agreed decisions
 
-This roadmap accompanies the reconciled [static audit](alm-static-audit.md) and
-[complete product description](alm-complete-product-description.md). These three documents
-were the planning deliverable. Implementation is now authorized and follows the release
-boundaries below. The reviewed source above identifies the original audit baseline; current
-release evidence belongs in the pull request.
+This roadmap accompanies the [static audit](alm-static-audit.md), the
+[complete product description](alm-complete-product-description.md), the
+[PR #521 code assessment](pr-521-code-assessment.md), and the
+[roadmap assessment](alm-roadmap-assessment.md). The roadmap is the durable design document for
+ALM; the open pull request is the live delivery status. Only the next two implementation slices
+are concrete here. Later releases stay outcome-shaped until they enter that horizon.
 
-The agreed direction is:
+The goal is ALM usable for production as the complete general product: one semantic message
+protocol with two first-class carriers, RTC between browsers and WS through the server, delivered
+release by release and proven slice by slice through the black-box conformance lane.
 
-- Cover the complete product through staged milestones. Keep only the next two
-  independently verifiable implementation slices concrete; refine later milestones when
-  they enter that horizon.
-- Use a coordinated clean cutover: update repository consumers together, remove obsolete
-  APIs, and explicitly reset incompatible ALM browser queues.
-- Authenticate RTC hops and authorize room relays. Cryptographic proof of the original
-  sender is outside this roadmap. Origin identity and immediate-hop identity are distinct.
-- Receiver ACKs confirm protocol acceptance under the promised durability policy.
-  Application completion requires a separate reply.
-- Keep normal room operation optimistic and permissive: use sufficient existing authority,
-  make progress with available routes, and recover from delayed observations. Missing evidence
-  is a bounded waiting/recovery condition; proved lack of authority is a rejection.
-- Typed messages remain reliable by default, with receipt policy chosen for their purpose:
-  commands address their responsible receiver; room notifications track the complete intended
-  audience without a room-wide readiness barrier. High-rate realtime stays explicitly best-effort.
+### Decision record
+
+Decided with the maintainer on 2026-09-08. Each later section applies these; none is restated as
+a question.
+
+| #  | Decision                                                                                                                                                                                                                                                                   |
+| -- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1 | Target is the full general product, conformance-driven: every capability in the product description, with acceptance defined by the conformance suite over both carriers.                                                                                                  |
+| D2 | A typed send with no options is reliable, receipted, and volatile: at-least-once, the receipt chosen by the channel's purpose, retried within the deadline, kept in memory only. Durability is an explicit per-channel opt-in.                                             |
+| D3 | There are no real users yet. Incompatible ALM browser storage is deleted on schema mismatch; no data migration, no compatibility window.                                                                                                                                   |
+| D4 | Both existing reliable paths become real ALM consumers: the game authority client awaits receipts, and the Relic server's snapshot publish moves to the durable outbox. The two games may be changed in any way that helps prove ALM.                                      |
+| D5 | Every declared capability is implemented, including principal, world, all, and fixed audiences, group-leader ACK, membership fencing on group-state authority, exclusive ownership, and reply correlation with trace propagation.                                          |
+| D6 | PRs are medium by default; a large coordinated PR is allowed where a cutover genuinely couples contracts, consumers, and harness. Each PR is reviewed and merged by the maintainer.                                                                                        |
+| D7 | Sequencing is foundation first: the conformance lane and the storage consolidation land before new capabilities.                                                                                                                                                           |
+| D8 | No legacy is retained anywhere in this series; unused code is deleted in the same PR. Search `packages/**` for an existing library before writing one; ask the maintainer before adding an internal library; never add a third-party dependency beyond those already used. |
+
+### Standing direction
+
+- Authenticate RTC hops and authorize room relays. Cryptographic proof of the original sender is
+  outside this roadmap. Origin identity and immediate-hop identity are distinct.
+- A receiver ACK confirms protocol acceptance under the promised durability policy; application
+  completion requires a separate reply.
+- Normal room operation is optimistic and permissive: use sufficient existing authority, make
+  progress with available routes, recover from delayed observations. Missing evidence is a bounded
+  waiting or recovery condition; proved lack of authority is a rejection.
 - Reuse QueueBox for queued work, reservations, redelivery, and scheduling. ALM owns message
   handling, policy, validation, receipts, and recovery decisions; it does not implement another queue.
-- Keep durable messages self-contained. Prefer immutable facts, independently retryable derived
-  state, and small atomic decisions; recover through ordinary redelivery and skip proven completed work.
-- Use existing repository libraries. No new third-party dependency or general-purpose message
-  buffer library is currently required. Discuss a demonstrated foundational gap with the user
-  before introducing a new library or expanding a domain helper into a shared framework.
+- Durable messages are self-contained: immutable facts, independently retryable derived state,
+  small atomic decisions, recovery through ordinary redelivery that skips proven completed work.
 
 ## Product direction and policy
 
-The product acceptance criterion is useful progress under ordinary uncertainty: a valid action
-can proceed despite one slow browser, a delayed room snapshot, or a changing connection, and the
-caller can see what remains unconfirmed. Preserve the existing
+The product acceptance criterion is useful progress under ordinary uncertainty: a valid action can
+proceed despite one slow browser, a delayed room snapshot, or a changing connection, and the caller
+can see what remains unconfirmed. Preserve the existing
 [optimistic room policy](../../packages/shared/api/group-lifecycle/group-lifecycle-policy-presets.ts)
 and [permissive convergence rules](../../.agents/skills/rallar-code-writing/references/convergent-service-writing.md).
-ALM consumes group/application authority; it does not create another authority or formation layer.
+ALM consumes group and application authority; it does not create another authority or formation
+layer.
 
-| Message purpose            | Default behavior                                                                                                                         | Completion and recovery                                                                                                                              |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fresh realtime update      | Volatile, freshness-first, no logical receipt; keep the existing room realtime lane direct.                                              | Replace obsolete queued values by semantic key; drop expired values rather than repairing obsolete state.                                            |
-| Reliable command           | Address the responsible receiver, keep one identity, and require its protocol receipt. Durability is an independent topic/caller choice. | Retry within the deadline; a separate application reply establishes completion of the action.                                                        |
-| Reliable room notification | Freeze the intended authorized session audience and start delivery to available routes immediately.                                      | Track every required recipient; retry only missing recipients and expose partial confirmation. One silent browser does not block delivery to others. |
+### Purpose at the channel
 
-Define these defaults at the channel/topic boundary. Do not infer a business completion rule from
-transport choice or apply complete-room receipts to a command addressed to one authority.
-Reliable volatile delivery survives temporary connection loss only while its runtime lives;
-crash survival requires an explicit durable policy. Ordering, durability, reliability, audience,
-and transport preference remain independent. A preferred transport may change; a required guarantee
-must not be silently weakened. The existing two-second receipt timeout, three receipt retries, and
-proposed 30-second interactive deadline are initial defaults, with explicit channel/caller overrides.
+A typed channel definition declares its purpose; the purpose fixes the defaults; a send may
+override them per call.
 
-Give every queued logical message a finite delivery deadline of its own. Resolve the channel/caller
-TTL once when constructing the message and carry the absolute deadline in `constraints.expiresAtMs`.
-Retry, deferral, restart, and carrier fallback preserve that captured value; receiving a message must
-not restart its TTL. A topic may choose a different finite lifetime for its purpose. The message
-is expired when the observed time reaches the deadline. Check this again at the actual send/delivery
-boundary after asynchronous readiness or authority work. Expiry stops new attempts; it cannot undo
-an application action that already began.
+| Purpose        | Default policy                                                                                                                           | Completion and recovery                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `realtime`     | Best-effort, volatile, freshness-first, no logical receipt. Stays on the existing direct `rallar.realtime.room` lane.                    | Replace obsolete queued values by semantic key; drop expired values.                                                                              |
+| `command`      | At-least-once, volatile, 30 s deadline, receipt from the addressed receiver, 2 s ACK timeout, three receipt retries.                     | Retry within the deadline; a separate application reply establishes completion of the action.                                                     |
+| `notification` | At-least-once, volatile, 30 s deadline, receipt from the complete intended audience frozen at admission, no room-wide readiness barrier. | Track every required recipient; retry only missing recipients; expose partial confirmation. One silent browser does not block delivery to others. |
 
-Capture policy-derived freshness limits as well as an explicit caller TTL. Carry the admitted
-deadline through application routers and derived delivery/forwarding work; rereading a changed
-policy must not remove or extend the earlier bound. Preserve the caller's value when computing
-the immutable message passed downstream. Test policy changes and restart as well as explicit TTLs.
+Durability (`local-outbox`, `local-inbox`) is an explicit per-channel choice. Reliable volatile
+delivery survives a dropped connection while its runtime lives; crash survival requires the durable
+choice. Ordering, durability, reliability, audience, and transport preference remain independent. A
+preferred transport may change; a required guarantee is never silently weakened: a guarantee the
+selected carrier cannot provide is a typed rejection.
 
-Keep that deadline distinct from QueueBox's next-attempt timestamp and storage retention. Schedule
-a readiness recheck no later than the deadline, and expire the work instead of delivering it when
-the deadline is reached. Retained completion, ordering, and deduplication facts may live longer under
-their bounded recovery policy; their presence never extends the message's permission to execute.
+### Deadline
+
+Every queued logical message has one finite deadline of its own, resolved once when the message is
+constructed and carried as `constraints.expiresAtMs`. Retry, deferral, restart, and carrier fallback
+preserve it; receiving a message never restarts it. The deadline is rechecked at the actual send or
+delivery boundary after asynchronous readiness or authority work. Expiry stops new attempts and
+cannot undo an application action that already began. The deadline is distinct from QueueBox's
+next-attempt timestamp and from storage retention: retained completion, ordering, and deduplication
+facts may live longer under their bounded retention policy, and their presence never extends the
+message's permission to execute.
+
+### Admission outcomes
 
 Admission distinguishes accepted work, permitted no-ops, bounded deferral, and typed rejection.
-Matching duplicates do not redeliver; repeat their receipt when needed without growing history.
-Older replaceable state is a no-op. Temporarily missing authority or a route can trigger bounded
-refresh, waiting, or authorized WS routing. Unverified messages do not reach application delivery,
-forwarding, or success receipts. Malformed, forged, wrong-scope, known-revoked, corrupt, and explicitly
-unsupported required guarantees are rejected. Queue capacity and deadline exhaustion have distinct
-outcomes; they do not turn an otherwise valid identity into an authorization failure.
+Matching duplicates do not redeliver; their receipt is repeated when needed without growing history.
+Older replaceable state is a no-op. Temporarily missing authority or a route triggers bounded refresh,
+waiting, or authorized WS routing. Unverified messages never reach application delivery, forwarding,
+or success receipts. Malformed, forged, wrong-scope, revoked, corrupt, and unsupported-required input
+is rejected. Queue capacity and deadline exhaustion have distinct outcomes.
 
-No receipt means **unconfirmed**, not proof of non-delivery. Results retain confirmed/unconfirmed
-recipient counts and whether transport submission occurred. Cancellation stops remaining owned
-attempts; it cannot retract remote work. Expiry, supersedence, cancellation, and exhausted retries
-never erase already confirmed progress or imply that an application action was undone.
+No receipt means **unconfirmed**, not proof of non-delivery. Results retain confirmed and
+unconfirmed recipients and whether transport submission occurred. Cancellation stops remaining owned
+attempts and cannot retract remote work. Expiry, supersedence, cancellation, and exhausted retries
+never erase confirmed progress.
 
 ## Implementation shape and existing foundations
 
@@ -100,774 +109,359 @@ Use this visible flow for each message-handling attempt:
 bounded decode -> read -> compute -> validate (Either) -> write or send -> observed result
 ```
 
-- **Read:** one named read method owns the bounded database/repository reads for that operation
-  and returns a coherent value snapshot, including observed revisions. It may use several bounded
-  queries; it must not mean loading entire queues. Resolve authority, policy, transport observations,
-  time, and other required inputs in the owned shell and pass their values into the snapshot.
-  Do not expose borrowed mutable QueueBox entries as immutable read facts; later reservation or
-  release must not change the snapshot or a previously computed candidate through a shared reference.
-- **Compute:** a pure function consumes only that snapshot and the immutable command/message
-  values. No injected callbacks, repositories, services, clock reads, randomness, asynchronous work,
-  or mutable captured state. Produce complete persistence/send candidates and typed decisions as
-  data. Stable message identity and captured command facts survive retries; fresh observations are
-  read again for each attempt.
-- **Validate:** a separate pure function checks the computed candidate against the read facts and
-  invariants and returns the existing `Either`, with typed issues on the left and the validated
-  computed value on the right. It neither repairs the candidate nor performs reads or effects.
-  Boundary decoding still precedes expensive work; post-compute validation is not its replacement.
-- **Write/send:** execute the validated value without mutating it or the read snapshot. Conditional
-  writes check the exact observed predecessors; final transport boundaries fence the observed
-  connection generation/authority as required. Return database/transport facts separately. A stale
-  observation returns a conflict or retryable outcome to its owner, not an in-place candidate rewrite.
-  Do not add business computation, new business reads, or hidden payload preparation inside write.
-- **Owned effects:** QueueBox/AppInbox retains the repository's transaction and redelivery rules.
-  One delivery makes one attempt; a conflict returns to QueueBox and repeats read/compute/validate
-  with fresh facts. QueueBox processing retries and AL receipt retries are different budgets;
-  neither may multiply the other's attempts or extend the logical message deadline. Keep external
-  sends after the relevant commit, with ambiguous crash/send outcomes handled through stable identity.
+- **Read:** one named read method owns the bounded repository reads for the operation and returns a
+  coherent value snapshot including observed revisions. It never loads entire queues. Authority,
+  policy, transport observations, and time are resolved in the owned shell and passed as values.
+- **Compute:** a pure function of that snapshot and the immutable message values. No callbacks,
+  repositories, clocks, randomness, asynchronous work, or mutable captured state. It produces complete
+  persistence or send candidates and typed decisions as data.
+- **Validate:** a separate pure function that checks the computed candidate against the read facts
+  and invariants and returns `Either`, with typed issues on the left and the validated candidate on
+  the right.
+- **Write or send:** executes the validated value without mutating it or the snapshot. Conditional
+  writes compare the exact observed predecessors. A stale observation returns a conflict as a value.
+- **Owned effects:** QueueBox and AppInbox retain the transaction and redelivery rules. One delivery
+  makes one attempt; a conflict returns to QueueBox, which repeats read, compute, and validate with
+  fresh facts. QueueBox processing retries and ALM receipt retries are different budgets.
 
-Carry reservation telemetry as explicit attempt values alongside the returned QueueBox entry.
-Copying an entry must preserve its selected lane and observed ages without an object-identity lookup
-or another clock sample. Durable queue status and cross-message resilience remain QueueBox concerns.
-Malformed persisted messages use `NonRetryableException` and terminate as `NON_RETRYABLE`; AppInbox records
-the failure result and finalizes the reservation atomically so the waiting caller receives a terminal
-answer. A failed database finalization still requires ordinary QueueBox redelivery.
+Expected failure is a value end to end, including control admission and effect validation. A
+conflict is `'conflict'`, never an exception escaping to a transport callback. `assertXxx` is
+reserved for programmer invariants. Persisted contracts have required fields. Readiness deferral uses
+QueueBox's `RETRY` with a future `nextTs` and consumes no processing attempt; the release computation
+inside QueueBox accounts for it, with cross-backend tests.
 
-Use a distinct not-ready disposition for a valid message whose required readiness is temporarily
-missing. Pure policy/validation returns this as an `Either` value; an exception-based QueueBox
-boundary may translate it to `NotReadyException`. QueueBox already supports `RETRY` with a future
-`nextTs`; reuse that release and scheduling path. The extension is readiness classification and
-accounting: waiting consumes no processing attempt and records neither a resilience failure nor a
-success. Prefer skipping known ineligible work before reservation. Recheck after reservation to handle readiness
-changes, preserving the original message deadline and existing database reservation checks. The
-database row remains authoritative: `RESERVED` is claimed work, and `RETRY` is available when
-`nextTs` is reached. Do not add ownership fencing, reservation tokens or generations, or controller
-ownership state for not-ready deferral. QueueBox increments attempts when reserving, so its canonical
-release computation must account for readiness separately, with cross-backend tests. Throwing a
-differently named exception alone does not establish those semantics.
-Use bounded readiness backoff and existing engine wakes, without another scheduler or a tight retry loop.
+### Reuse inventory
 
-Lifecycle subscriptions, transport callbacks, and existing QueueBox transaction callbacks belong
-to the imperative shell. Keep ALM computation and validation callback-free; do not rewrite
-existing libraries to remove their callback contracts. Prefer direct named functions and canonical interfaces;
-do not introduce forwarding wrappers, type aliases that merely rename types, or a generic workflow
-framework. Test frozen inputs and computed candidates through the real write/send boundary to prove
-that neither success, conflict, nor transport failure mutates them.
+| Need                                  | Existing owner                                                                                                                                                                                                                                                               | Rule                                                                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Typed validation result               | [Either](../../packages/shared/resilience/Either.ts)                                                                                                                                                                                                                         | Use directly; no parallel result abstraction.                                                              |
+| Volatile and durable queued work      | [InMemoryQueueBox](../../packages/shared/queuebox/in-memory-queue-box.ts), [IndexedDbQueueBox](../../packages/shared/queuebox/indexed-db-queue-box.ts), [PostgreSQL ResourceInbox](../../packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts) | Bind ALM policy and results to the existing reservation, release, expiry, and idempotency semantics.       |
+| Scheduling and redelivery             | [InboxOutboxEngine](../../packages/shared/services/InboxOutboxEngine.ts), [ResourceInboxRetryPolicy](../../packages/shared/queuebox/ResourceInboxRetryPolicy.ts), [readiness](../../packages/shared/queuebox/resource-inbox/not-ready-exception.ts)                          | One QueueBox port owner for both ALM work handlers; no ALM scheduler, lease manager, or nested retry loop. |
+| RTC backpressure and settlement       | [RtcDataChannelSendQueue](../../packages/shared/webrtc/rtc-data-channel-send-queue.ts), [QRtcDataChannel.SendDisposition](../../packages/shared/webrtc/qrtc-data-channel.ts)                                                                                                 | Preserve the queue owner; connect every settlement to the delivery lifecycle.                              |
+| Rate and work budgets                 | [SlidingWindowCounter and RateLimiter](../../packages/shared/resilience/Resilience.ts)                                                                                                                                                                                       | Shell-level counters; pass observations as values to pure policy.                                          |
+| Sequence ordering and retained state  | [computeALOrderingObservation](../../packages/shared/alm/compute-al-ordering-observation.ts), [resource limits](../../packages/shared/al-contracts/al-message-resource-limits.ts)                                                                                            | Extend the existing ordering owner; a bounded map is sufficient until measured need.                       |
+| Cross-tab coordination                | Web Locks in [dispatch admission](../../packages/shared/alm/outbound/al-outbound-dispatch-admission.ts)                                                                                                                                                                      | Extend the per-sender lock with a per-session durable-work claim; no new coordination primitive.           |
+| Group authority for audiences, fences | [group-state contracts](../../packages/shared/api/group-types.ts) (`snapshotVersion`, `rosterVersion`, `GroupStateCausalRevision`), [director appointment](../../packages/shared-web/browser/director/appoint-room-director.ts)                                              | ALM consumes these; it never mints its own epoch or leader.                                                |
+| Exclusive claims                      | ResourceInbox reservation with lease, expiry, and redelivery                                                                                                                                                                                                                 | Surface through ALM with typed outcomes; no second claim system.                                           |
+| Browser storage                       | [IndexedDB admission database](../../packages/shared/alm/open-indexed-db-admission-database.ts), [open-indexed-db](../../packages/shared/persistence/open-indexed-db.ts)                                                                                                     | Fixed two-store schema with a schema identity and delete-on-mismatch.                                      |
 
-### Self-contained messages and ordinary redelivery
+Decision D8 governs every gap: search first, reuse, ask before a new internal library, no new
+external dependency. The [Motion buffer](../../packages/shared/rallar-motion/buffer.ts) is not a
+message repair window and stays uncoupled.
 
-Use one durable message/work owner in QueueBox, immutable facts where possible, independently
-retryable derived state, and small atomic decisions where necessary. This is the agreed direction
-for reducing admission dependencies; it is not a claim that the current implementation already
-has those properties. Keep message identity, payload, policy, deadline, and the admitted audience
-stable across attempts. Store the canonical message once; any additional work refers to it and
-cannot outlive the facts required to execute it safely.
+## Release 1 delivered: PR #521
 
-Consolidate storage and its consumers together. Server cluster notifications currently publish
-transport outbox keys that receiving servers dereference. Removing the ALM-to-outbox handoff
-requires moving that message lookup and notification path to the canonical work owner in the same
-cutover; replacing the handoff with a transient message would weaken crash recovery.
+The first release ended with the bounded admission and QueueBox storage/retry cutover. Its
+assessment lives in [pr-521-code-assessment.md](pr-521-code-assessment.md). What it settled and
+what it left:
 
-Recovery should normally be the ordinary message handler running again. Its read method identifies
-completed work, remaining work, and terminal outcomes. Compute and validate only the remaining
-actions, using the retained message and freshly read values. A completed action may be skipped
-only when its durable evidence also establishes the facts on which remaining actions depend;
-an existing key alone does not prove that the same message or action completed. This permits
-independent messages and independent derived updates to make progress despite a conflict elsewhere.
+| Commitment                                     | State on `a28e61b61`                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bounded envelope and control validation        | Delivered: one decoder, resource ceilings with UTF-8 accounting, control codec, advisory NACK as `Either`.                                               |
+| Finite original deadline                       | Delivered at every write boundary in memory, IndexedDB, PostgreSQL, and the cluster bridge.                                                              |
+| Retained pending admission and fresh replay    | Delivered in both directions.                                                                                                                            |
+| Readiness-neutral retry accounting             | Delivered inside QueueBox.                                                                                                                               |
+| Bounded ordering window with `resync-required` | Delivered; range and page repair remain.                                                                                                                 |
+| Canonical outgoing message, one durable owner  | Delivered for outbound. Inbound effects still copy envelopes. The server still has two dequeue owners on one work queue. Seven whole-store reads remain. |
+| Coordinated consumers and obsolete API removal | Delivered.                                                                                                                                               |
+| Explicit reset of incompatible browser storage | Not delivered; the database name is unchanged and no reset mechanism exists.                                                                             |
+| Truthful send outcomes                         | Transport settlement is truthful; the public send result is still an admission snapshot, and `ack: 'receiver'` still normalizes to `hop`.                |
 
-Cover the first admission attempt as well as already-admitted effects, in both directions. A valid
-message that loses a conditional write must retain an owner for bounded redelivery; returning a
-conflict to a socket or signaling callback that ignores it loses the message. Reuse the existing
-inbound and outbound QueueBox work owners, preserve the immutable message, authenticated source,
-and original deadline, and rerun read/compute/validate on redelivery. Pending admission is not
-accepted delivery and earns no success receipt. Revalidate current authority before admission;
-malformed, unauthorized, and unknown control traffic must not create pending work. Prove restart
-and cleanup for that work too.
+Residual structural debt carried into release 2: two admission stores of 1,176 and 1,120 lines
+pinned by checker dispositions, control-admission conflicts thrown rather than returned, the
+typed-send default persisting to IndexedDB, and the base Prisma migration edited in place.
 
-For outgoing pending admission, retain one canonical payload with its full identity and a compact
-dispatch descriptor. Preserve the original expiry request separately from the selected deadline,
-so later carrier attempts can prove equal message intent without extending that deadline. Retain
-explicit forwarding intent and its source authority; an ordinary outgoing planner cannot recreate
-an incoming relay decision. Retry fresh admission from these facts, never the failed mutation
-bundle. Report pending only after durable retention succeeds, and verify full identity/content
-when a competing writer already retained the work. Queue-only retention may use the existing
-QueueBox atomic observation checks; a decision that reads admission metadata must still guard
-those observations, even when it writes only queue rows.
+## Release map
 
-Separate execution eligibility from a failed attempt. An ordered message waiting for its predecessor
-must not consume QueueBox's processing retry budget just because a worker sees it again. Read the
-required ordering facts, select eligible work, and wake the existing engine when a predecessor
-completes. Keep ordinary transport/storage failures on the existing retry policy. Before cutting
-inbound work over, prove that a full 256-message ordered buffer drains across restart without
-exhausting attempts on waiting messages, and that an expired or non-retryable predecessor produces
-the declared resynchronization outcome. Reuse or extend the canonical QueueBox selection boundary;
-do not add another queue, lease manager, or recovery scheduler.
+Twelve PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
+not on each other. Only F1 and F2 are file-level concrete; S1 to S3 are named by outcome; later
+releases are outcome-shaped with exit evidence.
 
-Classify state by its meaning before separating writes. A derived index or summary can retry
-independently only when the retained authoritative facts determine its correct value and readers
-can safely handle it being temporarily behind. Authorization, deduplication, ordering decisions,
-and supersedence winners are not automatically disposable derived state. Keep the smallest
-conditional commit needed for an invariant. Carry each mutable dependency's original observation
-into that commit, including relevant absence or range observations; rereading a revision only at
-write time does not protect earlier computation. Do not optimistically lock immutable facts merely
-because they are entities, or add a new global version that couples unrelated messages.
+| Release       | PR                                                    | Size   | Completion criteria served |
+| ------------- | ----------------------------------------------------- | ------ | -------------------------- |
+| 2 Foundation  | F1 Conformance lane and messaging entry point         | medium | 1 (lane), 5 (migration)    |
+| 2 Foundation  | F2 One work owner and split stores                    | large  | 5, 8, 10 (reset)           |
+| 3 Slice 2     | S1 Delivery lifecycle and handle                      | large  | 3, 9                       |
+| 3 Slice 2     | S2 One identity and receipted audiences               | large  | 1, 3, 6, 9                 |
+| 3 Slice 2     | S3 Defaults, fallback, volatile path, consumer proofs | medium | 3, 4                       |
+| 4 Arbitration | R1 Shared-key proof and range repair                  | medium | 8                          |
+| 4 Arbitration | R2 Membership fencing                                 | medium | 6                          |
+| 5 Audiences   | A1 Principal, world, all, and fixed audiences         | medium | 7                          |
+| 5 Audiences   | A2 Leader ACK and exclusive ownership                 | medium | 7                          |
+| 6 Scale       | V1 Aggregate budgets and long-run fairness            | medium | 8                          |
+| 7 Integration | I1 Reply correlation and trace propagation            | medium | 9                          |
+| 7 Integration | I2 Deterministic lifetime                             | medium | 10                         |
 
-Pure computation makes replay deterministic; it does not make a network send atomic with storing
-its completion. A crash after sending may repeat the send. Preserve its identity and receiver
-deduplication, and retain uncertain delivery in the result. Retain the canonical message and
-completion/deduplication facts for the declared retry/recovery horizon, with bounded expiry and
-explicit terminal policy. Do not acknowledge durable acceptance before its required work is retained.
+### Release 2, F1: conformance lane and messaging entry point
 
-Preserve complete-audience receipt evidence until related queued work can no longer replay; an
-absent pending-ACK record does not itself prove completion. A worker crash on the final permitted
-attempt still needs terminal cleanup. Reuse QueueBox's existing exhaustion-finalization operation,
-scoped to the handler's work types, without granting another message delivery attempt.
+**Outcome:** every later slice can be proven through the black-box runtime over both carriers, the
+browser facade stops being the growth constraint, and the database index change reaches every
+database.
 
-Keep a queued message immutable after its facts are captured. If an existing handler must first
-persist captured facts into its reserved message, carry the returned persisted entry into retry
-release. The original claimed value remains unchanged; QueueBox compares the returned observation
-when releasing the reservation. Do not weaken that comparison or reload an unrelated newer
-reservation merely to make a release succeed. This handoff is attempt-local data, not a new durable
-recovery record. An uncertain write still uses ordinary timeout recovery and rereads the stored
-message on the next delivery.
+**Owners:** [rallar-bb-test](../../packages/shared-test/rallar-bb-test/) (browser and control-agent
+runtime, recipe schema), [black-box-runner](../../packages/shared-test/black-box-runner/) (API
+recipes and the JSON runner), the black-box SPA, control server, and headless app, the Playwright
+full-stack specs under `tests/playwright/rallar-black-box/`, the Hetzner manifest catalog in
+`apps/rallar-black-box/src/hetzner-distributed-manifests.ts`,
+`packages/shared-web/scripts/measure-browser-bundles.mjs`, and `apps/api-v1/prisma/migrations/`.
 
-Do not introduce a recovery service, generic stage ledger, or another queue by default. First test
-ordinary QueueBox redelivery after crashes between the actual updates: completed changes remain
-no-ops, unfinished changes converge, stale attempts cannot overwrite newer decisions, and unrelated
-messages continue. Add explicit recovery metadata only if a concrete failure cannot be resolved
-from the retained message and authoritative state; keep the user informed if that evidence changes
-this design or requires a new library. Measure extra reads, conditional writes, retained bytes, and
-queue age before claiming that smaller commits improve performance.
+**Changes:**
 
-### Reuse inventory and library decisions
+1. Browser operations: `messages.send` with the full policy (transport, reliability, ack, ordering
+   key, supersede key, ttl, durability, target mode) returning message id and handle id;
+   `messages.observe` waiting for a handle state with timeout and returning submitted, confirmed,
+   and unconfirmed evidence; `messages.cancel`; `messages.received` as a receiver-side wait with
+   count and absence windows on the owned clock; `messages.receipts` for per-recipient confirmation.
+   Until S1 lands the handle, `messages.observe` reports the admission snapshot; the operation
+   contract is designed for the handle from the start.
+2. Fault injection through narrow test-only ports in the transport adapters: drop an ACK, delay,
+   close a lane, partition a peer. These ports exist only in the black-box composition.
+3. `agent.reload`: the control agent reloads its page, keeps its IndexedDB, and re-registers under
+   the same agent id.
+4. `storage.alCounters`: an injected observer in the IndexedDB admission backend counts AL-owned
+   operations per scenario.
+5. The `alm-conformance` recipe family, parameterized by carrier (`rtc`, `ws`,
+   `rtc-with-ws-fallback`) through the existing variable expansion, with a baseline set encoding
+   today's behavior: bounded rejection, deadline expiry, duplicate no-op, ordering resync.
+6. Lanes: a `smoke` subset in the Playwright memory lane run by `test:ci`; the full family over both
+   carriers in the Release Gate's Postgres lane; ALM manifests at 15, 30, and 50 agents in the
+   Hetzner supported set with ALM metrics (receipt latency percentiles, AL-owned IndexedDB
+   operations, retained rows and bytes, retries, repairs, terminal counts). Per-PR lanes use at most
+   three agents.
+7. `browser/rallar-messages.ts` as a narrow entry point with its own Brotli budget.
+8. Restore `20260216141946_repository/migration.sql` and add a new migration for the composite
+   `resource_inbox_ix` index, with the in-memory schema mirror updated.
 
-| Need                                          | Existing owner to reuse                                                                                                                                                                                                                                                                      | Work still required                                                                                                                                           |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Typed validation result                       | [Either](../../packages/shared/resilience/Either.ts)                                                                                                                                                                                                                                         | Use it directly; no parallel Result abstraction.                                                                                                              |
-| Volatile and durable queued work              | [InMemoryQueueBox](../../packages/shared/queuebox/in-memory-queue-box.ts), [IndexedDbQueueBox](../../packages/shared/queuebox/indexed-db-queue-box.ts), and [PostgreSQL ResourceInbox composition](../../packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts) | Bind ALM policy/results to existing reservation, release, expiry, and idempotency semantics. Existing memory queues are not automatically count/byte bounded. |
-| Scheduling and redelivery                     | [InboxOutboxEngine](../../packages/shared/services/InboxOutboxEngine.ts) and [ResourceInboxRetryPolicy](../../packages/shared/queuebox/ResourceInboxRetryPolicy.ts)                                                                                                                          | Extend existing wakes/queries only where evidence requires it; no ALM scheduler, lease manager, or nested retry loop.                                         |
-| RTC backpressure/coalescing                   | [RtcDataChannelSendQueue](../../packages/shared/webrtc/rtc-data-channel-send-queue.ts)                                                                                                                                                                                                       | Preserve its queue owner and connect replacement, flush, expiry, and failure to the AL delivery lifecycle. It is not the inbound reorder buffer.              |
-| Rate and work budgets                         | [SlidingWindowCounter and RateLimiter](../../packages/shared/resilience/Resilience.ts)                                                                                                                                                                                                       | Reuse appropriate shell-level counters; these count activity, not retained messages. Pass observations as values to pure policy functions.                    |
-| Sequence ordering and retained protocol state | [computeALOrderingObservation](../../packages/shared/alm/compute-al-ordering-observation.ts) and [existing AL memory backend](../../packages/shared/alm/al-admission-backend.ts)                                                                                                             | Add bounded window decisions and retention in the existing ALM owners; remove affected duplicate legacy algorithms. Do not add another work queue.            |
+**Acceptance:** the baseline family passes over both carriers in the memory lane and the Postgres
+lane; a deliberately broken assertion fails the lane; `agent.reload` preserves IndexedDB state;
+the counter reports zero for a `realtime.room` send and a positive count for today's typed send;
+`check:browser-bundles` reports the new entry; `migrate deploy` on a database at the previous
+migration adds the index; `npm run test:repo-governance` passes because the harness contracts
+changed.
 
-**Sliding message window:** needed as ALM behavior, not presently as a new general library. Extend
-the existing ordering owner with a bounded sequence-keyed state: last contiguous sequence, retained
-entries/references, accounted bytes, and expiry. Compute insertion, duplicate/no-op, contiguous
-release, pruning, and resync decisions from snapshot values; apply the validated result in the owner.
-A bounded map/array is sufficient as the initial representation; a circular buffer is not required
-without measured need. Handle sparse/out-of-order sequences without allocating their full range.
-Keep sender retransmission retention distinct from receiver reordering, while sharing limits and
-validation where semantics match. A reliable message must not silently disappear through eviction.
+### Release 2, F2: one work owner and split stores
 
-The [Motion buffer](../../packages/shared/rallar-motion/buffer.ts) has interpolation-specific behavior
-and drops older sequences; it is not a substitute for an ALM reorder/repair window. Do not couple
-messaging to motion just because both retain recent samples. Per-track limits must be accompanied by
-per-peer/session aggregate count, byte, age, and active-track budgets so many small tracks cannot
-exhaust memory. Select and test those aggregate budgets with the affected workloads before enabling
-the volatile path; use existing lifecycle/expiry owners rather than a new cleanup service.
+**Outcome:** durable work has one owner per side, the admission stores are readable without pins,
+and every later incompatible cutover has a reset mechanism.
 
-No new fundamental library is justified by the current inventory. If implementation exposes one,
-show the user the missing behavior, inspected alternatives, intended consumers/API, dependency and
-bundle impact, and validation/performance evidence before introducing it. Prefer an ALM-local
-policy function or a focused extension of an existing library; do not silently build a new generic
-buffer, cache, retry, scheduling, or persistence framework. New external dependencies require a
-separate user decision. This does not require approval for routine helpers within agreed ALM owners.
+**Owners:** [alm/inbound](../../packages/shared/alm/inbound/), [alm/outbound](../../packages/shared/alm/outbound/),
+[queuebox](../../packages/shared/queuebox/), [ws-queue-box-server](../../packages/shared/services/ws-queue-box-server/),
+[browser al-runtime](../../packages/shared-web/browser/al-runtime/), `scripts/repo-style-check/reviewed-dispositions.mjs`.
 
-## Reconciled documentation baseline
+**Changes:**
 
-The source documents now distinguish resolved findings, remaining defects, and measurement
-hypotheses. Finding identifiers remain stable. Current claims apply to the reviewed source
-above; implementation must recheck affected owners and consumers against its starting revision.
+1. Remove the legacy `dequeue()` path and its `onDequeuedDo` policy callback from the outbound
+   runtime; `ALOutboundWorkHandler` is the only consumer of the outbound work queue.
+2. One inbound canonical payload owner; inbound effects reference it instead of copying envelopes.
+3. Replace every `getAll()` read in the IndexedDB queue box with the indexed page reader; browser
+   session cleanup becomes a key-range delete.
+4. One named QueueBox port owner for both work handlers, with one retry decision; delete the raw
+   `workQueue` exposure and the forwarding methods on the inbound store.
+5. Lift control admission out of both persistence owners into the same attempt and pending shape as
+   data admission; a control conflict is `'conflict'`, never thrown.
+6. Split each admission store along the control and data boundary; retire the cognitive-load pins;
+   deduplicate the persisted key schema; receive the prepared-message decoder once at construction.
+7. Schema identity for the ALM browser database and delete-on-mismatch at open, with the
+   `alm.storage.reset` diagnostic. Unrelated storage is never touched.
+8. Touched-file standards closure across the ALM folders: banned verbs, `room` in the shared
+   contract, optional persisted fields, optional factory inputs.
 
-| Audit findings           | Current code facts and correction                                                                                                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| F1: reliability          | Open. Browser defaults combine at-least-once with no ACK; RTC discards structured send outcomes.                                                                                                             |
-| F2: ingress              | Partly resolved. RTC and browser WS decode envelopes; full-envelope RTC logging was removed. Control parsing, identity binding, and resource limits remain incomplete.                                       |
-| F3: room authorization   | Snapshot-floor enforcement and durable replay fencing exist. Unversioned room messages bypass the snapshot requirement. Authoritative membership-epoch fencing remains absent.                               |
-| F4: fallback             | Open. Carrier attempts create different identities. Separate RTC/WS admission scopes also need shared logical receiver deduplication.                                                                        |
-| F5/F7/F11: persistence   | Open. Volatile ALM uses persistent admission; durable dispatch traverses admission effects and QueueBox; envelopes are stored repeatedly.                                                                    |
-| F6/F8: IndexedDB         | Reads are readonly, prefix cursors stop outside the prefix, and expiry uses an index. Matching effects are still materialized and sorted. The obsolete transaction-count baseline is withdrawn.              |
-| F9/F10: QueueBox         | Queues use separate databases, ended-session cleanup deletes them, and enqueue wakeups exist. Database growth, abandoned sessions, full queue reads, and polling still need boundedness evidence.            |
-| F12/F13: resource limits | Large ordering gaps and several collections remain unbounded. Inbound ACK history can grow despite existing outbound ACK deduplication.                                                                      |
-| F14: arbitration         | Open. Sender-specific versions do not protect shared-key predecessors. A fresh IndexedDB revision at commit start cannot validate an earlier stale cross-sender decision.                                    |
-| F15: legacy              | Unused factory construction is removed. Review remaining exported legacy implementations and verified consumers before removal.                                                                              |
-| F16: missing semantics   | Correlation, trace propagation, general audiences, and distinct leader ACKs remain incomplete. Snapshot floors work; membership epoch currently also influences ordering without establishing authorization. |
-| F17: lifecycle           | Disposal fencing and regression coverage exist. Admission-time send statuses still do not establish transport acceptance or logical acknowledgement.                                                         |
+**Acceptance:** the conformance baseline family still passes; a crash between the progress commit
+and effect completion converges on redelivery; a reopened database with a stale schema id is reset
+and the diagnostic is emitted; the full checker reports no cognitive-load finding at or above the
+warn tier under `packages/shared/alm`; `check-changed-repo-style` passes with no new disposition;
+storage snapshot for the standard workload is recorded.
 
-The audit's 11 missing unique source-link targets have been replaced with current owners.
-Obsolete owner/size descriptions were removed. Neither document treats sender-equals-channel
-as a universal RTC rule: an authorized relay preserves the original sender. The existing B06
-three-browser `messages.rtc` workload is the measurement starting point; browser ALM workload
-coverage is not absent.
+### Release 3, Slice 2: outcomes
 
-## Slice 1 — Bounded admission with permissive recovery
+- **S1 Delivery lifecycle and handle.** An internal per-message lifecycle fed by every RTC and WS
+  settlement; a public handle with states `rejected`, `pending-authority`, `accepted`, `queued`,
+  `transport-accepted`, `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, an event
+  subscription, a terminal promise with evidence, and `cancel()`. The current send result and its
+  status union are removed with examples, apps, and black-box contracts updated together. Late
+  events never reopen a terminal state.
+- **S2 One identity and receipted audiences.** Session-logical inbound namespace for dedup,
+  ordering, supersedence, and message-owner keys; carrier-tagged control and ACK histories only.
+  The logical audience is frozen at admission from the channel's addressed sessions and the
+  identified room snapshot. ACKs carry origin and logical recipient; relays forward far ACKs toward
+  the origin; the WS server aggregates broadcast ACKs and routes them to the origin connection.
+  `receiver` is a logical ACK algorithm distinct from `hop`. Retry targets only missing recipients.
+  Incompatible browser schema; reset via F2. API recipe for the server path.
+- **S3 Defaults, fallback, volatile path, consumer proofs.** Purpose at the channel with the D2
+  default; carrier-aware capabilities installed in the browser composition; one memory and one
+  IndexedDB backend per carrier runtime with each channel routed to one; fallback on a declared
+  retryable outcome or receipt timeout within the deadline; aggregate memory, track, and intake
+  budgets; zero AL-owned IndexedDB operations proven per volatile scenario. The authority client
+  awaits receipts and consumes the handle; Relic snapshots move to the durable outbox with
+  receipts.
 
-**Outcome:** malformed, oversized, unauthorized, and unsupported traffic fails before it can
-change admitted-message state, deliver, forward, acknowledge, or create repair work. Valid direct
-and authorized relayed traffic can progress through delayed snapshots, harmless duplicates,
-and reconnects. Separate bounded pending-authority intake from admitted work; no pending message
-may grant itself authority or reserve its claimed deduplication identity.
+### Releases 4 to 7: outcomes and exit evidence
 
-**Owners and starting points:** [AL contracts/validation](../../packages/shared/al-contracts/),
-[inbound admission](../../packages/shared/alm/inbound/),
-[RTC receiver](../../packages/shared/services/web-rtc-rx-streamer-service.ts),
-[RTC room admission](../../packages/shared/multicast/rtc-room-snapshot-admission.ts),
-[RTC overlay](../../packages/shared/multicast/web-rtc-overlay-multicast-manager.ts),
-[browser WS](../../packages/shared/services/ws-queue-box-client-service.ts), and
-[server WS](../../packages/shared/services/ws-queue-box-server/).
+| Release | Outcome                                                                                                                                                                                                                                                                                                                                              | Exit evidence                                                                                                                                                                                                    |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4 R1    | Cross-backend shared-key arbitration proved; range and page repair replace individual sequence lists; resynchronization invokes the topic's declared recovery owner with bounded cursor information.                                                                                                                                                 | A/B stale-read then sequential-commit schedule has one winner on memory, IndexedDB, and PostgreSQL; a gap beyond the window yields `resync-required` and the owner is invoked once; exhausted repair terminates. |
+| 4 R2    | Membership fencing consumes group-state authority: the sender's snapshot supplies `rosterVersion` beside `minSnapshotVersion`; a receiver delivers only at or beyond that roster with the sender still a member; a receiver merely behind gets bounded catch-up; the envelope field is renamed to what it fences on and the version bumps.           | Fenced delivery, fenced rejection with typed reason, catch-up then delivery, both carriers; old envelope versions rejected explicitly.                                                                           |
+| 5 A1    | Unicast, room multicast, broadcast over room, world, all, and principal, and fixed recipient lists, with RTC and WS parity; WS uses the existing server resolver; RTC resolves room and principal from the snapshot session set; world and all take the WS route automatically when fallback is allowed and are typed carrier-unsupported otherwise. | The same audience scenario over both carriers with equivalent logical outcomes; carrier-unsupported results named in the handle.                                                                                 |
+| 5 A2    | `group-leader` ACK from the appointed director session, `no-leader` typed rejection without one; `ownership: 'exclusive'` as a ResourceInbox-backed claim with `claimed`, `held-by-other`, `expired`.                                                                                                                                                | Leader ACK over both carriers; two claimants, one winner, lease expiry, redelivery.                                                                                                                              |
+| 6 V1    | Per-session aggregate count, byte, age, and active-track budgets; fairness under many tracks, churn, and backpressure; long-run retention.                                                                                                                                                                                                           | Hetzner manifests at 15, 30, and 50 agents with ALM metrics within declared budgets; a 60-minute diagnostic run without growth.                                                                                  |
+| 7 I1    | `corrId` and `replyToMsgId` on the handle with `awaitReply({ timeoutMs })`; AppInbox trace id bridged into the envelope and preserved across retries and fallback; payload-free diagnostics.                                                                                                                                                         | Duplicate and late replies, wrong responders, timeout as `unconfirmed`, trace continuity across a fallback.                                                                                                      |
+| 7 I2    | Per-session durable-work claim across tabs on Web Locks; quota, eviction, blocked upgrade, and restart as typed outcomes; a channel whose policy allows it degrades to volatile with a handle note.                                                                                                                                                  | Two tabs, one drains, takeover on release; quota exhaustion outcome; blocked upgrade outcome; reload during pending work.                                                                                        |
 
-### Changes
+## Conformance lane
 
-1. Establish one canonical envelope/control validation boundary used by builders, live ingress,
-   and replay. Separate structural validity from authority checks while returning typed rejection
-   reasons for malformed, oversized, unauthorized, and unsupported requests. Decode registered
-   payloads at the appropriate topic boundary. Validate controls before their special dispatch can
-   bypass ordinary planning.
-2. Enforce resource budgets before message-owned writes or expensive ordering computation.
-   Reuse the existing [payload and route-input limits](../../packages/shared/api/rallar-validation.ts)
-   and add the initial ceilings below. Define byte accounting and inclusive boundary behavior in
-   the canonical contract so RTC, WS, builders, and replay make the same decision.
-3. Extend the existing ordering computation and state with a sequence window bounded by count,
-   bytes, age, and aggregate ownership budgets. A gap beyond the window or an exhausted buffer
-   produces `resync-required` without enumerating the gap or silently evicting reliable work.
-   Keep small-gap behavior working and invoke the topic's declared recovery owner with bounded
-   snapshot/cursor information; application state reconstruction remains with that topic/domain.
-   Freshness-first topics may skip obsolete state according to policy. Full range/page repair
-   generalization remains milestone 3.
-4. Bind direct RTC messages to their authenticated channel peer. For relays, validate origin,
-   immediate relay, local recipient, and allowed forwarding against the matching server-provided
-   room snapshot. Visited-peer diagnostics never grant authority.
-5. Require valid room authority even when no snapshot floor is supplied. Use sufficient existing
-   server-provided evidence without a synchronous server round trip per message. Separate missing
-   or insufficiently fresh evidence from a wrong-scope, removed, expired, or unauthorized room.
-   The former may wait under bounded intake or resolve through authorized server routing; the
-   latter rejects. Recheck authority for replay and preserve trusted immediate-hop provenance.
-   State/topology bootstrap uses its explicit authenticated server authority, avoiding a circular
-   requirement to already possess the snapshot being received. Room IDs, diagnostics, and empty
-   member sets cannot authorize delivery or relay.
-   Keep recipient freshness separate from origin authority: `targets.minSnapshotVersion` gates
-   receiver acceptance and relay forwarding. An origin with valid current room and routing
-   authority preserves that floor on the message without requiring its own snapshot to meet it.
-   Prove this through the real outbound entry and an actual receiver NACK; an origin rejection
-   or a test that bypasses outbound planning is not equivalent evidence.
-6. Validate ACK/NACK/repair identities against the control envelope, local destination, tracked
-   message, and expected peer/audience before mutation. Unknown controls must not create histories,
-   repairs, or acknowledgements. Control rejection must not poison later valid deduplication.
-   A matching duplicate application message is a no-op with a bounded repeat receipt where needed;
-   a harmless late receipt is a no-op, not a new history or a reopened terminal result.
-7. Explicitly reject requests requiring unsupported membership fencing until authoritative
-   implementation lands in milestone 3. Formation and ordering epochs do not substitute for it.
-8. Apply the read/compute/validate/write-or-send boundary above to each affected admission family.
-   Preserve QueueBox's ownership and remove affected redundant admission/queue algorithms instead
-   of creating a new scheduler or generic validation workflow.
-9. Preserve large legitimate audiences. Enforce the collection ceiling per protocol envelope or
-   page, not as a room membership cap. Server topology publication currently embeds full recipient
-   lists; adapt that producer and its replay consumer in the same slice. Use bounded audience
-   batches and topic-owned paging for oversized system snapshots, with bounded assembly and a
-   complete validated authority snapshot before it can authorize traffic. Splitting only the
-   recipient list does not solve an oversized payload. Keep one logical publication identity and
-   the intended audience; never truncate recipients or create an unbounded reassembly buffer.
+One scenario catalog, run over both carriers, is the acceptance authority for every release. A
+scenario is proven only when its assertion establishes the guarantee. Operations and recipe schema
+live in `rallar-bb-test`; scenario recipes live in the `alm-conformance` family beside the API
+recipes; server-only paths use API recipes in the api-v1 Postgres profile.
 
-| Budget                     | Initial ceiling        | Existing or planned                                |
-| -------------------------- | ---------------------- | -------------------------------------------------- |
-| Payload                    | 64 KiB                 | Existing input ceiling; apply consistently.        |
-| Route identifier           | 128 characters         | Existing input ceiling; apply consistently.        |
-| Whole envelope             | 128 KiB                | New shared ceiling.                                |
-| Protocol collection/page   | 256 entries            | Per-envelope/page work limit; not a room size cap. |
-| Visited peers / hop budget | 64                     | New ceiling.                                       |
-| Sequence repair window     | 256 sequences          | New window; never allocate an oversized gap.       |
-| Ordered buffer per track   | 256 messages and 1 MiB | Both ceilings apply.                               |
+Rules baked in from past runs: distinct identities per recipe because `runId` is shared per profile;
+per-issue command ids because the control server replays a reissued id as success; pinned ports per
+session; readiness only after activation and plans only after presence settles; scenario artifacts
+named in the PR body as evidence.
 
-### Acceptance and focused evidence
+Each PR adds its family: F1 baseline; S1 lifecycle matrix over every settlement and state; S2
+identity and receipts with three peers, relay changes, join and leave, lost ACK, duplicate arrival
+across carriers, both fallback orders; S3 volatile counters, fallback within the deadline, budgets;
+R1 and R2 arbitration and fencing; A1 and A2 audiences, leader, claims; V1 scale; I1 and I2
+correlation and lifetime.
 
-- Exercise the real RTC/WS ingress and replay boundaries with malformed JSON, wrong variants,
-  unknown versions, unknown fields, oversized envelopes/payloads/collections, invalid controls,
-  forged origins, and unauthorized relays. Assert zero delivery, forwarding, receipt, repair, and
-  dedup poisoning from rejected input; rejection diagnostics are allowed and payload-free.
-- Test each exact limit and one over it, non-ASCII byte accounting, initial/subsequent gaps, and
-  `Number.MAX_SAFE_INTEGER`. Use operation/allocation bounds rather than timing-only assertions.
-- Cover valid direct traffic and a three-peer authorized relay; no-floor room traffic; wrong scope;
-  removed/expired snapshots; stale-but-authorized catch-up; replay after authority changes; and
-  unsupported membership-fencing requests.
-- Prove successful join/send before the receiver's room cache catches up, a duplicate following a
-  lost receipt, harmless stale/late input, and bootstrap during reconnect. No global readiness
-  barrier may be introduced for the optimistic room policy. Pending authority work has count,
-  byte, time, and per-peer/global caps and cannot poison deduplication.
-- Test more than 256 intended recipients through actual topology publication/replay and oversized
-  snapshot paging. Every valid intended recipient remains represented; authority is never inferred
-  from incomplete pages. Test page loss, duplicate/reordered pages, expiry, and cancelled assembly.
-- Prove pure computation/validation from captured values and unchanged read/computed inputs after
-  a rejected candidate, conditional-write conflict, and send failure.
-- Send and receive concurrent valid frames through the actual socket and RTC signaling consumers
-  using both memory and IndexedDB admission, including simultaneous traffic in both directions.
-  Prove that storage contention cannot silently discard them;
-  pending work redelivers through QueueBox with fresh observations and the original deadline.
-  Include receipt/control contention without granting authority to an unknown control.
-- Extend [decoding tests](../../packages/tests/shared/al-message-persistence-decoding.test.ts),
-  [validation tests](../../packages/tests/shared/al-message-validation.test.ts),
-  [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts), and
-  [durable snapshot replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts).
-  Existing tests that explicitly allow the no-floor bypass must change with the contract.
-- Run focused semantic tests first, then affected shared/browser/server typechecks and the public
-  surface checks below. Preserve current disposal and safe-replay regressions.
+## Storage, cutover, reset, and rollback
 
-## Slice 2 — Truthful delivery, smart fallback, and the volatile path
+- **Browser.** One ALM-owned database per origin with a schema identity. A schema mismatch at open
+  deletes and recreates the ALM database and emits `alm.storage.reset`. Two stores, admission and
+  work, with bounded indexes. Durability is a channel property; each channel is routed to exactly one
+  backend. Cross-tab commit locking stays on Web Locks; I2 adds the per-session work claim. Quota,
+  eviction, and blocked upgrades are typed `storage-unavailable` outcomes.
+- **Server.** PostgreSQL ResourceInbox is the only durable work owner. Schema changes are additive
+  Prisma migrations; an applied migration is never edited. Per-recipient delivery facts for durable
+  notifications live in the existing results tables under AppInbox until the message deadline.
+  Broadcast ACKs route to the origin connection; for durable channels they are retained as receipt
+  facts until the deadline when the origin is offline.
+- **Cutover.** F2, S1, S2, and R2 are incompatible. Each lands contracts, consumers, examples,
+  harness, and recipes together, deletes the old path, and lists in the PR body what pending ALM
+  work is discarded. Web and API deploy together from `main`.
+- **Rollback.** Revert the merge commit. Browsers reset on the old schema id; server migrations are
+  additive; a mismatched envelope version is a typed rejection visible in diagnostics.
+- **Measurement.** Every cutover PR records the storage snapshot per message state for the standard
+  workload (eight updates, three recipients, 128 B, 4 KiB, and 64 KiB payloads) from the lane's
+  counters and compares it with the previous PR. A regression needs a stated reason.
 
-**Dependency:** slice 1 provides bounded, authorized message and receipt admission.
+## Governance and delivery rules
 
-**Outcome:** one message has one identity, audience, deadline, observed history, and truthful
-terminal result across backpressure, retries, and RTC/WS fallback. Receipt policy follows the
-message purpose, and volatile ALM uses bounded memory without IndexedDB. Required direct or
-complete room-audience confirmation ships only when its receipt behavior is dependable.
+- **Legacy.** Every affected item ends `removed` or `resolved`. No compatibility fallback, no
+  browser data migration, no envelope version window.
+- **Libraries.** Decision D8.
+- **Bundle.** `rallar-messages.ts` has its own budget. The aggregate facade keeps the maintainer
+  ruling: a crossed budget is raised to the next whole KiB with the measured figure recorded. Both
+  figures appear in every PR body.
+- **Checker.** After F2 no new `file.cognitive-load` pin on an ALM file. A `boundary.unknown` waiver
+  only for a genuine `decodeXxx(value: unknown): Either` boundary. Every disposition entry carries
+  its own comment. The exception registry is used only for its three real cases.
+- **Red-head prevention.** Every commit keeps `test:unit`, the three Deno checks, and `dprint check`
+  green; tests change in the same commit as the production change; the PR body names the commit each
+  figure was measured on; the Branch Release Gate is green before review is requested;
+  `pr:delivery status` decides the next action; `ready` and auto-merge are not used.
+- **PR shape.** Goal, Changes, Acceptance, Validation, Risk and rollback, Follow-up. Acceptance names
+  the conformance scenarios and API recipes; Validation names their artifacts. One active slice at a
+  time from merged `main`.
+- **Tests.** Semantic tests through real owners with narrow clock and transport fakes. An obsolete
+  coupled test is rewritten in the same PR. `deno task check` for api-v1 runs whenever a shared type
+  changes.
+- **Navigation maps.** The inbound and outbound READMEs are updated in every PR that changes their
+  owners and never claim behavior the code does not have.
 
-**Owners and starting points:** [outbound lifecycle and effects](../../packages/shared/alm/outbound/README.md),
-[typed message contracts and channels](../../packages/shared-web/browser/messages/),
-[RTC adapter](../../packages/shared/multicast/web-rtc-overlay-multicast-manager.ts),
-[data-channel outcomes](../../packages/shared/webrtc/qrtc-data-channel.ts),
-[WS receipt routing](../../packages/shared/services/ws-queue-box-server/), and
-[browser runtime scopes](../../packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts).
+## Consumer proofs in the games
 
-### Changes
+Gameplay realtime traffic stays on `realtime.room`. Each release changes at least one game so the
+new capability runs in a real UI with its own conformance recipe.
 
-1. Construct the logical message before selecting a carrier. Preserve identity, deadline, ordering,
-   supersedence, correlation, and frozen audience across attempts. Keep transport attempt state
-   distinct from logical message state.
-2. Introduce a delivery handle with message identity, current state, lifecycle subscription, terminal
-   result, and cancellation. Distinguish rejection, pending authority/route, acceptance, queueing,
-   transport acceptance, acknowledgement, expiry, supersedence, failure, and cancellation. Preserve
-   submitted/confirmed/unconfirmed evidence in terminal outcomes. A receipt timeout does not prove
-   non-delivery, and cancellation only stops remaining owned work. Queueing states its retention
-   policy; it does not by itself promise persistence or undo remote work.
-3. Connect RTC `sent`, `queued`, `dropped`, `replaced`, and `closed` outcomes to that lifecycle.
-   Queued work retains an owner until flush, replacement, expiry, or failure. Adapter acceptance
-   cannot preempt a later failure with a success result.
-4. Make direct receiver receipts and complete room-audience receipts dependable. Freeze the
-   authorized logical audience at admission: joins cannot expand it, departures cannot silently
-   shrink its success requirement. Keep partial receipts visible until completion or a terminal
-   deadline/failure. Physical next hops are not the logical audience. Define that audience from
-   the topic's addressed sessions/principal/authority and the identified room snapshot, rather than
-   silently including every offline room member. Dispatch to available authorized routes immediately;
-   waiting for receipts must not create a room-wide readiness or business-completion barrier.
-5. Separate transport submission and relay-hop receipts from complete logical acknowledgement.
-   A receiver ACK confirms protocol acceptance under the promised durability policy; application
-   completion uses a separate reply. Control traffic creates no recursive ACK obligations.
-6. Reject explicit at-least-once/no-receipt requests. Use the two-second ACK timeout, three receipt
-   retries, and 30-second interactive deadline as initial channel defaults with caller overrides.
-   After conformance passes, commands/direct messages require their addressed receiver's ACK;
-   reliable room notifications require complete intended-audience ACKs. Business completion uses
-   its responsible authority's reply. Expose preferred versus required QoS explicitly; do not
-   quietly downgrade a required receipt or persistence guarantee. High-rate realtime stays best-effort.
-7. Permit fallback for a declared retryable carrier/route outcome or receipt timeout while the
-   original deadline is valid. Missing-evidence recovery may choose a WS route that independently
-   authorizes the message; a proved authorization rejection stops attempts. Cancellation, expiry,
-   supersedence, and validation rejection also stop attempts. Late events cannot reopen a terminal result.
-8. Share logical receiver deduplication across RTC and WS, preserving application/session/room
-   scope. A common outgoing ID alone is insufficient while inbound stores remain carrier-scoped.
-   Update public consumers, exports, and examples with the new result contract in the same cutover.
-9. Retry only missing recipients, reuse bounded receipt aggregation where it proves actual audience
-   confirmation, and coalesce replaceable state. A relay receipt alone cannot discharge another
-   receiver's obligation. Feed existing channel backpressure into policy, use existing retry/wake
-   mechanisms, and avoid competing transport, ALM, and QueueBox retry loops.
-10. Bring the basic volatile path forward from milestone 4. Reuse existing AL memory state and
-    InMemoryQueueBox where queued execution is needed; retain the direct realtime send path.
-    Apply one policy computation/validation model to volatile and durable values. Before enabling
-    volatile traffic, publish and test aggregate memory/track/intake budgets in addition to the
-    per-message/window limits. Reliable volatile receipts promise only the admitted memory policy.
-    Durability remains explicit; later hardening is not permission to defer zero-IDB behavior.
-
-### Acceptance and focused evidence
-
-- Exercise loss, every data-channel overflow outcome, queued flush/replacement, disconnect,
-  duplicate arrival, late ACKs, cancellation, expiry, and supersedence with deterministic clocks and
-  transport outcomes. A queued/drop outcome must never appear as logical acknowledgement.
-- Run both fallback orders with the first attempt delayed until after fallback. Assert one message
-  ID, bounded attempts, one deadline, one logical receiver admission, and one terminal result.
-- Verify complete-audience receipts with three peers, relay changes, partial delivery, joins, and
-  departures. A hop ACK cannot satisfy another logical recipient's obligation. Reject unknown,
-  duplicate-spam, and wrong-peer controls without growing state.
-- Preserve receipt state and expiry semantics across the promised durable restart boundary. A
-  volatile result must not imply crash survival. No exactly-once application-execution guarantee is
-  introduced; applications still own idempotency and completion replies.
-- Prove repeated not-ready deferrals leave the processing failure count unchanged and cannot extend
-  the message deadline. Cover expiry exactly at the boundary, expiry during an asynchronous read,
-  restart while waiting, late readiness/receipts, and stale reservation release after another worker
-  claims the message. Ordinary failures still consume their declared retry budget; malformed work
-  remains `NON_RETRYABLE` and expiry remains a distinct logical terminal result.
-- Prove a message received with a lost ACK ends as unconfirmed if recovery is exhausted, without
-  claiming non-delivery. Cancellation after submission preserves prior recipient progress.
-  One unavailable recipient cannot block others; retry only that missing obligation. Contrast a
-  command to one authority with a notification to a frozen room audience.
-- Instrument actual browser volatile ALM sends/receives/retries and prove zero AL-owned IndexedDB
-  operations, including cross-carrier deduplication. Test aggregate memory/track bounds and disposal.
-  Verify pure read/compute/validate/write-or-send behavior with immutable candidates and the real
-  QueueBox attempt boundary. Durable behavior must still survive its promised restart boundary.
-- Extend [outbound runtime coverage](../../packages/tests/shared/al-outbound-message-runtime.test.ts),
-  [durable effects](../../packages/tests/shared/al-outbound-durable-effects.test.ts),
-  [IndexedDB replay](../../packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts), and
-  [data-channel flow control](../../packages/tests/shared/qrtc-data-channel.test.ts). Add semantic
-  typed-channel/RTC/WS conformance cases using real production owners and narrow carrier controls.
-- Update and verify [room messages](../../examples/room-message-channel/README.md),
-  [room realtime](../../examples/room-realtime-channel/README.md), and
-  [server room topics](../../examples/server-room-topics/README.md), plus verified application
-  consumers. Run their affected tests/builds and public API/bundle checks.
-
-## Later milestones
-
-These remain outcome-based until they enter the next-two-slice horizon. Tests and affected
-legacy consolidation are part of each milestone, not a final cleanup phase.
-
-| Order | Outcome                                                                                                                                                                                                                          | Required exit evidence                                                                                                                                                                                                                                                 |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3     | **Correct arbitration and recovery:** shared-key compare-and-set, bounded range/page repair, resynchronization integration, and authoritative membership fencing.                                                                | Cross-sender races, stale decisions, restart, epoch changes, exhausted repair, and deterministic convergence across affected memory/IndexedDB/PostgreSQL paths.                                                                                                        |
-| 4     | **Volatile scale and lifecycle hardening:** extend slice 2's zero-IDB path across concurrent topics/rooms, aggregate budgets, fairness, and long-running retention.                                                              | Sustained bounded memory and fair progress under many tracks, churn, backpressure, disposal, and cross-carrier traffic. Basic zero-IDB execution must already pass in slice 2.                                                                                         |
-| 5     | **One durable work owner through QueueBox:** retain canonical messages and authoritative facts; retry derived state independently where safe. Use indexed due/expiry queries, a fixed browser schema, and existing-engine wakes. | Small atomic acceptance decisions; redelivery after partial progress skips completed work and converges. Prove reservation recovery, multi-tab claims, retention, quota/abort handling, and bounded queries/cleanup. No parallel ALM queue/lease/retry engine remains. |
-| 6     | **Consumer-backed audience and QoS extensions:** evaluate room/principal/world/all/fixed audiences, distinct leader ACKs, and remaining capability/congestion policy against concrete Rallar consumers.                          | Named consumer and independent acceptance scenario for each implemented capability; equivalent logical RTC/WS outcomes, explicit unsupported results, and preserved authority during repair.                                                                           |
-| 7     | **Application integration:** correlation/reply matching, timeouts, session/trace propagation, ownership semantics, and payload-free diagnostics; distributed exclusive ownership only for a demonstrated consumer.               | Duplicate/late replies, wrong responders, restart, cancellation uncertainty, and privacy assertions. Any distributed claim use proves QueueBox-backed expiry/redelivery rather than a second claim system.                                                             |
-
-Cancellation, basic lifecycle observation, practical topic policy, full room-notification receipts,
-and zero-IDB volatile execution land in slice 2. Milestones 4, 6, and 7 harden or extend them; they
-must not defer these foundations. Instrumentation accompanies the first slice that needs it.
-
-The first release brings the canonical-message and retained-work foundations of milestone 5
-forward because admission recovery depends on them. Continue from the existing QueueBox owners;
-do not rebuild those foundations when reaching that milestone. Its remaining exit requirements
-still include bounded selection and cleanup under unrelated-row/session growth, browser
-multi-context recovery, and quota/eviction evidence. The matrix below retains those complete
-requirements; it does not mean every listed behavior remains unimplemented.
-
-Milestones 6 and 7 keep every named capability visible for product review, but a declaration in
-an old envelope is not evidence of product demand. Identify a real consumer before committing to
-new general messaging machinery. If no consumer justifies a capability, bring that decision back
-to the user and keep the guarantee explicitly unsupported; do not silently remove the roadmap
-item or report the entire implementation goal complete. Reuse existing principal/state-sync,
-CRDT, game, and room authority rather than adding competing owners.
+| Release  | AR Eye Hunter (browser-director)                                                                                                           | Relic Hunters (server-authoritative)                                                                                 |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 3 S1     | The match capability's WS send shows pending, confirmed, and failed states from the handle.                                                | Commands move from the REST `POST` to a `command` channel over WS addressed to the server; the UI shows the outcome. |
+| 3 S2     | Match lifecycle notifications (start, end, score) become a `notification` channel over RTC with WS fallback with frozen-audience receipts. | Server events become a room notification with per-session confirmation visible in server diagnostics.                |
+| 3 S3     | Match commands become a `command` channel with a real director receipt, volatile, zero IndexedDB proven.                                   | Snapshots move from live-only to the durable WS outbox with receipts.                                                |
+| 4 R1, R2 | Round-start notifications fenced on the current roster.                                                                                    | Round transitions use an ordering key per round with range repair.                                                   |
+| 5 A1, A2 | The director is the group leader: leader ACK on match-critical notifications; pickup-style actions use exclusive ownership.                | AI suggestions addressed to a principal audience; per-player private events.                                         |
+| 6 V1     | Manifests at 15, 30, and 50 agents using the match payload shapes.                                                                         | Long-run manifest with snapshot fan-out.                                                                             |
+| 7 I1, I2 | Multi-tab claim of the match session.                                                                                                      | AI planning request and reply on `awaitReply` with correlation and trace.                                            |
 
 ## Requirement-to-evidence matrix
 
-The coverage anchors below locate maintained tests; their presence does not certify that the
-matrix passes. The matrix is a requirement map, not an execution ledger. When implementing,
-attach actual evidence to the affected test and delivery review. F identifiers refer to the
-audit baseline; PC numbers match the product description's ten completion criteria. A listed
-test establishes only its existing assertions, not the entire row.
+Finding identifiers are the audit's; PC numbers are the product description's completion criteria.
+"Release" names where the remaining behavior lands; "State" is on `a28e61b61`.
 
-### Existing coverage anchors
-
-- **E1 — decoding/policy:** [persisted decoding](../../packages/tests/shared/al-message-persistence-decoding.test.ts),
-  [input validation](../../packages/tests/shared/al-message-validation.test.ts), and
-  [policy](../../packages/tests/shared/al-policy.test.ts).
-- **E2 — room/replay:** [room admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
-  [snapshot floors](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts), and
-  [durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts).
-- **E3 — delivery/control:** [inbound runtime](../../packages/tests/shared/al-inbound-message-runtime.test.ts),
-  [outbound runtime](../../packages/tests/shared/al-outbound-message-runtime.test.ts),
-  [durable effects](../../packages/tests/shared/al-outbound-durable-effects.test.ts), and
-  [RTC flow control](../../packages/tests/shared/qrtc-data-channel.test.ts).
-- **E4 — persistence/arbitration:** [admission backend](../../packages/tests/shared/alm/al-admission-backend.test.ts),
-  [IndexedDB replay](../../packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts), and
-  [PostgreSQL validated reads](../../packages/tests/shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.test.ts).
-- **E5 — browser lifetime:** [AL cleanup](../../packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-validation.test.ts),
-  [scope ownership](../../packages/tests/shared-web/al-runtime/browser-al-runtime-ownership.test.ts),
-  [canonical outbound cleanup](../../packages/tests/shared-web/al-runtime/browser-outbound-cleanup.test.ts), and
-  [effect-worker lifecycle](../../packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts).
-- **E6 — browser workload:** [three-browser RTC](../../tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts)
-  and the [RTC benchmark catalog](../../packages/shared-rtc-bench/README.md).
-- **E7 — specialized audiences:** [principal state sync](../../packages/tests/shared-server/rallar-system/state-sync/state-sync-principal-audience.test.ts)
-  and [CRDT principal targeting](../../packages/tests/shared-server/rallar-system/websocket/targets/crdt-principal-target.test.ts).
-
-### Audit findings
-
-| Requirement                | Owner                                           | Existing inspected coverage                    | Missing behavior / required acceptance evidence                                                                                   | Milestone               |
-| -------------------------- | ----------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| F1 reliable receipts       | Outbound runtime, typed sender, RTC/WS adapters | E3 ACK/effect and queue outcomes separately    | Purpose-specific receiver/audience receipts; partial and unconfirmed results; truthful transport outcomes.                        | 2                       |
-| F2 bounded trusted ingress | Contracts, inbound control, RTC/WS ingress      | E1 structural decode                           | Unified bounded validation; authenticated controls and relay trust; rejected input creates no message-owned work.                 | 1                       |
-| F3 room authority          | RTC snapshot/overlay, WS routing                | E2 floor/replay fences                         | No-floor authorization; bounded missing-authority recovery and bootstrap; epoch changes; frozen receipt audience.                 | 1, 2, 3                 |
-| F4 one fallback lifecycle  | Typed channels, logical admission scope         | E3 per-runtime behavior; E5 separate scopes    | Same identity/deadline and shared receiver dedup across both fallback orders; late events cannot reopen terminal state.           | 2                       |
-| F5 volatile path           | Browser AL state and existing memory QueueBox   | E4 persistent replay; E6 actual ALM workload   | Zero AL-owned IDB operations in slice 2; equivalent policy, aggregate budgets, then sustained scale evidence.                     | 2, 4                    |
-| F6 admission work          | Admission backends and effect selection         | E4 revision/transaction/decode cases           | Coherent shared-key decisions; bounded due queries; operation counts versus matching and unrelated work.                          | 3, 5                    |
-| F7 durable ownership       | QueueBox/ResourceInbox and ALM message handlers | E3/E4 durable effects/replay                   | One QueueBox-owned durable work path; atomic admission/work recording; no lost/double work across crash transitions.              | 5                       |
-| F8 indexed bounded cleanup | IDB snapshots and browser cleanup               | E4 prefix/expiry; E5 cleanup isolation         | Paged selection; hard visited-row/byte bounds with many eligible rows and unrelated namespaces.                                   | 5                       |
-| F9 database lifetime       | Browser persistence/session cleanup             | E5 ended-session deletion                      | Fixed bounded schema and database count; abandoned sessions, blocked deletion, multi-tab reset.                                   | 5                       |
-| F10 scheduling             | Existing InboxOutboxEngine and QueueBox         | E3 effects; E5 queue lifecycle                 | Existing-engine enqueue/readiness/due/cross-tab wakes, bounded recovery polling, measured idle operations and wake latency.       | 2, 5                    |
-| F11 stored envelope copies | Admission state/effects and serialization       | E3/E4 replay correctness                       | One canonical durable envelope; measured bytes/allocations with payload/fanout growth.                                            | 5                       |
-| F12 ordering gaps          | Existing ordering observation/state and repair  | E1/E3 small-gap policy/runtime                 | Max-safe-integer bounded work, count/byte/age and aggregate caps, deterministic release/no-op/resync.                             | 1, 2, 3                 |
-| F13 resource histories     | Contracts, controls, retention, diagnostics     | E1 structure; E3 outbound ACK dedup            | Input/page caps without a room-size cap; repeat-receipt and retained-state bounds; payload-free diagnostics.                      | 1, 2, 3, 5, 7           |
-| F14 shared-key races       | Admission computation and backend CAS           | E4 backend revision and rollback               | A/B stale-read then sequential-commit schedule has one winner; cross-backend global/semantic-key convergence.                     | 3                       |
-| F15 affected legacy        | Public exports, factories, verified consumers   | E4/E5 canonical factory/replay behavior        | Consumer/export inventory and coordinated removals; public API and consumer builds, no speculative retention.                     | Each affected milestone |
-| F16 incomplete semantics   | Audience/topic policy and application API       | E1/E2/E7 partial policy and specialized routes | Fencing, purpose-specific receipts and policy, consumer-backed audience/reply/ownership extensions, explicit unsupported results. | 1, 2, 3, 6, 7           |
-| F17 lifecycle truth        | Runtime, QueueBox, and delivery owners          | E2/E5 disposal regressions                     | Preserve disposal fences; staged results and cancellation uncertainty; durable restart and ownership outcomes.                    | 2, 5, 7                 |
-
-### Product completion criteria
-
-| Requirement                        | Owner                                      | Existing inspected coverage     | Missing behavior / required acceptance evidence                                                                              | Milestone                         |
-| ---------------------------------- | ------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| PC1 carrier conformance            | Shared semantics, RTC/WS adapters          | E1/E3/E6 separate layers        | Same scenario suite and equivalent admission/order/receipt/repair/expiry/terminal outcomes across carriers.                  | 1–7, extended with each guarantee |
-| PC2 all boundaries validated       | Contracts and ingress/replay owners        | E1/E4 structural checks         | Bounded decoding, identity/authority before admitted-state mutation, permissive recovery and immutable validated candidates. | 1                                 |
-| PC3 honest reliability             | Typed sender and delivery lifecycle        | E3 ACK and channel queue tests  | Required receipts cannot disappear; partial progress and non-delivery uncertainty remain explicit.                           | 2                                 |
-| PC4 zero-IDB volatile              | Browser volatile execution                 | E6 ALM workload exists          | Instrumented actual volatile ALM send/receive/retry performs zero AL-owned IndexedDB work; later scale hardening.            | 2, 4                              |
-| PC5 bounded durable owner          | QueueBox/ResourceInbox and ALM handlers    | E4/E5 replay/cleanup            | One durable work owner and canonical envelope; bounded queries despite unrelated rows and historical sessions.               | 5                                 |
-| PC6 authorized rooms               | Room authority, relay and receipt planning | E2 floor/replay                 | Matching authority, bounded catch-up/bootstrap, optimistic room progress, membership fence and frozen audience.              | 1, 2, 3                           |
-| PC7 supported target/ACK semantics | Audience policy and server/browser API     | E1/E7 specialized audiences     | Consumer-backed target/ACK modes have common conformance evidence; unimplemented required guarantees reject explicitly.      | 2, 6                              |
-| PC8 bounded protocol work          | Ordering, controls, retention and storage  | E1/E3/E4 partial mechanisms     | Count/byte/time and aggregate budgets; bounded audience/snapshot pages; fair progress, clean resync and terminal results.    | 1, 2, 3, 4, 5                     |
-| PC9 one observable identity        | Delivery handle and request/reply API      | E3 lifecycle pieces             | Stable fallback identity, receipt uncertainty, correlation/trace across retry/restart, payload-free diagnostics.             | 2, 7                              |
-| PC10 deterministic lifetime        | Runtime, storage, exclusive ownership      | E2/E4/E5 disposal/replay/claims | Multi-tab races, quota/eviction, blocked open/delete, crash boundaries and observable outcomes.                              | 2, 4, 5, 7                        |
+| Requirement                            | State                                                                                        | Release           |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------- |
+| F1 reliable receipts                   | Open: public result is an admission snapshot; `receiver` normalizes to `hop`.                | S1, S2, S3        |
+| F2 bounded trusted ingress             | Resolved.                                                                                    | done              |
+| F3 room authority                      | Partial: floors and no-floor server authorization exist; frozen audience and fencing remain. | S2, R2            |
+| F4 one fallback lifecycle              | Open: same envelope, carrier-scoped inbound stores.                                          | S2, S3            |
+| F5 volatile path                       | Open: every typed send persists by default.                                                  | S3, V1            |
+| F6 admission work                      | Partial: exact observation CAS exists; two dequeue owners and whole-store reads remain.      | F2, R1            |
+| F7 durable ownership                   | Partial: outbound canonical; inbound copies; two server consumers.                           | F2                |
+| F8 indexed bounded cleanup             | Partial: indexed page reader exists; seven `getAll()` sites and a full-range cleanup scan.   | F2                |
+| F9 database lifetime                   | Partial: fixed schema; no reset mechanism; multi-tab and quota untested.                     | F2, I2            |
+| F10 scheduling                         | Resolved for wakes and readiness; polling bounds measured in V1.                             | V1                |
+| F11 stored envelope copies             | Partial: outbound one copy; inbound copies.                                                  | F2                |
+| F12 ordering gaps                      | Resolved for bounds; range repair remains.                                                   | R1                |
+| F13 resource histories                 | Resolved for ceilings; aggregate budgets remain.                                             | S3, V1            |
+| F14 shared-key races                   | Mechanism present; cross-backend proof remains.                                              | R1                |
+| F15 affected legacy                    | Resolved for #521's scope; D8 governs the series.                                            | every PR          |
+| F16 incomplete semantics               | Open: audiences, leader, fencing, correlation, ownership.                                    | R2, A1, A2, I1    |
+| F17 lifecycle truth                    | Partial: settlement truthful; handle and disposal outcomes remain.                           | S1, I2            |
+| PC1 carrier conformance                | Lane missing.                                                                                | F1, then every PR |
+| PC2 all boundaries validated           | Resolved.                                                                                    | done              |
+| PC3 honest reliability                 | Open.                                                                                        | S1, S2, S3        |
+| PC4 zero-IndexedDB volatile            | Open.                                                                                        | S3                |
+| PC5 bounded durable owner              | Partial.                                                                                     | F2                |
+| PC6 authorized rooms                   | Partial.                                                                                     | S2, R2            |
+| PC7 supported target and ACK semantics | Open.                                                                                        | A1, A2            |
+| PC8 bounded protocol work              | Partial.                                                                                     | F2, R1, V1        |
+| PC9 one observable identity            | Open.                                                                                        | S1, S2, I1        |
+| PC10 deterministic lifetime            | Open.                                                                                        | F2, I2            |
 
 ## Validation and performance
 
-### Required layers
-
-1. **Focused semantics:** decoding, authorization, controls, ordering bounds, shared-key races,
-   send outcomes, receipts, fallback, and disposal. Test behavior through real owners; use narrow
-   transport/clock controls instead of reimplementing admission in fixtures.
-   Include successful progress under delayed snapshots, lost receipts, duplicate/no-op input,
-   partial room connectivity, and transient route loss. Negative tests alone do not prove the
-   optimistic product behavior.
-2. **Storage:** memory/IndexedDB parity and real PostgreSQL conditional writes where affected;
-   crash boundaries, lease recovery, multi-context claims, corruption, blocked deletion, quota,
-   transaction aborts, and eviction. Fake IndexedDB alone does not prove browser scheduling or
-   multi-tab behavior.
-3. **Transport conformance:** run the same logical scenarios through RTC and WS, including direct
-   delivery, three-peer relay, complete audience receipts, and cross-carrier duplicate arrival.
-   Distinguish the logical audience from the initial transport fanout. The current typed
-   `messages.rtc` API constructs room messages; `nextHopPeerIds` chooses entry peers, not a fixed
-   recipient list. Its one-entry-peer browser case must require delivery to the other room
-   member through relay. Keep direct realtime recipient checks strict. Do not claim typed
-   unicast or fixed-audience coverage from that room workload.
-4. **Browser workflows:** operate visible controls and verify delivery state, reconnect,
-   cancellation, room changes, and session cleanup. Extend the existing three-browser suite.
-5. **Package validation:** affected shared/browser/server typechecks, public API snapshots,
-   browser bundle-boundary checks, consumer tests/builds, and repository style/navigation review.
-6. **Computation and library ownership:** prove deterministic compute/validate from the same value
-   snapshot, `Either`-based expected rejections, no mutation of frozen inputs/candidates by
-   write/send, and a fresh read/compute/validate attempt after QueueBox-owned conflict/redelivery.
-   Exercise crashes between independently committed updates: read skips proven completed actions,
-   retains the facts needed by pending actions, and retries only the remaining work. Verify the
-   small atomic decisions separately, including stale and absent predecessors and duplicate sends.
-   Inspect actual registration-to-result paths to verify QueueBox is reused and no second work,
-   lease, retry, buffer-framework, or scheduling owner is introduced. A mock callback count or a
-   source-string assertion is not sufficient evidence for the behavior.
-
-At execution time, use [the testing command reference](../../.agents/skills/rallar-testing/references/test-commands.md)
-and verify commands against current scripts. Existing entry points include:
+Required layers, per PR: focused semantic tests through real owners; storage parity across memory,
+IndexedDB, and real PostgreSQL where affected; the conformance family over both carriers; the
+affected browser workflow; package validation (typechecks, public API snapshots, bundle boundaries,
+`deno task check` for api-v1, repo style); and the reuse inspection required by D8.
 
 ```sh
-# Focused tests first; select the additional changed suites from the evidence matrix.
-npm run test:unit -- packages/tests/shared/al-message-persistence-decoding.test.ts packages/tests/shared/rtc-snapshot-floor-admission.test.ts packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts
+npx vitest run packages/tests/shared/alm packages/tests/shared-web/al-runtime packages/tests/shared-server/al-runtime
 npx tsc -p packages/shared/tsconfig.json --noEmit
 npm --workspace @ar-eye-hunter/shared-web run typecheck
 npm --workspace @ar-eye-hunter/shared-server run typecheck
-npm run test:unit -- packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-entrypoints.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts
+cd apps/api-v1 && deno task check
 npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
-npm run check:repo-style
+npm run check:repo-style:changed -- origin/main HEAD
+npm run test:full-stack:memory
+npm run test:api-v1:black-box:postgres
+npm run test:api-v1:black-box:postgres:medium-scale
 ```
 
-Run affected consumer builds after updating their public contracts. With the required services
-available, use `npm run test:rallar:full-stack:postgres:live-rtc-3` for live three-browser RTC and
-`npm run test:postgres:integration` for affected true database concurrency. REST changes also
-require focused black-box recipes in `packages/shared-test/black-box-runner`.
+The medium-scale and state-write gates apply to every PR that changes an authoritative mutation
+path or concurrency domain, with unchanged workloads and thresholds. ALM measurements extend the
+existing `messages.rtc` workload with AL-owned transactions, visited and decoded rows, bytes, work
+age, retries, repairs, terminal counts, and receipt latency, recorded as p50, p95, and p99 with
+environment, configuration, sample count, and failures. Serialized readback bytes are layout
+evidence, not physical allocation or latency. Artifacts live under `tmp/perf/` locally and as CI
+artifacts in the lanes.
 
-When authoritative mutation paths or concurrency domains change, apply the existing PostgreSQL
-medium-scale and performance gates without weakening their workloads or thresholds:
-`npm run test:api-v1:black-box:postgres:medium-scale` and the affected state-write benchmark/
-comparison procedure in the testing reference. Select broader checks from actual changed risk;
-document passed, failed, and skipped results distinctly.
+## Continuing from a fresh session
 
-### Measurement design
+Read this roadmap, then the open pull request's Goal, Acceptance, Validation, and Follow-up
+sections, then run `npm run pr:delivery -- status`. The current planning delivery is
+[PR #548](https://github.com/intact-software-systems/ar-eye-hunter/pull/548), which also carries
+the implementation plan for F1 and F2 under `plans/`. Start the next slice from merged `main` on a
+new branch. Recover the current owner, entry,
+dataflow, failure boundary, and tests from the repository before editing; this roadmap is not a
+navigation map. When a release completes, move the next two slices into the concrete horizon here
+and leave the rest outcome-shaped. Do not add pull request status prose to this document.
 
-Extend B06's existing `messages.rtc` workload using the [RTC benchmark catalog](../../packages/shared-rtc-bench/README.md)
-and [performance guidance](../../scripts/perf/README.md). Native data-channel measurements do not
-establish ALM admission cost. Add AL-owned transactions, visited/decoded/matched rows, bytes,
-work/queue age, retries, repairs, terminal counts, and receipt latency to the actual ALM path.
+## Revision history
 
-Compare cold and warm runs, unrelated-row growth, matching backlog, ended and abandoned sessions,
-128 B/4 KiB/64 KiB payloads, fanout, backpressure, background tabs, and multi-tab use. Keep
-three-browser conformance as the common baseline; expand scale cohorts only with declared
-workloads and equivalent environment. Separate transport submission from end-to-end receipt
-latency. Record p50/p95/p99 plus environment, configuration, sample count, and failures.
-
-Measure payload copies and total retained rows/bytes separately. Canonical storage can remove
-payload duplication while retaining more identity and completion facts for superseded messages.
-Small messages with rapid replacement can therefore consume more total storage until their
-original deadlines. Include active, waiting, superseded, completed, and expired states; do not
-infer universal storage savings from large-payload results. Serialized readback bytes are useful
-layout evidence but do not measure physical IndexedDB allocation or runtime latency.
-
-Record actual send attempts alongside storage snapshots. An eager dispatch path may attempt each
-accepted state update before a newer update arrives, while a queued batch can discard older updates
-before its first send. The same producer input then performs different transport work; compare
-that coalescing tradeoff explicitly instead of attributing all row growth to storage layout.
-Distinguish enqueue completion from dispatch, and verify payload/work expiry separately from the
-configured retention of metadata such as versions and supersedence tracks.
-
-Include one slow/missing recipient, duplicate receipt traffic, many ordering tracks, and audiences
-beyond a single protocol page. Compare work for all recipients with selective retry of only missing
-ones, receipt aggregation, and replacement of obsolete state. A room-size increase must not turn a
-wire/page budget into silent audience truncation. Choose aggregate budget values against declared
-workloads and record their capacity/deferral semantics in the owning policy before release.
-
-Require zero AL-owned IndexedDB operations for the volatile target and bounded rows/bytes for
-durable selection/cleanup independent of unrelated state. Set numeric latency budgets from
-measured baselines before claiming improvement. Keep generated artifacts under `tmp/perf/`;
-the retired static transaction count is not a baseline and no improvement is claimed here.
-
-## Rollout, maintenance, and completion
-
-### Merge boundaries
-
-Deliver the roadmap through independently usable releases. The first release ends with the
-bounded admission and QueueBox storage/retry cutover: canonical outgoing messages, retained
-admission work, readiness-neutral retry accounting, finite original deadlines, and coordinated
-RTC/WS/server consumers. Finish the correctness repairs and affected release checks for that
-cutover, then merge it before starting another product capability. A complete ALM roadmap is
-not a prerequisite for this release.
-
-Keep the existing receipt guarantees and their documented limitations explicit at this boundary.
-Delivery handles, dependable complete-audience receipts, shared receiver deduplication, and the
-zero-IndexedDB volatile path belong to subsequent pull requests from the merged base. They remain
-required roadmap outcomes; do not report them complete or change reliability defaults early.
-
-After the release scope is fixed, add work only when required for its correctness, compatibility,
-touched-file standards closure, or acceptance evidence. Keep independent improvements for the
-next release. Preserve coordinated contracts and their verified consumers in the same release;
-do not split that dependency solely to reduce the file count. Every release must pass its affected
-checks and document its actual guarantees before merge.
-
-### Continuing from a fresh session
-
-Read this roadmap and the current pull request's Goal, Acceptance, Validation, and Follow-up
-sections before selecting work. The first release is [PR #521](https://github.com/intact-software-systems/ar-eye-hunter/pull/521).
-Inspect the current branch, uncommitted changes, and affected production owners, then run
-`npm run pr:delivery -- status`. The PR carries current delivery evidence; this roadmap defines
-the intended capabilities and their acceptance requirements.
-
-While the first release remains open, finish its storage/retry corrections, full affected-file
-review, and selected release checks. In particular, verify first-admission contention recovery,
-current authority on replay, expiry after asynchronous reads/writes, signaling failure propagation,
-server queue activation, restart, and cleanup through the real owners. Run the unchanged
-three-browser send workload with audience-correct delivery assertions, plus the required
-storage/package/PostgreSQL/performance checks against the final candidate. Preserve the receiver
-NACK, closed-send, artifact, and cleanup checks. The room case requires relay progress rather than
-treating a next-hop hint as a recipient restriction. Inspect actual results and their
-source/workload scope; a historical passing checkpoint or an artifact named `green` does not
-prove the current release passes.
-
-Validate recovery through canonical message readback and worker replay, rather than obsolete
-physical row counts or another carrier submission. Keep queue-time clock observations separate
-from worker-created auth facts. Use live message timestamps and stored retry eligibility; identify
-NACK-triggered repair separately from an independently scheduled ACK timeout. These test repairs
-must preserve identity, authority, original expiry, and observable delivery assertions.
-
-Deadline fixtures must align the clocks used by admission, workers, and queue readback in both
-Node and Deno. Mocking `Date.now` alone does not control native `Temporal.Now.instant`. Prove
-delivery immediately before the original deadline and rejection at or after it; distinguish pending
-work from completed effects and explicit cleanup. Immediate absence of every queue row is not a
-delivery-completion guarantee.
-
-Configured policy-denial NACKs must preserve the original admission rejection and create no
-accepted-message work. Treat them as advisory controls: reflect the complete message identity only
-when both the control payload and envelope fit their existing limits and the authenticated receiver
-can be represented. Do not truncate identities or let an unrepresentable advisory replace the
-rejection with an exception. Strict builder invariant failures must remain visible.
-
-Observe topology through scoped, assembled snapshot pages, keeping room broadcasts distinct from
-unicast reconnect hydration. Restore current presence and authoritative topology before expecting
-reconnect hydration. Live HTTP observations may include concurrent worker writes and therefore
-require monotonic revision floors; prove read-only projection preserves the exact observed causal
-tuple in controlled snapshot tests. Preserve the named expiry event as evidence of lease cleanup.
-
-For state-write performance acceptance, preserve the original pre-cutover baseline and
-unchanged workload, thresholds, and controlled database environment. Reuse a locally computed
-expected mutation when validating the enclosing operation; validate the complete inert candidate
-before reading its fields and retain all identity, persistence, authority, and conditional-write
-checks. The standalone invariant check still constructs its own expected value. Separate throwing
-programmer-invariant assertions from pure policy validation, which returns issues; the existing
-QueueBox handler chooses the retry or rejection outcome. Accept this optimization only with focused
-semantic evidence and a fresh comparison; fewer computations alone do not prove the measured
-regression is repaired.
-
-Keep measured results attributed to the production source and harness actually run. A subsequent
-test-support or documentation correction does not invalidate unchanged production measurements;
-repeat the comparison when production, the workload, or the measurement environment changes in
-a way that affects that evidence. The PR records the current result and its limits.
-
-Exercise the current named QueueBox reservation contract in the real browser IndexedDB probe,
-preserving atomic rollback, replay, and competing-write assertions. PostgreSQL fixtures must clean
-up their exact normalized work contexts as well as canonical payload/identity keys and metadata,
-including malformed and terminal work. Verify absence before closing the fixture and run the full
-selected integration sequence to catch cross-test contamination.
-
-Release acceptance also covers the directly affected HTTP control-observation decoder and WS
-report contracts, owned clocks in the existing queue/auth and black-box execution adapters, and
-malformed performance-artifact rejection before derived calculations. Invalid measurements must
-retain precise field errors through both artifact validation and baseline/candidate comparison.
-These are review and acceptance repairs for this release, not new ALM capabilities. Complete
-their focused regressions and full affected-file review before the final package, browser,
-PostgreSQL, and comparative performance gates. Keep current command results and publication
-status in the PR.
-
-The affected test harness must also preserve its own evidence contracts: count and absence
-windows use the owned clock, and an observation wait settles its in-flight reads before reporting
-success. Assertion/report operators validate their control fields while preserving opaque payloads.
-Recipe expansion preserves quoted and escaped variable strings, and finite traffic weights must
-not overflow into biased workload selection. Keep these corrections within the existing owners
-and verify the supported recipe behavior; they do not expand the ALM feature horizon.
-
-Browser-facing report decoders must remain independent of CLI filesystem imports while preserving
-their scalar conversion policies. Browser fixtures must wait for the visible selection to become
-ready and prove a scope change before releasing work held in the previous scope. Preserve actual
-keyboard interaction and authority assertions without adding sleeps or changing timeout limits.
-
-Preserve supplied control values through compilation so validation can reject malformed options;
-apply defaults only under the documented absence policy. Generated result indexes must accept
-all supported step names without inheriting JavaScript prototype keys. Remote command preparation
-must return its existing typed failure before queueing invalid control fields. The topology proof
-uses one owned clock for wait eligibility and fragment expiry, with unchanged assertion bounds.
-
-After merge, use the merged source as the starting point for a new branch and PR. Reassess the
-next useful delivery/receipt capability from current code, keeping only two slices concrete.
-Preserve the remaining requirement-to-evidence matrix rather than treating this first release as
-completion of the roadmap. No ignored local report or prior conversation is required to discover
-the release boundary, next capability, or acceptance requirements.
-
-### Deployment and final completion
-
-Use coordinated deployment for incompatible public or wire contracts. Update verified repository
-consumers and examples together, remove obsolete APIs, and reject unsupported versions explicitly.
-Stop producers and workers in all affected contexts before explicitly resetting incompatible ALM
-browser storage. Resume only against the new schema/contracts. Reset only ALM-owned data, preserve
-unrelated application data, and document which pending ALM work is discarded. Do not introduce
-silent migration fallbacks. A rollback also coordinates producers and storage compatibility;
-old workers must not consume the new schema.
-
-Within every milestone, review and remediate every changed human-authored file completely.
-Every support file modified by that remediation enters closure recursively. Independent untouched
-code remains outside closure. Remove affected legacy that has no independent requirement or
-verified consumer; do not remove a public export solely because its factory stopped constructing
-it. Any genuinely required retained compatibility boundary needs the repository's explicit
-maintainer decision and exception treatment; none is authorized by this roadmap. The requested
-implementation retains no affected unused code or legacy and introduces no migration. Reuse of
-QueueBox and existing libraries means extending their canonical owners where necessary, not
-copying an old implementation or preserving a redundant ALM worker for convenience.
-
-Planning completion required the reconciled audit and product description, this adjacent roadmap,
-valid links, and every finding/completion criterion represented in the evidence matrix. The
-subsequent execution task authorized implementation and regular pull request publication.
-Complete each release at its stated boundary, preserving the remaining roadmap outcomes.
-
-### Commands executed and what they taught us
-
-These entries record the original planning verification; they are not a live implementation status.
-
-- **Source, policy, and library inspection:** confirmed Rallar's optimistic default and the existing
-  QueueBox, RTC queue, retry, rate-window, ordering, memory-state, and `Either` owners. A rate
-  counter or Motion interpolation buffer is not an ALM message-repair window. No new foundational
-  or third-party library is justified by this inventory.
-- **Read-only documentation validation:** resolved 162 local Markdown links and anchors and the
-  complete F1–F17 and PC1–PC10 evidence-matrix sequences. The revised matrix moves basic volatile
-  execution into slice 2 and names QueueBox as the durable work owner.
-- **Formatting and diff validation:** `dprint check` passed all three documents and
-  `git diff --check` passed. This revision changes documentation only; pre-existing implementation
-  drafts are outside its edits.
-- **Runtime evidence boundary:** the original baseline Vitest invocation exited 127 because its
-  worktree did not then have Vitest installed. That historical attempt is not passing evidence.
-  No runtime tests, application builds, or performance workloads were run for this document update;
-  their required implementation checks remain specified above.
+- 2026-09-05: planning deliverable against `02d65ac4a`.
+- 2026-09-07: first-release merge boundary and fresh-session guidance for PR #521.
+- 2026-09-08: re-baselined on `a28e61b61`; decision record D1 to D8; release map, conformance lane,
+  storage and cutover, governance, consumer proofs, and refreshed matrix.
