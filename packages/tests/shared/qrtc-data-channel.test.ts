@@ -949,7 +949,11 @@ describe('QRtcDataChannel', () => {
         const settlements: QRtcDataChannel.SendSettlement[] = [];
         const result = channel.sendJson(
             { id: { msgId: '1' }, typeId: 'chat' },
-            { onSettled: (settlement) => settlements.push(settlement) }
+            {
+                onSettled: (settlement) => {
+                    settlements.push(settlement);
+                }
+            }
         );
 
         expect(result).toMatchObject({ status: 'dropped' });

@@ -3,6 +3,7 @@ import {
     AL_CONTROL_NACK_TYPE_ID,
     AL_CONTROL_REPAIR_TYPE_ID
 } from '../al-contracts/al-control.ts';
+import type { ApiJsonObject } from '../api/api-json-value.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
@@ -111,26 +112,27 @@ function matchesFault(match: TransportFaultMatch, facts: SerializedFrameFacts): 
 }
 
 function toSerializedFrameFacts(serialized: string): SerializedFrameFacts | undefined {
-    let parsed: unknown;
     try {
-        parsed = JSON.parse(serialized);
+        return decodeSerializedFrameFacts(JSON.parse(serialized));
     }
     catch {
         return undefined;
     }
-    if (typeof parsed !== 'object' || parsed === null) {
+}
+
+function decodeSerializedFrameFacts(value: unknown): SerializedFrameFacts | undefined {
+    if (!isRecord(value)) {
         return undefined;
     }
-    const record = parsed as Record<string, unknown>;
-    const id = typeof record.id === 'object' && record.id !== null
-        ? record.id as Record<string, unknown>
-        : {};
-    const payload = typeof record.payload === 'object' && record.payload !== null
-        ? record.payload as Record<string, unknown>
-        : {};
+    const id: ApiJsonObject = isRecord(value.id) ? value.id : {};
+    const payload: ApiJsonObject = isRecord(value.payload) ? value.payload : {};
     return {
-        typeId: typeof record.typeId === 'string' ? record.typeId : undefined,
+        typeId: typeof value.typeId === 'string' ? value.typeId : undefined,
         msgId: typeof id.msgId === 'string' ? id.msgId : undefined,
         ackedMsgId: typeof payload.ackedMsgId === 'string' ? payload.ackedMsgId : undefined
     };
+}
+
+function isRecord(value: unknown): value is ApiJsonObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
