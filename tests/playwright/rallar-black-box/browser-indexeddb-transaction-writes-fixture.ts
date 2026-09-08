@@ -42,19 +42,28 @@ interface IndexedDbAtomicAdmissionProbe {
     readonly admissionConflictRolledBackQueue: boolean;
 }
 
-export interface IndexedDbTransactionWriteBrowserProbe extends IndexedDbAtomicAdmissionProbe {
+interface IndexedDbQueueStorageProbe {
     readonly databaseVersion: number;
     readonly fairnessIndexPresent: boolean;
-    readonly storedResource: string | undefined;
     readonly storedRevision: number;
-    readonly concurrentResults: readonly string[];
-    readonly durableWinner: string | undefined;
+}
+
+interface IndexedDbAdmissionStorageProbe {
     readonly admissionTokenPresent: boolean;
     readonly guardedAdmissionBatchRolledBack: boolean;
 }
 
-export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<IndexedDbTransactionWriteBrowserProbe> {
-    const dbName = `playwright-indexeddb-queue-${crypto.randomUUID()}`;
+export interface IndexedDbTransactionWriteBrowserProbe
+    extends IndexedDbAtomicAdmissionProbe, IndexedDbQueueStorageProbe, IndexedDbAdmissionStorageProbe {
+    readonly storedResource: string | undefined;
+    readonly concurrentResults: readonly string[];
+    readonly durableWinner: string | undefined;
+}
+
+export async function runIndexedDbTransactionWriteBrowserProbe(
+    databaseId: string
+): Promise<IndexedDbTransactionWriteBrowserProbe> {
+    const dbName = `playwright-indexeddb-queue-${databaseId}`;
     const storedEntry = createQueueEntry('stored', 'stored-value');
     const firstQueue = new IndexedDbQueueBox({ dbName, storeName: STORE_NAME });
     await firstQueue.enqueue(storedEntry);
@@ -74,8 +83,8 @@ export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<Indexe
     ]);
     const durableWinner = await firstQueue.getItem(firstCandidate.key);
     const databaseState = await inspectQueueDatabase(dbName, storedEntry.key);
-    const admissionState = await runAdmissionStorageProbe();
-    const atomicState = await runAtomicAdmissionStorageProbe();
+    const admissionState = await runAdmissionStorageProbe(`playwright-indexeddb-admission-${databaseId}`);
+    const atomicState = await runAtomicAdmissionStorageProbe(`playwright-atomic-admission-${databaseId}`);
 
     return {
         ...databaseState,
@@ -87,13 +96,8 @@ export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<Indexe
     };
 }
 
-async function runAdmissionStorageProbe(): Promise<
-    Pick<IndexedDbTransactionWriteBrowserProbe, 'admissionTokenPresent' | 'guardedAdmissionBatchRolledBack'>
-> {
-    const database = await openIndexedDbAdmissionDatabase(
-        `playwright-indexeddb-admission-${crypto.randomUUID()}`,
-        ADMISSION_STORE_NAME
-    );
+async function runAdmissionStorageProbe(dbName: string): Promise<IndexedDbAdmissionStorageProbe> {
+    const database = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
     try {
         const initial = computeBrowserAdmissionWrite(0, createQueueEntry('current', 'current'), []);
         if (!await writeIndexedDbAdmissionMutations({ ...initial, db: database })) {
@@ -129,8 +133,7 @@ async function runAdmissionStorageProbe(): Promise<
     }
 }
 
-async function runAtomicAdmissionStorageProbe(): Promise<IndexedDbAtomicAdmissionProbe> {
-    const dbName = `playwright-atomic-admission-${crypto.randomUUID()}`;
+async function runAtomicAdmissionStorageProbe(dbName: string): Promise<IndexedDbAtomicAdmissionProbe> {
     const entry = createQueueEntry('atomic-work', 'retained-message');
     const original = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
     try {
@@ -148,7 +151,11 @@ async function runAtomicAdmissionStorageProbe(): Promise<IndexedDbAtomicAdmissio
         storeName: AL_ADMISSION_WORK_STORE_NAME
     });
     try {
-        const reserved = await queue.reserveEntries(new Set([entry.typeId]), new Set([EntityStatus.NEW]), 1);
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([entry.typeId]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1
+        });
         const queuedWorkReplayed = reserved.size === 1 && [...reserved.values()][0].resource === entry.resource;
         return {
             queuedWorkReplayed,
@@ -225,7 +232,7 @@ function createQueueEntry(resourceId: string, resource: string): ResourceEntry {
 async function inspectQueueDatabase(
     dbName: string,
     storedKey: Key
-): Promise<Pick<IndexedDbTransactionWriteBrowserProbe, 'databaseVersion' | 'fairnessIndexPresent' | 'storedRevision'>> {
+): Promise<IndexedDbQueueStorageProbe> {
     const database = await readIndexedDbRequest(indexedDB.open(dbName));
     try {
         const transaction = database.transaction(STORE_NAME, 'readonly');

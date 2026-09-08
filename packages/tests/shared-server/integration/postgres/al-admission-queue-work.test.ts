@@ -14,9 +14,13 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { decodeALOutboundTransportMessage, toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    decodeALOutboundTransportMessage,
+    toALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import {
     createDefaultResourceInboxDequeuer,
     NonRetryableException,
@@ -34,7 +38,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
     createRuntimeStatePostgresSql,
-    requirePostgresDatabaseUrl
+    requirePostgresDatabaseUrl,
+    type PostgresSql
 } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -98,7 +103,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
                 traceId: 'trace/'.repeat(30)
             }
         };
-        const decision = await readSupersedenceDecision(first, message);
+        const decision = await readSupersedenceDecision({ store: first, message: message, nowMs: Date.now });
         const canonicalKey = decision.entries[0].key;
         const identityKey = toALOutboundIdentityKey(canonicalKey);
         ownedKeys.push(canonicalKey, identityKey);
@@ -124,7 +129,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             expect(row.key.contextId.length).toBeLessThanOrEqual(128);
         }
         await restarted.completeEffect(action.entry);
-        expect((await readSupersedenceDecision(restarted, message)).status).toBe('duplicate');
+        expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).status).toBe('duplicate');
         expect(await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage)).toEqual([]);
         const conflicting = {
             ...identity!,
@@ -148,7 +153,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const message = createSupersedingMessage('sender', 1);
-        const decision = await readSupersedenceDecision(store, message);
+        const decision = await readSupersedenceDecision({ store, message, nowMs: Date.now });
         const canonicalKey = decision.entries[0].key;
         const identityKey = toALOutboundIdentityKey(canonicalKey);
         ownedKeys.push(canonicalKey, identityKey);
@@ -178,8 +183,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const second = createALOutboundAdmissionStore({ ...settings, backend: other });
         const original = createSupersedingMessage('sender-a', 1);
         const conflicting = { ...original, id: { ...original.id, senderId: 'sender-b' } };
-        const firstDecision = await readSupersedenceDecision(first, original, 'sender-a');
-        const secondDecision = await readSupersedenceDecision(second, conflicting, 'sender-b');
+        const firstDecision = await readSupersedenceDecision({ store: first, message: original, supersedenceKey: 'sender-a', nowMs: Date.now });
+        const secondDecision = await readSupersedenceDecision({ store: second, message: conflicting, supersedenceKey: 'sender-b', nowMs: Date.now });
         for (const decision of [firstDecision, secondDecision]) {
             ownedKeys.push(decision.entries[0].key, toALOutboundIdentityKey(decision.entries[0].key));
         }
@@ -296,8 +301,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const second = createALOutboundAdmissionStore({ ...settings, backend: other });
         const older = createSupersedingMessage('sender-a', 1);
         const newer = createSupersedingMessage('sender-b', 2);
-        const oldDecision = await readSupersedenceDecision(first, older);
-        const newDecision = await readSupersedenceDecision(second, newer);
+        const oldDecision = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
+        const newDecision = await readSupersedenceDecision({ store: second, message: newer, nowMs: Date.now });
         ownedKeys.push(
             oldDecision.entries[0].key,
             toALOutboundIdentityKey(oldDecision.entries[0].key),
@@ -310,7 +315,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await first.readSentMessage(older.id.msgId)).toBeUndefined();
         const pending = await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage);
         expect(pending.map((work) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')).toEqual([newer.id.msgId]);
-        const retried = await readSupersedenceDecision(first, older);
+        const retried = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
         expect(retried.status).toBe('superseded');
         expect(retried.bundle).toBeUndefined();
     });
@@ -484,17 +489,22 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
     });
 });
 
-async function createStorage(nowMs: () => number = Date.now) {
-    const namespace = crypto.randomUUID();
+interface AdmissionStorageFixture {
+    readonly backend: PSqlAdmissionWorkBackend;
+    readonly other: PSqlAdmissionWorkBackend;
+    readonly entry: ResourceEntry;
+    readonly ownedKeys: Key[];
+}
+
+async function createStorage(
+    nowMs: () => number = Date.now,
+    namespace: string = crypto.randomUUID()
+): Promise<AdmissionStorageFixture> {
     const ownedKeys: Key[] = [];
     const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
     onTestFinished(async () => {
         try {
-            for (const key of ownedKeys) {
-                await sql`delete from resource_inbox where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}`;
-            }
-            await sql`delete from resource_inbox where fk_ext_bank_id = ${namespace}`;
-            await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
+            await cleanupStorage({ sql, namespace, ownedKeys });
         }
         finally {
             await sql.end();
@@ -542,7 +552,16 @@ function createSupersedingMessage(senderId: string, sequence: number): ALMessage
     return { ...message, ordering: { seq: sequence, orderingKey: 'shared-topic' } };
 }
 
-async function readSupersedenceDecision(store: ALOutboundAdmissionStore, message: ALMessage, supersedenceKey = 'shared-topic') {
+interface ReadSupersedenceDecisionInput {
+    readonly store: ALOutboundAdmissionStore;
+    readonly message: ALMessage;
+    readonly supersedenceKey?: string;
+    readonly nowMs: () => number;
+}
+
+async function readSupersedenceDecision(
+    { store, message, supersedenceKey = 'shared-topic', nowMs }: ReadSupersedenceDecisionInput
+): Promise<ALOutboundComputedDto<ALOutboundTransportMessage>> {
     const read = await store.readOutgoingMessage({
         msg: message,
         planner: () => ({
@@ -557,9 +576,52 @@ async function readSupersedenceDecision(store: ALOutboundAdmissionStore, message
     return computeALOutboundDispatch({
         read,
         outboxEntry: { ...QueueBoxUtilities.toResourceEntryFromMsg(read.msg, 'WS_OUTBOX'), key: toALOutboundCanonicalKey(store.canonicalScope, read.msg) },
-        dispatchAtMs: Date.now(),
+        dispatchAtMs: nowMs(),
         intent: 'enqueue',
         phase: 'immediate',
         options: {}
     });
+}
+
+interface CleanupStorageInput {
+    readonly sql: PostgresSql;
+    readonly namespace: string;
+    readonly ownedKeys: readonly Key[];
+}
+
+interface RemainingStorageRow {
+    readonly identity: string;
+}
+
+async function cleanupStorage({ sql, namespace, ownedKeys }: CleanupStorageInput): Promise<void> {
+    // The work context is normalized independently of the raw metadata namespace.
+    // Delete by the complete fixture context, including terminal or malformed work.
+    const workContext = toALOutboundWorkKey(namespace, 'cleanup-context').contextId;
+    for (const key of ownedKeys) {
+        await sql`
+            delete from resource_inbox
+            where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+                and fk_ext_bank_id = ${key.contextId}
+        `;
+        const remaining = await sql<RemainingStorageRow[]>`
+            select ri_resource_id as identity from resource_inbox
+            where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
+                and fk_ext_bank_id = ${key.contextId}
+        `;
+        expect(remaining).toEqual([]);
+    }
+    await sql`
+        delete from resource_inbox
+        where fk_ext_bank_id = ${namespace} or fk_ext_bank_id = ${workContext}
+    `;
+    await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
+    const remainingWork = await sql<RemainingStorageRow[]>`
+        select ri_resource_id as identity from resource_inbox
+        where fk_ext_bank_id = ${namespace} or fk_ext_bank_id = ${workContext}
+    `;
+    const remainingMetadata = await sql<RemainingStorageRow[]>`
+        select store_key as identity from runtime_state_store where store_namespace = ${namespace}
+    `;
+    expect(remainingWork).toEqual([]);
+    expect(remainingMetadata).toEqual([]);
 }

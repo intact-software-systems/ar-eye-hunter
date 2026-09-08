@@ -756,7 +756,7 @@ from worker-created auth facts. Use live message timestamps and stored retry eli
 NACK-triggered repair separately from an independently scheduled ACK timeout. These test repairs
 must preserve identity, authority, original expiry, and observable delivery assertions.
 
-For the remaining state-write performance gate, preserve the original pre-cutover baseline and
+For state-write performance acceptance, preserve the original pre-cutover baseline and
 unchanged workload, thresholds, and controlled database environment. Reuse a locally computed
 expected mutation when validating the enclosing operation; validate the complete inert candidate
 before reading its fields and retain all identity, persistence, authority, and conditional-write
@@ -765,6 +765,17 @@ programmer-invariant assertions from pure policy validation, which returns issue
 QueueBox handler chooses the retry or rejection outcome. Accept this optimization only with focused
 semantic evidence and a fresh comparison; fewer computations alone do not prove the measured
 regression is repaired.
+
+Keep measured results attributed to the production source and harness actually run. A subsequent
+test-support or documentation correction does not invalidate unchanged production measurements;
+repeat the comparison when production, the workload, or the measurement environment changes in
+a way that affects that evidence. The PR records the current result and its limits.
+
+Exercise the current named QueueBox reservation contract in the real browser IndexedDB probe,
+preserving atomic rollback, replay, and competing-write assertions. PostgreSQL fixtures must clean
+up their exact normalized work contexts as well as canonical payload/identity keys and metadata,
+including malformed and terminal work. Verify absence before closing the fixture and run the full
+selected integration sequence to catch cross-test contamination.
 
 Release acceptance also covers the directly affected HTTP control-observation decoder and WS
 report contracts, owned clocks in the existing queue/auth and black-box execution adapters, and
