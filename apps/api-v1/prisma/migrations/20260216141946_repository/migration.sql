@@ -20,4 +20,4 @@ CREATE TABLE resource_inbox
     CONSTRAINT resource_inbox_unique_k UNIQUE (fk_ext_bank_id, ri_resource_id, ri_topic_id)
 );
 
-CREATE INDEX resource_inbox_ix ON resource_inbox (ri_status, ri_type_id, created_ts, ri_row_id);
+CREATE INDEX resource_inbox_ix ON resource_inbox (ri_status, ri_type_id);
