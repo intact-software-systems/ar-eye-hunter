@@ -18,6 +18,7 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -166,7 +167,25 @@ describe('WS server bounded and authorized admission', () => {
 
         const observed = effect === 'local' ? fixture.delivered : recipient.sent;
         expect(observed).toHaveLength(offsetMs < 0 ? 1 : 0);
-        expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        fixture.admission.workQueue.cleanup();
+        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        if (offsetMs < 0 && effect === 'forward') {
+            expect(keys).toHaveLength(1);
+            const pending = await fixture.admissionStore.workQueue.getItem(keys[0]);
+            expect(pending).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+            expect(pending?.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
+            const retained = decodeALInboundWorkEntry(pending!, 'ws-server-ingress');
+            expect(retained.payload.kind).toBe('dispatch-local');
+            if (retained.payload.kind !== 'dispatch-local') {
+                throw new Error('Expected pending local delivery');
+            }
+            const original = decodePersistedALMessage(retained.payload.entry.resource);
+            expect(original.id).toEqual(message.id);
+            expect(original.constraints?.expiresAtMs).toBe(expiresAtMs);
+        }
+        else {
+            expect(keys).toEqual([]);
+        }
     });
 
     it.each(['unauthorized', 'not-yet-in-sync'] as const)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
@@ -528,6 +547,7 @@ async function createServerIngressFixture(
     await socket.open();
     server.addConnection(new ConnectionContext({ id: peerId, socket }));
     const nowMs = Date.now;
+    vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(nowMs()));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs())));
     const engine = new InboxOutboxEngine();
     const admissionStore = createALInboundAdmissionStore({

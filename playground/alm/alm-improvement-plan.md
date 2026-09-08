@@ -756,6 +756,12 @@ from worker-created auth facts. Use live message timestamps and stored retry eli
 NACK-triggered repair separately from an independently scheduled ACK timeout. These test repairs
 must preserve identity, authority, original expiry, and observable delivery assertions.
 
+Deadline fixtures must align the clocks used by admission, workers, and queue readback in both
+Node and Deno. Mocking `Date.now` alone does not control native `Temporal.Now.instant`. Prove
+delivery immediately before the original deadline and rejection at or after it; distinguish pending
+work from completed effects and explicit cleanup. Immediate absence of every queue row is not a
+delivery-completion guarantee.
+
 Configured policy-denial NACKs must preserve the original admission rejection and create no
 accepted-message work. Treat them as advisory controls: reflect the complete message identity only
 when both the control payload and envelope fit their existing limits and the authenticated receiver
