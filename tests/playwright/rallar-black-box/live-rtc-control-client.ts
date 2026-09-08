@@ -328,6 +328,12 @@ export class LiveRtcControlClient {
             const error = toError(cause);
             runCaptureFailure = { name: error.name, message: error.message };
         }
+        const sendResult = summarizeSendResult(
+            (run?.results ?? []).find((result) =>
+                result.agentId === input.senderAgentId &&
+                result.commandId === `send-${input.matrixId}`
+            )
+        );
         await this.#writeDiagnosticsArtifact(
             `live-rtc-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}.json`,
             JSON.stringify(
@@ -342,6 +348,7 @@ export class LiveRtcControlClient {
                     failure: { name: failure.name, message: failure.message },
                     healthByAgentId: Object.fromEntries(healthEntries),
                     ...(runCaptureFailure ? { runCaptureFailure } : {}),
+                    ...(sendResult ? { sendResult } : {}),
                     recentResults: (run?.results ?? []).slice(-100).map((result) => ({
                         agentId: result.agentId,
                         commandId: result.commandId,
@@ -672,6 +679,36 @@ function summarizeEvent(event: LiveRtcControlClient.Event): Readonly<Record<stri
             deliveryMode: stringValue(data.deliveryMode)
         }).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
     );
+}
+
+function summarizeSendResult(
+    result: LiveRtcControlClient.Result | undefined
+): Readonly<Record<string, boolean | number | string | readonly string[]>> | undefined {
+    if (!result) {
+        return undefined;
+    }
+    const diagnostics = jsonRecord(result.result?.value) ?? {};
+    const admission = jsonRecord(diagnostics.message) ?? {};
+    const message = jsonRecord(admission.message) ?? {};
+    const entries = Array.isArray(admission.entries) ? admission.entries : [];
+    const entryStatuses = entries
+        .map((entry) => stringValue(jsonRecord(entry)?.status))
+        .filter((status): status is string => Boolean(status));
+    const runtimeStatus = stringValue(diagnostics.status);
+    const admissionStatus = stringValue(admission.status);
+    const reason = stringValue(admission.reason);
+    const messageId = stringValue(jsonRecord(message.id)?.msgId);
+    return {
+        ...(result.agentId ? { agentId: result.agentId } : {}),
+        commandId: result.commandId,
+        ok: result.ok,
+        ...(runtimeStatus ? { runtimeStatus } : {}),
+        ...(admissionStatus ? { admissionStatus } : {}),
+        ...(reason ? { reason } : {}),
+        ...(messageId ? { messageId } : {}),
+        entryCount: entries.length,
+        entryStatuses
+    };
 }
 
 export interface LiveRtcObservedDeliveries {

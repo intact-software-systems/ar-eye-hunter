@@ -186,7 +186,21 @@ describe('live RTC control client', () => {
             agentId: 'agent-a',
             commandId: 'send-direct-timeout',
             ok: true,
-            result: { value: { credential: 'must-not-be-retained' } }
+            result: {
+                value: {
+                    status: 'sent',
+                    message: {
+                        status: 'pending-admission',
+                        reason: 'awaiting a durable admission retry',
+                        message: {
+                            id: { msgId: 'message-direct-timeout' },
+                            payload: { resource: 'must-not-be-retained' }
+                        },
+                        entries: [{ status: 'NEW', resource: 'must-not-be-retained' }]
+                    },
+                    credential: 'must-not-be-retained'
+                }
+            }
         });
         events.push({
             agentId: 'agent-b',
@@ -235,6 +249,17 @@ describe('live RTC control client', () => {
             commandId: 'send-direct-timeout',
             ok: true
         }]));
+        expect(artifact.sendResult).toEqual({
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true,
+            runtimeStatus: 'sent',
+            admissionStatus: 'pending-admission',
+            reason: 'awaiting a durable admission retry',
+            messageId: 'message-direct-timeout',
+            entryCount: 1,
+            entryStatuses: ['NEW']
+        });
         expect(artifact.recentEvents).toEqual([{
             agentId: 'agent-b',
             kind: 'message',

@@ -146,10 +146,20 @@ prove them. It also absorbs PR #546's complementary retained-peer expiry fix:
 the same manager lifecycle now wakes at the earliest transition-grace expiry,
 re-arms for later retentions, and cancels or adopts the timer across stop/start.
 One lifecycle flag owns both wake sources; no parallel manager, lock, or legacy
-path remains. Because this consolidation changes the candidate head, its
-same-head diagnostic proof count is zero. There is not yet a valid B06 E3
-result. B07 remains held, and evidence ranking cannot start until a valid B06
-primary and any required repeat are archived.
+path remains. Diagnostic run 34239018198 on consolidated head
+`c3aa9c33f085d21d6d09cb73a2568e725f61d354` reached complete RTC readiness
+but timed out on the first direct `messages.rtc` delivery. Sender and receiver
+health retained open reliable lanes with no drops or reconnects, while the
+receiver recorded zero application messages. Heartbeat traffic shares those
+lanes, so aggregate raw receive counters cannot prove that the application
+frame reached the receiver. The retained result summary also omitted the
+sender's AL admission status, leaving native-send versus admitted-work delay
+unresolved. PR #530 therefore adds a payload-free send-result summary with the
+outer runtime status, actual admission status and reason, message identity,
+and entry statuses before its next diagnostic. Because this changes the
+candidate head, its same-head diagnostic proof count remains zero. There is
+not yet a valid B06 E3 result. B07 remains held, and evidence ranking cannot
+start until a valid B06 primary and any required repeat are archived.
 
 ### Current execution horizon
 
@@ -4606,11 +4616,21 @@ after complete realtime readiness when B did not record the first direct
 `messages.rtc` delivery from A. The proof count is zero again. PR #530 next
 adds bounded failure-only message diagnostics on a new head so the next
 recurrence can distinguish endpoint RTC state, command completion, and
-control-event recording without retaining raw command payloads. Three
-independent diagnostics must then pass on one unchanged final PR head before
-merge; any later head change restarts that proof. The next two slices remain
-to prove and merge that correction, then dispatch B06 in publish mode from
-moving `main`. B07 remains held; Task 12 remains blocked on valid B06 evidence.
+control-event recording without retaining raw command payloads. It then
+absorbs PR #546's retained-peer expiry wake into the same manager lifecycle.
+Run 34239018198 on consolidated head
+`c3aa9c33f085d21d6d09cb73a2568e725f61d354` reached complete RTC readiness
+but again timed out on the first direct `messages.rtc` delivery. The retained
+health proves open lanes and no drops or reconnects, while the receiver still
+records zero application messages; heartbeat traffic makes raw lane counters
+insufficient to prove application-frame arrival. The next same-PR revision
+therefore retains only the sender's bounded AL admission outcome, reason,
+message ID, and entry statuses alongside the existing endpoint health. Its
+head change keeps the proof count at zero. Three independent diagnostics must
+then pass on one unchanged final PR head before merge; any later head change
+restarts that proof. The next two slices remain to prove and merge that
+correction, then dispatch B06 in publish mode from moving `main`. B07 remains
+held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
