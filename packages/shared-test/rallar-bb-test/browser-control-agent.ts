@@ -1,3 +1,4 @@
+import { takeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from './browser-adapter.ts';
 import {
     remoteControlConfig,
@@ -145,6 +146,7 @@ export function createRallarBlackBoxBrowserControlAgent(
     const { runtime, disposeBridge } = createRuntimeForBootstrap(bootstrap);
     const listeners = new Set<BrowserControlAgentListener>();
     let disposed = false;
+    let resumedCommandIds: readonly string[] = [];
     let snapshot: RallarBlackBoxBrowserControlAgentSnapshot = {
         state: runtime.state(),
         control: initialControlSnapshot(bootstrap),
@@ -198,6 +200,10 @@ export function createRallarBlackBoxBrowserControlAgent(
         async start() {
             assertNotDisposed();
             const config = remoteControlConfig(bootstrap, 1);
+            const resumed = takeAgentResumeRecord(config.runId ?? bootstrap.runId, bootstrap.agentId);
+            if (resumed) {
+                resumedCommandIds = resumed.completedCommandIds;
+            }
             snapshot = {
                 ...snapshot,
                 bootstrapping: true,
@@ -240,7 +246,8 @@ export function createRallarBlackBoxBrowserControlAgent(
                         url: bootstrap.controlUrl,
                         runId: config.runId ?? bootstrap.runId,
                         agentId: bootstrap.agentId,
-                        token: bootstrap.controlToken
+                        token: bootstrap.controlToken,
+                        completedCommandIds: resumedCommandIds
                     });
                 }
             }

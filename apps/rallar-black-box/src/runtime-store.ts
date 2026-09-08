@@ -1,3 +1,4 @@
+import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser-adapter.ts';
 import {
     bootstrapFleetMetadata,
@@ -496,6 +497,7 @@ class RallarBlackBoxRuntimeStore {
     private snapshot: RuntimeStoreSnapshot;
     private bootstrapStarted = false;
     private runSequence = 1;
+    private resumedCommandIds: readonly string[] = [];
     private bootstrapConfig = resolveInitialBootstrapConfig();
 
     constructor() {
@@ -603,7 +605,8 @@ class RallarBlackBoxRuntimeStore {
             url,
             runId: effectiveRunId,
             agentId: effectiveAgentId,
-            token: this.bootstrapConfig.controlToken
+            token: this.bootstrapConfig.controlToken,
+            completedCommandIds: this.resumedCommandIds
         });
     }
 
@@ -694,6 +697,10 @@ class RallarBlackBoxRuntimeStore {
     async bootstrapControlAgent(): Promise<void> {
         const runNumber = this.runSequence++;
         const config = remoteControlConfig(this.bootstrapConfig, runNumber);
+        const resumed = takeAgentResumeRecord(config.runId ?? this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
+        if (resumed) {
+            this.resumedCommandIds = resumed.completedCommandIds;
+        }
         this.snapshot = {
             ...this.snapshot,
             bootstrapping: true,

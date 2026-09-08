@@ -1333,8 +1333,37 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                     }
                                 },
                                 additionalProperties: false
+                            },
+                            messaging: {
+                                type: 'object',
+                                required: [
+                                    'supported',
+                                    'carriers',
+                                    'faults',
+                                    'storageCounters',
+                                    'reload'
+                                ],
+                                description: 'ALM messaging features this agent build executes: typed ' +
+                                    'message sends over the advertised carriers, transport fault ' +
+                                    'injection, queue-box storage counters, and the agent.reload ' +
+                                    'command that reboots the page and resumes completed commands.',
+                                properties: {
+                                    supported: { type: 'boolean' },
+                                    carriers: {
+                                        type: 'array',
+                                        items: {
+                                            type: 'string',
+                                            enum: ['ws', 'rtc', 'rtc-with-ws-fallback']
+                                        }
+                                    },
+                                    faults: { type: 'boolean' },
+                                    storageCounters: { type: 'boolean' },
+                                    reload: { type: 'boolean' }
+                                },
+                                additionalProperties: false
                             }
                         },
+                        required: ['messaging'],
                         additionalProperties: false
                     },
                     updatedAtEpochMs: { type: 'integer' }
