@@ -39,8 +39,10 @@ The highest-priority remaining gaps are:
 6. Ordering gaps and protocol collections lack comprehensive bounds. Shared semantic keys
    are not fully protected by sender-specific admission guards.
 
-These are code-derived findings. No current browser latency profile or ALM transaction-count
-measurement was captured. The original numeric transaction baseline is withdrawn.
+These are code-derived findings against `02d65ac4a`. The first release resolved items 2 and 6
+except range repair and left the rest partial or open; the status table below is authoritative.
+No current browser latency profile or ALM transaction-count measurement was captured. The
+original numeric transaction baseline is withdrawn.
 
 ## Status after the first release
 
