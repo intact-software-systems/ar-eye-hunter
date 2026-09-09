@@ -294,6 +294,33 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
         }
     );
 
+    it('observes a pending delivery after durable message admission completes', async () => {
+        let clockEpochMs = 0;
+        const timing = {
+            now: () => clockEpochMs,
+            delay: async (milliseconds: number) => {
+                clockEpochMs += milliseconds;
+            }
+        };
+        await withBrowserRuntimeTiming(timing, async (nativeRuntime) => {
+            facade.behavior.typedSend.mockResolvedValue(almSendResult('pending-admission', 'msg-pending'));
+            facade.behavior.messageAdmission.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+            await nativeRuntime.connect(almConnectionConfig());
+            await sendAlmMessage(nativeRuntime, 'h-pending');
+
+            await expect(nativeRuntime.observeDelivery({
+                connection: 'aliceAlm',
+                handleId: 'h-pending',
+                state: ['accepted'],
+                timeoutMs: 1_000
+            })).resolves.toMatchObject({
+                handleId: 'h-pending',
+                state: 'accepted',
+                submitted: true
+            });
+        });
+    });
+
     it('times out observing a delivery state the handle never reaches', async () => {
         let clockEpochMs = 0;
         const timing = {

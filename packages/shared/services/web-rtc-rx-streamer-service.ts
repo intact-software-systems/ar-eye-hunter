@@ -1,5 +1,6 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
+    decodeALMessageValue,
     decodePersistedALMessage
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
@@ -49,6 +50,10 @@ export namespace WebRtcRxStreamerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly nowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
+        readonly refreshRoomAuthorityIfNeeded?: (
+            message: ALMessage,
+            acceptance: ALInboundMessageRuntime.Acceptance
+        ) => Promise<void>;
     }
 
     export interface Dependencies {
@@ -60,6 +65,10 @@ export namespace WebRtcRxStreamerService {
             readonly maxMissedPings: number;
             readonly pingFrequencyMsecs: number;
         };
+        readonly refreshRoomAuthorityIfNeeded: ((
+            message: ALMessage,
+            acceptance: ALInboundMessageRuntime.Acceptance
+        ) => Promise<void>) | undefined;
     }
 }
 
@@ -142,12 +151,17 @@ export class WebRtcRxStreamerService {
                 {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
                     onMessage: async (value) => {
+                        const message = decodeALMessageValue(value).right;
                         const acceptance = await this.inboundRuntime.handleIncomingMessage(value, {
                             kind: 'rtc-peer',
                             peerId: peerDto.peerId
                         });
                         if (acceptance.left) {
                             console.warn('Rejected RTC message', acceptance.left.code);
+                            return;
+                        }
+                        if (acceptance.right && message) {
+                            await this.dependencies.refreshRoomAuthorityIfNeeded?.(message, acceptance.right);
                         }
                     }
                 }
@@ -454,6 +468,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
         heartbeat: input.heartbeat ?? {
             maxMissedPings: defaultMaxMissedPings,
             pingFrequencyMsecs: defaultPingFrequencyMsecs
-        }
+        },
+        refreshRoomAuthorityIfNeeded: input.refreshRoomAuthorityIfNeeded
     });
 }

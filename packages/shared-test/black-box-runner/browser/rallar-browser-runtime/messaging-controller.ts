@@ -156,6 +156,16 @@ function toTypedSendOptions(
 
 type TypedSendAdmission = Either<string, RallarMessageSendResult>;
 
+interface PendingMessageAdmission {
+    readonly messageId: string;
+    readonly transport: 'rtc' | 'ws';
+}
+
+interface DeliveryRecord {
+    readonly observation: BlackBoxRallarDeliveryObservation;
+    readonly pendingAdmission?: PendingMessageAdmission;
+}
+
 function toDeliveryObservationState(
     status: RallarMessageSendResult['status']
 ): BlackBoxRallarDeliveryObservation['state'] {
@@ -192,27 +202,40 @@ async function readTypedSendAdmission(
     }
 }
 
-function toDeliveryObservationFromAdmission(
+function toDeliveryRecordFromAdmission(
     handleId: string,
     admission: TypedSendAdmission
-): BlackBoxRallarDeliveryObservation {
-    return admission.fold<BlackBoxRallarDeliveryObservation>(
+): DeliveryRecord {
+    return admission.fold<DeliveryRecord>(
         () => ({
-            handleId,
-            state: 'rejected',
-            submitted: false,
-            confirmedPeerIds: [],
-            unconfirmedPeerIds: [],
-            attempts: 1
+            observation: {
+                handleId,
+                state: 'rejected',
+                submitted: false,
+                confirmedPeerIds: [],
+                unconfirmedPeerIds: [],
+                attempts: 1
+            }
         }),
-        (result) => ({
-            handleId,
-            state: toDeliveryObservationState(result.status),
-            submitted: result.status === 'enqueued' || result.status === 'accepted',
-            confirmedPeerIds: [],
-            unconfirmedPeerIds: [],
-            attempts: 1
-        })
+        (result) => {
+            const observation: BlackBoxRallarDeliveryObservation = {
+                handleId,
+                state: toDeliveryObservationState(result.status),
+                submitted: result.status === 'enqueued' || result.status === 'accepted',
+                confirmedPeerIds: [],
+                unconfirmedPeerIds: [],
+                attempts: 1
+            };
+            return result.status === 'pending-admission' && result.transport !== 'replay'
+                ? {
+                    observation,
+                    pendingAdmission: {
+                        messageId: result.message.id.msgId,
+                        transport: result.transport
+                    }
+                }
+                : { observation };
+        }
     );
 }
 
@@ -273,13 +296,14 @@ export namespace BlackBoxRallarMessagingController {
         emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
         emitDiagnostic(config: BlackBoxRallarConnectionConfig, topic: string, data?: object): void;
         readonly emitError: BlackBoxRallarRuntimeDiagnostics['emitError'];
+        hasMessageAdmission(messageId: string, transport: 'rtc' | 'ws'): Promise<boolean>;
     }
 }
 
 export class BlackBoxRallarMessagingController {
     readonly #options: BlackBoxRallarMessagingController.Input;
     readonly #resources: BlackBoxRallarMessagingResourceController;
-    readonly #deliveries = new Map<string, BlackBoxRallarDeliveryObservation>();
+    readonly #deliveries = new Map<string, DeliveryRecord>();
     constructor(options: BlackBoxRallarMessagingController.Input) {
         this.#options = options;
         this.#resources = createBlackBoxRallarMessagingResourceController(options);
@@ -675,7 +699,7 @@ export class BlackBoxRallarMessagingController {
             channel.send(send.payload, toTypedSendOptions(send))
         );
         this.#resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
-        this.#deliveries.set(send.handleId, toDeliveryObservationFromAdmission(send.handleId, admission));
+        this.#deliveries.set(send.handleId, toDeliveryRecordFromAdmission(send.handleId, admission));
         const diagnostics = toMessageSendDiagnostics(send, admission);
         this.#options.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
@@ -689,13 +713,37 @@ export class BlackBoxRallarMessagingController {
     };
 
     readDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
-        const observation = this.#deliveries.get(handleId);
-        if (observation === undefined) {
+        const record = this.#deliveries.get(handleId);
+        if (record === undefined) {
             throw new TypeError(
                 `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.unknownDeliveryHandle} ${handleId}`
             );
         }
-        return observation;
+        return record.observation;
+    };
+
+    refreshDelivery = async (handleId: string): Promise<BlackBoxRallarDeliveryObservation> => {
+        const record = this.#deliveries.get(handleId);
+        if (record === undefined) {
+            return this.readDelivery(handleId);
+        }
+        const pending = record.pendingAdmission;
+        if (!pending || !await this.#options.hasMessageAdmission(pending.messageId, pending.transport)) {
+            return record.observation;
+        }
+        const current = this.#deliveries.get(handleId);
+        if (current !== record) {
+            return this.readDelivery(handleId);
+        }
+        const admitted: DeliveryRecord = {
+            observation: {
+                ...record.observation,
+                state: 'accepted',
+                submitted: true
+            }
+        };
+        this.#deliveries.set(handleId, admitted);
+        return admitted.observation;
     };
 
     cancelDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
@@ -703,7 +751,7 @@ export class BlackBoxRallarMessagingController {
             ...this.readDelivery(handleId),
             state: 'cancelled'
         };
-        this.#deliveries.set(handleId, cancelled);
+        this.#deliveries.set(handleId, { observation: cancelled });
         return cancelled;
     };
 

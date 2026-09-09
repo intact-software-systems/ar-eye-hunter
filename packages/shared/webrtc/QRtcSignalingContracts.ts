@@ -35,7 +35,7 @@ export type QRtcSignalingTransportCallbacks = {
     onOpen: (sessionId: string, token: string) => Promise<void>;
     onError: (sessionId: string, token: string, message: string) => Promise<void>;
     onClose: (sessionId: string, token: string) => Promise<void>;
-    onMessage: (sessionId: string, token: string, data: ALMessage) => Promise<void>;
+    onMessage: (sessionId: string, token: string, data: ALMessage) => Promise<void | 'retry'>;
 };
 
 export type QRtcSignalingTransportInputDto = {

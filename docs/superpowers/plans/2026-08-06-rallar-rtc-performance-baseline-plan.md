@@ -8,7 +8,8 @@
 > `rallar-testing`, and `publishing-plan-progress` workflows.
 
 **Goal:** Produce reproducible, correctness-gated RTC evidence for the accepted
-`RTC-B01` through `RTC-B06` workloads without changing production RTC behavior.
+`RTC-B01` through `RTC-B06` workloads, separating measurement from any
+independently reviewed RTC correctness corrections that failed evidence exposes.
 Browser and live-RTC observations are an append-only stream over the `main`
 snapshot selected by each run; they do not wait for a permanently stable head.
 
@@ -171,14 +172,35 @@ wire/send/endpoint facts needed to diagnose an intermittent NACK miss. There is
 not yet a valid B06 E3 result. B07 remains held, and evidence ranking cannot
 start until a valid B06 primary and any required repeat are archived.
 
+PR #554 is the single correction-and-proof PR for the failures exposed while
+closing that tooling gap. It keeps the NACK diagnostics, makes transient
+signaling layout mismatches return through the existing QueueBox retry path,
+pulls the authoritative room snapshot when an RTC application message is
+blocked on a newer causal floor, and makes the black-box delivery handle poll
+the existing durable AL admission record instead of freezing its initial
+`pending-admission` result. It adds no lock, library, compatibility path,
+Playwright retry, or wider timing budget. The current candidate passes more
+than 190 focused tests and repository type checking. Its recovery behavior passed five
+retry-free delivery-only browser repetitions and three retry-free repetitions
+of the complete RTC smoke family; after the ownership-only standards closure,
+the exact candidate passed the complete RTC smoke family again without retries.
+The added recovery and live observation behavior measured 252.37 KiB Brotli in
+the headless browser bundle; the maintainer approved its smallest containing
+strict whole-KiB ceiling, `<253 KiB`, without changing any operator dependency
+exclusions.
+Keep subsequent corrections and local proof in PR #554 until this exact slice
+is complete; do not create another hypothesis PR or spend a full CI cycle after
+each local observation.
+
 ### Current execution horizon
 
 | Order | Slice                                                                | Completion evidence                                                                                                                                                                                                                                                                                                                                                  |
 | ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Archive run 34361576057 and merge bounded NACK failure diagnostics | PR #553 merges the verified failed ZIP/index row unchanged. One focused tooling PR makes failed NACK attempts retain payload-free wire classifications, closed send/result/event classifications, and aggregate sender/target RTC health inside the attempt's already archived raw evidence. Focused tests, type/build/style/structure checks, branch review, and the exact default three-browser scenario pass. |
-| 2     | Capture B06 E3-memory again from moving `main`                       | Manually dispatch `RTC-B06 Performance Observation` in `publish` mode after the tooling correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. If it fails, its archive itself contains the bounded facts needed for diagnosis.                                               |
+| 1     | Archive run 34361576057                                               | PR #553 merges the verified failed ZIP/index row unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2     | Complete and merge correction/proof PR #554                           | Keep bounded NACK diagnostics, the evidenced RTC recovery corrections, live durable-admission observation, all local stress repetitions, branch review, and final CI in this one PR. The exact candidate passes focused tests, type/build/style/structure checks, five retry-free delivery-only runs, three retry-free complete RTC smoke runs, and one final Branch Release Gate. Do not split further hypothesis or test-only PRs from this slice. |
+| 3     | Capture B06 E3-memory again from moving `main`                        | Manually dispatch `RTC-B06 Performance Observation` in `publish` mode after PR #554 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. If it fails, its archive itself contains the bounded facts needed for diagnosis.                                                                                                     |
 
-After these two slices, Task 12 will choose the B05 observation window,
+After these three slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
 unlike-environment evidence before ranking at most one candidate—or `none`.
 

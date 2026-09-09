@@ -68,7 +68,7 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
             {
                 onMessage: async (message) => {
                     try {
-                        await input.callbacks.onMessage(input.sessionId, input.token, message);
+                        return await input.callbacks.onMessage(input.sessionId, input.token, message);
                     }
                     catch (error) {
                         console.error('Error in onMessage handler', toError(error));

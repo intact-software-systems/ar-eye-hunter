@@ -93,8 +93,9 @@ interface PeerEntry {
 }
 
 interface PeerCreationAdmission {
-    allowed: boolean;
-    reason?: string;
+    readonly allowed: boolean;
+    readonly reason?: string;
+    readonly retryInboundSignal?: true;
 }
 
 interface PeerLaneIdentity {
@@ -302,6 +303,13 @@ export namespace WebRtcConnectionService {
             reason?: string;
         }>;
 
+    export type InboundPeerCreationDecision =
+        | PeerCreationDecision
+        | Readonly<{
+            decision: 'retry';
+            reason?: string;
+        }>;
+
     export interface PeerLifecycleCallback {
         onCreated(peerDto: QRtcPeerDto): void;
 
@@ -330,7 +338,7 @@ export namespace WebRtcConnectionService {
 
     export type InboundPeerCreationPolicy = (
         input: InboundPeerCreationPolicyInput
-    ) => PeerCreationDecision;
+    ) => InboundPeerCreationDecision;
 
     export interface OutboundDialPolicyInput {
         readonly peerId: PeerId;
@@ -393,10 +401,6 @@ export class WebRtcConnectionService {
         return this.attemptBudget.readDiagnostics();
     }
 
-    // --------------------------------------------------
-    // Callbacks
-    // --------------------------------------------------
-
     onRtcPeerLifecycleDo(id: string, cb: WebRtcConnectionService.PeerLifecycleCallback): WebRtcConnectionService {
         this.onRtcPeerLifecycleCallbacks.set(id, cb);
         return this;
@@ -405,10 +409,6 @@ export class WebRtcConnectionService {
     removeRtcPeerLifecycleById(id: string): boolean {
         return this.onRtcPeerLifecycleCallbacks.delete(id);
     }
-
-    // --------------------------------------------------
-    // Peer management
-    // --------------------------------------------------
 
     removePeerIfPresent(
         peerId: string,
@@ -544,13 +544,13 @@ export class WebRtcConnectionService {
                     throw new TypeError(signal.left.message);
                 }
                 if (signal.right) {
-                    await this.receiveSignal(signal.right);
+                    return await this.receiveSignal(signal.right);
                 }
             }
         };
     }
 
-    private async receiveSignal(message: DecodedRtcSignalingMessage): Promise<void> {
+    private async receiveSignal(message: DecodedRtcSignalingMessage): Promise<void | 'retry'> {
         const peerId = message.fromId;
         if (message.toId !== this.input.sessionId || peerId === this.input.sessionId) {
             return;
@@ -562,7 +562,7 @@ export class WebRtcConnectionService {
         }
         const admission = this.shouldCreatePeerFromInboundSignal(peerId, message);
         if (!admission.allowed) {
-            return;
+            return admission.retryInboundSignal ? 'retry' : undefined;
         }
         const accepted = await this.acceptPeerIfAbsent(peerId, message);
         if (accepted.left) {
@@ -632,7 +632,7 @@ export class WebRtcConnectionService {
     }
 
     private normalizePeerCreationDecision(
-        decision: WebRtcConnectionService.PeerCreationDecision
+        decision: WebRtcConnectionService.InboundPeerCreationDecision
     ): PeerCreationAdmission {
         if (decision === true || decision === 'allow') {
             return { allowed: true };
@@ -640,6 +640,10 @@ export class WebRtcConnectionService {
 
         if (decision === false || decision === 'deny') {
             return { allowed: false };
+        }
+
+        if (decision.decision === 'retry') {
+            return { allowed: false, reason: decision.reason, retryInboundSignal: true };
         }
 
         return { allowed: decision.decision === 'allow', reason: decision.reason };

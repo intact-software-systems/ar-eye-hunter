@@ -89,7 +89,8 @@ describe('browser RTC peer admission', () => {
                     expect(dial.left?.kind).toBe('dial-denied');
                 }
 
-                await inbound.connection.receive(offer(peerId));
+                const inboundResult = await inbound.connection.receive(offer(peerId));
+                expect(inboundResult).toBe(allowed ? undefined : 'retry');
                 if (allowed) {
                     expect(inbound.connection.nativePeer(peerId).remoteDescription?.type).toBe('offer');
                 }

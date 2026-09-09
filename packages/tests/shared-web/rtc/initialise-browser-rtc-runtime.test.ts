@@ -56,7 +56,7 @@ describe('browser RTC runtime composition', () => {
         configureBrowserALRuntimeStores('self', { diagnosticsPorts });
     });
 
-    it('rejects an incoming offer while signaling starts, then admits the selected accepted peer', async () => {
+    it('retains an incoming offer while signaling starts and admits it after the selected layout is ready', async () => {
         const nativeRuntime = installNativeRtcRuntime();
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
@@ -110,9 +110,7 @@ describe('browser RTC runtime composition', () => {
             await manager.getOrCreate(group.group).acceptGroupUpdate(group);
             configureBrowserRtcPeerCreationPolicies(service, manager);
 
-            await receiveOffer(queueBox, 'startup-peer');
-
-            expect(service.knownPeerIds()).toEqual(['startup-peer']);
+            await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
             expect(nativeRuntime.createdConnections).toHaveLength(1);
             expect(nativeRuntime.createdConnections[0].receivedDescriptions).toEqual([
                 { type: 'offer', sdp: 'startup-peer-offer' }

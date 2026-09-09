@@ -55,7 +55,10 @@ import {
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
 import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
-import type { OnMessageCallback, OnOutboxWebSocketMessageCallback } from './queue-message-callbacks.ts';
+import type {
+    OnInboxMessageCallback,
+    OnOutboxWebSocketMessageCallback
+} from './queue-message-callbacks.ts';
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -141,9 +144,9 @@ export class WsQueueBoxClientService {
         OnOutboxWebSocketMessageCallback
     >();
 
-    private readonly onInboxMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
+    private readonly onInboxMessageCallbacks: Map<string, OnInboxMessageCallback> = new Map();
 
-    private readonly onAnyInboxMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
+    private readonly onAnyInboxMessageCallbacks: Map<string, OnInboxMessageCallback> = new Map();
 
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
@@ -301,7 +304,7 @@ export class WsQueueBoxClientService {
 
     onInboxMessageDo(
         id: string,
-        callback: OnMessageCallback
+        callback: OnInboxMessageCallback
     ): WsQueueBoxClientService {
         this.onInboxMessageCallbacks.set(id, callback);
         this.dependencies.inboundRuntime.queueEngine.wake();
@@ -309,7 +312,7 @@ export class WsQueueBoxClientService {
     }
 
     onAllInboxMessagesDo(
-        callback: OnMessageCallback,
+        callback: OnInboxMessageCallback,
         forceUpdate: boolean = false
     ): WsQueueBoxClientService {
         if (
@@ -326,7 +329,7 @@ export class WsQueueBoxClientService {
 
     onAnyInboxMessageDo(
         id: string,
-        callback: OnMessageCallback
+        callback: OnInboxMessageCallback
     ): WsQueueBoxClientService {
         this.onAnyInboxMessageCallbacks.set(id, callback);
         this.dependencies.inboundRuntime.queueEngine.wake();
@@ -592,7 +595,10 @@ export class WsQueueBoxClientService {
         this.requireInboxDeliveryTime(entry);
         const selected = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
             (plan.ownership.exclusive ? this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN) : undefined);
-        await selected?.onMessage(message, entry);
+        const selectedResult = await selected?.onMessage(message, entry);
+        if (selectedResult === 'retry') {
+            return 'retry';
+        }
         if (this.closed) {
             return 'retry';
         }
@@ -601,7 +607,10 @@ export class WsQueueBoxClientService {
             : this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN);
         if (wildcard !== undefined) {
             this.requireInboxDeliveryTime(entry);
-            await wildcard.onMessage(message, entry);
+            const wildcardResult = await wildcard.onMessage(message, entry);
+            if (wildcardResult === 'retry') {
+                return 'retry';
+            }
         }
 
         for (const callback of this.onAnyInboxMessageCallbacks.values()) {
@@ -609,7 +618,10 @@ export class WsQueueBoxClientService {
                 return 'retry';
             }
             this.requireInboxDeliveryTime(entry);
-            await callback.onMessage(message, entry);
+            const callbackResult = await callback.onMessage(message, entry);
+            if (callbackResult === 'retry') {
+                return 'retry';
+            }
         }
 
         if (

@@ -234,6 +234,26 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         });
     });
 
+    it('requests current room authority when durable admission waits for a newer snapshot', async () => {
+        const refreshRoomAuthorityIfNeeded = vi.fn(async () => undefined);
+        const fixture = createRtcReceiveFixture(
+            shared.createDefaultInMemoryALInboundRuntimeStores(),
+            refreshRoomAuthorityIfNeeded
+        );
+        const message = createMulticast({
+            seq: 1,
+            acknowledgeSubtree: false,
+            minSnapshotVersion: 2
+        });
+
+        await fixture.receive(message, 'peer-1');
+
+        expect(refreshRoomAuthorityIfNeeded).toHaveBeenCalledWith(
+            message,
+            { kind: 'not-admitted', reason: 'not-yet-in-sync' }
+        );
+    });
+
     it.each([true, false])('routes exclusive delivery to a specific consumer when registered=%s, otherwise the catch-all', async (specific) => {
         const fixture = createRtcReceiveFixture();
         const delivered: string[] = [];
@@ -332,13 +352,17 @@ interface RtcReceiveFixture {
     outbound(): Promise<shared.ALMessage[]>;
 }
 
-function createRtcReceiveFixture(stores = shared.createDefaultInMemoryALInboundRuntimeStores()): RtcReceiveFixture {
+function createRtcReceiveFixture(
+    stores = shared.createDefaultInMemoryALInboundRuntimeStores(),
+    refreshRoomAuthorityIfNeeded?: shared.WebRtcRxStreamerService.Input['refreshRoomAuthorityIfNeeded']
+): RtcReceiveFixture {
     const transport = createRtcReceiveTransport();
     const multicast = createRtcRoomMulticast(transport.connections);
     const service = shared.createDefaultWebRtcRxStreamerService({
         multicast,
         sessionId: 'self',
-        inboundStores: stores
+        inboundStores: stores,
+        refreshRoomAuthorityIfNeeded
     });
     for (const peer of transport.peers.values()) {
         service.addPeer(peer);
@@ -485,7 +509,11 @@ function createUnicast(input: { readonly acknowledge: boolean; readonly exclusiv
     });
 }
 
-function createMulticast(input: { readonly seq: number; readonly acknowledgeSubtree: boolean; }): shared.ALMessage {
+function createMulticast(input: {
+    readonly seq: number;
+    readonly acknowledgeSubtree: boolean;
+    readonly minSnapshotVersion?: number;
+}): shared.ALMessage {
     return shared.newALMulticastMessage(
         'peer-1',
         {
@@ -499,7 +527,8 @@ function createMulticast(input: { readonly seq: number; readonly acknowledgeSubt
         {
             seq: input.seq,
             reliability: 'at-least-once',
-            ack: input.acknowledgeSubtree ? 'all-logical-recipients' : 'none'
+            ack: input.acknowledgeSubtree ? 'all-logical-recipients' : 'none',
+            minSnapshotVersion: input.minSnapshotVersion
         }
     );
 }

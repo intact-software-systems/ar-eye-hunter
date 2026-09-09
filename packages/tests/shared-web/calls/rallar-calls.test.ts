@@ -2,7 +2,7 @@ import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-we
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     beforeEach,
@@ -461,7 +461,7 @@ function resetCallApiDoubles(): void {
     );
 }
 
-function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
+function findLatestWsAnyMessageCallback(): OnInboxMessageCallback | undefined {
     return mocks.webSocketQueueBox
         .onAnyInboxMessageDo.mock.calls
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
