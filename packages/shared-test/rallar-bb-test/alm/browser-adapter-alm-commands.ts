@@ -1,4 +1,4 @@
-import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-delivery-error-messages.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '../browser-adapter.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';

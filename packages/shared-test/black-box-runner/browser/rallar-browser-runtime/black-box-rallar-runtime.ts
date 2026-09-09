@@ -19,7 +19,6 @@ import {
 } from './black-box-rallar-connection-policy.ts';
 import { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import { BlackBoxRallarCrdtController } from './black-box-rallar-crdt-controller.ts';
-import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-messages.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarConsoleDiagnostics
@@ -57,6 +56,7 @@ import {
     type BlackBoxRallarLifecycleOperationContext
 } from './lifecycle-controller.ts';
 import { BlackBoxRallarMessagingController } from './messaging-controller.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import {
     decodeBlackBoxRallarDeliveryHandleInput,
     decodeBlackBoxRallarDeliveryObserveInput,

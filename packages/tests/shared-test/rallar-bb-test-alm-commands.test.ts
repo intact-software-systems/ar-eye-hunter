@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-delivery-error-messages.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import {
     createRallarBlackBoxRtcClient,

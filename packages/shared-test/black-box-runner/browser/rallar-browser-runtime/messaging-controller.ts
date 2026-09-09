@@ -13,7 +13,6 @@ import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-messages.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
@@ -35,6 +34,7 @@ import {
     decodeBlackBoxRallarSendInput,
     decodeBlackBoxRallarWsSendInput
 } from './decode-black-box-rallar-command-input.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { decodeBlackBoxRallarMessageSendInput } from './messaging/decode-black-box-rallar-messaging-input.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
 
