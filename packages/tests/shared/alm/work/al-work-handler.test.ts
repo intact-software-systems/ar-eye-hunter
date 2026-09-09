@@ -2,6 +2,7 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import type { ALWorkBatchDiagnostics, ALWorkReadySelection } from '@shared/alm/work/al-work-handler.ts';
 import { ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { newWorkEntry } from './al-work-test-entries.ts';
@@ -318,9 +319,9 @@ describe('ALWorkHandler', () => {
             diagnostics: undefined
         });
 
-        const unhandled: unknown[] = [];
+        const unhandled: Error[] = [];
         const onUnhandledRejection: NodeJS.UnhandledRejectionListener = (reason) => {
-            unhandled.push(reason);
+            unhandled.push(toError(reason));
         };
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         process.on('unhandledRejection', onUnhandledRejection);
