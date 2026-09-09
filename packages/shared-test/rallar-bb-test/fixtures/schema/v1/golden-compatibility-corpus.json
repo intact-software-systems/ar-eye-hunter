@@ -156,8 +156,7 @@
           "connection": "goldenWs",
           "handleId": "messages-send-v1-handle",
           "state": [
-            "submitted",
-            "confirmed"
+            "accepted"
           ]
         },
         {

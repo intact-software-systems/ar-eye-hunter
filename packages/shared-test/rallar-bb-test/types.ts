@@ -304,8 +304,6 @@ export type RallarBlackBoxTestMessagesSendCommand =
         ttlMs?: number;
         orderingKey?: string;
         seq?: number;
-        key?: string;
-        toPeerId?: string;
         handleId?: string;
     }>;
 

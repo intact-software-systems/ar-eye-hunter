@@ -25,10 +25,23 @@ const MESSAGE_RELIABILITIES: readonly string[] = ['best-effort', 'at-least-once'
 const FAULT_CARRIERS: readonly string[] = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES: readonly string[] = ['ack', 'nack', 'repair'];
 
+/** The RTC data channel treats a delay decision as pass, so arming one there would be inert. */
+export const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
+
+const DELIVERY_STATES: readonly string[] = [
+    'rejected',
+    'accepted',
+    'queued',
+    'transport-accepted',
+    'acknowledged',
+    'expired',
+    'superseded',
+    'failed',
+    'cancelled'
+];
+
 export function decodeBlackBoxRallarMessageSendInput(value: unknown): BlackBoxRallarMessageSendInput {
     const record = decodeRequiredBlackBoxCommandRecord(value, 'messages.send input');
-    rejectUnsupportedMessageField(record, 'key');
-    rejectUnsupportedMessageField(record, 'toPeerId');
     if (!('payload' in record)) {
         throw new TypeError('messages.send.payload is required.');
     }
@@ -68,11 +81,16 @@ export function decodeBlackBoxRallarDeliveryObserveInput(value: unknown): BlackB
 
 export function decodeBlackBoxRallarFaultInput(value: unknown): ScriptedTransportFault {
     const record = decodeRequiredBlackBoxCommandRecord(value, 'fault.inject input');
+    const carrier = decodeFaultCarrier(record.carrier);
+    const action = decodeFaultAction(record.action);
+    if (carrier === 'rtc' && action !== 'drop') {
+        throw new TypeError(FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE);
+    }
     return {
         faultId: decodeRequiredBlackBoxCommandString(record.faultId, 'fault.inject.faultId'),
-        carrier: decodeFaultCarrier(record.carrier),
+        carrier,
         match: decodeFaultMatch(record.match),
-        action: decodeFaultAction(record.action),
+        action,
         remaining: decodeRequiredBlackBoxCommandNumber(record.remaining, 'fault.inject.remaining')
     };
 }
@@ -106,15 +124,23 @@ function decodeMessageScope(value: unknown): BlackBoxRallarMessageSendInput['sco
 }
 
 function decodeMessageReliability(value: unknown): BlackBoxRallarMessageSendInput['reliability'] {
-    return isMessageReliability(value) ? value : undefined;
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    if (isMessageReliability(value)) {
+        return value;
+    }
+    throw new TypeError('messages.send.reliability must be best-effort or at-least-once.');
 }
 
 function decodeDeliveryStates(value: unknown): readonly string[] {
     if (
         !Array.isArray(value) || value.length === 0 ||
-        !value.every((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        !value.every((entry): entry is string => typeof entry === 'string' && DELIVERY_STATES.includes(entry))
     ) {
-        throw new TypeError('messages.observe.state must list at least one delivery state.');
+        throw new TypeError(
+            `messages.observe.state must list at least one of ${DELIVERY_STATES.join(', ')}.`
+        );
     }
     return value;
 }
@@ -177,12 +203,6 @@ function decodeRequiredBlackBoxCommandNumber(value: unknown, field: string): num
         throw new TypeError(`${field} is required.`);
     }
     return decoded;
-}
-
-function rejectUnsupportedMessageField(record: BlackBoxRallarCommandRecord, field: string): void {
-    if (record[field] !== undefined) {
-        throw new TypeError(`messages.send.${field} is not supported by this runtime release`);
-    }
 }
 
 function isMessageCarrier(value: unknown): value is BlackBoxRallarMessageSendInput['carrier'] {

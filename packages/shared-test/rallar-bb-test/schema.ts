@@ -674,8 +674,6 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         ttlMs: { type: 'integer', minimum: 0 },
         orderingKey: stringSchema,
         seq: numberSchema,
-        key: stringSchema,
-        toPeerId: stringSchema,
         handleId: stringSchema
     }),
     'messages.observe': strictCommandSchema('messages.observe', ['handleId', 'state'], {
@@ -1324,8 +1322,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'ttlMs',
             'orderingKey',
             'seq',
-            'key',
-            'toPeerId',
             'handleId',
             'commandId',
             'label',
@@ -1336,7 +1332,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['send result with carrier and status', 'ACK/NACK/repair control events'],
+        artifactExpectations: ['send result with handleId, carrier, and admission status'],
         example: {
             kind: 'messages.send',
             commandId: 'send-alm-message',
@@ -1349,18 +1345,21 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'messages.observe',
         title: 'Observe ALM Send',
-        description: 'Waits for a prior messages.send handle to reach one of the given delivery states.',
+        description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
+            'The states are rejected, accepted, queued, transport-accepted, acknowledged, expired, ' +
+            'superseded, failed, and cancelled; this release derives them from the local admission ' +
+            'ledger, so a send settles on accepted or rejected and never advances on a peer receipt.',
         requiredFields: ['handleId', 'state'],
         optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['observed delivery state', 'confirmed/unconfirmed peer ids'],
+        artifactExpectations: ['observed delivery state', 'submitted flag and attempt count'],
         example: {
             kind: 'messages.observe',
             commandId: 'observe-alm-send',
             handleId: 'alm-send-1',
-            state: ['submitted', 'confirmed']
+            state: ['accepted']
         }
     },
     {
@@ -1382,8 +1381,10 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'messages.received',
         title: 'Assert ALM Messages Received',
-        description:
-            'Counts messages of a typeId (optionally one msgId) received within a trailing window and compares against an expected count.',
+        description: 'Counts messages of a typeId (optionally one msgId) on the whole inbound event log and ' +
+            'compares against an expected count. A presence claim settles as soon as the count is ' +
+            'reached; absent holds the whole windowMs and then passes only if fewer than count ' +
+            '(at least one) arrived.',
         requiredFields: ['typeId', 'count', 'windowMs'],
         optionalFields: [
             'connection',
@@ -1410,13 +1411,15 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'messages.receipts',
         title: 'Read ALM Receipts',
-        description: 'Reads the ACK/NACK/repair receipt trail recorded for a messages.send handle.',
+        description: 'Reads the delivery ledger observation recorded for a messages.send handle. This release ' +
+            'derives that observation from local admission, so confirmedPeerIds and unconfirmedPeerIds ' +
+            'stay empty until real acknowledgements land.',
         requiredFields: ['handleId'],
         optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['receipt trail for the handle'],
+        artifactExpectations: ['ledger observation for the handle'],
         example: {
             kind: 'messages.receipts',
             commandId: 'read-alm-receipts',
@@ -1433,7 +1436,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
-        artifactExpectations: ['fault registration result', 'per-match fault application diagnostics'],
+        artifactExpectations: ['fault registration result'],
         example: {
             kind: 'fault.inject',
             commandId: 'inject-nack-drop',
@@ -1447,7 +1450,9 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'storage.counters',
         title: 'Read Storage Counters',
-        description: 'Reads (and optionally resets) local ALM storage counters by owner and kind.',
+        description: 'Reads (and optionally resets) the AL-owned IndexedDB operation counters by owner ' +
+            '(al-admission, al-work) and by operation kind. The scripted storage observer is only ' +
+            'attached when the active connection names an application.',
         requiredFields: [],
         optionalFields: ['reset', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
@@ -1462,7 +1467,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'agent.reload',
         title: 'Reload Agent',
-        description: 'Reloads the browser agent runtime and waits for it to become ready again within a timeout.',
+        description: 'Asks the control agent to reload its page and resume the run when it is ready again. ' +
+            'On the spa-local surface nothing reloads and the command only records the request.',
         requiredFields: ['readyTimeoutMs'],
         optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],

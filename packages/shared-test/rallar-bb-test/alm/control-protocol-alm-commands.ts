@@ -37,6 +37,17 @@ const MESSAGES_RELIABILITIES = ['best-effort', 'at-least-once'];
 const MESSAGES_ACKS = ['none', 'receiver', 'all-logical-recipients', 'group-leader'];
 const FAULT_CARRIERS = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES = ['ack', 'nack', 'repair'];
+const MESSAGES_DELIVERY_STATES = [
+    'rejected',
+    'accepted',
+    'queued',
+    'transport-accepted',
+    'acknowledged',
+    'expired',
+    'superseded',
+    'failed',
+    'cancelled'
+];
 
 const ALM_COMMAND_FIELDS: Readonly<Record<RallarBlackBoxTestAlmCommandKind, readonly string[]>> = {
     'messages.send': [
@@ -52,8 +63,6 @@ const ALM_COMMAND_FIELDS: Readonly<Record<RallarBlackBoxTestAlmCommandKind, read
         'ttlMs',
         'orderingKey',
         'seq',
-        'key',
-        'toPeerId',
         'handleId'
     ],
     'messages.observe': ['connection', 'handleId', 'state'],
@@ -136,8 +145,6 @@ function validateMessagesSendOptionalFields(
     return toFirstFailure([
         validateOptionalStringField(command, 'topicId', 'messages.send'),
         validateOptionalStringField(command, 'orderingKey', 'messages.send'),
-        validateOptionalStringField(command, 'key', 'messages.send'),
-        validateOptionalStringField(command, 'toPeerId', 'messages.send'),
         validateOptionalStringField(command, 'handleId', 'messages.send'),
         validateOptionalRecordField(command, 'roomRef', 'messages.send'),
         validateOptionalEnumField({
@@ -256,6 +263,9 @@ function validateFaultActionField(
     if (!isAlmCommandRecord(action)) {
         return fail('fault.inject.action must be "drop" or an object with delayMs.');
     }
+    if (command.carrier === 'rtc') {
+        return fail('fault.inject.action must be "drop" on the rtc carrier.');
+    }
     return toFirstFailure([
         validateKeysOf(action, ['delayMs'], 'fault.inject.action'),
         validateRequiredNumberField(action, 'delayMs', 'fault.inject.action')
@@ -266,9 +276,12 @@ function validateDeliveryStateField(
     command: RallarBlackBoxTestRecord
 ): ControlCommandValidationResult {
     const state = command.state;
-    return Array.isArray(state) && state.every((entry) => typeof entry === 'string')
+    if (!Array.isArray(state) || state.length === 0) {
+        return fail('messages.observe.state must list at least one delivery state.');
+    }
+    return state.every((entry) => typeof entry === 'string' && MESSAGES_DELIVERY_STATES.includes(entry))
         ? accepted
-        : fail('messages.observe.state must be a string array.');
+        : fail(`messages.observe.state must list only ${MESSAGES_DELIVERY_STATES.join(', ')}.`);
 }
 
 function validateKeysOf(
