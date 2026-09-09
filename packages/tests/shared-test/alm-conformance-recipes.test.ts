@@ -35,6 +35,13 @@ const CARRIER_CONNECT_TRANSPORTS = {
     'rtc-with-ws-fallback': 'messages.rtc'
 } as const;
 
+/** `ordering-resync` is withheld from `ws`: see the family's own carrier-scoping comment. */
+const CARRIER_SCENARIO_IDS = {
+    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline'],
+    rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync'],
+    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
+} as const;
+
 function conformanceInput(
     carrier: CreateAlmConformanceRecipesInput['carrier']
 ): CreateAlmConformanceRecipesInput {
@@ -88,16 +95,15 @@ function receivedCommandsOf(scenarios: readonly AlmConformanceScenario[]): reado
 }
 
 describe('alm-conformance recipe family', () => {
-    it('produces four valid scenarios per carrier with distinct command ids', () => {
+    it('produces the carrier-scoped scenarios with distinct command ids', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(conformanceInput(carrier));
 
-            expect(scenarios.map((scenario) => scenario.scenarioId)).toEqual([
-                'bounded-rejection',
-                'deadline-expiry',
-                'delivery-baseline',
-                'ordering-resync'
-            ]);
+            expect(scenarios.map((scenario) => scenario.scenarioId)).toEqual(CARRIER_SCENARIO_IDS[carrier]);
+            if (carrier === 'ws') {
+                // WS typed sends carry no ordering block in this release, so ordering-resync cannot hold on ws.
+                expect(scenarios.some((scenario) => scenario.scenarioId === 'ordering-resync')).toBe(false);
+            }
             const commandIds = recipesOf(scenarios).flatMap((recipe) => recipe.commands.map((command) => command.commandId));
             expect(new Set(commandIds).size).toBe(commandIds.length);
             for (const recipe of recipesOf(scenarios)) {
@@ -186,8 +192,7 @@ describe('alm-conformance recipe family', () => {
         expect(scenarios.map((scenario) => scenario.tags)).toEqual([
             ['smoke', 'full'],
             ['full'],
-            ['smoke', 'full'],
-            ['full']
+            ['smoke', 'full']
         ]);
     });
 });

@@ -6,7 +6,7 @@ import type {
     RallarBlackBoxTestRecord
 } from '../../types.ts';
 
-import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 
 export interface CreateAlmConformanceRecipesInput {
     readonly group: RallarBlackBoxDistributedGroupRef;
@@ -80,12 +80,17 @@ interface AlmConformanceFaultInput extends AlmConformanceStepInput {
 interface AlmConformanceScenarioDefinition {
     readonly scenarioId: AlmConformanceScenario['scenarioId'];
     readonly tags: readonly ('smoke' | 'full')[];
+    readonly carriers: readonly AlmConformanceCarrier[];
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
     readonly toReceiverCommands: (receiver: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
 }
 
 const SMOKE_TAGS: readonly ('smoke' | 'full')[] = ['smoke', 'full'];
 const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
+
+/** `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. */
+const ALL_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS;
+const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc', 'rtc-with-ws-fallback'];
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -114,24 +119,28 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     {
         scenarioId: 'bounded-rejection',
         tags: SMOKE_TAGS,
+        carriers: ALL_CARRIERS,
         toSenderCommands: toBoundedRejectionSenderCommands,
         toReceiverCommands: toBoundedRejectionReceiverCommands
     },
     {
         scenarioId: 'deadline-expiry',
         tags: FULL_TAGS,
+        carriers: ALL_CARRIERS,
         toSenderCommands: toDeadlineExpirySenderCommands,
         toReceiverCommands: toDeadlineExpiryReceiverCommands
     },
     {
         scenarioId: 'delivery-baseline',
         tags: SMOKE_TAGS,
+        carriers: ALL_CARRIERS,
         toSenderCommands: toDeliveryBaselineSenderCommands,
         toReceiverCommands: toDeliveryBaselineReceiverCommands
     },
     {
         scenarioId: 'ordering-resync',
         tags: FULL_TAGS,
+        carriers: RTC_CARRIERS,
         toSenderCommands: toOrderingResyncSenderCommands,
         toReceiverCommands: toOrderingResyncReceiverCommands
     }
@@ -146,7 +155,9 @@ export function createAlmConformanceRecipes(
         );
     }
 
-    return ALM_CONFORMANCE_SCENARIOS.map((definition) => toAlmConformanceScenario(input, definition));
+    return ALM_CONFORMANCE_SCENARIOS
+        .filter((definition) => definition.carriers.includes(input.carrier))
+        .map((definition) => toAlmConformanceScenario(input, definition));
 }
 
 function toAlmConformanceScenario(
