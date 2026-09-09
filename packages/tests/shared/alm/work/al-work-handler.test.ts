@@ -190,8 +190,8 @@ describe('ALWorkHandler', () => {
         await handler.ready();
         expect(released).toEqual([]);
 
-        // Work becomes due only after bootstrap; the engine's own isWork -> runnable path must
-        // discover it via peekNextReadyAt/wakeAt rather than the direct ready() bootstrap batch.
+        // Work becomes due only after bootstrap; the isWork -> runnable path owned by the engine
+        // must discover it via peekNextReadyAt/wakeAt rather than the direct ready() bootstrap batch.
         pending.push(toFakeALWorkClaim('engine-driven'));
         dueAtMs = Date.now() - 1;
 
@@ -205,16 +205,24 @@ describe('ALWorkHandler', () => {
 
     it('runs a follow-up batch for work committed mid-batch, without the engine ever running', async () => {
         const released: string[] = [];
-        const pending: ALWorkClaim[] = [toFakeALWorkClaim('first')];
+        const pending: ALWorkClaim[] = [];
+        let claimCallCount = 0;
         let releaseFirst: (() => void) | undefined;
         const firstGate = new Promise<void>((resolve) => {
             releaseFirst = resolve;
+        });
+        let signalFirstClaimEntered: (() => void) | undefined;
+        const firstClaimEntered = new Promise<void>((resolve) => {
+            signalFirstClaimEntered = resolve;
         });
         const port: ALWorkQueuePort = {
             workTypes: new Set(['AL_TEST']),
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
-            claim: async ({ maxCount }) => pending.splice(0, maxCount),
+            claim: async ({ maxCount }) => {
+                claimCallCount += 1;
+                return pending.splice(0, maxCount);
+            },
             finalizeExhausted: async () => [],
             release: async (claim, outcome) => {
                 released.push(`${claim.entry.key.contextId}:${outcome.status}`);
@@ -236,6 +244,7 @@ describe('ALWorkHandler', () => {
             }),
             runClaim: async (claim) => {
                 if (claim.entry.key.contextId === 'first') {
+                    signalFirstClaimEntered?.();
                     await firstGate;
                 }
                 return { status: 'completed' };
@@ -243,17 +252,28 @@ describe('ALWorkHandler', () => {
             diagnostics: undefined
         });
 
-        const readyPromise = handler.ready();
-        expect(handler.hasActiveBatch()).toBe(true);
+        // The engine is never started (ownsQueueEngine: false), so only the bootstrap batch runs here.
+        await handler.ready();
+        expect(handler.hasActiveBatch()).toBe(false);
+        claimCallCount = 0;
 
-        // A commit lands, and its work becomes claimable, while 'first' is still being processed.
-        pending.push(toFakeALWorkClaim('committed-during-batch'));
+        // Seed the claim that a mid-batch commit must reach only through the follow-up batch: wait
+        // for this batch's own claim() call to run and capture it before 'second' ever exists.
+        pending.push(toFakeALWorkClaim('first'));
+        handler.committed();
+        expect(handler.hasActiveBatch()).toBe(true);
+        await firstClaimEntered;
+
+        // A second commit lands, and its work becomes claimable, while 'first' is still in flight.
+        pending.push(toFakeALWorkClaim('second'));
         handler.committed();
 
         releaseFirst?.();
-        await readyPromise;
+        await expect.poll(() => released).toEqual(['first:completed', 'second:completed']);
 
-        await expect.poll(() => released).toEqual(['first:completed', 'committed-during-batch:completed']);
+        // Two distinct claim() calls after ready() prove 'second' arrived through the follow-up
+        // batch that runBatch()'s .finally starts, not through the first batch's own claim() call.
+        expect(claimCallCount).toBe(2);
         handler.dispose();
     });
 
@@ -299,7 +319,7 @@ describe('ALWorkHandler', () => {
         });
 
         const unhandled: unknown[] = [];
-        const onUnhandledRejection = (reason: unknown): void => {
+        const onUnhandledRejection: NodeJS.UnhandledRejectionListener = (reason) => {
             unhandled.push(reason);
         };
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
