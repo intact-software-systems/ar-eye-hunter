@@ -1,4 +1,5 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { toError } from '../../resilience/to-error.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from './al-work-queue-port.ts';
@@ -61,7 +62,7 @@ export class ALWorkHandler {
             name: dependencies.workerId,
             maxConcurrency: () => 1,
             isWork: () => this.hasReadyWork(),
-            runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(error)),
+            runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
             ongoingTasks: []
         });
     }
@@ -89,7 +90,7 @@ export class ALWorkHandler {
     committed(): void {
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {
-            void this.runBatch().catch((error) => this.reportBatchFailure(error));
+            void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
         }
         else {
             this.commitPending = true;
@@ -120,13 +121,13 @@ export class ALWorkHandler {
             if (error instanceof ALAdmissionCorruptionError) {
                 throw error;
             }
-            this.reportBatchFailure(error);
+            this.reportBatchFailure(toError(error));
         }).finally(() => {
             this.batch = undefined;
             this.dependencies.queueEngine.wake();
             if (this.commitPending && !this.shutdown.signal.aborted) {
                 this.commitPending = false;
-                void this.runBatch().catch((error) => this.reportBatchFailure(error));
+                void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
             }
         });
         return this.batch;
@@ -195,7 +196,7 @@ export class ALWorkHandler {
         }
     }
 
-    private reportBatchFailure(error: unknown): void {
+    private reportBatchFailure(error: Error): void {
         console.error('ALM work batch failed', error);
     }
 }
