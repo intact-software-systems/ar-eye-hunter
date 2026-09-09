@@ -8,8 +8,13 @@ import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import {
+    createALOutboundAdmissionStore,
+    type ALOutboundPreparedMessageDecoder
+} from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { PSqlAdmissionWorkBackend } from './p-sql-admission-work-backend.ts';
 
@@ -21,6 +26,10 @@ export interface CreatePSqlALRuntimeStoresInput {
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
 }
 
+export interface CreatePSqlALOutboundRuntimeStoresInput<TPrepared> extends CreatePSqlALRuntimeStoresInput {
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+}
+
 export interface CreateDefaultPSqlALRuntimeStoresInput {
     readonly repository: PSqlRuntimeStateRepository;
     readonly namespace?: string;
@@ -29,59 +38,21 @@ export interface CreateDefaultPSqlALRuntimeStoresInput {
     readonly retention?: ALRuntimeStoreRetentionConfig;
 }
 
-const DEFAULT_NAMESPACE = 'al-runtime';
+export interface CreateDefaultPSqlALOutboundRuntimeStoresInput<TPrepared>
+    extends CreateDefaultPSqlALRuntimeStoresInput {
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+}
 
-type RuntimeStoreDirection = 'inbound' | 'outbound';
+const DEFAULT_NAMESPACE = 'al-runtime';
 
 export function toServerWsQBoxALRuntimeStoreId(name: string): string {
     return `server-ws-qbox:${name}`;
 }
 
-function createPSqlALRuntimeStores(
-    direction: 'inbound',
-    input: CreatePSqlALRuntimeStoresInput
-): ALInboundRuntimeStores;
-function createPSqlALRuntimeStores(
-    direction: 'outbound',
-    input: CreatePSqlALRuntimeStoresInput
-): ALOutboundRuntimeStores;
-function createPSqlALRuntimeStores(
-    direction: RuntimeStoreDirection,
-    input: CreatePSqlALRuntimeStoresInput
-): ALInboundRuntimeStores | ALOutboundRuntimeStores {
-    const { repository, namespace } = input;
-
-    if (direction === 'inbound') {
-        const backend = new PSqlAdmissionWorkBackend(repository.sql, `${namespace}:inbound:admission`);
-        return {
-            admissionStore: createALInboundAdmissionStore({
-                namespace: `${namespace}:inbound:admission`,
-                backend,
-                orderingTrackTtlMs: input.orderingTrackTtlMs,
-                supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-                retention: normalizeALRuntimeStoreRetention(input.retention)
-            }),
-            workQueue: backend.workQueue
-        };
-    }
-
-    return {
-        admissionStore: createALOutboundAdmissionStore({
-            namespace: `${namespace}:outbound:admission`,
-            backend: new PSqlAdmissionWorkBackend(
-                repository.sql,
-                `${namespace}:outbound:admission`
-            ),
-            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
-        })
-    };
-}
-
 function createPSqlRuntimeStoreFactories(
     runtimeStoreId: string,
-    options: CreateDefaultPSqlALRuntimeStoresInput
-): ALRuntimeStoreFactories {
+    options: CreateDefaultPSqlALOutboundRuntimeStoresInput<WsQueueBoxServerPreparedMessage>
+): ALRuntimeStoreFactories<WsQueueBoxServerPreparedMessage> {
     const scopedOptions = {
         ...options,
         namespace: options.namespace ?? runtimeStoreId
@@ -93,35 +64,40 @@ function createPSqlRuntimeStoreFactories(
     };
 }
 
-function resolveServerWsQBoxALRuntimeStores(
-    direction: 'inbound',
-    name: string
-): ALInboundRuntimeStores;
-function resolveServerWsQBoxALRuntimeStores(
-    direction: 'outbound',
-    name: string
-): ALOutboundRuntimeStores;
-function resolveServerWsQBoxALRuntimeStores(
-    direction: RuntimeStoreDirection,
-    name: string
-): ALInboundRuntimeStores | ALOutboundRuntimeStores {
-    const runtimeStoreId = toServerWsQBoxALRuntimeStoreId(name);
-
-    return direction === 'inbound'
-        ? resolveALInboundRuntimeStores(runtimeStoreId)
-        : resolveALOutboundRuntimeStores(runtimeStoreId);
-}
-
 export function createPSqlALInboundRuntimeStores(
     input: CreatePSqlALRuntimeStoresInput
 ): ALInboundRuntimeStores {
-    return createPSqlALRuntimeStores('inbound', input);
+    const namespace = `${input.namespace}:inbound:admission`;
+    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace);
+    return {
+        admissionStore: createALInboundAdmissionStore({
+            namespace,
+            backend,
+            orderingTrackTtlMs: input.orderingTrackTtlMs,
+            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
+            retention: normalizeALRuntimeStoreRetention(input.retention)
+        }),
+        workQueue: backend.workQueue
+    };
 }
 
-export function createPSqlALOutboundRuntimeStores(
-    input: CreatePSqlALRuntimeStoresInput
-): ALOutboundRuntimeStores {
-    return createPSqlALRuntimeStores('outbound', input);
+export function createPSqlALOutboundRuntimeStores<TPrepared>(
+    input: CreatePSqlALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    const namespace = `${input.namespace}:outbound:admission`;
+    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace);
+    return {
+        admissionStore: createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            namespace,
+            canonicalScope: namespace,
+            backend,
+            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
+            retention: normalizeALRuntimeStoreRetention(input.retention),
+            decodePrepared: input.decodePrepared
+        }),
+        workQueue: backend.workQueue
+    };
 }
 
 export function createDefaultPSqlALInboundRuntimeStores(
@@ -130,10 +106,13 @@ export function createDefaultPSqlALInboundRuntimeStores(
     return createPSqlALInboundRuntimeStores(toDefaultPSqlALRuntimeStoresInput(options));
 }
 
-export function createDefaultPSqlALOutboundRuntimeStores(
-    options: CreateDefaultPSqlALRuntimeStoresInput
-): ALOutboundRuntimeStores {
-    return createPSqlALOutboundRuntimeStores(toDefaultPSqlALRuntimeStoresInput(options));
+export function createDefaultPSqlALOutboundRuntimeStores<TPrepared>(
+    options: CreateDefaultPSqlALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    return createPSqlALOutboundRuntimeStores({
+        ...toDefaultPSqlALRuntimeStoresInput(options),
+        decodePrepared: options.decodePrepared
+    });
 }
 
 export function configureServerWsQBoxALRuntimeStores(
@@ -144,17 +123,22 @@ export function configureServerWsQBoxALRuntimeStores(
     configureALRuntimeStoreScopes([
         {
             id: runtimeStoreId,
-            factories: createPSqlRuntimeStoreFactories(runtimeStoreId, options)
+            factories: createPSqlRuntimeStoreFactories(runtimeStoreId, {
+                ...options,
+                decodePrepared: decodeWsQueueBoxServerPreparedMessage
+            })
         }
     ]);
 }
 
 export function resolveServerWsQBoxALInboundRuntimeStores(name: string): ALInboundRuntimeStores {
-    return resolveServerWsQBoxALRuntimeStores('inbound', name);
+    return resolveALInboundRuntimeStores(toServerWsQBoxALRuntimeStoreId(name));
 }
 
-export function resolveServerWsQBoxALOutboundRuntimeStores(name: string): ALOutboundRuntimeStores {
-    return resolveServerWsQBoxALRuntimeStores('outbound', name);
+export function resolveServerWsQBoxALOutboundRuntimeStores(
+    name: string
+): ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage> {
+    return resolveALOutboundRuntimeStores(toServerWsQBoxALRuntimeStoreId(name));
 }
 
 function toDefaultPSqlALRuntimeStoresInput(

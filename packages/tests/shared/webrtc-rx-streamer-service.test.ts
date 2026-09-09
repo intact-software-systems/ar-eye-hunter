@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -7,7 +8,10 @@ import {
     vi
 } from 'vitest';
 
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
@@ -101,9 +105,10 @@ function createMediaFixture(): MediaFixture {
         },
         qosProvider: undefined,
         outboundDiagnostics: undefined,
-        outboundRuntime: createDefaultALOutboundRuntimeResources(),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter()
+        rateLimiter: toRateLimiter(),
+        dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
     onTestFinished(() => {

@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -11,7 +12,10 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -474,9 +478,10 @@ function createRtcRoomMulticast(
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connections),
         qosProvider: undefined,
         outboundDiagnostics: undefined,
-        outboundRuntime: createDefaultALOutboundRuntimeResources(),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: shared.toCircuitBreaker(),
-        rateLimiter: shared.toRateLimiter()
+        rateLimiter: shared.toRateLimiter(),
+        dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
 }
 

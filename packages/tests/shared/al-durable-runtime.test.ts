@@ -311,29 +311,34 @@ function createDefaultInboundRuntime(
 
 function createRetainedOutboundStoreSet(
     existing?: RetainedAdmissionState
-): RetainedRuntimeStoreSet<ALOutboundRuntimeStores> {
+): RetainedRuntimeStoreSet<ALOutboundRuntimeStores<OutboundTestPayload>> {
     const admissionState = existing?.admissionState ??
         createInMemoryALAdmissionState();
+    const outboundBackend = new InMemoryAdmissionBackend(admissionState, Date.now);
 
     return {
         admissionState,
         runtimeStores: {
             admissionStore: createALOutboundAdmissionStore({
+                decodePrepared: decodeOutboundTestPayload,
+                nowMs: Date.now,
                 namespace: 'durable-test:outbound:admission',
-                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
+                canonicalScope: 'durable-test:outbound:admission',
+                backend: outboundBackend,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention()
-            })
+                retention: normalizeALRuntimeStoreRetention(),
+            }),
+            workQueue: outboundBackend.workQueue
         }
     };
 }
 
 function createDefaultOutboundRuntime(
-    stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores>,
+    stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores<OutboundTestPayload>>,
     sent: OutboundTestPayload[]
 ): ALOutboundMessageRuntime<OutboundTestPayload> {
     const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        outbox: stores.runtimeStores.admissionStore.workQueue,
+        outbox: stores.runtimeStores.workQueue,
         stores: stores.runtimeStores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         decodePreparedMessage: decodeOutboundTestPayload,

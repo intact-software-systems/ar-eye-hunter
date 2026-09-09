@@ -3,7 +3,10 @@ import {
     expect,
     it
 } from 'vitest';
-import { createOutboundCanonicalEntry } from './outbound-runtime-test-fixture.ts';
+import {
+    createOutboundCanonicalEntry,
+    peekOutboundTestWorkReadyAt
+} from './outbound-runtime-test-fixture.ts';
 
 import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
@@ -40,7 +43,7 @@ describe('outbound dispatch value ownership', () => {
         expect(result.computed.reason).toBe('Outbound queue candidate differs from its message');
         expect(result.committed).toBe(false);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
         admission.dispose();
     });
 

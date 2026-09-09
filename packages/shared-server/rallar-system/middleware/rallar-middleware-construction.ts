@@ -9,6 +9,7 @@ import type {
     WsDeliveryDiagnosticsSink,
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -79,7 +80,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
     readonly inboundStores?: ALInboundRuntimeStores;
-    readonly outboundStores?: ALOutboundRuntimeStores;
+    readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly createGroupStateInboxService: (
         input: RallarGroupStateInboxServiceFactoryInput

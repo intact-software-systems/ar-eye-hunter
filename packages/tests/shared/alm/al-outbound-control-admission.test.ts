@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
@@ -35,7 +36,7 @@ describe('outbound control admission identity', () => {
 
         expect(await store.acceptControlMessage(control, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
         expect(state.data.size).toBe(0);
-        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
     });
 
     it.each(['ack', 'nack', 'repair'] as const)(
@@ -66,7 +67,7 @@ describe('outbound control admission identity', () => {
                         deadlineAtMs: Date.now() + 2_000
                     }
                 }]
-            }, decodeALOutboundPreparedMessage);
+            });
             const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
@@ -129,7 +130,7 @@ describe('outbound control admission identity', () => {
                 expect(await store.readPendingAck(msgId)).toBeUndefined();
             }
             else {
-                const effects = await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage);
+                const effects = await store.claimReadyEffects({ maxCount: 10 });
                 expect(effects.map((effect) => effect.payload)).toContainEqual(expect.objectContaining({
                     kind: 'repair-hint',
                     msgId,
@@ -163,7 +164,7 @@ describe('outbound control admission identity', () => {
 
         expect(await store.acceptControlMessage(controlMessage(type, 'intruder'), decodeALOutboundPreparedMessage)).toEqual({ handled: false });
         expect([...state.data]).toEqual(baseline);
-        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
     });
 
     it('rejects a control addressed to another local message owner', async () => {
@@ -190,7 +191,7 @@ describe('outbound control admission identity', () => {
             handled: false
         });
         expect([...state.data]).toEqual(acceptedState);
-        const effects = await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage);
+        const effects = await store.claimReadyEffects({ maxCount: 10 });
         expect(effects.map((effect) => effect.payload)).toEqual([{
             kind: 'repair-hint',
             msgId: 'message',
@@ -322,7 +323,7 @@ describe('outbound control admission identity', () => {
         await expect(store.acceptControlMessage(controlMessage('ack'), decodeALOutboundPreparedMessage))
             .rejects.toBeInstanceOf(ALAdmissionBackendConflictError);
         expect(state.data.has('outbound-control:control:acks:message')).toBe(false);
-        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
     });
 });
 
@@ -330,6 +331,9 @@ function createFixture() {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'outbound-control',
+        decodePrepared: decodeALOutboundTransportMessage,
         namespace: 'outbound-control',
         backend,
         supersedenceTrackTtlMs: 300000,
@@ -396,7 +400,7 @@ async function seedObligation(
             }
         ],
         durableEffects: []
-    }, decodeALOutboundPreparedMessage);
+    });
 }
 
 function repairControl(observedAtEpochMs: number): ALMessage {

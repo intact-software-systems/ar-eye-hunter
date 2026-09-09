@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     expect,
@@ -45,8 +46,14 @@ it.each([
         ? createDefaultIndexedDbALInboundRuntimeStores(database)
         : createDefaultInMemoryALInboundRuntimeStores(database);
     const outboundStores = backend === 'indexeddb'
-        ? createDefaultIndexedDbALOutboundRuntimeStores(database)
-        : createDefaultInMemoryALOutboundRuntimeStores(database);
+        ? createDefaultIndexedDbALOutboundRuntimeStores({
+            ...database,
+            decodePrepared: decodeALOutboundTransportMessage
+        })
+        : createDefaultInMemoryALOutboundRuntimeStores({
+            ...database,
+            decodePrepared: decodeALOutboundTransportMessage
+        });
     await Promise.all([inboundStores.admissionStore.ready(), outboundStores.admissionStore.ready()]);
     const client = new JsonWebSocketClient('ws://signaling-test', createPassThroughTransportFaultPort());
     const connecting = client.connect();

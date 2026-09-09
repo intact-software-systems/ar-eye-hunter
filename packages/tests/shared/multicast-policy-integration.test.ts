@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
@@ -8,7 +9,10 @@ import {
     vi
 } from 'vitest';
 
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -20,7 +24,11 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
-import { computeOutboundTestAdmission, createOutboundMessage } from './alm/outbound-runtime-test-fixture.ts';
+import {
+    computeOutboundTestAdmission,
+    createOutboundMessage,
+    peekOutboundWorkReadyAt
+} from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 interface CapturedRtcConnection extends shared.WebRtcConnectionService {
@@ -40,16 +48,16 @@ describe('multicast QoS integration', () => {
             const groups = createReadableCache({ 'group-1': createGroupSnapshot(['self', 'origin', 'relay', 'peer-2', 'peer-3']) });
             const overlays = createReadableCache({ 'group-1': createOverlayInfo(['relay', 'peer-2']) });
             const engine = new InboxOutboxEngine();
-            const resources = createDefaultALOutboundRuntimeResources({ queueEngine: engine });
+            const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine });
             const store = resources.admissionStore;
             const competitorMessage = createOutboundMessage('forward-competitor');
             const competitor = await computeOutboundTestAdmission(store, { ...competitorMessage, id: { ...competitorMessage.id, senderId: 'origin' } });
             const commit = store.commitBundle.bind(store);
-            vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, decode) => {
-                expect(await commit(competitor, decodeOutboundTestPayload)).toBe('committed');
-                return await commit(bundle, decode);
+            vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
+                expect(await commit(competitor)).toBe('committed');
+                return await commit(bundle);
             });
-            const holdClaims = vi.spyOn(store, 'claimReadyEffects').mockResolvedValue([]);
+            const holdClaims = vi.spyOn(resources.workQueue, 'reserveEntries').mockResolvedValue(new Map());
             const dependencies: shared.WebRtcOverlayMulticastManager.Dependencies = {
                 connectionService,
                 groupCache: groups,
@@ -59,7 +67,8 @@ describe('multicast QoS integration', () => {
                 outboundDiagnostics: undefined,
                 outboundRuntime: resources,
                 circuitBreaker: toCircuitBreaker(),
-                rateLimiter: toRateLimiter()
+                rateLimiter: toRateLimiter(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
             };
             const initial = new shared.WebRtcOverlayMulticastManager(dependencies);
             const message = shared.newALMulticastMessage(
@@ -92,7 +101,7 @@ describe('multicast QoS integration', () => {
             onTestFinished(() => restarted.dispose());
             await vi.waitFor(async () => {
                 await engine.executeOnce();
-                expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+                expect(await peekOutboundWorkReadyAt(resources.workQueue, store.namespace)).toBeUndefined();
             });
             expect(connectionService.sendByPeerId.get('peer-2') ?? []).toHaveLength(authority === 'current' ? 1 : 0);
             expect(connectionService.sendByPeerId.get('peer-3') ?? []).toEqual([]);
@@ -122,9 +131,10 @@ describe('multicast QoS integration', () => {
             multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
         const message = shared.newALMulticastMessage(
@@ -249,9 +259,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -307,9 +318,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -362,9 +374,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -416,9 +429,10 @@ describe('multicast QoS integration', () => {
                     ),
                 qosProvider: undefined,
                 outboundDiagnostics: undefined,
-                outboundRuntime: createDefaultALOutboundRuntimeResources(),
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
                 circuitBreaker: toCircuitBreaker(),
-                rateLimiter: toRateLimiter()
+                rateLimiter: toRateLimiter(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
             });
             onTestFinished(() => manager.dispose());
 
@@ -511,9 +525,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -590,9 +605,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -639,9 +655,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -685,9 +702,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 

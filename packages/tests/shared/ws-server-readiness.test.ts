@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -120,6 +121,9 @@ interface ServerRuntime {
 function createServerRuntime(): ServerRuntime {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
     const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'ws-readiness',
+        decodePrepared: decodeALOutboundTransportMessage,
         namespace: 'ws-readiness',
         backend,
         supersedenceTrackTtlMs: 300_000,

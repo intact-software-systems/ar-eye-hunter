@@ -44,7 +44,7 @@ function createBrowserWebSocketQueueBoxService(
     const outboundStores = resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId);
     return createDefaultWsQueueBoxClientService({
         queueEngine: input.qboxEngine,
-        outbox: outboundStores.admissionStore.workQueue,
+        outbox: outboundStores.workQueue,
         socket,
         sessionId: clientData.sessionId,
         inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),

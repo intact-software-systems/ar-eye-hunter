@@ -3,7 +3,11 @@ import {
     resolveBrowserRtcRxALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type {
     ClientInfo,
     IceConfig,
@@ -50,9 +54,11 @@ export function initialiseRtcOverlayMulticastManager(
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            decodePrepared: decodeALOutboundTransportMessage,
             queueEngine: qboxEngine,
             stores
         }),
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         qosProvider: undefined,
         circuitBreaker: toCircuitBreaker(),

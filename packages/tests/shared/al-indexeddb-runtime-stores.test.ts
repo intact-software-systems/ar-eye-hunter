@@ -465,7 +465,7 @@ describe('IndexedDB AL runtime stores', () => {
             await admissionStore.commitBundle({
                 ...bundle,
                 mutations: [...bundle.mutations, { kind: 'set-repair-attempt', snapshot: { msgId: msg.id.msgId, attempts: 1 } }]
-            }, decodeOutboundTestPayload)
+            })
         ).toBe('committed');
 
         await admissionStore.acceptControlMessage(
@@ -581,12 +581,9 @@ describe('IndexedDB AL runtime stores', () => {
             dbName: dbName,
             namespace: namespace,
             sent: sent,
-            stores: {
-                ...stores,
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     claimReadyEffects: async () => []
-                })
-            }
+                }))
         });
 
         await enqueueOutboundOrThrow(runtime1, msg);
@@ -616,12 +613,9 @@ describe('IndexedDB AL runtime stores', () => {
             dbName: dbName,
             namespace: namespace,
             sent: sent,
-            stores: {
-                ...stores,
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     claimReadyEffects: async () => []
-                })
-            }
+                }))
         });
 
         await enqueueOutboundOrThrow(runtime1, msg);
@@ -673,9 +667,7 @@ describe('IndexedDB AL runtime stores', () => {
             dbName: dbName,
             namespace: namespace,
             sent: sent,
-            stores: {
-                ...stores,
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) => {
                         const effects = await admissionStore.claimReadyEffects(input, decode);
                         if (
@@ -700,8 +692,7 @@ describe('IndexedDB AL runtime stores', () => {
 
                         return effects;
                     }
-                })
-            },
+                })),
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 persist: false,

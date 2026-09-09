@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { PersistenceWriteExpiredError } from '../../persistence/persistence-write-deadline.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -32,22 +33,26 @@ export interface RetainALOutboundPendingAdmissionInput<TPrepared> {
     readonly canonicalEntry: ResourceEntry;
     readonly creationExpiry: string;
     readonly payload: ALOutboundPendingAdmission<TPrepared>;
-    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 }
 
 export function toALOutboundPendingAdmissionId(message: ALOutboundMessageReference): string {
     return toALOutboundEffectId(['admit-message', message.senderId, message.identity]);
 }
 
-export interface ALOutboundPendingAdmissionStorage {
+export function toALOutboundPendingControlId(msg: ALMessage): string {
+    return toALOutboundEffectId(['admit-control', msg.id.senderId, msg.id.msgId, msg.payload.typeId]);
+}
+
+export interface ALOutboundPendingAdmissionStorage<TPrepared> {
     readonly backend: ALAdmissionWorkBackend;
     readonly namespace: string;
     readonly nowMs: () => number;
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 }
 
 /** This queue-only write owns a failed first admission; it never writes admission metadata. */
 export async function retainALOutboundPendingAdmission<TPrepared>(
-    storage: ALOutboundPendingAdmissionStorage,
+    storage: ALOutboundPendingAdmissionStorage<TPrepared>,
     input: RetainALOutboundPendingAdmissionInput<TPrepared>
 ): Promise<'pending' | 'conflict' | 'expired'> {
     const { backend, namespace, nowMs } = storage;
@@ -73,7 +78,7 @@ export async function retainALOutboundPendingAdmission<TPrepared>(
         return 'expired';
     }
     const preparedRead = {
-        decodePrepared: input.decodePrepared,
+        decodePrepared: storage.decodePrepared,
         message: decodePersistedALMessage(canonical.resource)
     };
     const payload = decodeALOutboundWorkEntry(entry, namespace, preparedRead).payload;
@@ -111,7 +116,7 @@ function validatePendingObservation<T>(candidate: T, existing: T | undefined): E
 }
 
 async function readRacedPendingOwner(
-    storage: ALOutboundPendingAdmissionStorage,
+    storage: Pick<ALOutboundPendingAdmissionStorage<never>, 'backend' | 'nowMs'>,
     writes: readonly ALOutboundCanonicalFactWrite[],
     expiresAtMs: number
 ): Promise<'pending' | 'conflict' | 'expired'> {

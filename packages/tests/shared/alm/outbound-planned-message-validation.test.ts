@@ -13,7 +13,9 @@ import {
 import {
     createDefaultOutboundTestAdmissionStore,
     createDefaultOutboundTestRuntime,
-    createOutboundMessage
+    createOutboundMessage,
+    peekOutboundTestWorkReadyAt,
+    toOutboundTestStores
 } from './outbound-runtime-test-fixture.ts';
 
 const malformedMessages = [undefined, {}, { id: { msgId: 'malformed' } }];
@@ -24,7 +26,7 @@ describe('outbound planner validation boundary', () => {
         const outbox = new InMemoryQueueBox();
         const original = createOutboundMessage('invalid-planner');
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' }),
             planOutgoingMessage: () => ({ msg: planned as ALMessage, persist: true, preparedMessages: [] })
@@ -32,7 +34,7 @@ describe('outbound planner validation boundary', () => {
         const result = await runtime.enqueueIfAbsent(original);
         expect(result).toMatchObject({ status: 'failed', message: original, entries: [] });
         expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
         expect(await outbox.getItem(QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox').key)).toBeUndefined();
     });
 

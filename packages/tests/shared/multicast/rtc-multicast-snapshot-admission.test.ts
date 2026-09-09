@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     describe,
     expect,
@@ -9,7 +10,10 @@ import {
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -174,9 +178,10 @@ function createDefaultSnapshotAdmissionManager(
         },
         qosProvider: undefined,
         outboundDiagnostics: undefined,
-        outboundRuntime: createDefaultALOutboundRuntimeResources({ nowMs: () => 1_000 }),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, nowMs: () => 1_000 }),
         circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter()
+        rateLimiter: toRateLimiter(),
+        dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
 }
 

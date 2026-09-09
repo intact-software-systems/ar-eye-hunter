@@ -1,14 +1,18 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
     EntityStatus,
     isKeysEqual,
+    toKeyAsString,
     type ResourceEntry
 } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
+import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -16,6 +20,9 @@ import type {
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from './al-outbound-effect-validation.ts';
 
 export const AL_OUTBOUND_WORK_LEASE_MS = 10_000;
+export const AL_OUTBOUND_WORK_PAGE_SIZE = 16;
+
+const AL_OUTBOUND_SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
 
 export interface ALOutboundWorkEntryInput<TPrepared> {
     readonly namespace: string;
@@ -102,6 +109,88 @@ export function decodeALOutboundWorkEntry<TPrepared>(
     }
     catch (error) {
         throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
+    }
+}
+
+/**
+ * Retained and recovered work is due now, retried work at its own `nextTs`, and an expired row is
+ * never advertised. A page that still owes a cursor answers `nowMs`: one status never hides the next.
+ */
+export async function readALOutboundWorkReadyAt(
+    port: ALWorkQueuePort,
+    nowMs: number
+): Promise<number | undefined> {
+    let readyAtMs: number | undefined;
+    for (const status of AL_OUTBOUND_SCAN_STATUSES) {
+        const page = await port.readPage({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE, cursor: null });
+        if (page.nextCursor !== null) {
+            return nowMs;
+        }
+        for (const entry of page.entries) {
+            if (entry.audit.expiryTs.epochMilliseconds <= nowMs) {
+                continue;
+            }
+            const candidateAtMs = isUnleasedALOutboundReservation(entry) ? nowMs : resolveALOutboundWorkReadyAt(entry);
+            readyAtMs = Math.min(readyAtMs ?? candidateAtMs, candidateAtMs);
+        }
+    }
+    return readyAtMs;
+}
+
+/**
+ * A reservation without a lease start can never time out, so the port can never re-reserve it; the
+ * owner claims it as observed and the attempt rejects it.
+ */
+export async function readUnleasedALOutboundWorkClaims(
+    port: ALWorkQueuePort,
+    maxToRead: number,
+    nowMs: number
+): Promise<readonly ALWorkClaim[]> {
+    const page = await port.readPage({ status: EntityStatus.RESERVED, maxToRead, cursor: null });
+    return page.entries
+        .filter(isUnleasedALOutboundReservation)
+        .map((entry) => ({ entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs: nowMs }));
+}
+
+function isUnleasedALOutboundReservation(entry: ResourceEntry): boolean {
+    return entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined;
+}
+
+/**
+ * A row of a foreign dequeue type is work the outbound owner admits, not work it wrote: its identity
+ * is the queue slot itself and its message is the queued payload.
+ */
+export function toALOutboundDequeueWork<TPrepared>(
+    entry: ResourceEntry,
+    readMessageFromEntry: (entry: ResourceEntry) => ALMessage
+): ALOutboundEffectSnapshot<TPrepared> {
+    return {
+        effectId: toKeyAsString(entry.key),
+        payload: { kind: 'dequeue-message', queueTypeId: entry.typeId },
+        canonicalMessage: readALOutboundQueuedMessage(entry, readMessageFromEntry),
+        entry,
+        attempts: entry.dequeueAudit.attempts,
+        retryAtMs: Number(
+            entry.dequeueAudit.nextTs?.epochMilliseconds ??
+                entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
+        ),
+        expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
+        leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALOutboundWorkReadyAt(entry) : undefined
+    };
+}
+
+function readALOutboundQueuedMessage(
+    entry: ResourceEntry,
+    readMessageFromEntry: (entry: ResourceEntry) => ALMessage
+): ALMessage {
+    try {
+        return readMessageFromEntry(entry);
+    }
+    catch (error) {
+        if (error instanceof TypeError) {
+            throw new NonRetryableException(error.message);
+        }
+        throw error;
     }
 }
 

@@ -32,7 +32,8 @@ import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createFlakyOutboundAdmissionStore,
-    createOutboundMessage
+    createOutboundMessage,
+    toOutboundTestStores
 } from './outbound-runtime-test-fixture.ts';
 
 describe('canonical outbound payload storage', () => {
@@ -51,13 +52,16 @@ describe('canonical outbound payload storage', () => {
             observer: createPassThroughIndexedDbOperationObserver()
         });
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'canonical-cleanup',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'canonical-cleanup',
             backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
@@ -75,13 +79,16 @@ describe('canonical outbound payload storage', () => {
             observer: createPassThroughIndexedDbOperationObserver()
         });
         const otherStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'another-session:rtc',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'another-session:rtc',
             backend: restarted,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         const otherRuntime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: otherStore },
+            stores: toOutboundTestStores(otherStore),
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
@@ -129,6 +136,9 @@ describe('canonical outbound payload storage', () => {
                 observer: createPassThroughIndexedDbOperationObserver()
             });
         const admissionStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'canonical-test',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'canonical-test',
             backend,
             supersedenceTrackTtlMs: 60_000,
@@ -164,6 +174,9 @@ describe('canonical outbound payload storage', () => {
         });
         vi.setSystemTime(1_000);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'expired-admission',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'expired-admission',
             backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
             supersedenceTrackTtlMs: 60_000,
@@ -172,7 +185,7 @@ describe('canonical outbound payload storage', () => {
         let selectedDeadline = 1_010;
         const sends: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
                 persist: false,
@@ -210,13 +223,16 @@ describe('canonical outbound payload storage', () => {
         vi.setSystemTime(1_000);
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'cross-deadline',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'cross-deadline',
             backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: createFlakyOutboundAdmissionStore(store, { claimReadyEffects: async () => [] }) },
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(store, {})),
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => {
                 throw new Error('Expired work must never send');
@@ -242,7 +258,7 @@ describe('canonical outbound payload storage', () => {
         }
         else {
             const release = vi.spyOn(backend.workQueue, 'releaseEntries');
-            expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+            expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
             expect(release).toHaveBeenCalledWith(expect.any(Array), { status: EntityStatus.COMPLETED, delayMs: null });
         }
     });
@@ -250,6 +266,9 @@ describe('canonical outbound payload storage', () => {
     it('rejects concurrent different senders reusing the globally addressed message id', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'sender-collision',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'sender-collision',
             backend,
             supersedenceTrackTtlMs: 60_000,
@@ -259,8 +278,8 @@ describe('canonical outbound payload storage', () => {
         const second = { ...first, id: { ...first.id, senderId: 'different-sender' } };
         const firstAdmission = await computeOutboundTestAdmission(store, first);
         const secondAdmission = await computeOutboundTestAdmission(store, second);
-        expect(await store.commitBundle(firstAdmission, decodeOutboundTestPayload)).toBe('committed');
-        await expect(store.commitBundle(secondAdmission, decodeOutboundTestPayload)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await store.commitBundle(firstAdmission)).toBe('committed');
+        await expect(store.commitBundle(secondAdmission)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await store.readSentMessage(first.id.msgId))?.msg.id.senderId).toBe(first.id.senderId);
         expect(await backend.read(`sender-collision:msg-owner:${first.id.msgId}`, (value) => value)).toBe(first.id.senderId);
         expect(await backend.workQueue.getItem(secondAdmission.canonicalEntry!.key)).toBeUndefined();
@@ -269,6 +288,8 @@ describe('canonical outbound payload storage', () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const canonicalScope = 'local/session/' + 'scope-'.repeat(100);
         const admissionStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'long-identity',
             canonicalScope,
             backend,
@@ -336,6 +357,8 @@ describe('canonical outbound payload storage', () => {
         const message = createOutboundMessage('cross-carrier');
         const makeRuntime = (namespace: string, canonicalScope: string) => {
             const admissionStore = createALOutboundAdmissionStore({
+                nowMs: Date.now,
+                decodePrepared: decodeOutboundTestPayload,
                 namespace,
                 canonicalScope,
                 backend,

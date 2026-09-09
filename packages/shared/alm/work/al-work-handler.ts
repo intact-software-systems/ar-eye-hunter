@@ -103,6 +103,11 @@ export class ALWorkHandler {
         }
     }
 
+    /** Runs one batch to settlement; a caller that owns no engine tick drives its work through this. */
+    async drain(): Promise<void> {
+        await this.runBatch();
+    }
+
     hasActiveBatch(): boolean {
         return this.batch !== undefined;
     }

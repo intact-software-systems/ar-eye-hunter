@@ -39,6 +39,9 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
                 observer: createPassThroughIndexedDbOperationObserver()
             });
             const store = createALOutboundAdmissionStore({
+                nowMs: Date.now,
+                canonicalScope: 'outbound',
+                decodePrepared: decodeOutboundTestPayload,
                 namespace: 'outbound',
                 backend,
                 supersedenceTrackTtlMs: 60_000,
@@ -62,7 +65,7 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
             });
             const result = pending
                 ? await store.retainPendingAdmission(input)
-                : await store.commitBundle(bundle, decodeOutboundTestPayload);
+                : await store.commitBundle(bundle);
             expect(result).toBe(offset < 0 ? (pending ? 'pending' : 'committed') : 'expired');
             expect(crossed).toBe(true);
             spy.mockRestore();
@@ -87,6 +90,9 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
 it.each([EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE])('does not call a terminal %s descriptor pending or reactivate it', async (status) => {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
     const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'terminal',
+        decodePrepared: decodeOutboundTestPayload,
         namespace: 'terminal',
         backend,
         supersedenceTrackTtlMs: 60_000,
@@ -123,6 +129,9 @@ it.each([EntityStatus.RETRY, EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE]
     async (status) => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'raced-terminal',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'raced-terminal',
             backend,
             supersedenceTrackTtlMs: 60_000,

@@ -21,6 +21,9 @@ describe('outbound control version candidate', () => {
     it('computes and validates the ready version from frozen observations', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'control-values',
+            decodePrepared: decodeOutboundTestPayload,
             backend,
             namespace: 'control-values',
             retention: normalizeALRuntimeStoreRetention(),
@@ -61,7 +64,9 @@ describe('outbound control version candidate', () => {
     it('rejects a changed owner version before installing control history and accepts a fresh observation', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const namespace = 'control-version-test';
-        const store = createALOutboundAdmissionStore({ backend, namespace, retention: normalizeALRuntimeStoreRetention(), supersedenceTrackTtlMs: 60_000 });
+        const store = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeOutboundTestPayload, backend, namespace, retention: normalizeALRuntimeStoreRetention(), supersedenceTrackTtlMs: 60_000 });
         const message = createOutboundMessage('control-version-race');
         await store.commitBundle(await computeOutboundTestAdmission(store, message), decodeOutboundTestPayload);
         const control = newALNackControlMessage({ v: 2, msgId: 'nack-race', senderId: 'peer-1', ts: Date.now() }, {

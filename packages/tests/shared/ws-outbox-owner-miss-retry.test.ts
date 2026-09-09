@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
@@ -111,6 +112,9 @@ describe('durable WS outbox owner misses', () => {
         ));
         const ownerSocket = createSocket();
         const base = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'ws-owner-claim-conflict',
+            decodePrepared: decodeALOutboundTransportMessage,
             namespace: 'ws-owner-claim-conflict',
             supersedenceTrackTtlMs: 60_000,
             backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),

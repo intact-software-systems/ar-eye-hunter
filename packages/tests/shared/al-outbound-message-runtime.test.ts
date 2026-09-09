@@ -27,6 +27,7 @@ import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
     enqueueOutboundOrThrow,
+    peekOutboundTestWorkReadyAt,
     reserveOutbox,
     waitUntil
 } from './alm/outbound-runtime-test-fixture.ts';
@@ -70,7 +71,7 @@ describe('ALOutboundMessageRuntime', () => {
         onTestFinished(() => runtime.dispose());
 
         await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
-        expect(await admissionStore.peekNextEffectReadyAt()).toBe(nowMs + 25);
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBe(nowMs + 25);
         nowMs += 24;
         vi.setSystemTime(nowMs);
         await queueEngine.executeOnce();
@@ -81,7 +82,7 @@ describe('ALOutboundMessageRuntime', () => {
         await queueEngine.executeOnce();
         await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry', 'injected-retry']);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
     });
 
     it.each([30_000, 30_001])('expires an asynchronous readiness settlement at %s ms without sending or acknowledging', async (elapsedMs) => {
@@ -108,7 +109,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(complete.mock.calls[0][0].audit.expiryTs.epochMilliseconds).toBe(31_000);
         expect(send).toHaveBeenCalledTimes(1);
         expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
     });
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
@@ -292,7 +293,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([msg.id.msgId]);
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
         restarted.dispose();
     });
 
@@ -316,7 +317,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
 
         expect(result.status).toBe('accepted');
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores: { admissionStore },

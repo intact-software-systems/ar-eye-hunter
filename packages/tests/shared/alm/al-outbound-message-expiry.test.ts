@@ -23,7 +23,8 @@ import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestAdmissionStore,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    peekOutboundTestWorkReadyAt
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -61,7 +62,7 @@ describe('outbound message expiry', () => {
         });
         expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
         expect(await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload)).toBe('committed');
-        const [work] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
+        const [work] = await store.claimReadyEffects({ maxCount: 1 });
         expect(work.expireAtTimestamp).toBe(31_000);
         expect(work.canonicalMessage).toEqual(JSON.parse(JSON.stringify(msg)));
         expect(work.payload).toMatchObject({ prepared: { message: JSON.stringify(msg) } });
@@ -116,7 +117,7 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(2_000);
         expect(await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload)).toBe('expired');
         expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
         expect(JSON.stringify(candidate)).toBe(before);
     });
 
@@ -126,6 +127,9 @@ describe('outbound message expiry', () => {
         const state = createInMemoryALAdmissionState();
         const backend = new InMemoryAdmissionBackend(state, Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'held-writer',
+            decodePrepared: decodeOutboundTestPayload,
             backend,
             namespace: 'held-writer',
             supersedenceTrackTtlMs: 60_000,
@@ -196,7 +200,7 @@ describe('outbound message expiry', () => {
                     maxAttempts: 1
                 }
             }]
-        }, decodeOutboundTestPayload);
+        });
         const clock = { nowMs: Date.now };
         const repair = new ALOutboundRepairAdmission({
             admissionStore: store,
@@ -229,6 +233,9 @@ describe('outbound message expiry', () => {
         const state = createInMemoryALAdmissionState();
         const backend = new InMemoryAdmissionBackend(state, Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'malformed-reservation',
+            decodePrepared: decodeOutboundTestPayload,
             backend,
             namespace: 'malformed-reservation',
             supersedenceTrackTtlMs: 60_000,
@@ -252,11 +259,11 @@ describe('outbound message expiry', () => {
             });
             await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload);
         }
-        const [reserved] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
+        const [reserved] = await store.claimReadyEffects({ maxCount: 1 });
         const malformed = { ...reserved.entry, dequeueAudit: { ...reserved.entry.dequeueAudit, startTs: undefined } };
         await backend.workQueue.setItem(malformed.key, malformed, { expireAtTimestamp: reserved.expireAtTimestamp });
-        expect(await store.peekNextEffectReadyAt()).toBe(1_000);
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toHaveLength(1);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBe(1_000);
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toHaveLength(1);
         expect(await backend.workQueue.getItem(malformed.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
@@ -301,7 +308,7 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(1_999);
         expect(await store.readSentMessage(msg.id.msgId)).toBeDefined();
         vi.setSystemTime(2_000);
-        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
         expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
     });
 

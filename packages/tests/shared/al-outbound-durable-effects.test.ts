@@ -6,7 +6,11 @@ import {
     it,
     vi
 } from 'vitest';
-import { computeOutboundTestAdmission } from './alm/outbound-runtime-test-fixture.ts';
+import {
+    computeOutboundTestAdmission,
+    peekOutboundTestWorkReadyAt,
+    toOutboundTestStores
+} from './alm/outbound-runtime-test-fixture.ts';
 
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import type { ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -46,13 +50,13 @@ describe('AL outbound durable effect lifecycle', () => {
             return undefined;
         });
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             sendPreparedMessage: send,
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         await runtime.enqueueIfAbsent(createOutboundMessage('expires-during-receipt-read', { ttlMs: 1_000 }));
         expect(send).not.toHaveBeenCalled();
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it('recovers a retained send when durable completion fails after its native settlement', async () => {
@@ -62,8 +66,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const sent: string[] = [];
         let failCompletion = true;
         const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     completeEffect: async (reservation) => {
                         if (failCompletion) {
                             failCompletion = false;
@@ -71,8 +74,7 @@ describe('AL outbound durable effect lifecycle', () => {
                         }
                         await admissionStore.completeEffect(reservation);
                     }
-                })
-            },
+                })),
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
                 return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent' };
@@ -83,14 +85,14 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.enqueueIfAbsent(message);
         settlement.resolve({ status: 'sent' });
         await vi.advanceTimersByTimeAsync(0);
-        const retryAt = await admissionStore.peekNextEffectReadyAt();
+        const retryAt = await peekOutboundTestWorkReadyAt(admissionStore);
         if (retryAt === undefined) {
             throw new Error('Completion failure must retain retryable work');
         }
         expect(retryAt).toBeGreaterThan(Date.now());
         await vi.advanceTimersByTimeAsync(retryAt - Date.now());
         expect(sent).toEqual([message.id.msgId, message.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
     });
 
     it.each(['cancelled', 'expired', 'superseded'] as const)('does not retry a retained send after %s settlement', async (status) => {
@@ -111,7 +113,7 @@ describe('AL outbound durable effect lifecycle', () => {
         settlement.resolve({ status });
         await vi.advanceTimersByTimeAsync(10_001);
         expect(attempts).toEqual([message.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
     });
 
     it('drains committed send effects after a restart when the first runtime crashes before drain', async () => {
@@ -119,11 +121,9 @@ describe('AL outbound durable effect lifecycle', () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const msg = createOutboundMessage('msg-crash-before-drain');
         const runtime1 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     claimReadyEffects: async () => []
-                })
-            },
+                })),
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
@@ -244,8 +244,7 @@ describe('AL outbound durable effect lifecycle', () => {
         let failFirstComplete = true;
         const msg = createOutboundMessage('msg-complete-fails-after-send');
         const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     completeEffect: async (reservation) => {
                         if (failFirstComplete) {
                             failFirstComplete = false;
@@ -254,8 +253,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
                         await admissionStore.completeEffect(reservation);
                     }
-                })
-            },
+                })),
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
@@ -273,7 +271,7 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        const retryAt = await admissionStore.peekNextEffectReadyAt();
+        const retryAt = await peekOutboundTestWorkReadyAt(admissionStore);
         if (retryAt === undefined) {
             throw new Error('Failed completion must leave a pending QueueBox retry');
         }
@@ -293,11 +291,9 @@ describe('AL outbound durable effect lifecycle', () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const msg = createOutboundMessage('msg-single-claim');
         const runtime1 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     claimReadyEffects: async () => []
-                })
-            },
+                })),
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
@@ -370,8 +366,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const msg = createOutboundMessage('msg-ack-during-timeout');
         let acceptedAckDuringTimeout = false;
         const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     claimReadyEffects: async (input, decodePrepared) => {
                         const effects = await admissionStore.claimReadyEffects(input, decodePrepared);
                         if (
@@ -396,8 +391,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
                         return effects;
                     }
-                })
-            },
+                })),
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
@@ -454,12 +448,11 @@ describe('AL outbound durable effect lifecycle', () => {
         const msg = createOutboundMessage('msg-conflict-recompute');
         let rejectedFirstCommit = false;
         const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     commitBundle: async (bundle, decodePrepared) => {
                         if (!rejectedFirstCommit) {
                             rejectedFirstCommit = true;
-                            expect(await admissionStore.commitBundle(bundle, decodePrepared)).toBe('committed');
+                            expect(await admissionStore.commitBundle(bundle)).toBe('committed');
                             await admissionStore.acceptControlMessage(
                                 newALAckControlMessage(
                                     { v: 2, msgId: 'control-conflict-ack', ts: 1, senderId: 'peer-1' },
@@ -476,10 +469,9 @@ describe('AL outbound durable effect lifecycle', () => {
                             return 'conflict';
                         }
 
-                        return await admissionStore.commitBundle(bundle, decodePrepared);
+                        return await admissionStore.commitBundle(bundle);
                     }
-                })
-            },
+                })),
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
@@ -580,7 +572,7 @@ describe('AL outbound durable effect lifecycle', () => {
         await admissionStore.commitBundle({
             ...admission,
             durableEffects: [{ effectId, payload }]
-        }, decodeOutboundTestPayload);
+        });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
             sendPreparedMessage: async (prepared) => {
@@ -613,7 +605,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(sent).toEqual([]);
         const pending = await admissionStore.claimReadyEffects({
             maxCount: 10
-        }, decodeOutboundTestPayload);
+        });
         expect(pending.map((effect) => effect.payload)).toEqual([payload]);
     });
 
@@ -622,8 +614,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         let attempts = 0;
         const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
                     acceptControlMessage: async (msg) => {
                         attempts += 1;
                         if (attempts < 4) {
@@ -633,8 +624,7 @@ describe('AL outbound durable effect lifecycle', () => {
                         }
                         return await admissionStore.acceptControlMessage(msg, decodeOutboundTestPayload);
                     }
-                })
-            },
+                })),
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
@@ -684,7 +674,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await sendStarted.promise;
-        const leaseExpiresAt = await admissionStore.peekNextEffectReadyAt();
+        const leaseExpiresAt = await peekOutboundTestWorkReadyAt(admissionStore);
         if (leaseExpiresAt === undefined) {
             throw new Error('Expected the in-flight send to retain its durable lease');
         }
@@ -692,7 +682,7 @@ describe('AL outbound durable effect lifecycle', () => {
         runtime.dispose();
         sendCompleted.resolve();
         await enqueue;
-        expect(await admissionStore.peekNextEffectReadyAt()).toBe(leaseExpiresAt);
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBe(leaseExpiresAt);
 
         const recovered: string[] = [];
         const restarted = createDefaultOutboundTestRuntime({
@@ -709,7 +699,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(recovered).toEqual([]);
         await vi.advanceTimersByTimeAsync(1);
         expect(recovered).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
         restarted.dispose();
     });
 });

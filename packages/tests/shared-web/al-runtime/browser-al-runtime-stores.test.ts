@@ -1,3 +1,4 @@
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 
@@ -318,7 +319,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
                 }
             ],
             durableEffects: []
-        }, decodeALOutboundPreparedMessage);
+        });
 
         const ownerPrefix = `${
             toBrowserALRuntimeEntryKeyPrefix(
@@ -498,7 +499,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
 });
 
 async function readSentMessageIds(
-    admissionStore: ALOutboundAdmissionStore
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<readonly string[]> {
     const prefix = `${admissionStore.namespace}:sent:`;
     const keys = await readBrowserALRuntimeEntryKeys(prefix);
@@ -507,12 +508,12 @@ async function readSentMessageIds(
 }
 
 async function persistSentMessage(
-    admissionStore: ALOutboundAdmissionStore,
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
     msgId: string
 ): Promise<void> {
     const snapshot = createSentSnapshot(msgId);
     const bundle = await computeOutboundTestAdmission(admissionStore, snapshot.msg);
-    const status = await admissionStore.commitBundle(bundle, decodeALOutboundPreparedMessage);
+    const status = await admissionStore.commitBundle(bundle);
 
     if (status !== 'committed') {
         throw new Error(`Failed to persist sent message ${msgId}`);

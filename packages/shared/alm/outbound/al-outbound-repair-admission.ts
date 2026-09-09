@@ -11,7 +11,6 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
-    ALOutboundPreparedMessageDecoder,
     ALOutboundRepairHint,
     ALOutboundRepairReadDto
 } from './al-outbound-admission-store.ts';
@@ -21,6 +20,10 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest
 } from './al-outbound-message-runtime.ts';
+import type {
+    ALOutboundControlAdmission,
+    ALOutboundControlAdmissionResult
+} from './control/al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
@@ -41,10 +44,10 @@ interface ALOutboundCommitRepairInput<TPrepared> {
 
 export namespace ALOutboundRepairAdmission {
     export interface Dependencies<TPrepared> {
-        readonly admissionStore: ALOutboundAdmissionStore;
+        readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
+        readonly controlAdmission: ALOutboundControlAdmission<TPrepared>;
         readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
         readonly planRepairMessage:
             | ((
@@ -58,7 +61,7 @@ export namespace ALOutboundRepairAdmission {
 /** Turns persisted control/ACK/repair state into new durable admission commits; never sends directly. */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
-    private readonly admissionStore: ALOutboundAdmissionStore;
+    private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private readonly dependencies: ALOutboundRepairAdmission.Dependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundRepairAdmission.Dependencies<TPrepared>) {
@@ -66,19 +69,16 @@ export class ALOutboundRepairAdmission<TPrepared> {
         this.admissionStore = dependencies.admissionStore;
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<boolean> {
+    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         const decoded = decodeALControlMessage(msg);
         if (decoded.left || !await this.hasCurrentRepairAuthority(decoded.right!)) {
-            return false;
+            return { kind: 'not-handled' };
         }
-        const acceptance = await this.admissionStore.acceptControlMessage<TPrepared>(
-            msg,
-            this.dependencies.decodePreparedMessage
-        );
-        if (acceptance.handled) {
+        const admitted = await this.dependencies.controlAdmission.admit(msg);
+        if (admitted.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(msg);
         }
-        return acceptance.handled;
+        return admitted;
     }
 
     private async hasCurrentRepairAuthority(control: ALParsedControlMessage): Promise<boolean> {
@@ -137,14 +137,14 @@ export class ALOutboundRepairAdmission<TPrepared> {
             retry.retryDelayMs ?? ALOutboundRepairAdmission.NOT_YET_IN_SYNC_RETRY_DELAY_MS
         );
         const retryAtMs = read.nowMs + retryDelayMs;
-        const result = await this.admissionStore.scheduleNotYetInSyncRetry<TPrepared>({
+        const result = await this.dependencies.controlAdmission.scheduleNotYetInSyncRetry({
             senderId: msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
             msgId,
             maxAttempts: retry.maxAttempts,
             expireAtTimestamp: resolveALMessageExpireAtMs(msg),
             retryAtMs
-        }, this.dependencies.decodePreparedMessage);
+        });
         if (result.status === 'conflict') {
             throw new RetryableConflictError('Outbound not-yet-in-sync retry commit conflict');
         }
@@ -154,7 +154,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
-    async handlePendingAckTimeout(msgId: string): Promise<void> {
+    async retryPendingAck(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const pending = read.pendingAck;
         const msg = read.sentSnapshot?.msg;
@@ -168,7 +168,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                     expectedVersion: read.clientRecord.version,
                     mutations: [{ kind: 'delete-pending-ack', msgId }, { kind: 'delete-repair-attempt', msgId }],
                     durableEffects: []
-                }, this.dependencies.decodePreparedMessage);
+                });
                 if (status === 'conflict') {
                     throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
                 }
@@ -195,7 +195,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             deadlineAtMs: this.readNowMs() + pending.timeoutMs
         };
         const bundle = this.toAckTimeoutRepairBundle(msg, nextPending, read.clientRecord?.version);
-        const status = await this.admissionStore.commitBundle(bundle, this.dependencies.decodePreparedMessage);
+        const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound ack timeout commit conflict');
         }
@@ -237,14 +237,14 @@ export class ALOutboundRepairAdmission<TPrepared> {
         pending: ALOutboundPendingAckSnapshot,
         expectedVersion?: number
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle<TPrepared>({
+        const status = await this.admissionStore.commitBundle({
             senderId: msg.id.senderId,
             expectedVersion,
             mutations: [],
             durableEffects: [
                 this.toAckTimeoutEffect(pending)
             ]
-        }, this.dependencies.decodePreparedMessage);
+        });
         if (status === 'conflict') {
             throw new RetryableConflictError(
                 'Outbound ack timeout persistence commit conflict'
@@ -257,7 +257,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         pending: ALOutboundPendingAckSnapshot,
         expectedVersion?: number
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle<TPrepared>({
+        const status = await this.admissionStore.commitBundle({
             senderId: msg.id.senderId,
             expectedVersion,
             mutations: [
@@ -271,7 +271,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                 }
             ],
             durableEffects: []
-        }, this.dependencies.decodePreparedMessage);
+        });
         if (status === 'conflict') {
             throw new RetryableConflictError(
                 'Outbound pending ack clear commit conflict'
@@ -279,7 +279,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
-    async executeRepairFromHint(
+    async retransmitFromRepairHint(
         fallbackMsgId: string,
         request: ALOutboundRepairHint,
         attemptIdentity: string

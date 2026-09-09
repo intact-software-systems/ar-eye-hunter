@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
     configureALRuntimeStoreFactories,
@@ -26,7 +27,9 @@ describe('AL runtime store registry', () => {
             'runtime-a',
             {
                 createInboundStores: () => createDefaultInMemoryALInboundRuntimeStores(),
-                createOutboundStores: () => createDefaultInMemoryALOutboundRuntimeStores()
+                createOutboundStores: () =>
+                    createDefaultInMemoryALOutboundRuntimeStores({
+                    })
             },
             manager
         );

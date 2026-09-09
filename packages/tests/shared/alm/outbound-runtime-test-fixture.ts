@@ -17,22 +17,41 @@ import {
     QueueBoxUtilities,
     type ALMessage,
     type ALOutboundAdmissionStore,
-    type ALOutboundPlanner,
     type ResourceEntry
 } from '@shared/mod.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
+import type { ALOutboundPreparedMessageDecoder } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import {
+    AL_OUTBOUND_WORK_LEASE_MS,
+    readALOutboundWorkReadyAt,
+    toALOutboundWorkType
+} from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import {
+    createALWorkQueuePort,
+    type ALWorkClaim,
+    type ALWorkOutcome,
+    type ALWorkQueuePort
+} from '@shared/alm/work/al-work-queue-port.ts';
+
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
-interface OutboundTestRuntimeInput {
+interface OutboundTestRuntimeInput<TPrepared> {
     readonly queueEngine?: InboxOutboxEngine;
     readonly outbox?: InMemoryQueueBox;
-    readonly stores?: ALOutboundRuntimeStores;
+    readonly stores?: ALOutboundRuntimeStores<TPrepared>;
+    readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly nowMs?: () => number;
-    readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planOutgoingMessage'];
-    readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planRepairMessage'];
-    readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'];
+    readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
+    readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
+    readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
+}
+
+interface OutboundTestRuntimeInputFor<TPrepared> extends OutboundTestRuntimeInput<TPrepared> {
+    readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
+    readonly stores: ALOutboundRuntimeStores<TPrepared>;
 }
 
 export async function enqueueOutboundOrThrow(
@@ -55,14 +74,28 @@ export async function reserveOutbox(outbox: InMemoryQueueBox): Promise<readonly 
     ];
 }
 
-export function createDefaultOutboundTestRuntime(options: OutboundTestRuntimeInput): ALOutboundMessageRuntime<OutboundTestPayload> {
+export function createDefaultOutboundTestRuntime(
+    options: OutboundTestRuntimeInput<OutboundTestPayload>
+): ALOutboundMessageRuntime<OutboundTestPayload> {
     const outbox = options.outbox ?? new InMemoryQueueBox(new Map());
-
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        decodePreparedMessage: decodeOutboundTestPayload,
-        queueEngine: options.queueEngine,
+    return createOutboundTestRuntimeFor({
+        ...options,
         outbox,
-        stores: options.stores ?? { admissionStore: createDefaultOutboundTestAdmissionStore(outbox) },
+        stores: options.stores ?? createDefaultOutboundTestStores(outbox),
+        decodePreparedMessage: decodeOutboundTestPayload
+    });
+}
+
+/** The same runtime for a caller whose stores carry another prepared contract (browser transport copies). */
+export function createOutboundTestRuntimeFor<TPrepared>(
+    options: OutboundTestRuntimeInputFor<TPrepared>
+): ALOutboundMessageRuntime<TPrepared> {
+    const runtime = createDefaultALOutboundMessageRuntime<TPrepared>({
+        decodePreparedMessage: options.decodePreparedMessage,
+        queueEngine: options.queueEngine,
+        outbox: options.outbox ?? new InMemoryQueueBox(new Map()),
+        stores: options.stores,
+        dequeue: options.dequeue,
         diagnostics: options.diagnostics,
         nowMs: options.nowMs ?? Date.now,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
@@ -75,6 +108,30 @@ export function createDefaultOutboundTestRuntime(options: OutboundTestRuntimeInp
     return runtime;
 }
 
+/** The work port an outbound owner builds for one admission scope, for tests that drive work directly. */
+export function createOutboundWorkPort(
+    workQueue: QueueBoxResourceEntryRepository,
+    namespace: string,
+    dequeueTypes: ReadonlySet<string> = new Set<string>()
+): ALWorkQueuePort {
+    return createALWorkQueuePort({
+        queue: workQueue,
+        workTypes: new Set([toALOutboundWorkType(namespace), ...dequeueTypes]),
+        leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
+        nowMs: Date.now,
+        random: Math.random
+    });
+}
+
+/** The readiness the outbound owner advertises: undefined once its work is drained. */
+export async function peekOutboundWorkReadyAt(
+    workQueue: QueueBoxResourceEntryRepository,
+    namespace: string
+): Promise<number | undefined> {
+    return await readALOutboundWorkReadyAt(createOutboundWorkPort(workQueue, namespace), Date.now());
+}
+
+/** Claims work the way the owner does, decoding each row through the store. */
 export async function waitUntil(predicate: () => boolean): Promise<void> {
     for (let i = 0; i < 20; i += 1) {
         if (predicate()) {
@@ -85,67 +142,107 @@ export async function waitUntil(predicate: () => boolean): Promise<void> {
     expect(predicate()).toBe(true);
 }
 
-export function createDefaultOutboundTestAdmissionStore(outbox?: InMemoryQueueBox): ALOutboundAdmissionStore {
-    return createALOutboundAdmissionStore({
-        namespace: 'outbound-test',
-        supersedenceTrackTtlMs: 5 * 60_000,
-        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
-        retention: normalizeALRuntimeStoreRetention()
+/** Test-only index from a store to the queue its owner would build a work port over. */
+const workQueuesByStore = new WeakMap<object, QueueBoxResourceEntryRepository>();
+
+export function rememberOutboundTestWorkQueue<TPrepared>(
+    stores: ALOutboundRuntimeStores<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    workQueuesByStore.set(stores.admissionStore, stores.workQueue);
+    return stores;
+}
+
+function readOutboundTestWorkQueue<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>
+): QueueBoxResourceEntryRepository {
+    const queue = workQueuesByStore.get(store);
+    if (queue === undefined) {
+        throw new Error('Outbound test store was not created through the fixture');
+    }
+    return queue;
+}
+
+/** The stores bundle an owner needs, recovered from a store the fixture created. */
+export function toOutboundTestStores<TPrepared>(
+    admissionStore: ALOutboundAdmissionStore<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    return { admissionStore, workQueue: readOutboundTestWorkQueue(admissionStore) };
+}
+
+/** The readiness the owner would advertise for this store: undefined once its work is drained. */
+export async function peekOutboundTestWorkReadyAt<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>
+): Promise<number | undefined> {
+    return await peekOutboundWorkReadyAt(readOutboundTestWorkQueue(store), store.namespace);
+}
+
+/** Claims and decodes work the way the owner does. */
+export async function claimOutboundTestWork<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>,
+    maxCount: number
+): Promise<readonly ALWorkClaim[]> {
+    const port = createOutboundWorkPort(readOutboundTestWorkQueue(store), store.namespace);
+    return await port.claim({ maxCount, observedEntries: undefined });
+}
+
+export async function releaseOutboundTestWork<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>,
+    claim: ALWorkClaim,
+    outcome: ALWorkOutcome
+): Promise<void> {
+    const port = createOutboundWorkPort(readOutboundTestWorkQueue(store), store.namespace);
+    await port.release(claim, outcome);
+}
+
+export function createDefaultOutboundTestStores(
+    outbox?: InMemoryQueueBox
+): ALOutboundRuntimeStores<OutboundTestPayload> {
+    const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now);
+    return rememberOutboundTestWorkQueue({
+        admissionStore: createALOutboundAdmissionStore({
+            decodePrepared: decodeOutboundTestPayload,
+            nowMs: Date.now,
+            namespace: 'outbound-test',
+            canonicalScope: 'outbound-test',
+            supersedenceTrackTtlMs: 5 * 60_000,
+            backend,
+            retention: normalizeALRuntimeStoreRetention(),
+        }),
+        workQueue: backend.workQueue
     });
 }
 
+export function createDefaultOutboundTestAdmissionStore(
+    outbox?: InMemoryQueueBox
+): ALOutboundAdmissionStore<OutboundTestPayload> {
+    return createDefaultOutboundTestStores(outbox).admissionStore;
+}
+
 export function createFlakyOutboundAdmissionStore(
-    inner: ALOutboundAdmissionStore,
+    inner: ALOutboundAdmissionStore<OutboundTestPayload>,
     hooks: Partial<
         Pick<
-            ALOutboundAdmissionStore,
-            | 'acceptControlMessage'
-            | 'claimReadyEffects'
-            | 'commitBundle'
-            | 'completeEffect'
-            | 'rescheduleEffect'
+            ALOutboundAdmissionStore<OutboundTestPayload>,
+            'commitBundle' | 'readWorkSnapshot'
         >
     >
-): ALOutboundAdmissionStore {
+): ALOutboundAdmissionStore<OutboundTestPayload> {
     return {
         retainPendingAdmission: (input) => inner.retainPendingAdmission(input),
         namespace: inner.namespace,
         canonicalScope: inner.canonicalScope,
-        workQueue: inner.workQueue,
         isMessageSuperseded: (message) => inner.isMessageSuperseded(message),
         ready: () => inner.ready(),
         readOutgoingMessage: (input) => inner.readOutgoingMessage(input),
-        readRepairMessage: <TPrepared>(
-            msgId: string,
-            planner: ALOutboundPlanner<TPrepared>
-        ) => inner.readRepairMessage<TPrepared>(msgId, planner),
+        readRepairMessage: (msgId, planner) => inner.readRepairMessage(msgId, planner),
         readSentMessage: (msgId: string) => inner.readSentMessage(msgId),
         readSentMessageByOrdering: (trackKey, seq) => inner.readSentMessageByOrdering(trackKey, seq),
         readReceiptState: (msgId: string) => inner.readReceiptState(msgId),
         readPendingAck: (msgId: string) => inner.readPendingAck(msgId),
-        commitBundle: (bundle, decodePrepared) =>
-            hooks.commitBundle
-                ? hooks.commitBundle(bundle, decodePrepared)
-                : inner.commitBundle(bundle, decodePrepared),
-        acceptControlMessage: (msg, decodePrepared) =>
-            hooks.acceptControlMessage
-                ? hooks.acceptControlMessage(msg, decodePrepared)
-                : inner.acceptControlMessage(msg, decodePrepared),
-        scheduleNotYetInSyncRetry: (schedule, decodePrepared) => inner.scheduleNotYetInSyncRetry(schedule, decodePrepared),
-        claimReadyEffects: (input, decodePrepared) =>
-            hooks.claimReadyEffects
-                ? hooks.claimReadyEffects(input, decodePrepared)
-                : inner.claimReadyEffects(input, decodePrepared),
-        rejectEffect: (reservation) => inner.rejectEffect(reservation),
-        completeEffect: (reservation) =>
-            hooks.completeEffect
-                ? hooks.completeEffect(reservation)
-                : inner.completeEffect(reservation),
-        rescheduleEffect: (input) =>
-            hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input)
-                : inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
+        readWorkSnapshot: (entry) =>
+            hooks.readWorkSnapshot ? hooks.readWorkSnapshot(entry) : inner.readWorkSnapshot(entry),
+        commitBundle: (bundle) => hooks.commitBundle ? hooks.commitBundle(bundle) : inner.commitBundle(bundle),
+        createControlAdmission: (port, clock) => inner.createControlAdmission(port, clock)
     };
 }
 
@@ -177,11 +274,17 @@ export function firstValue<K, V>(map: Map<K, V>): V {
     return first;
 }
 
-export function createOutboundCanonicalEntry(store: ALOutboundAdmissionStore, msg: ALMessage): ResourceEntry {
+export function createOutboundCanonicalEntry<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>,
+    msg: ALMessage
+): ResourceEntry {
     return { ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'), key: toALOutboundCanonicalKey(store.canonicalScope, msg) };
 }
 
-export async function computeOutboundTestAdmission(store: ALOutboundAdmissionStore, message: ALMessage) {
+export async function computeOutboundTestAdmission<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>,
+    message: ALMessage
+) {
     const read = await store.readOutgoingMessage({
         msg: message,
         planner: (msg) => ({ msg, persist: true, preparedMessages: [] }),

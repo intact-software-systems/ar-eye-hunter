@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { vi } from 'vitest';
 
 import { Temporal } from '@js-temporal/polyfill';
@@ -8,7 +9,10 @@ import {
     createDefaultInMemoryALInboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -41,7 +45,8 @@ interface RtcMessageCallbackRegistry {
 export class RtcEndpointFixture {
     readonly groups = new LatestRepository<string, GroupSnapshot>();
     readonly overlays = new LatestRepository<string, OverlayInfo>();
-    readonly outbound = createDefaultInMemoryALOutboundRuntimeStores();
+    readonly outbound = createDefaultInMemoryALOutboundRuntimeStores({
+    });
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];
     readonly peer: QRtcPeerDto;
@@ -82,9 +87,10 @@ export class RtcEndpointFixture {
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: this.outbound }),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: this.outbound }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,

@@ -87,6 +87,8 @@ function validateDispatchEffects<TPrepared>(
         const messageMatches = (payload.kind === 'send-prepared' || payload.kind === 'admit-message')
             ? payload.message.msgId === msg.id.msgId && payload.message.senderId === msg.id.senderId &&
                 payload.message.expiresAtMs === resolveALMessageExpireAtMs(msg)
+            : (payload.kind === 'admit-control' || payload.kind === 'dequeue-message')
+            ? false
             : payload.msgId === msg.id.msgId;
         if (
             (payload.kind === 'send-prepared' || payload.kind === 'admit-message') &&

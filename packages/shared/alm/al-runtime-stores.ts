@@ -16,7 +16,10 @@ import { createALInboundAdmissionStore } from './inbound/al-inbound-admission-st
 import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
 import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
 
-import { createALOutboundAdmissionStore } from './outbound/al-outbound-admission-store.ts';
+import {
+    createALOutboundAdmissionStore,
+    type ALOutboundPreparedMessageDecoder
+} from './outbound/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
 
 export interface CreateInMemoryALRuntimeStoresInput {
@@ -29,9 +32,21 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
 }
 
+export interface CreateInMemoryALOutboundRuntimeStoresInput<TPrepared> extends CreateInMemoryALRuntimeStoresInput {
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+}
+
 export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRuntimeStoresInput {
     readonly dbName: string | undefined;
     readonly observer: IndexedDbOperationObserver;
+}
+
+export interface CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared> extends CreateIndexedDbALRuntimeStoresInput {
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+}
+
+export interface CreateDefaultALOutboundRuntimeStoresInput<TPrepared> extends CreateDefaultALRuntimeStoresInput {
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 }
 
 export interface CreateDefaultALRuntimeStoresInput {
@@ -71,24 +86,27 @@ export function createInMemoryALInboundRuntimeStores(
     };
 }
 
-export function createInMemoryALOutboundRuntimeStores(
-    input: CreateInMemoryALRuntimeStoresInput
-): ALOutboundRuntimeStores {
+export function createInMemoryALOutboundRuntimeStores<TPrepared>(
+    input: CreateInMemoryALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    const backend = input.outboundBackend ??
+        new InMemoryAdmissionBackend(
+            createInMemoryALAdmissionState(
+                new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
+            ),
+            input.nowMs
+        );
     return {
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
             canonicalScope: input.canonicalScope ?? input.namespace,
-            backend: input.outboundBackend ??
-                new InMemoryAdmissionBackend(
-                    createInMemoryALAdmissionState(
-                        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
-                    ),
-                    input.nowMs
-                ),
+            backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
-        })
+            retention: normalizeALRuntimeStoreRetention(input.retention),
+            decodePrepared: input.decodePrepared
+        }),
+        workQueue: backend.workQueue
     };
 }
 
@@ -115,25 +133,28 @@ export function createIndexedDbALInboundRuntimeStores(
     };
 }
 
-export function createIndexedDbALOutboundRuntimeStores(
-    input: CreateIndexedDbALRuntimeStoresInput
-): ALOutboundRuntimeStores {
+export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
+    input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    const backend = input.outboundBackend ??
+        new IndexedDbAdmissionBackend({
+            dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
+            storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+            nowMs: input.nowMs,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: input.observer
+        });
     return {
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
             canonicalScope: input.canonicalScope ?? input.namespace,
-            backend: input.outboundBackend ??
-                new IndexedDbAdmissionBackend({
-                    dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-                    storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-                    nowMs: input.nowMs,
-                    newWriteToken: crypto.randomUUID.bind(crypto),
-                    observer: input.observer
-                }),
+            backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
-        })
+            retention: normalizeALRuntimeStoreRetention(input.retention),
+            decodePrepared: input.decodePrepared
+        }),
+        workQueue: backend.workQueue
     };
 }
 
@@ -143,10 +164,13 @@ export function createDefaultInMemoryALInboundRuntimeStores(
     return createInMemoryALInboundRuntimeStores(toDefaultInMemoryInput(options));
 }
 
-export function createDefaultInMemoryALOutboundRuntimeStores(
-    options: CreateDefaultALRuntimeStoresInput = {}
-): ALOutboundRuntimeStores {
-    return createInMemoryALOutboundRuntimeStores(toDefaultInMemoryInput(options));
+export function createDefaultInMemoryALOutboundRuntimeStores<TPrepared>(
+    options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    return createInMemoryALOutboundRuntimeStores({
+        ...toDefaultInMemoryInput(options),
+        decodePrepared: options.decodePrepared
+    });
 }
 
 export function createDefaultIndexedDbALInboundRuntimeStores(
@@ -155,10 +179,13 @@ export function createDefaultIndexedDbALInboundRuntimeStores(
     return createIndexedDbALInboundRuntimeStores(toDefaultIndexedDbInput(options));
 }
 
-export function createDefaultIndexedDbALOutboundRuntimeStores(
-    options: CreateDefaultALRuntimeStoresInput = {}
-): ALOutboundRuntimeStores {
-    return createIndexedDbALOutboundRuntimeStores(toDefaultIndexedDbInput(options));
+export function createDefaultIndexedDbALOutboundRuntimeStores<TPrepared>(
+    options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    return createIndexedDbALOutboundRuntimeStores({
+        ...toDefaultIndexedDbInput(options),
+        decodePrepared: options.decodePrepared
+    });
 }
 
 export function isIndexedDbALRuntimeStoreSupported(): boolean {

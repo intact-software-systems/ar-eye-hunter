@@ -5,7 +5,10 @@ import {
     it,
     vi
 } from 'vitest';
-import { computeOutboundTestAdmission } from '../shared/alm/outbound-runtime-test-fixture.ts';
+import {
+    computeOutboundTestAdmission,
+    peekOutboundTestWorkReadyAt
+} from '../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
@@ -200,10 +203,13 @@ describe('PostgreSQL outbound admission', () => {
         const namespace = 'psql-test:outbound:admission';
         const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodePreparedOutboundSend,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         });
         const msg = createOutboundMessage('msg-outbound-1');
         const bundle = await computeOutboundTestAdmission(store, msg);
@@ -237,7 +243,7 @@ describe('PostgreSQL outbound admission', () => {
                     }
                 }
             ]
-        }, decodePreparedOutboundSend);
+        });
 
         expect(status).toBe('committed');
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
@@ -257,23 +263,26 @@ describe('PostgreSQL outbound admission', () => {
             }
         });
 
-        const claimed = await store.claimReadyEffects({ maxCount: 1 }, decodePreparedOutboundSend);
+        const claimed = await store.claimReadyEffects({ maxCount: 1 });
 
         expect(claimed).toHaveLength(1);
         expect(claimed[0].effectId).toBe(effectId);
         await store.completeEffect(claimed[0].entry);
         expect(await backend.workQueue.getItem(workKey)).toMatchObject({ status: EntityStatus.COMPLETED });
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it('bumps the owning sender version when accepting outbound control messages', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodePreparedOutboundSend,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -296,7 +305,7 @@ describe('PostgreSQL outbound admission', () => {
                 }
             ],
             durableEffects: []
-        }, decodePreparedOutboundSend);
+        });
         const acceptance = await store.acceptControlMessage(
             newALAckControlMessage(
                 { v: 2, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1' },
@@ -349,7 +358,7 @@ describe('PostgreSQL outbound admission', () => {
                 }
             ],
             durableEffects: []
-        }, decodePreparedOutboundSend);
+        });
 
         const admissionNamespace = `${namespace}:outbound:admission`;
         const versionEntry = await repository.findEntry(

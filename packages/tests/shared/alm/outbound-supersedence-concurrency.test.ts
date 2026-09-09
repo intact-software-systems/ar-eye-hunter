@@ -31,7 +31,7 @@ describe('outbound shared supersedence decisions', () => {
         if (populated) {
             const seed = await readDecision(store, createMessage('seed', 0));
             expect(await store.commitBundle(seed.bundle!, decodeOutboundTestPayload)).toBe('committed');
-            for (const effect of await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload)) {
+            for (const effect of await store.claimReadyEffects({ maxCount: 10 })) {
                 await store.completeEffect(effect.entry);
             }
         }
@@ -45,7 +45,7 @@ describe('outbound shared supersedence decisions', () => {
         expect(await store.commitBundle(newDecision.bundle!, decodeOutboundTestPayload)).toBe('committed');
         expect(await store.commitBundle(oldDecision.bundle!, decodeOutboundTestPayload)).toBe('conflict');
         expect(await store.readSentMessage(older.id.msgId)).toBeUndefined();
-        const effects = await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload);
+        const effects = await store.claimReadyEffects({ maxCount: 10 });
         expect(effects.map((effect) => effect.payload.kind === 'send-prepared' ? effect.payload.message.msgId : '')).toEqual([newer.id.msgId]);
 
         const refreshed = await readDecision(store, older);
@@ -95,6 +95,9 @@ function createStore(storage: 'memory' | 'indexeddb') {
             observer: createPassThroughIndexedDbOperationObserver()
         });
     return createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'outbound',
+        decodePrepared: decodeOutboundTestPayload,
         namespace: 'outbound',
         backend,
         supersedenceTrackTtlMs: 60_000,

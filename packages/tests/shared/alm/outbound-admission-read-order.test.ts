@@ -10,7 +10,12 @@ import {
     it,
     vi
 } from 'vitest';
-import { createDefaultOutboundTestRuntime, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import {
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage,
+    peekOutboundTestWorkReadyAt,
+    toOutboundTestStores
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound admission observation order', () => {
@@ -19,6 +24,9 @@ describe('outbound admission observation order', () => {
     it('keeps the raced normal admission authoritative while recovering its stale same-message enqueue', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'read-race',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'read-race',
             backend,
             supersedenceTrackTtlMs: 300_000,
@@ -74,7 +82,7 @@ describe('outbound admission observation order', () => {
         expect(winningSnapshot?.outboxKey).toBeDefined();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'changed' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -83,7 +91,7 @@ describe('outbound admission observation order', () => {
         });
         await runtime.ready();
         expect(sent).toEqual([]);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
         expect(await store.workQueue.getItem(winningSnapshot!.outboxKey!)).toMatchObject({ status: 'NEW' });
         stale.dispose();
         winner.dispose();
@@ -91,6 +99,9 @@ describe('outbound admission observation order', () => {
     it('rereads repair state after discovering its sender and capturing that sender version', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'repair-race',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'repair-race',
             backend,
             supersedenceTrackTtlMs: 300_000,
@@ -133,7 +144,7 @@ describe('outbound admission observation order', () => {
                 expectedVersion: 1,
                 mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
                 durableEffects: []
-            }, decodeOutboundTestPayload)
+            })
         ).toBe('committed');
         resume.resolve();
         const repair = await pending;

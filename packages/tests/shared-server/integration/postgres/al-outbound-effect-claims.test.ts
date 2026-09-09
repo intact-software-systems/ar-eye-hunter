@@ -1,4 +1,8 @@
 import {
+    peekOutboundTestWorkReadyAt
+} from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
     describe,
     expect,
     it
@@ -37,7 +41,7 @@ describe('Postgres AL outbound effect claims', () => {
                     expireAtTimestamp: nowMs + 60_000,
                     payload: { kind: 'ack-timeout', msgId: 'message' }
                 }]
-            }, decodeALOutboundPreparedMessage);
+            });
             const input = { maxCount: 1 };
             const results = await Promise.allSettled([
                 first.claimReadyEffects(input, decodeALOutboundPreparedMessage),
@@ -56,23 +60,26 @@ describe('Postgres AL outbound effect claims', () => {
             const [newClaim] = await second.claimReadyEffects(input, decodeALOutboundPreparedMessage);
 
             await first.completeEffect(oldClaim.entry);
-            expect(await second.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
+            expect(await peekOutboundTestWorkReadyAt(second)).toBe(newClaim.leaseUntilMs);
             await first.rescheduleEffect({
                 reservation: oldClaim.entry,
                 retryAtMs: Date.now() + 5_000
             });
-            expect(await second.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
+            expect(await peekOutboundTestWorkReadyAt(second)).toBe(newClaim.leaseUntilMs);
             await second.completeEffect(newClaim.entry);
-            expect(await first.peekNextEffectReadyAt()).toBeUndefined();
+            expect(await peekOutboundTestWorkReadyAt(first)).toBeUndefined();
         });
     }, 60_000);
 });
 
 function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string) {
     return createALOutboundAdmissionStore({
+        decodePrepared: decodeALOutboundTransportMessage,
+        nowMs: Date.now,
         namespace,
+        canonicalScope: namespace,
         backend: new PSqlAdmissionWorkBackend(repository.sql, namespace),
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
     });
 }

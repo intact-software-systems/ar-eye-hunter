@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     describe,
     expect,
@@ -148,10 +149,13 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-conflict';
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         });
         conflictNextAdmissionCommit(storage, { namespace, senderId: 'self' }, Date.now);
 
@@ -164,7 +168,7 @@ describe('PSql admission optimistic retry', () => {
                 senderId: 'self'
             }],
             durableEffects: []
-        }, decodeALOutboundPreparedMessage)).resolves.toBe('conflict');
+        })).resolves.toBe('conflict');
     });
 
     it('translates an outbound retry-schedule CAS loss to the owner conflict result', async () => {
@@ -172,10 +176,13 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:outbound:retry-apply-conflict';
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         });
         conflictNextAdmissionCommit(storage, { namespace, senderId: 'self' }, Date.now);
 
@@ -186,7 +193,7 @@ describe('PSql admission optimistic retry', () => {
             maxAttempts: 1,
             expireAtTimestamp: Date.now() + 60_000,
             retryAtMs: Date.now()
-        }, decodeALOutboundPreparedMessage)).resolves.toEqual({ status: 'conflict' });
+        })).resolves.toEqual({ status: 'conflict' });
     });
 
     it('does not translate an unexpected outbound apply failure into a conflict', async () => {
@@ -194,10 +201,13 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-error';
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         });
         vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('outbound storage unavailable'));
 
@@ -210,7 +220,7 @@ describe('PSql admission optimistic retry', () => {
                 senderId: 'self'
             }],
             durableEffects: []
-        }, decodeALOutboundPreparedMessage)).rejects.toThrow('outbound storage unavailable');
+        })).rejects.toThrow('outbound storage unavailable');
     });
 
     it('retains a post-read outbound conflict and activates its canonical row after restart', async () => {

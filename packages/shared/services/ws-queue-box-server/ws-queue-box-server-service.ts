@@ -27,7 +27,10 @@ import type {
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { reconstructALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { createDefaultALOutboundRuntimeResources } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -64,8 +67,9 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider?: ALQosInputProvider;
         readonly targetResolver?: WsServerTargetResolver;
         readonly inboundStores?: ALInboundRuntimeStores;
-        readonly outboundStores?: ALOutboundRuntimeStores;
+        readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly dequeueResilience?: ResourceInboxResilience;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
         readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
@@ -86,7 +90,8 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly targetResolver: WsServerTargetResolver;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
-        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
+        readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
@@ -137,7 +142,7 @@ export class WsQueueBoxServerService {
         this.clock = dependencies.outboundRuntime.clock;
         this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
-        this.outbox = dependencies.outboundRuntime.admissionStore.workQueue;
+        this.outbox = dependencies.outboundRuntime.workQueue;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.qosProvider = dependencies.qosProvider;
@@ -173,6 +178,10 @@ export class WsQueueBoxServerService {
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
+            dequeue: {
+                types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
+                resilience: dependencies.dequeueResilience
+            },
             diagnostics: dependencies.outboundDiagnostics,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(
@@ -331,10 +340,10 @@ export class WsQueueBoxServerService {
     }
 
     async dequeueOutbox(
-        typesToDequeue: Set<string>,
-        resilience: ResourceInboxResilience
+        _typesToDequeue: Set<string>,
+        _resilience: ResourceInboxResilience
     ): Promise<void> {
-        await this.outboundRuntime.dequeue(typesToDequeue, resilience);
+        await this.outboundRuntime.drainWork();
     }
 
     private sendControlMessage(message: ALMessage): Promise<void> {
@@ -697,10 +706,12 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
             queueEngine: input.queueEngine
         }),
+        dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,

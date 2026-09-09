@@ -1,4 +1,12 @@
 import {
+    peekOutboundWorkReadyAt
+} from '../alm/outbound-runtime-test-fixture.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
     afterEach,
     describe,
     expect,
@@ -31,7 +39,8 @@ interface ClientIngressFixture {
     readonly service: WsQueueBoxClientService;
     readonly socket: TestWebSocket;
     readonly admissionStore: ALInboundAdmissionStore;
-    readonly outboundStore: ALOutboundAdmissionStore;
+    readonly outboundStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly outbox: InMemoryQueueBox;
     readonly admission: ALAdmissionMemoryState;
     readonly delivered: ALMessage[];
@@ -227,7 +236,10 @@ describe('WS client typed ingress and transport effects', () => {
         const result = await fixture.service.enqueueOutboxIfAbsent(message);
         expect(result.status).toBe('accepted');
         expect(fixture.socket.sent).toEqual([]);
-        const retryAtMs = await fixture.outboundStore.peekNextEffectReadyAt();
+        const retryAtMs = await peekOutboundWorkReadyAt(
+            fixture.outboundStores.workQueue,
+            fixture.outboundStore.namespace
+        );
         if (retryAtMs === undefined) {
             throw new Error('Expected retained retry work after the failed socket submission');
         }
@@ -307,7 +319,8 @@ async function createClientIngressFixture(
     const outbox = new InMemoryQueueBox(new Map());
     const delivered: ALMessage[] = [];
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
-        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now)
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
+        decodePrepared: decodeALOutboundTransportMessage
     });
     const admissionStore = createALInboundAdmissionStore({
         namespace: 'ws-client-ingress',
@@ -329,7 +342,16 @@ async function createClientIngressFixture(
         }
     });
     onTestFinished(() => service.close());
-    return { service, socket, admissionStore, outboundStore: outboundStores.admissionStore, outbox, admission, delivered };
+    return {
+        service,
+        socket,
+        admissionStore,
+        outboundStore: outboundStores.admissionStore,
+        outboundStores,
+        outbox,
+        admission,
+        delivered
+    };
 }
 
 function incomingMessage(): ALMessage {

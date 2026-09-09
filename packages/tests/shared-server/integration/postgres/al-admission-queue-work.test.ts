@@ -1,3 +1,6 @@
+import {
+    peekOutboundTestWorkReadyAt
+} from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
@@ -49,10 +52,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const { backend, other, entry } = await createStorage();
         const namespace = entry.key.contextId;
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         });
         await store.commitBundle({
             senderId: 'self',
@@ -61,7 +67,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
                 effectId: msgId,
                 payload: { kind: 'ack-timeout', msgId }
             }))
-        }, decodeALOutboundTransportMessage);
+        });
         const malformedKey = toALOutboundWorkKey(namespace, 'malformed');
         const original = await other.workQueue.getItem(malformedKey);
         if (original === undefined) {
@@ -70,7 +76,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.replaceIfObserved(original, { ...original, resource: '{invalid-json' }))
             .not.toBeNull();
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage);
+        const claimed = await store.claimReadyEffects({ maxCount: 3 });
 
         expect(claimed.map((effect) => effect.payload)).toEqual([{ kind: 'ack-timeout', msgId: 'valid' }]);
         expect(await other.workQueue.getItem(malformedKey)).toMatchObject({
@@ -79,19 +85,22 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
         await other.workQueue.releaseEntries([claimed[0]!.entry], { status: EntityStatus.COMPLETED, delayMs: null });
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
-        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        expect(await store.claimReadyEffects({ maxCount: 3 })).toEqual([]);
     });
 
     postgresIt('commits one canonical payload, full identity and compact action, then reloads through another connection', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
         const settings = {
+            nowMs: Date.now,
             namespace: entry.key.contextId,
             canonicalScope: `local-session:${'long-scope/'.repeat(60)}:${entry.key.contextId}`,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         };
-        const first = createALOutboundAdmissionStore({ ...settings, backend });
+        const first = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend });
         const original = createSupersedingMessage('sender', 1);
         const message = {
             ...original,
@@ -109,7 +118,9 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         ownedKeys.push(canonicalKey, identityKey);
         expect(await first.commitBundle(decision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
 
-        const restarted = createALOutboundAdmissionStore({ ...settings, backend: other });
+        const restarted = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend: other });
         expect((await restarted.readSentMessage(message.id.msgId))?.msg).toEqual(message);
         const canonical = await other.workQueue.getItem(canonicalKey);
         const identity = await other.workQueue.getItem(identityKey);
@@ -120,7 +131,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             senderId: message.id.senderId
         });
         expect(identity?.audit.expiryTs.epochMilliseconds).toBe(message.constraints?.expiresAtMs);
-        const [action] = await restarted.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage);
+        const [action] = await restarted.claimReadyEffects({ maxCount: 10 });
         expect(action.canonicalMessage).toEqual(message);
         expect(action.entry.resource).not.toContain(message.payload.resource);
         for (const row of [canonical!, identity!, action.entry]) {
@@ -130,7 +141,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         }
         await restarted.completeEffect(action.entry);
         expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).status).toBe('duplicate');
-        expect(await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await first.claimReadyEffects({ maxCount: 10 })).toEqual([]);
         const conflicting = {
             ...identity!,
             resource: JSON.stringify({
@@ -141,12 +152,15 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.replaceIfObserved(identity!, conflicting)).not.toBeNull();
         await expect(first.readSentMessage(message.id.msgId)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await other.workQueue.getItem(canonicalKey))?.resource).toBe(canonical?.resource);
-        expect(await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await first.claimReadyEffects({ maxCount: 10 })).toEqual([]);
     });
 
     postgresIt('aborts canonical payload, identity, action and metadata together when the final action slot races', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: entry.key.contextId,
+            decodePrepared: decodeALOutboundTransportMessage,
             namespace: entry.key.contextId,
             backend,
             supersedenceTrackTtlMs: 60_000,
@@ -178,9 +192,19 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
 
     postgresIt('refuses concurrent conflicting sender reuse of one globally addressed message id without overwriting metadata', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
-        const settings = { namespace: entry.key.contextId, supersedenceTrackTtlMs: 60_000, retention: normalizeALRuntimeStoreRetention() };
-        const first = createALOutboundAdmissionStore({ ...settings, backend });
-        const second = createALOutboundAdmissionStore({ ...settings, backend: other });
+        const settings = {
+            nowMs: Date.now,
+            namespace: entry.key.contextId,
+            canonicalScope: entry.key.contextId,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention(),
+        };
+        const first = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend });
+        const second = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend: other });
         const original = createSupersedingMessage('sender-a', 1);
         const conflicting = { ...original, id: { ...original.id, senderId: 'sender-b' } };
         const firstDecision = await readSupersedenceDecision({ store: first, message: original, supersedenceKey: 'sender-a', nowMs: Date.now });
@@ -293,12 +317,18 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
     postgresIt('rejects a cross-sender decision computed before another connection fills its shared slot', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
         const settings = {
+            nowMs: Date.now,
             namespace: entry.key.contextId,
+            canonicalScope: entry.key.contextId,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
         };
-        const first = createALOutboundAdmissionStore({ ...settings, backend });
-        const second = createALOutboundAdmissionStore({ ...settings, backend: other });
+        const first = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend });
+        const second = createALOutboundAdmissionStore({
+    nowMs: Date.now,
+    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend: other });
         const older = createSupersedingMessage('sender-a', 1);
         const newer = createSupersedingMessage('sender-b', 2);
         const oldDecision = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
@@ -313,7 +343,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await second.commitBundle(newDecision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
         expect(await first.commitBundle(oldDecision.bundle!, decodeALOutboundTransportMessage)).toBe('conflict');
         expect(await first.readSentMessage(older.id.msgId)).toBeUndefined();
-        const pending = await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage);
+        const pending = await first.claimReadyEffects({ maxCount: 10 });
         expect(pending.map((work) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')).toEqual([newer.id.msgId]);
         const retried = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
         expect(retried.status).toBe('superseded');

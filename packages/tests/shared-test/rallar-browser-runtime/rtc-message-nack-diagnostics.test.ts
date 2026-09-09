@@ -1,3 +1,7 @@
+import {
+    createOutboundWorkPort
+} from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
@@ -21,11 +25,16 @@ describe('RTC message diagnostic receipts', () => {
         const sessionId = `nack-diagnostics-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
         try {
-            const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
+            const stores = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
+            const { admissionStore } = stores;
+            const controlAdmission = admissionStore.createControlAdmission(
+                createOutboundWorkPort(stores.workQueue, admissionStore.namespace),
+                { nowMs: Date.now }
+            );
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
             await admitAttemptedMessage(admissionStore, sessionId);
             const sentBefore = await admissionStore.readSentMessage('attempted');
-            await admissionStore.acceptControlMessage(
+            await controlAdmission.admit(
                 newALNackControlMessage(
                     {
                         v: 2,
@@ -40,8 +49,7 @@ describe('RTC message diagnostic receipts', () => {
                         reason: 'not-yet-in-sync',
                         observedAtEpochMs: 1
                     }
-                ),
-                decodeALOutboundPreparedMessage
+                )
             );
             const receipt = await readBlackBoxRtcMessageNacks(sessionId, 'attempted');
             expect(receipt).toEqual([expect.objectContaining({
@@ -60,7 +68,10 @@ describe('RTC message diagnostic receipts', () => {
     });
 });
 
-async function admitAttemptedMessage(store: ALOutboundAdmissionStore, sessionId: string): Promise<void> {
+async function admitAttemptedMessage(
+    store: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    sessionId: string
+): Promise<void> {
     const nowMs = Date.now();
     const message = {
         id: { v: 2 as const, msgId: 'attempted', senderId: sessionId, ts: nowMs },
@@ -88,5 +99,5 @@ async function admitAttemptedMessage(store: ALOutboundAdmissionStore, sessionId:
             }
         ],
         durableEffects: []
-    }, decodeALOutboundPreparedMessage);
+    });
 }

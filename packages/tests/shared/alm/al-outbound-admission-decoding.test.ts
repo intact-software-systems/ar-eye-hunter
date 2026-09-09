@@ -1,3 +1,7 @@
+import {
+    peekOutboundTestWorkReadyAt,
+    toOutboundTestStores
+} from './outbound-runtime-test-fixture.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
@@ -43,19 +47,19 @@ describe('outbound admission persisted-record validation', () => {
         });
         vi.spyOn(backend.workQueue, 'releaseEntries').mockRejectedValueOnce(new Error('Terminal write unavailable'));
 
-        await expect(store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundTransportMessage))
+        await expect(store.claimReadyEffects({ maxCount: 1 }))
             .rejects.toThrow('Terminal write unavailable');
         expect(await backend.workQueue.getItem(entry.key))
             .toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
 
         vi.setSystemTime(Date.now() + 10_001);
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
         expect(await backend.workQueue.getItem(entry.key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             resource: entry.resource,
             dequeueAudit: { attempts: 2, nextTs: undefined }
         });
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it.each([0, 19, 20])('isolates malformed work at attempt %s while valid work remains claimable', async (attempts) => {
@@ -77,7 +81,7 @@ describe('outbound admission persisted-record validation', () => {
         const valid = createEffect(createMessage());
         await writeRawOutboundWork(backend, valid.effectId, valid);
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage);
+        const claimed = await store.claimReadyEffects({ maxCount: 3 });
 
         expect(claimed.map((effect) => effect.payload)).toEqual([valid.payload]);
         expect(await backend.workQueue.getItem(corruptedEntry.key)).toMatchObject({
@@ -86,8 +90,8 @@ describe('outbound admission persisted-record validation', () => {
             dequeueAudit: { attempts: attempts + 1, nextTs: undefined }
         });
         await store.completeEffect(claimed[0]!.entry);
-        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage)).toEqual([]);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await store.claimReadyEffects({ maxCount: 3 })).toEqual([]);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it('rejects wrong-slot and malformed sent snapshots in point and ordering lookup reads', async () => {
@@ -184,7 +188,7 @@ describe('outbound admission persisted-record validation', () => {
         await writeRawOutboundWork(backend, effect.effectId, effect);
         const [claimed] = await store.claimReadyEffects({
             maxCount: 1
-        }, decodeALOutboundTransportMessage);
+        });
         expect(claimed.payload).toEqual(effect.payload);
         expect(claimed.entry.status).toBe(EntityStatus.RESERVED);
     });
@@ -201,14 +205,14 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundTransportMessage)
+            })
         ).toEqual([]);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
             durableEffects: [{ effectId: effect.effectId, payload: effect.payload }]
-        }, decodeALOutboundTransportMessage)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         const persisted = await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId));
         expect(persisted?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect(JSON.parse(persisted!.resource).payload).toEqual(corrupt.payload);
@@ -227,7 +231,7 @@ describe('outbound admission persisted-record validation', () => {
         await writeRawOutboundWork(backend, valid.effectId, valid);
         const sent: string[] = [];
         const runtime = createDefaultALOutboundMessageRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
@@ -258,10 +262,10 @@ describe('outbound admission persisted-record validation', () => {
         const effect = createEffect(createMessage());
         await writeRawOutboundWork(backend, effect.effectId, effect);
         await backend.workQueue.removeItem(missing === 'payload' ? effect.canonicalEntry.key : effect.identityEntry.key);
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
         expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))
             .toMatchObject({ status: EntityStatus.NON_RETRYABLE });
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it.each(['ack-timeout', 'repair-hint', 'nack-retry'])('terminates corrupt %s replay as non-retryable', async (kind) => {
@@ -281,7 +285,7 @@ describe('outbound admission persisted-record validation', () => {
             await writeRawOutboundWork(backend, effectId, { effectId, payload });
         });
         const runtime = createDefaultALOutboundMessageRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
@@ -346,7 +350,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundTransportMessage)
+            })
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -372,7 +376,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundTransportMessage)
+            })
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -440,7 +444,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundTransportMessage)
+            })
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -457,7 +461,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(
             await store.claimReadyEffects({
                 maxCount: 1
-            }, decodeALOutboundTransportMessage)
+            })
         ).toEqual([]);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
@@ -468,6 +472,9 @@ function createAdmission() {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'outbound',
+        decodePrepared: decodeALOutboundTransportMessage,
         namespace: 'outbound',
         backend,
         supersedenceTrackTtlMs: 1_000,
@@ -487,7 +494,7 @@ async function scheduleNotYetInSyncRetry(
         maxAttempts: 3,
         expireAtTimestamp: Date.now() + 60_000,
         retryAtMs: Date.now()
-    }, decodeALOutboundTransportMessage);
+    });
 }
 
 function createMessage() {

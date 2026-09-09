@@ -1,3 +1,5 @@
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     describe,
     expect,
@@ -848,15 +850,17 @@ interface RouterFixture {
     readonly service: WsQueueBoxServerService;
     readonly socket: RecordingWsServer;
     readonly outbox: QueueBoxResourceEntryRepository;
-    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
 
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ): RouterFixture {
     const socket = createRecordingWsServer();
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
-    const outbox = outboundStores.admissionStore.workQueue;
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+    const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         outboundStores,
@@ -980,7 +984,7 @@ interface PublicRouterFixture {
     readonly service: WsQueueBoxServerService;
     readonly socket: RecordingWsServer;
     readonly outbox: QueueBoxResourceEntryRepository;
-    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly qboxEngine: RouterQueueWakeRecorder;
 }
 
@@ -988,8 +992,10 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     const socket = createRecordingWsServer({
         failingConnectionIds: options.failingConnectionIds
     });
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
-    const outbox = outboundStores.admissionStore.workQueue;
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+    const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         outboundStores,

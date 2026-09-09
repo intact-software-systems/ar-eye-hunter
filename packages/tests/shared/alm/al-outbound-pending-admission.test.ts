@@ -16,7 +16,8 @@ import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createFlakyOutboundAdmissionStore,
-    createOutboundMessage
+    createOutboundMessage,
+    toOutboundTestStores
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -55,7 +56,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     });
     const original = createOutboundMessage('pending-unique-payload', { ttlMs: 10_000 });
     const initial = createDefaultOutboundTestRuntime({
-        stores: { admissionStore: heldStore },
+        stores: toOutboundTestStores(heldStore),
         queueEngine: new InboxOutboxEngine(),
         planOutgoingMessage: (msg) => ({
             msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: Date.now() + 1_000 } },
@@ -76,6 +77,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     expect(rows.filter((row) => row?.resource.includes('pending-unique-payload'))).toHaveLength(1);
     expect(rows.filter((row) => row?.resource.includes('"kind":"admit-message"'))).toHaveLength(1);
     const restartedStore = createALOutboundAdmissionStore({
+        decodePrepared: decodeOutboundTestPayload,
         ...options,
         backend: kind === 'memory'
             ? backend
@@ -90,7 +92,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     const engine = new InboxOutboxEngine();
     const sent: string[] = [];
     const restarted = createDefaultOutboundTestRuntime({
-        stores: { admissionStore: restartedStore },
+        stores: toOutboundTestStores(restartedStore),
         queueEngine: engine,
         planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'changed' }] }),
         sendPreparedMessage: async (prepared, _phase, lifecycle) => {

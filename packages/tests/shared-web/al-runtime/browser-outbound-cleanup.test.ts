@@ -1,3 +1,7 @@
+import {
+    decodeALOutboundTransportMessage,
+    toALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -29,7 +33,7 @@ import {
     it,
     vi
 } from 'vitest';
-import { createDefaultOutboundTestRuntime, createOutboundMessage } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { createOutboundTestRuntimeFor, createOutboundMessage } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
 interface RawWorkRow {
     readonly keyString: string;
@@ -131,12 +135,17 @@ describe('browser canonical outbound cleanup', () => {
 
 async function admitForSession(sessionId: string, ttlMs: number) {
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    const store = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
+    const store = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
     const before = new Set((await readRawWorkRows()).map((row) => row.keyString));
-    const runtime = createDefaultOutboundTestRuntime({
+    const runtime = createOutboundTestRuntimeFor({
         queueEngine: new InboxOutboxEngine(),
-        stores: { admissionStore: store },
-        planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
+        stores: store,
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        planOutgoingMessage: (msg) => ({
+            msg,
+            persist: true,
+            preparedMessages: [toALOutboundTransportMessage(msg)]
+        }),
         sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
     });
     const result = await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs }));

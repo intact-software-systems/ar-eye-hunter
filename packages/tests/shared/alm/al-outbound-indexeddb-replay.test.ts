@@ -28,7 +28,9 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import {
     createDefaultOutboundTestRuntime,
     createFlakyOutboundAdmissionStore,
-    createOutboundMessage
+    createOutboundMessage,
+    peekOutboundTestWorkReadyAt,
+    toOutboundTestStores
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -42,7 +44,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                 effectId: msgId,
                 payload: { kind: 'ack-timeout', msgId }
             }))
-        }, decodeOutboundTestPayload);
+        });
         const malformedKey = toALOutboundWorkKey('outbound', 'malformed');
         const original = await backend.workQueue.getItem(malformedKey);
         if (original === undefined) {
@@ -52,7 +54,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             expireAtTimestamp: Number(original.audit.expiryTs.epochMilliseconds)
         });
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeOutboundTestPayload);
+        const claimed = await store.claimReadyEffects({ maxCount: 3 });
 
         expect(claimed.map((effect) => effect.payload)).toEqual([{ kind: 'ack-timeout', msgId: 'valid' }]);
         expect(await backend.workQueue.getItem(malformedKey)).toMatchObject({
@@ -61,8 +63,8 @@ describe('outbound IndexedDB durable queue replay', () => {
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
         await store.completeEffect(claimed[0]!.entry);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
-        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        expect(await store.claimReadyEffects({ maxCount: 3 })).toEqual([]);
     });
 
     it.each(['memory', 'indexeddb'] as const)('skips a complete audience after restart while replaying an incomplete audience in %s', async (storage) => {
@@ -83,7 +85,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         );
         const runtime1 = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 persist: false,
@@ -113,7 +115,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const sent: string[] = [];
         const runtime2 = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: () => {
                 throw new Error('Replay must use the retained message');
             },
@@ -177,6 +179,8 @@ describe('outbound IndexedDB durable queue replay', () => {
     it('retains an actual QueueBox reservation while a runtime send waits in the native queue', async () => {
         const dbName = `outbound-queue-owner-${crypto.randomUUID()}`;
         const store = createALOutboundAdmissionStore({
+            canonicalScope: 'outbound',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'outbound',
             backend: new IndexedDbAdmissionBackend({
                 dbName: dbName,
@@ -189,7 +193,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ text: 'retained' }] }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
         });
@@ -223,26 +227,24 @@ describe('outbound IndexedDB durable queue replay', () => {
             senderId: msg.id.senderId,
             mutations: [],
             durableEffects: [{ effectId: 'lease-fence', retryAtMs: nowMs, payload: { kind: 'ack-timeout', msgId: msg.id.msgId } }]
-        }, decodeOutboundTestPayload);
+        });
         const [oldClaim] = await store.claimReadyEffects(
-            { maxCount: 1 },
-            decodeOutboundTestPayload
+            { maxCount: 1 }
         );
         vi.setSystemTime(nowMs + 10_001);
         const [newClaim] = await store.claimReadyEffects(
-            { maxCount: 1 },
-            decodeOutboundTestPayload
+            { maxCount: 1 }
         );
 
         await store.completeEffect(oldClaim.entry);
-        expect(await store.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBe(newClaim.leaseUntilMs);
         await store.rescheduleEffect({
             reservation: oldClaim.entry,
             retryAtMs: nowMs + 50_000
         });
-        expect(await store.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBe(newClaim.leaseUntilMs);
         await store.completeEffect(newClaim.entry);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it('keeps canonical and action Temporal values across persistence, lease, reschedule and runtime restart', async () => {
@@ -253,7 +255,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const { store, backend } = createAdmission();
         const msg = createOutboundMessage('queued');
         const runtime1 = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: createFlakyOutboundAdmissionStore(store, { claimReadyEffects: async () => [] }) },
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(store, {})),
             planOutgoingMessage: (message) => ({ msg: message, persist: true, preparedMessages: [{ text: 'captured-recipient' }] }),
             sendPreparedMessage: async () => {
                 throw new Error('Claims are held until restart');
@@ -261,7 +263,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const enqueued = await runtime1.enqueueIfAbsent(msg);
         runtime1.dispose();
-        const [claimed] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
+        const [claimed] = await store.claimReadyEffects({ maxCount: 1 });
         expect(claimed.payload.kind).toBe('send-prepared');
         expect(claimed.canonicalMessage).toEqual(msg);
         expect(claimed.entry.audit.date).toBeInstanceOf(Temporal.PlainTime);
@@ -269,12 +271,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(claimed.entry.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
         expect(claimed.entry.dequeueAudit.startTs).toBeInstanceOf(Temporal.Instant);
         await store.rescheduleEffect({ reservation: claimed.entry, retryAtMs: Date.now() });
-        const retryAt = await store.peekNextEffectReadyAt();
+        const retryAt = await peekOutboundTestWorkReadyAt(store);
         expect(retryAt).toBeDefined();
         vi.setSystemTime(retryAt!);
         const sent: string[] = [];
         const runtime2 = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: toOutboundTestStores(store),
             planOutgoingMessage: () => {
                 throw new Error('Saved prepared attempt must not replan');
             },
@@ -291,7 +293,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(canonical?.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
         expect(canonical?.audit.expiryTs.toString()).toBe(enqueued.entry?.audit.expiryTs.toString());
         expect(canonical?.resource).toBe(JSON.stringify(msg));
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it.each(['memory', 'indexeddb'] as const)('finishes exhausted QueueBox work without advertising another retry in %s', async (storage) => {
@@ -304,10 +306,10 @@ describe('outbound IndexedDB durable queue replay', () => {
             senderId: 'self',
             mutations: [],
             durableEffects: [{ effectId: 'exhausted', payload: { kind: 'ack-timeout', msgId: 'exhausted' } }]
-        }, decodeOutboundTestPayload);
+        });
 
         for (let attempt = 1; attempt <= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; attempt += 1) {
-            const [claimed] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
+            const [claimed] = await store.claimReadyEffects({ maxCount: 1 });
             expect(claimed.attempts).toBe(attempt);
             await store.rescheduleEffect({ reservation: claimed.entry, retryAtMs: Date.now() });
             vi.setSystemTime(Date.now() + 1);
@@ -318,8 +320,8 @@ describe('outbound IndexedDB durable queue replay', () => {
             status: EntityStatus.FAILED,
             dequeueAudit: { attempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts }
         });
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it.each(['memory', 'indexeddb'] as const)('finalizes the last crashed attempt without sending again in %s', async (storage) => {
@@ -332,9 +334,9 @@ describe('outbound IndexedDB durable queue replay', () => {
             senderId: 'self',
             mutations: [],
             durableEffects: [{ effectId: 'crashed-last-attempt', payload: { kind: 'ack-timeout', msgId: 'crashed-last-attempt' } }]
-        }, decodeOutboundTestPayload);
+        });
         for (let attempt = 1; attempt <= 20; attempt += 1) {
-            const [claimed] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
+            const [claimed] = await store.claimReadyEffects({ maxCount: 1 });
             expect(claimed.attempts).toBe(attempt);
             if (attempt < 20) {
                 await store.rescheduleEffect({ reservation: claimed.entry, retryAtMs: Date.now() });
@@ -343,17 +345,17 @@ describe('outbound IndexedDB durable queue replay', () => {
         }
         vi.setSystemTime(Date.now() + 10_001);
 
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
         const [key] = await backend.workQueue.getAllKeys();
         expect(await backend.workQueue.getItem(key)).toMatchObject({ status: EntityStatus.FAILED });
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 
     it('rejects a changed canonical deadline after an IndexedDB restart without resetting the action', async () => {
         const { backend, store } = createAdmission();
         const message = createOutboundMessage('changed-canonical-deadline');
         const runtime1 = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: createFlakyOutboundAdmissionStore(store, { claimReadyEffects: async () => [] }) },
+            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(store, {})),
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ text: 'captured' }] }),
             sendPreparedMessage: async () => {
                 throw new Error('Claims are held');
@@ -367,12 +369,12 @@ describe('outbound IndexedDB durable queue replay', () => {
             resource: JSON.stringify({ ...message, constraints: { ...message.constraints, expiresAtMs: message.constraints!.expiresAtMs! + 1 } })
         };
         await backend.workQueue.setItem(corrupted.key, corrupted, { expireAtTimestamp: Number(corrupted.audit.expiryTs.epochMilliseconds) });
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
         const keys = await backend.workQueue.getAllKeys();
         const action = await backend.workQueue.getItem(keys.find((key) => key.topicId === 'AL_OUTBOUND')!);
         expect(action?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect((await backend.workQueue.getItem(corrupted.key))?.resource).toBe(corrupted.resource);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
     });
 });
 
@@ -387,6 +389,9 @@ function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
             observer: createPassThroughIndexedDbOperationObserver()
         });
     const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'outbound',
+        decodePrepared: decodeOutboundTestPayload,
         namespace: 'outbound',
         backend,
         supersedenceTrackTtlMs: 1_000,

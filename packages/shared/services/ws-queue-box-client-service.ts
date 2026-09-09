@@ -38,7 +38,10 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
-import { createDefaultALOutboundRuntimeResources } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
@@ -110,8 +113,9 @@ export namespace WsQueueBoxClientService {
         readonly sessionId: string;
         readonly qosProvider?: ALQosInputProvider;
         readonly inboundStores?: ALInboundRuntimeStores;
-        readonly outboundStores?: ALOutboundRuntimeStores;
+        readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly dequeueResilience?: ResourceInboxResilience;
         readonly newConnectionRequestId?: () => string;
         readonly reconnect?: ReconnectOptions;
     }
@@ -121,7 +125,8 @@ export namespace WsQueueBoxClientService {
         readonly sessionId: string;
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
-        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
+        readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly newConnectionRequestId: (() => string) | undefined;
         readonly reconnect: ReconnectOptions;
@@ -163,7 +168,7 @@ export class WsQueueBoxClientService {
     private readonly dependencies: WsQueueBoxClientService.Dependencies;
 
     constructor(dependencies: WsQueueBoxClientService.Dependencies) {
-        this.outbox = dependencies.outboundRuntime.admissionStore.workQueue;
+        this.outbox = dependencies.outboundRuntime.workQueue;
         this.socket = dependencies.socket;
         this.sessionId = dependencies.sessionId;
         this.dependencies = dependencies;
@@ -172,12 +177,16 @@ export class WsQueueBoxClientService {
     }
 
     private createOutboundRuntime(
-        resources: ALOutboundMessageRuntime.Resources
+        resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>
     ): ALOutboundMessageRuntime<ALOutboundTransportMessage> {
         return new ALOutboundMessageRuntime<ALOutboundTransportMessage>(
             {
                 ...resources,
                 decodePreparedMessage: decodeALOutboundTransportMessage,
+                dequeue: {
+                    types: WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
+                    resilience: this.dependencies.dequeueResilience
+                },
                 diagnostics: this.dependencies.outboundDiagnostics,
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
@@ -569,12 +578,12 @@ export class WsQueueBoxClientService {
         return await this.outboundRuntime.enqueueIfAbsent(message);
     }
 
-    async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResourceInboxResilience) {
+    async dequeueOutbox(_typesToDequeue: Set<string>, _resilience: ResourceInboxResilience) {
         if (this.closed) {
             return;
         }
 
-        await this.outboundRuntime.dequeue(typesToDequeue, resilience);
+        await this.outboundRuntime.drainWork();
     }
 
     private hasInboxConsumer(message: ALMessage): boolean {
@@ -729,10 +738,12 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            decodePrepared: decodeALOutboundTransportMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
             queueEngine: input.queueEngine
         }),
+        dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: input.reconnect ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS

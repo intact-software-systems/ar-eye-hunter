@@ -3,6 +3,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPreparedMessageDecoder
@@ -53,7 +54,8 @@ export namespace ALOutboundDispatchAdmission {
     }
 
     export interface Dependencies<TPrepared> {
-        readonly admissionStore: ALOutboundAdmissionStore;
+        readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
+        readonly workPort: ALWorkQueuePort;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
@@ -64,7 +66,7 @@ export namespace ALOutboundDispatchAdmission {
 
 /** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
 export class ALOutboundDispatchAdmission<TPrepared> {
-    private readonly admissionStore: ALOutboundAdmissionStore;
+    private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
     private disposed = false;
     private readonly dependencies: ALOutboundDispatchAdmission.Dependencies<TPrepared>;
@@ -139,10 +141,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const status = await this.admissionStore.commitBundle(
-            computed.bundle,
-            this.dependencies.decodePreparedMessage
-        );
+        const status = await this.admissionStore.commitBundle(computed.bundle);
         if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
             return await this.retainPendingDispatch(input, computed);
         }
@@ -172,8 +171,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 ),
                 policy: captureALOutboundPolicy(input.read.plan),
                 preparedMessages: input.read.plan.preparedMessages
-            },
-            decodePrepared: this.dependencies.decodePreparedMessage
+            }
         });
         if (status !== 'pending') {
             return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
@@ -199,7 +197,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             input.read.msg
         );
         const key = toALOutboundWorkKey(this.admissionStore.namespace, toALOutboundPendingAdmissionId(reference));
-        const entry = await this.admissionStore.workQueue.getItem(key);
+        const entry = await this.dependencies.workPort.readEntry(key);
         if (!entry || reference.expiresAtMs <= this.readNowMs()) {
             return undefined;
         }
