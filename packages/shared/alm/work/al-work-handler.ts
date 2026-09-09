@@ -9,6 +9,7 @@ export type ALWorkAttemptResult =
 
 export interface ALWorkReadySelection {
     readonly claims: readonly ALWorkClaim[];
+    /** A non-negative safe integer (epoch ms) or undefined; `wakeAt` throws `RangeError` on anything else — never clamped here. */
     readonly nextReadyAtMs: number | undefined;
 }
 
@@ -50,6 +51,8 @@ export class ALWorkHandler {
     private readonly dependencies: ALWorkHandlerDependencies;
     private batch: Promise<void> | undefined;
     private bootstrapped = false;
+    /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
+    private commitPending = false;
     private readonly shutdown = new AbortController();
 
     constructor(dependencies: ALWorkHandlerDependencies) {
@@ -58,7 +61,7 @@ export class ALWorkHandler {
             name: dependencies.workerId,
             maxConcurrency: () => 1,
             isWork: () => this.hasReadyWork(),
-            runnable: () => this.runBatch(),
+            runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(error)),
             ongoingTasks: []
         });
     }
@@ -86,7 +89,10 @@ export class ALWorkHandler {
     committed(): void {
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {
-            void this.runBatch();
+            void this.runBatch().catch((error) => this.reportBatchFailure(error));
+        }
+        else {
+            this.commitPending = true;
         }
     }
 
@@ -114,15 +120,20 @@ export class ALWorkHandler {
             if (error instanceof ALAdmissionCorruptionError) {
                 throw error;
             }
-            console.error('ALM work batch failed', error);
+            this.reportBatchFailure(error);
         }).finally(() => {
             this.batch = undefined;
+            this.dependencies.queueEngine.wake();
+            if (this.commitPending && !this.shutdown.signal.aborted) {
+                this.commitPending = false;
+                void this.runBatch().catch((error) => this.reportBatchFailure(error));
+            }
         });
         return this.batch;
     }
 
     private async runSelectedWork(): Promise<void> {
-        const { port, pageSize, selectReady, clock, workerId } = this.dependencies;
+        const { port, pageSize, selectReady, clock, workerId, queueEngine, diagnostics } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const counts: ALWorkCounts = {
             claimedCount: 0,
@@ -142,8 +153,8 @@ export class ALWorkHandler {
             }
             await this.runOne(claim, counts);
         }
-        this.dependencies.queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
-        this.dependencies.diagnostics?.({
+        queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
+        diagnostics?.({
             kind: 'work-batch',
             workerId,
             durationMs: Math.max(0, clock.nowMs() - startedAtMs),
@@ -163,6 +174,9 @@ export class ALWorkHandler {
                 : { status: 'retry' };
         }
         if (result.status === 'retained') {
+            // A rejected `settled` only logs here: `release` never runs, so the claim is recovered
+            // solely by lease expiry (the port's timeout-reservation path), and it is never added to
+            // `counts` on this path or on the eventual release.
             void result.settled
                 .then((outcome) => this.dependencies.port.release(claim, outcome))
                 .catch((error) => console.error('Retained ALM work failed', error))
@@ -179,5 +193,9 @@ export class ALWorkHandler {
         else {
             counts.rescheduledCount += 1;
         }
+    }
+
+    private reportBatchFailure(error: unknown): void {
+        console.error('ALM work batch failed', error);
     }
 }
