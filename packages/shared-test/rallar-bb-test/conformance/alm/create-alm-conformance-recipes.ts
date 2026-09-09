@@ -92,7 +92,7 @@ const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 
 const ENSURE_TIMEOUT_MS = 5_000;
-/** A cold RTC handshake on a fresh server exceeds the message deadline; connect budgets match the two-agent RTC smoke. */
+/** A cold RTC handshake on a fresh server exceeds the message deadline; connect budgets are harness budgets. */
 const CONNECT_TIMEOUT_MS = 45_000;
 const CONNECT_READINESS_TIMEOUT_MS = 30_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;

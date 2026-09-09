@@ -52,7 +52,7 @@ function toCarrierSelection(value: string | undefined): readonly AlmConformanceC
     }
     const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
     if (unsupported.length > 0) {
-        throw new Error(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
+        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
     }
     return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
 }
