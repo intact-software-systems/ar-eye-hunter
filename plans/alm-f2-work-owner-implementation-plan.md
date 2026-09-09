@@ -52,6 +52,22 @@ counters.
 - This is an incompatible cutover (decision D6 allows the large PR): browser schema id, inbound work
   key layout, and effect payload shapes change together.
 
+## Execution adjustments (2026-09-09, pre-flight rulings)
+
+- R1/R2: the admission stores stop exposing `workQueue`, but the composition still needs the
+  queue to build the port. `ALInboundRuntimeStores`/`ALInboundMessageRuntime.Resources` (Task 4)
+  and `ALOutboundRuntimeStores`/`ALOutboundMessageRuntime.Resources` (Task 6) carry
+  `readonly workQueue: QueueBoxResourceEntryRepository`; each runtime constructor builds its own
+  `ALWorkQueuePort` from it (inbound `workTypes = {toALInboundWorkType(namespace)}`, outbound
+  `{toALOutboundWorkType(namespace), ...dequeue.types}`) before constructing the control admission
+  and the handler. The outbound type set depends on consumer-specific dequeue types the store
+  factories do not know, so the port is not a resource.
+- R3/R4: Task 6 passes `dequeue` and receives `workQueue` at the three production constructions
+  so every commit typechecks; Task 7 deletes the legacy methods and registrations. The overlay
+  manager's `this.outbox` becomes the stores bundle's `workQueue`.
+- R18: `peekNextReadyAt` reads one fixed 16-entry RETRY page per type (the existing handler's
+  bound); the engine's idle schedule covers an under-report; polling bounds are measured in V1.
+
 ---
 
 ## File structure
@@ -182,7 +198,7 @@ and maps each `ResourceEntry` to `{ entry, attempts: entry.dequeueAudit.attempts
 `finalizeExhausted` wraps `reserveRetryExhaustionFinalizations(workTypes, { processingAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts, maxToReserve, staleAfterMs: leaseMs })`.
 `peekNextReadyAt` reads one `RETRY` page and returns the earliest `dequeueAudit.nextTs`, or `undefined`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/work/al-work-queue-port.test.ts` using `InMemoryQueueBox` (see
 `packages/tests/shared/in-memory-queuebox.test.ts` for construction with an injected clock):
@@ -261,12 +277,12 @@ that returns a `ResourceEntry` in status `NEW` with `audit.expiryTs = NEVER_EXPI
 `{ topicId: 'AL_TEST', resourceId: 'ns', contextId: effectId }` (copy the audit fields from
 `QueueBoxUtilities.toResourceEntryFromMsg`).
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-queue-port.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Write the port**
+- [x] **Step 3: Write the port**
 
 Create `packages/shared/alm/work/al-work-queue-port.ts` with the contracts above, the `release`
 shown, and:
@@ -338,12 +354,12 @@ function toClaim(entry: ResourceEntry, leaseUntilMs: number): ALWorkClaim {
 `peekNextReadyAt` iterate every type in that case and merge (`Math.min` for readiness; concatenated
 pages capped at `maxToRead`).
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-queue-port.test.ts`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/alm/work packages/tests/shared/alm/work
@@ -768,6 +784,14 @@ export interface ALInboundPendingControl {
 }
 ```
 
+- `ALInboundRuntimeStores` and `ALInboundMessageRuntime.Resources` gain
+  `readonly workQueue: QueueBoxResourceEntryRepository` (the backend's queue): the store factories in
+  `al-runtime-stores.ts` and `browser-al-runtime-stores.ts` return their backend's queue,
+  `createDefaultALInboundRuntimeResources` returns its local `InMemoryQueueBox`, and the runtime
+  constructor builds `this.workPort = createALWorkQueuePort({ queue: dependencies.workQueue, workTypes: new Set([toALInboundWorkType(namespace)]), leaseMs: AL_INBOUND_WORK_LEASE_MS, nowMs: () => clock.nowMs(), random })`
+  and hands it to `ALInboundControlAdmission` (rulings R1, R2). The admission store keeps
+  `workQueue` until Task 5 removes its last caller (`retainPending`).
+
 `admit` = decode (`decodeALControlMessage`) → read (`readControlAdmission` moved here) →
 `computeALInboundControlAdmission` → `validateALInboundControlAdmission` (returns `Either`) →
 `admissionStore.commitMutations(...)`; when the commit returns `'conflict'` it calls
@@ -832,8 +856,9 @@ git commit -m "refactor(alm): lift inbound control admission into its own owner 
 
 **Interfaces:**
 
-- `ALInboundMessageRuntime.Resources` gains `readonly workPort: ALWorkQueuePort` and loses nothing else; `createDefaultALInboundRuntimeResources` builds it with
-  `createALWorkQueuePort({ queue: backend.workQueue, workTypes: new Set([toALInboundWorkType(namespace)]), leaseMs: AL_INBOUND_WORK_LEASE_MS, nowMs: clock.nowMs, random })`.
+- `ALInboundMessageRuntime.Resources` already carries `readonly workQueue` (Task 4); the runtime
+  constructor already builds `this.workPort` from it (ruling R2). This task removes
+  `ALInboundAdmissionStore.workQueue` and the forwarding methods and moves `retainPending` onto the port.
 - The inbound `selectReady(port, pageSize)` keeps the status rotation and readiness probe of the old
   handler (`readALInboundWorkSelection`) but returns `ALWorkReadySelection` and calls `port.claim({ maxCount, observedEntries: claimable })`.
 - `runClaim(claim)` decodes the entry with `decodeALInboundWorkEntry`, dispatches on `payload.kind`:
@@ -843,23 +868,28 @@ git commit -m "refactor(alm): lift inbound control admission into its own owner 
 - [ ] **Step 1: Rewrite the lifecycle test first**
 
 Rewrite `al-inbound-effect-worker-lifecycle.test.ts` so each case retains work through
-`resources.workPort.retainIfAbsent(...)`, drives the engine, and asserts outcomes through
-`resources.workPort.readEntry(key)`. Keep its four behaviors: transient claim failure retries;
+`resources.workQueue.enqueueIfAbsent(...)`, drives the engine, and asserts outcomes through
+`resources.workQueue.getItem(key)`. Keep its four behaviors: transient claim failure retries;
 corruption rejects; disposal stops further batches; a not-ready deferral keeps `attempts` at 0.
+Add the crash-convergence case the spec's F2 acceptance names: a progress commit persisted, the
+claim released as `retry` before the effect completed, and redelivery converging on the next batch
+(ruling R17). Add a case that `committed()` returns synchronously and never awaits delivery (R16).
 
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
-Expected: FAIL, `workPort` is not a resource.
+Expected: FAIL on the new cases (synchronous `committed()`, crash convergence) while the old handler is still composed.
 
 - [ ] **Step 3: Compose**
 
-In the runtime constructor replace `new ALInboundWorkHandler({...})` with:
+In the runtime constructor replace `new ALInboundWorkHandler({...})` with (the port is the one
+the constructor already built from `dependencies.workQueue` in Task 4; the inbound `selectReady`
+is a selector created in the constructor that owns the scan state `cursor`/`statusIndex`, ruling R8):
 
 ```ts
 this.work = new ALWorkHandler({
     workerId: dependencies.effectWorkerId,
-    port: dependencies.workPort,
+    port: this.workPort,
     queueEngine: dependencies.queueEngine,
     ownsQueueEngine: dependencies.ownsQueueEngine,
     clock: dependencies.clock,
@@ -877,7 +907,8 @@ this.work = new ALWorkHandler({
 });
 ```
 
-`admitIncomingMessage` ends with `this.work.committed();` (no await). Delete the old handler file
+`admitIncomingMessage` ends with `this.work.committed();` (no await), and so does
+`admitControlMessage` before `onControlMessage` runs (ruling R16). Delete the old handler file
 and every import of it.
 
 - [ ] **Step 4: Run the suites and the typecheck**
@@ -910,7 +941,7 @@ git commit -m "refactor(alm): compose the inbound runtime on the work port and t
 - `CreateALOutboundAdmissionStoreInput<TPrepared>` becomes `{ nowMs; canonicalScope; namespace; backend; supersedenceTrackTtlMs; retention; decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared> }` (all required); `createALOutboundAdmissionStore<TPrepared>(input)`; every method loses its `decodePrepared` parameter; `ALOutboundAdmissionStore<TPrepared>` loses `workQueue`, `claimReadyEffects`, `completeEffect`, `rejectEffect`, `rescheduleEffect`, `peekNextEffectReadyAt`, `acceptControlMessage`, `scheduleNotYetInSyncRetry`.
 - `ALOutboundControlAdmission<TPrepared>` (moved store) exposes `admit(msg): Promise<ALOutboundControlAdmissionResult>` with the same result union as the inbound one (`not-handled | committed | pending-control | rejected`) and `scheduleNotYetInSyncRetry(schedule)`; `validateEffects` returns `readonly ALOutboundEffectIssue[]` (`{ code: string; effectId: string; message: string }`), and `assertObservations` becomes `validateObservedWork(...)` returning issues that the commit turns into `'conflict'`.
 - New outbound work payload `{ kind: 'dequeue-message'; queueTypeId: string }` decoded from a foreign queue row (a row whose `typeId` is in `dequeueTypes`): `decodeALOutboundWorkEntry` returns `{ effectId: toKeyAsString(entry.key), payload: { kind: 'dequeue-message', queueTypeId: entry.typeId }, canonicalMessage: readMessageFromEntry(entry), ... }` for those rows.
-- `ALOutboundMessageRuntime.Dependencies` gains `readonly dequeue: { readonly types: ReadonlySet<string>; readonly resilience: ResourceInboxResilience; }` and `readonly workPort: ALWorkQueuePort` (built with `workTypes = new Set([toALOutboundWorkType(namespace), ...dequeue.types])`); `dequeue()` is deleted. `runDurableEffect` gains:
+- `ALOutboundMessageRuntime.Dependencies` gains `readonly dequeue: { readonly types: ReadonlySet<string>; readonly resilience: ResourceInboxResilience; }`; `ALOutboundRuntimeStores` and `ALOutboundMessageRuntime.Resources` gain `readonly workQueue: QueueBoxResourceEntryRepository` (the backend's queue, returned by the store factories and by `createDefaultALOutboundRuntimeResources`); the runtime constructor builds `this.workPort = createALWorkQueuePort({ queue: dependencies.workQueue, workTypes: new Set([toALOutboundWorkType(namespace), ...dequeue.types]), leaseMs, nowMs, random })` (rulings R1, R2); `dequeue()` is deleted. The three production constructions (`ws-queue-box-server-service.ts:173`, `ws-queue-box-client-service.ts:177`, `web-rtc-overlay-multicast-manager.ts:134`) pass `dequeue` and receive `workQueue` from their stores in this task so every commit typechecks; the overlay manager's `this.outbox` reads the stores' `workQueue` (rulings R3, R4). `runDurableEffect` gains:
 
 ```ts
 case 'dequeue-message':
@@ -1006,15 +1037,14 @@ Create the keys module and replace both stores' private builders. Move the contr
 store input at construction, convert `throw workValidated[0]` and the two conflict throws into returned
 values, and add the `pending-control` retention through the port exactly as Task 4 did inbound.
 Change `CreateALOutboundAdmissionStoreInput` and the interface as listed; delete the per-call
-decoder parameters. Add the `dequeue-message` payload and decoder branch. Add `workPort` and
-`dequeue` to the runtime dependencies, compose `ALWorkHandler` as Task 5 did with
+decoder parameters. Add the `dequeue-message` payload and decoder branch. Add `workQueue` to the
+resources and `dequeue` to the dependencies, build the port in the constructor, compose `ALWorkHandler` as Task 5 did with
 `selectReady: (port, size) => port.claim({ maxCount: size, observedEntries: undefined }).then((claims) => ({ claims, nextReadyAtMs: undefined }))`
 and `runClaim: (claim) => this.runOutboundClaim(claim)` (decode → `runDurableEffect`). Delete
 `dequeue()`, rename `handlePendingAckTimeout` → `retryPendingAck` and `executeRepairFromHint` →
 `retransmitFromRepairHint`. Delete `al-outbound-work-handler.ts`. In
-`create-default-al-outbound-message-runtime.ts` build the port from `stores.admissionStore` with
-`createALWorkQueuePort({ queue: backend.workQueue, ... })` (the backend is the composition root's
-own value, so the store no longer exposes the queue).
+`create-default-al-outbound-message-runtime.ts` return the stores' `workQueue` as a resource (the
+backend is the composition root's own value, so the store no longer exposes the queue).
 
 - [ ] **Step 4: Run the outbound suites and the typecheck**
 
@@ -1034,7 +1064,7 @@ git commit -m "refactor(alm): one outbound work owner, control admission as its 
 
 **Files:**
 
-- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:334-339` (delete `dequeueOutbox`; pass `dequeue: { types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience }` and the port when constructing the outbound runtime)
+- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:334-339` (delete `dequeueOutbox`; Task 6 already passes `dequeue: { types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience }` and `workQueue` when constructing the outbound runtime)
 - Modify: `packages/shared/services/ws-queue-box-client-service.ts:573-579` and the `includeTask` registration near lines 180-200 (delete the outbox task; the runtime's handler owns the engine task)
 - Modify: `packages/shared/multicast/web-rtc-overlay-multicast-manager.ts:355-363` and its outbox `includeTask` registration
 - Modify: `packages/shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts:131-146` (delete the `WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE` task)
