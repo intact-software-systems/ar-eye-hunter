@@ -26,6 +26,7 @@ const supportedMainlineManifestPaths = [
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
 ];
 const operationSourceGroupRef = {
