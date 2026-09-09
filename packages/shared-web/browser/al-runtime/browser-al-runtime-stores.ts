@@ -25,7 +25,7 @@ import {
     toBrowserWsClientALRuntimeStoreId
 } from './browser-al-runtime-identity.ts';
 
-export type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
+type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
 
 export interface ConfigureBrowserALRuntimeStoresInput extends Omit<BrowserALRuntimeOptions, 'observer'> {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;

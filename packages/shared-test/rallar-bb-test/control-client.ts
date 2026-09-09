@@ -622,9 +622,9 @@ export class RallarBlackBoxControlClient {
         this.sendResult(result);
     }
 
-    // The result envelope must reach the socket before the page is torn down; a
-    // resume record that cannot be persisted would make the server redeliver the
-    // reload after every bootstrap, so the command fails instead of looping.
+    // sendResult only buffers on the socket, so the reload waits one macrotask to give that write a
+    // turn to flush before the page is torn down. Without a persisted resume record the reloaded
+    // agent could not tell the coordinator what it had already run, so the command fails instead.
     private reloadAgent(commandId: string, readyTimeoutMs: number): void {
         const options = this.requireOptions();
         const written = writeAgentResumeRecord({
@@ -634,7 +634,7 @@ export class RallarBlackBoxControlClient {
         });
         this.sendResult(toAgentReloadResult(commandId, readyTimeoutMs, written));
         if (written === 'written') {
-            globalThis.location.reload();
+            setTimeout(() => globalThis.location.reload(), 0);
         }
     }
 

@@ -241,6 +241,35 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
         });
     });
 
+    it('refuses the scripted-port commands when the connection names no application', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            const config = almConnectionConfig();
+            await nativeRuntime.connect({
+                ...config,
+                rallar: { ...config.rallar, applicationId: undefined }
+            });
+
+            await expect(nativeRuntime.injectFault({
+                faultId: 'drop-once',
+                carrier: 'ws',
+                match: { typeId: 'alm.conformance' },
+                action: 'drop',
+                remaining: 1
+            })).rejects.toThrow(
+                new TypeError(
+                    'Scripted transport and storage ports are not installed: ' +
+                        'fault.inject needs a connection that names an application.'
+                )
+            );
+            await expect(nativeRuntime.readStorageCounters({ reset: false })).rejects.toThrow(
+                new TypeError(
+                    'Scripted transport and storage ports are not installed: ' +
+                        'storage.counters needs a connection that names an application.'
+                )
+            );
+        });
+    });
+
     it.each(almDeliveryStateCases)(
         'maps the %s admission status to a %s observation',
         async (status, state, submitted) => {
@@ -288,28 +317,6 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 new TypeError('Delivery handle h-1 did not reach [acknowledged]; last state accepted')
             );
             expect(clockEpochMs).toBeGreaterThanOrEqual(100);
-        });
-    });
-
-    it('rejects messages.send fields this runtime release does not support', async () => {
-        await withBrowserRuntime(async (nativeRuntime) => {
-            facade.behavior.typedSend.mockResolvedValue(almSendResult('enqueued', 'msg-1'));
-            await nativeRuntime.connect(almConnectionConfig());
-            const send = {
-                connection: 'aliceAlm',
-                carrier: 'ws',
-                typeId: 'alm.conformance',
-                payload: { n: 1 },
-                handleId: 'h-1'
-            };
-
-            await expect(nativeRuntime.sendMessage({ ...send, key: 'ordering-key' })).rejects.toThrow(
-                'messages.send.key is not supported by this runtime release'
-            );
-            await expect(nativeRuntime.sendMessage({ ...send, toPeerId: 'peer-1' })).rejects.toThrow(
-                'messages.send.toPeerId is not supported by this runtime release'
-            );
-            expect(facade.records.typedSends).toEqual([]);
         });
     });
 

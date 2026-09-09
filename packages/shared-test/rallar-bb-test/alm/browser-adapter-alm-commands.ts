@@ -1,3 +1,4 @@
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-delivery-error-messages.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '../browser-adapter.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
@@ -111,12 +112,20 @@ const ALM_DELIVERY_TOPICS: Readonly<Record<AlmDeliveryKind, string>> = {
 
 const ALM_ERROR_CODES = {
     invalidCommandInput: 'RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT',
+    invalidRuntimeResult: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
     unknownDeliveryHandle: 'RALLAR_BLACK_BOX_ALM_UNKNOWN_DELIVERY_HANDLE',
     deliveryStateTimeout: 'RALLAR_BLACK_BOX_ALM_DELIVERY_STATE_TIMEOUT',
+    scriptedPortsUnavailable: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
     messagesNotReceived: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
     messagesReceivedWhileAbsent: 'RALLAR_BLACK_BOX_ALM_MESSAGES_RECEIVED_WHILE_ABSENT'
 } as const;
+
+const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
+    'ws',
+    'rtc',
+    'rtc-with-ws-fallback'
+];
 
 // The adapter's own abort fires a hair before the page's observe deadline, so the cancelled and
 // timed-out command must not be reported as a rejected recipe input.
@@ -245,7 +254,10 @@ function readAlmStorageCounters(
     });
 }
 
-/** Task 11 performs the reload in the control agent; the adapter only records the request. */
+/**
+ * The control client intercepts `agent.reload` before it reaches this adapter, so reaching here
+ * means the surface cannot reload: the request is recorded as a warning rather than a silent pass.
+ */
 function requestAlmAgentReload(
     input: AlmBrowserCommandInput<'agent.reload'>
 ): RallarBlackBoxTestCommandOutcome {
@@ -255,8 +267,8 @@ function requestAlmAgentReload(
         command: input.command,
         connection: undefined,
         topic: 'rallar.bb.agent.reload_requested',
-        severity: 'info',
-        message: undefined,
+        severity: 'warning',
+        message: 'This runtime surface does not reload; the request was recorded only.',
         value: { readyTimeoutMs }
     });
     return {
@@ -375,8 +387,8 @@ function isAlmInboundMessageEvent(
         return false;
     }
     const data = decodeAlmRuntimeRecord(decodeAlmRuntimeRecord(event.payload).data);
-    return toAlmStringField(data, 'typeId') === match.typeId &&
-        (match.msgId === undefined || toAlmStringField(data, 'msgId') === match.msgId);
+    return toAlmEventStringField(data, 'typeId') === match.typeId &&
+        (match.msgId === undefined || toAlmEventStringField(data, 'msgId') === match.msgId);
 }
 
 function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTestCommandOutcome {
@@ -469,11 +481,21 @@ function toAlmErrorCode(error: Error): string {
     if (ALM_ABORTED_ERROR_NAMES.includes(error.name)) {
         return ALM_ERROR_CODES.commandAborted;
     }
-    if (error.message.startsWith('Unknown delivery handle')) {
+    return error.name === ALM_ERROR_CODES.invalidRuntimeResult
+        ? ALM_ERROR_CODES.invalidRuntimeResult
+        : toAlmPageRuntimeErrorCode(error.message);
+}
+
+function toAlmPageRuntimeErrorCode(message: string): string {
+    const prefixes = BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES;
+    if (message.startsWith(prefixes.unknownDeliveryHandle)) {
         return ALM_ERROR_CODES.unknownDeliveryHandle;
     }
-    return error.message.includes('did not reach')
-        ? ALM_ERROR_CODES.deliveryStateTimeout
+    if (message.startsWith(prefixes.deliveryStateTimeout)) {
+        return ALM_ERROR_CODES.deliveryStateTimeout;
+    }
+    return message.startsWith(prefixes.scriptedPortsUnavailable)
+        ? ALM_ERROR_CODES.scriptedPortsUnavailable
         : ALM_ERROR_CODES.invalidCommandInput;
 }
 
@@ -481,14 +503,15 @@ function decodeAlmMessagesSendResultValue(
     value: unknown
 ): RallarBlackBoxTestMessagesSendResultValue {
     const record = decodeAlmRuntimeRecord(value);
-    const msgId = toAlmStringField(record, 'msgId');
-    const reason = toAlmStringField(record, 'reason');
+    const path = 'messages.send result';
+    const msgId = readAlmOptionalStringField(record, path, 'msgId');
+    const reason = readAlmOptionalStringField(record, path, 'reason');
     return {
-        handleId: toAlmStringField(record, 'handleId'),
-        ...(msgId.length > 0 ? { msgId } : {}),
-        carrier: toAlmCarrierField(record),
-        status: toAlmStringField(record, 'status'),
-        ...(reason.length > 0 ? { reason } : {})
+        handleId: requireAlmStringField(record, path, 'handleId'),
+        ...(msgId === undefined ? {} : { msgId }),
+        carrier: requireAlmCarrierField(record, path),
+        status: requireAlmStringField(record, path, 'status'),
+        ...(reason === undefined ? {} : { reason })
     };
 }
 
@@ -496,13 +519,14 @@ function decodeAlmDeliveryResultValue(
     value: unknown
 ): RallarBlackBoxTestMessagesObserveResultValue {
     const record = decodeAlmRuntimeRecord(value);
+    const path = 'delivery observation';
     return {
-        handleId: toAlmStringField(record, 'handleId'),
-        state: toAlmStringField(record, 'state'),
-        submitted: record.submitted === true,
-        confirmedPeerIds: toAlmStringListField(record, 'confirmedPeerIds'),
-        unconfirmedPeerIds: toAlmStringListField(record, 'unconfirmedPeerIds'),
-        attempts: toAlmNumberField(record, 'attempts')
+        handleId: requireAlmStringField(record, path, 'handleId'),
+        state: requireAlmStringField(record, path, 'state'),
+        submitted: requireAlmBooleanField(record, path, 'submitted'),
+        confirmedPeerIds: requireAlmStringListField(record, path, 'confirmedPeerIds'),
+        unconfirmedPeerIds: requireAlmStringListField(record, path, 'unconfirmedPeerIds'),
+        attempts: requireAlmNumberField(record, path, 'attempts')
     };
 }
 
@@ -510,15 +534,15 @@ function decodeAlmStorageCountersResultValue(
     value: unknown
 ): RallarBlackBoxTestStorageCountersResultValue {
     const record = decodeAlmRuntimeRecord(value);
-    const byOwner = decodeAlmRuntimeRecord(record.byOwner);
-    const byKind = decodeAlmRuntimeRecord(record.byKind);
+    const path = 'storage.counters result';
+    const byOwner = requireAlmRecordField(record, path, 'byOwner');
     return {
-        total: toAlmNumberField(record, 'total'),
+        total: requireAlmNumberField(record, path, 'total'),
         byOwner: {
-            'al-admission': toAlmNumberField(byOwner, 'al-admission'),
-            'al-work': toAlmNumberField(byOwner, 'al-work')
+            'al-admission': requireAlmNumberField(byOwner, `${path}.byOwner`, 'al-admission'),
+            'al-work': requireAlmNumberField(byOwner, `${path}.byOwner`, 'al-work')
         },
-        byKind: toAlmCountsByKind(byKind)
+        byKind: requireAlmCountsByKind(requireAlmRecordField(record, path, 'byKind'), `${path}.byKind`)
     };
 }
 
@@ -528,33 +552,105 @@ function decodeAlmRuntimeRecord(value: unknown): RallarBlackBoxTestRecord {
         : {};
 }
 
-function toAlmCountsByKind(record: RallarBlackBoxTestRecord): Readonly<Record<string, number>> {
+function requireAlmCountsByKind(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): Readonly<Record<string, number>> {
     return Object.fromEntries(
-        Object.keys(record).map((key) => [key, toAlmNumberField(record, key)])
+        Object.keys(record).map((key) => [key, requireAlmNumberField(record, path, key)])
     );
 }
 
-function toAlmCarrierField(record: RallarBlackBoxTestRecord): RallarBlackBoxTestMessagesCarrier {
-    const carrier = record.carrier;
-    return carrier === 'rtc' || carrier === 'rtc-with-ws-fallback' ? carrier : 'ws';
-}
-
-function toAlmStringField(record: RallarBlackBoxTestRecord, key: string): string {
-    const value = record[key];
-    return typeof value === 'string' ? value : '';
-}
-
-function toAlmNumberField(record: RallarBlackBoxTestRecord, key: string): number {
-    const value = record[key];
-    return typeof value === 'number' ? value : 0;
-}
-
-function toAlmStringListField(
+function requireAlmCarrierField(
     record: RallarBlackBoxTestRecord,
+    path: string
+): RallarBlackBoxTestMessagesCarrier {
+    const carrier = ALM_MESSAGES_CARRIERS.find((candidate) => candidate === record.carrier);
+    if (carrier === undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.carrier`);
+    }
+    return carrier;
+}
+
+function requireAlmStringField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    key: string
+): string {
+    const value = record[key];
+    if (typeof value !== 'string') {
+        throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+    }
+    return value;
+}
+
+function readAlmOptionalStringField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    key: string
+): string | undefined {
+    const value = record[key];
+    if (value === undefined || typeof value === 'string') {
+        return value;
+    }
+    throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+}
+
+function requireAlmNumberField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    key: string
+): number {
+    const value = record[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+    }
+    return value;
+}
+
+function requireAlmBooleanField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    key: string
+): boolean {
+    const value = record[key];
+    if (typeof value !== 'boolean') {
+        throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+    }
+    return value;
+}
+
+function requireAlmStringListField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
     key: string
 ): readonly string[] {
     const value = record[key];
-    return Array.isArray(value)
-        ? value.filter((entry): entry is string => typeof entry === 'string')
-        : [];
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+    }
+    return value as readonly string[];
+}
+
+function requireAlmRecordField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    key: string
+): RallarBlackBoxTestRecord {
+    const value = record[key];
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+    }
+    return value as RallarBlackBoxTestRecord;
+}
+
+function toAlmInvalidRuntimeResultError(field: string): Error {
+    const error = new Error(`The page runtime returned no usable ${field}.`);
+    error.name = ALM_ERROR_CODES.invalidRuntimeResult;
+    return error;
+}
+
+function toAlmEventStringField(record: RallarBlackBoxTestRecord, key: string): string {
+    const value = record[key];
+    return typeof value === 'string' ? value : '';
 }

@@ -54,7 +54,8 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // The maintainer approved necessary ALM and formation-command growth.
         // Keep the smallest whole-KiB strict limit containing the measured
         // behavior, with all operator dependency exclusions intact.
-        // Measured 251.15 KiB brotli after the agent.reload resume record landed (R45 ruling).
+        // Measured 251.85 KiB brotli after the review's strict ALM result decoding landed
+        // (R45 ruling); the limit still holds, so it is not raised.
         expect(result.brotliKiB).toBeLessThan(252);
     });
 });

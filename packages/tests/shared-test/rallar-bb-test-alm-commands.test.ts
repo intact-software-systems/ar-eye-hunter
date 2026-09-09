@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxRtcClient } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-delivery-error-messages.ts';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import {
+    createRallarBlackBoxRtcClient,
+    createRallarBlackBoxRtcProvider
+} from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRallarRuntime
@@ -186,6 +191,38 @@ describe('ALM recipe commands', () => {
         expect(invalid.ok).toBe(false);
         if (!invalid.ok) {
             expect(formatJsonSchemaValidationErrors(invalid.errors)).toContain('carrier');
+        }
+    });
+
+    it('rejects the supersedence and unicast fields F1 does not carry', () => {
+        for (const field of ['key', 'toPeerId']) {
+            const schemaResult = validateJsonSchema(
+                RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+                recipeWithCommand(`send-${field}`, {
+                    kind: 'messages.send',
+                    carrier: 'ws',
+                    typeId: 'alm.conformance',
+                    payload: { n: 1 },
+                    [field]: 'unsupported'
+                })
+            );
+            expect(schemaResult.ok, field).toBe(false);
+            if (!schemaResult.ok) {
+                expect(formatJsonSchemaValidationErrors(schemaResult.errors)).toContain(field);
+            }
+
+            const controlResult = validateRallarBlackBoxTestCommand({
+                kind: 'messages.send',
+                commandId: `send-${field}`,
+                carrier: 'ws',
+                typeId: 'alm.conformance',
+                payload: { n: 1 },
+                [field]: 'unsupported'
+            });
+            expect(controlResult.ok, field).toBe(false);
+            if (!controlResult.ok) {
+                expect(controlResult.error).toBe(`messages.send has unsupported field: ${field}.`);
+            }
         }
     });
 
@@ -509,6 +546,93 @@ describe('ALM browser adapter execution', () => {
         );
     });
 
+    it('fails a command whose page-runtime result is missing a field instead of defaulting it', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(captures),
+                readStorageCounters: async () => ({ total: 4, byOwner: { 'al-admission': 4 }, byKind: {} })
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'storage.counters',
+            commandId: 'alm-counters-malformed',
+            reset: false
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: 'The page runtime returned no usable storage.counters result.byOwner.al-work.'
+        });
+    });
+
+    it('fails a send whose page-runtime result names an unknown carrier', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(captures),
+                sendMessage: async () => ({ ...SEND_DIAGNOSTICS, carrier: 'quic' })
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'messages.send',
+            commandId: 'alm-send-unknown-carrier',
+            connection: 'aliceRtc',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            handleId: 'handle-1'
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: 'The page runtime returned no usable messages.send result.carrier.'
+        });
+    });
+
+    it('classifies the page runtime rejections by their exported message prefixes', async () => {
+        const cases = [
+            {
+                commandId: 'alm-receipts-timeout',
+                message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.deliveryStateTimeout} h-1 did not reach [acknowledged]; last state accepted`,
+                code: 'RALLAR_BLACK_BOX_ALM_DELIVERY_STATE_TIMEOUT'
+            },
+            {
+                commandId: 'alm-receipts-no-ports',
+                message:
+                    `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.scriptedPortsUnavailable}: storage.counters needs a connection that names an application.`,
+                code: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE'
+            },
+            {
+                commandId: 'alm-receipts-bad-input',
+                message: 'delivery handle handleId is required.',
+                code: 'RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT'
+            }
+        ];
+
+        for (const testCase of cases) {
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                    readReceipts: () => Promise.reject(new TypeError(testCase.message))
+                }
+            });
+
+            const result = await runtime.execute({
+                kind: 'messages.receipts',
+                commandId: testCase.commandId,
+                handleId: 'h-1'
+            });
+
+            expect(result.ok, testCase.commandId).toBe(false);
+            expect(result.error).toMatchObject({ code: testCase.code, message: testCase.message });
+        }
+    });
+
     it('fails an ALM command with a typed error when the page runtime rejects it', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -531,7 +655,59 @@ describe('ALM browser adapter execution', () => {
     });
 });
 
+async function runAlmKindThroughRtcSendStep(kind: string) {
+    const provider = createRallarBlackBoxRtcProvider(createRallarBlackBoxTestRuntime());
+    return await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-bb',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1
+                    },
+                    response: {}
+                },
+                connectAlice: {}
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'send',
+                        kind,
+                        connection: 'aliceRtc',
+                        provider: 'rallar-bb',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        send: { n: 1 },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2
+                    },
+                    response: {}
+                },
+                aliceSendsBrowserOnlyKind: {}
+            }
+        ],
+        0,
+        { rtcProviders: { 'rallar-bb': provider } }
+    );
+}
+
 describe('ALM commands on the in-process runner adapter', () => {
+    it('fails the runner step for a browser-only ALM kind instead of reporting a pass', async () => {
+        const report = await runAlmKindThroughRtcSendStep('messages.send');
+        const step = report.resultsByName.aliceSendsBrowserOnlyKind[0];
+
+        expect(report.summary.failure).toBe(1);
+        expect(step.status).toBe('FAILURE');
+        expect(step.result).toBe('messages.send requires a browser agent');
+        expect(step.actual.code).toBe('browser-only-command');
+    });
+
     it('rejects every browser-only ALM kind instead of translating it to an RTC send', async () => {
         const client = createRallarBlackBoxRtcClient(
             createRallarBlackBoxTestRuntime(),

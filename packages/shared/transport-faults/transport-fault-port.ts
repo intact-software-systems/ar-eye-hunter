@@ -73,6 +73,7 @@ export function createScriptedTransportFaultPort(): ScriptedTransportFaultPort {
         },
         clear() {
             faults.clear();
+            observations.length = 0;
         },
         getObservations() {
             return [...observations];

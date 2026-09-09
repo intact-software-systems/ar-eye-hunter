@@ -698,9 +698,7 @@ class RallarBlackBoxRuntimeStore {
         const runNumber = this.runSequence++;
         const config = remoteControlConfig(this.bootstrapConfig, runNumber);
         const resumed = takeAgentResumeRecord(config.runId ?? this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
-        if (resumed) {
-            this.resumedCommandIds = resumed.completedCommandIds;
-        }
+        this.resumedCommandIds = resumed?.completedCommandIds ?? [];
         this.snapshot = {
             ...this.snapshot,
             bootstrapping: true,

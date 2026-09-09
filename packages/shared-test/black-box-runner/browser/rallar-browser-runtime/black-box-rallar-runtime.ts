@@ -19,6 +19,7 @@ import {
 } from './black-box-rallar-connection-policy.ts';
 import { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import { BlackBoxRallarCrdtController } from './black-box-rallar-crdt-controller.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-messages.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarConsoleDiagnostics
@@ -331,6 +332,7 @@ class BlackBoxRallarConnectionRuntime {
         if (runtimeState?.unsubscribeConsoleDiagnostics) {
             runtimeState.unsubscribeConsoleDiagnostics();
         }
+        this.#messagingController.resetDeliveryLedger();
         unsubscribed += this.#messagingController.cleanupWsSubscriptions();
         if (unsubscribed > 0 && topicConfig) {
             this.#runtimeDiagnostics.emitDiagnostic(topicConfig, 'rallar.browser.cleanup.unsubscribe_completed', {
@@ -948,7 +950,8 @@ class BlackBoxRallarConnectionRuntime {
         while (!observe.state.includes(observation.state)) {
             if (this.#now() >= deadlineEpochMs) {
                 throw new TypeError(
-                    `Delivery handle ${observe.handleId} did not reach [${observe.state.join(', ')}]; ` +
+                    `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.deliveryStateTimeout} ` +
+                        `${observe.handleId} did not reach [${observe.state.join(', ')}]; ` +
                         `last state ${observation.state}`
                 );
             }
@@ -963,10 +966,21 @@ class BlackBoxRallarConnectionRuntime {
     // carries real acknowledgements.
     #readReceipts = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
         this.#messagingController.readDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+    #requireScriptedPorts = (command: string): void => {
+        const config = this.#connectionState.get()?.config;
+        if (config === undefined || toBlackBoxRallarDefaults(config) === undefined) {
+            throw new TypeError(
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.scriptedPortsUnavailable}: ` +
+                    `${command} needs a connection that names an application.`
+            );
+        }
+    };
     #injectFault = async (input: unknown): Promise<void> => {
+        this.#requireScriptedPorts('fault.inject');
         this.#rallar.diagnostics.faults.inject(decodeBlackBoxRallarFaultInput(input));
     };
     #readStorageCounters = async (input: unknown): Promise<IndexedDbOperationCounts> => {
+        this.#requireScriptedPorts('storage.counters');
         const counters = decodeBlackBoxRallarStorageCountersInput(input);
         const counts = this.#rallar.diagnostics.storage.getCounts();
         if (counters.reset) {

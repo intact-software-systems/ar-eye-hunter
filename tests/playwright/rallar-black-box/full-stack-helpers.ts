@@ -850,6 +850,12 @@ async function waitForReceiverConnectBarrier(
         }
         await waitMs(CONTROL_POLL_INTERVAL_MS);
     }
+    console.warn('Receiver connect barrier timed out; releasing the sender anyway', {
+        runId: run.runId,
+        connectCommandId: input.connectCommandId,
+        runCommandId: input.runCommandId,
+        timeoutMs: RECEIVER_CONNECT_TIMEOUT_MS
+    });
 }
 
 async function readControlResult(

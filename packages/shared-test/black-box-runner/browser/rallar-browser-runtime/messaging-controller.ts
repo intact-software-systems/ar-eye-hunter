@@ -13,6 +13,7 @@ import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-messages.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
@@ -690,7 +691,9 @@ export class BlackBoxRallarMessagingController {
     readDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
         const observation = this.#deliveries.get(handleId);
         if (observation === undefined) {
-            throw new TypeError(`Unknown delivery handle ${handleId}`);
+            throw new TypeError(
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.unknownDeliveryHandle} ${handleId}`
+            );
         }
         return observation;
     };
@@ -704,8 +707,10 @@ export class BlackBoxRallarMessagingController {
         return cancelled;
     };
 
-    cleanupWsSubscriptions = (): number => {
+    cleanupWsSubscriptions = (): number => this.#resources.cleanupWsSubscriptions();
+
+    /** Handles are per-connection: a reconnect starts a fresh ledger, so observes must precede it. */
+    resetDeliveryLedger = (): void => {
         this.#deliveries.clear();
-        return this.#resources.cleanupWsSubscriptions();
     };
 }
