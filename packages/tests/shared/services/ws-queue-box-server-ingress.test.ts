@@ -91,7 +91,7 @@ describe('WS server bounded and authorized admission', () => {
             name: 'server',
             socket: fixture.server,
             outbox: new InMemoryQueueBox(),
-            inboundStores: { admissionStore: fixture.admissionStore }
+            inboundStores: { admissionStore: fixture.admissionStore, workQueue: fixture.admissionStore.workQueue }
         });
         onTestFinished(() => resumed.dispose());
         const delivered: ALMessage[] = [];
@@ -566,7 +566,7 @@ async function createServerIngressFixture(
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
         validateInboundMessage,
-        inboundStores: { admissionStore },
+        inboundStores: { admissionStore, workQueue: admissionStore.workQueue },
         queueEngine: engine
     });
     const delivered: ALMessage[] = [];

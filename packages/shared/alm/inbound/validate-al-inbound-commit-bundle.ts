@@ -48,8 +48,8 @@ export function validateALInboundCommitBundle(
             provenanceExpireAtTimestamps.push(mutation.expireAtTimestamp);
         }
         if (
-            mutation.kind === 'set-buffered' || mutation.kind === 'set-control-pending' ||
-            mutation.kind === 'set-control-owners'
+            mutation.kind === 'set-buffered' || mutation.kind === 'set-control-acks' ||
+            mutation.kind === 'set-control-pending' || mutation.kind === 'set-control-owners'
         ) {
             ownedWorkExpireAtTimestamp = Math.max(ownedWorkExpireAtTimestamp, mutation.expireAtTimestamp);
         }
@@ -139,6 +139,7 @@ function matchesOriginalObservation(
         case 'set-msg-owner':
         case 'set-inbound-message':
             return mutation.value.msgId === observed.msgId && mutation.value.senderId === observed.senderId;
+        case 'set-control-acks':
         case 'set-control-pending':
         case 'delete-control-pending':
             return mutation.msgId === observed.msgId && mutation.senderId === observed.senderId;

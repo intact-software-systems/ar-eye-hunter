@@ -58,7 +58,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
-        await runtime.handleIncomingMessage({ ...message(sequence), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage({ ...message(sequence), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
     }
     const queue = resources.admissionStore.workQueue;
     const keys = await queue.getAllKeys();
@@ -123,7 +123,7 @@ it('retries durable local delivery after restart with a single admission work ow
     onTestFinished(() => first.dispose());
     const incoming: ALMessage = { ...message(1), ordering: undefined, qos: { durability: { algo: 'local-inbox' } } };
 
-    await first.handleIncomingMessage(incoming, { kind: 'rtc-peer', peerId: 'sender' });
+    await first.admitIncomingMessage(incoming, { kind: 'rtc-peer', peerId: 'sender' });
 
     expect(attempts).toEqual([incoming.id.msgId]);
     const keys = await resources.admissionStore.workQueue.getAllKeys();
@@ -181,7 +181,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
             });
         const initial = createRuntime();
         onTestFinished(() => initial.dispose());
-        await initial.handleIncomingMessage({ ...message(1), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
+        await initial.admitIncomingMessage({ ...message(1), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
         const keys = await resources.admissionStore.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         const owner = (await resources.admissionStore.workQueue.getItem(keys[0]))!;
@@ -262,7 +262,7 @@ it.each([
         constraints: { expiresAtMs: admittedAt + 1_000 }
     };
 
-    await runtime.handleIncomingMessage(incoming, { kind: 'ws-client', peerId: 'sender' });
+    await runtime.admitIncomingMessage(incoming, { kind: 'ws-client', peerId: 'sender' });
 
     expect(deliveries).toEqual(delivered);
     expect(incoming.constraints?.expiresAtMs).toBe(admittedAt + 1_000);
@@ -289,7 +289,7 @@ it('retains predecessor completion through the longest admitted deadline across 
         new ALInboundMessageRuntime({
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                stores: { admissionStore: store },
+                stores: { admissionStore: store, workQueue: store.workQueue },
                 queueEngine: engine,
                 toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
             }),
@@ -303,11 +303,11 @@ it('retains predecessor completion through the longest admitted deadline across 
         });
     const initial = createRuntime();
     onTestFinished(() => initial.dispose());
-    await initial.handleIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
+    await initial.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
     expect(delivered).toEqual(['message-1']);
     const paused = vi.spyOn(store, 'claimReadyEffects').mockResolvedValue([]);
-    await initial.handleIncomingMessage({ ...message(2), constraints: { expiresAtMs: admittedAt + 10_000 } }, { kind: 'rtc-peer', peerId: 'sender' });
-    await initial.handleIncomingMessage(message(3), { kind: 'rtc-peer', peerId: 'sender' });
+    await initial.admitIncomingMessage({ ...message(2), constraints: { expiresAtMs: admittedAt + 10_000 } }, { kind: 'rtc-peer', peerId: 'sender' });
+    await initial.admitIncomingMessage(message(3), { kind: 'rtc-peer', peerId: 'sender' });
     initial.dispose();
     paused.mockRestore();
     vi.setSystemTime(admittedAt + 1_000);
@@ -344,7 +344,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore: store },
+            stores: { admissionStore: store, workQueue: store.workQueue },
             queueEngine: engine,
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
         }),
@@ -362,7 +362,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
-        await runtime.handleIncomingMessage({ ...message(sequence), constraints: { expiresAtMs: Date.now() + 10_000 } }, {
+        await runtime.admitIncomingMessage({ ...message(sequence), constraints: { expiresAtMs: Date.now() + 10_000 } }, {
             kind: 'ws-client',
             peerId: 'sender'
         });
@@ -413,7 +413,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore: store },
+            stores: { admissionStore: store, workQueue: store.workQueue },
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
         }),
 
@@ -434,8 +434,8 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     });
     onTestFinished(() => runtime.dispose());
     const second: ALMessage = { ...message(2), qos: { durability: { algo: durability } } };
-    await runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
-    const admittedFirst = runtime.handleIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
+    await runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+    const admittedFirst = runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
     const trackKey = toALOrderingTrackKey(second)!;
     await failedAttemptReleased.promise;
     const work = await readMessageWork({ namespace: store.namespace, backend, trackKey, msgId: second.id.msgId, seq: 2 });
@@ -481,7 +481,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         const runtime = new ALInboundMessageRuntime({
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                stores: { admissionStore: store },
+                stores: { admissionStore: store, workQueue: store.workQueue },
                 queueEngine: engine,
                 toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
             }),
@@ -504,7 +504,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             }
         });
         onTestFinished(() => runtime.dispose());
-        await runtime.handleIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
+        await runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
         const keys = await backend.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         const predecessor = (await backend.workQueue.getItem(keys[0]))!;
@@ -532,9 +532,9 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             }).toBe(EntityStatus.NON_RETRYABLE);
         }
         available = true;
-        await runtime.handleIncomingMessage(message(2), { kind: 'rtc-peer', peerId: 'sender' });
+        await runtime.admitIncomingMessage(message(2), { kind: 'rtc-peer', peerId: 'sender' });
         const independent = { ...message(3), ordering: undefined };
-        await runtime.handleIncomingMessage(independent, { kind: 'rtc-peer', peerId: 'sender' });
+        await runtime.admitIncomingMessage(independent, { kind: 'rtc-peer', peerId: 'sender' });
         await expect.poll(async () => {
             await engine.executeOnce();
             return controls.map((control) => decodeALControlMessage(control).right);
@@ -570,7 +570,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         const runtime = new ALInboundMessageRuntime({
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                stores: { admissionStore: store },
+                stores: { admissionStore: store, workQueue: store.workQueue },
                 queueEngine: engine,
                 toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
             }),
@@ -595,10 +595,10 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     };
     const first = createRuntime();
     for (let sequence = 2; sequence <= 256; sequence++) {
-        expect((await first.runtime.handleIncomingMessage(message(sequence), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
+        expect((await first.runtime.admitIncomingMessage(message(sequence), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
             .toBe('admitted');
     }
-    expect((await first.runtime.handleIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
+    expect((await first.runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
         .toBe('admitted');
 
     for (let cycle = 0; cycle < 30; cycle++) {
@@ -633,7 +633,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     backend.workQueue.cleanup();
 
     const afterCleanup = createRuntime();
-    await afterCleanup.runtime.handleIncomingMessage(message(257), { kind: 'rtc-peer', peerId: 'sender' });
+    await afterCleanup.runtime.admitIncomingMessage(message(257), { kind: 'rtc-peer', peerId: 'sender' });
     expect(delivered).toEqual(Array.from({ length: 257 }, (_, index) => index + 1));
 }, 45_000);
 

@@ -58,17 +58,19 @@ describe('middleware pre-admission', () => {
                 concurrencyReduceStep: 1
             });
             const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
+            const signalingBackend = new InMemoryAdmissionBackend(admission, Date.now);
             const runtime = createRallarMiddleware({
                 ...fixture.options,
                 webSocketServer: socket,
                 inboundStores: {
                     admissionStore: createALInboundAdmissionStore({
                         namespace: 'middleware-signaling',
-                        backend: new InMemoryAdmissionBackend(admission, Date.now),
+                        backend: signalingBackend,
                         orderingTrackTtlMs: 60_000,
                         supersedenceTrackTtlMs: 60_000,
                         retention: normalizeALRuntimeStoreRetention()
-                    })
+                    }),
+                    workQueue: signalingBackend.workQueue
                 }
             });
             onTestFinished(() => runtime.wsQBoxServerService.dispose());

@@ -399,7 +399,7 @@ export class WsQueueBoxServerService {
         if (!authorization.authorized) {
             return await this.rejectIncomingMessage(message, authorization);
         }
-        return await this.inboundRuntime.handleIncomingMessage(message, {
+        return await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
             ...(authorization.roomRecipientPeerIds === undefined

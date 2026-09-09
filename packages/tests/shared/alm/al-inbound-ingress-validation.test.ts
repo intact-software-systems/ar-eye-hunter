@@ -24,7 +24,7 @@ describe('AL inbound canonical validation', () => {
         const payload = { typeId: 'text', resource: JSON.stringify('x'.repeat(60_000)) };
         try {
             for (let seq = 2; seq <= 18; seq++) {
-                const result = await fixture.runtime.handleIncomingMessage({
+                const result = await fixture.runtime.admitIncomingMessage({
                     ...base,
                     id: { ...base.id, msgId: `message-${seq}` },
                     payload,
@@ -40,12 +40,12 @@ describe('AL inbound canonical validation', () => {
                 route: { ...base.route, resourceId: 'message-19' },
                 ordering: { orderingKey: 'ordered', seq: 19 }
             };
-            const rejected = await fixture.runtime.handleIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
+            const rejected = await fixture.runtime.admitIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
             expect(rejected.right?.kind).toBe('resync-required');
-            const repeated = await fixture.runtime.handleIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
+            const repeated = await fixture.runtime.admitIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
             expect(repeated.right?.kind).toBe('resync-required');
             expect(fixture.delivered).toEqual([]);
-            await fixture.runtime.handleIncomingMessage({
+            await fixture.runtime.admitIncomingMessage({
                 ...base,
                 ordering: { orderingKey: 'ordered', seq: 1 }
             }, { kind: 'rtc-peer', peerId: 'sender' });
@@ -53,7 +53,7 @@ describe('AL inbound canonical validation', () => {
             await expect.poll(async () => {
                 return (await fixture.admissionStore.readOrderedDelivery(trackKey, 3)).completedThrough;
             }, { timeout: 4_000 }).toBeGreaterThanOrEqual(2);
-            const retried = await fixture.runtime.handleIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
+            const retried = await fixture.runtime.admitIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
             expect(retried.right?.kind).toBe('admitted');
             expect(fixture.delivered).toContain('message');
         }
@@ -71,7 +71,7 @@ describe('AL inbound canonical validation', () => {
         );
         try {
             for (let attempt = 0; attempt < 3; attempt++) {
-                const result = await fixture.runtime.handleIncomingMessage(control, { kind: 'rtc-peer', peerId: 'sender' });
+                const result = await fixture.runtime.admitIncomingMessage(control, { kind: 'rtc-peer', peerId: 'sender' });
                 expect(result.right).toEqual({ kind: 'control', handled: false });
             }
             expect(fixture.state.data.size).toBe(0);
@@ -86,7 +86,7 @@ describe('AL inbound canonical validation', () => {
     it('rejects unsupported control types before application dispatch or admission', async () => {
         const fixture = createFixture();
         try {
-            const result = await fixture.runtime.handleIncomingMessage({
+            const result = await fixture.runtime.admitIncomingMessage({
                 ...directMessage(),
                 payload: { typeId: 'al.control.future.v5', resource: '{}' }
             }, { kind: 'rtc-peer', peerId: 'sender' });
@@ -103,11 +103,11 @@ describe('AL inbound canonical validation', () => {
         const fixture = createFixture();
         const message = directMessage();
         try {
-            const rejected = await fixture.runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
+            const rejected = await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
             expect(rejected.left?.code).toBe('unauthorized');
             expect(fixture.delivered).toEqual([]);
             expect(fixture.controls).toEqual([]);
-            const accepted = await fixture.runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+            const accepted = await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
             expect(accepted.right?.kind).toBe('admitted');
             expect(fixture.delivered).toEqual(['message']);
         }
@@ -119,8 +119,8 @@ describe('AL inbound canonical validation', () => {
     it('rejects malformed and oversized envelopes as values without dispatching work', async () => {
         const fixture = createFixture();
         try {
-            const malformed = await fixture.runtime.handleIncomingMessage({}, { kind: 'rtc-peer', peerId: 'sender' });
-            const oversized = await fixture.runtime.handleIncomingMessage({
+            const malformed = await fixture.runtime.admitIncomingMessage({}, { kind: 'rtc-peer', peerId: 'sender' });
+            const oversized = await fixture.runtime.admitIncomingMessage({
                 ...directMessage(),
                 payload: { typeId: 'text', resource: JSON.stringify('a'.repeat(65_536)) }
             }, { kind: 'rtc-peer', peerId: 'sender' });
@@ -137,7 +137,7 @@ describe('AL inbound canonical validation', () => {
     it('preserves the logical sender on an explicitly trusted server relay', async () => {
         const fixture = createFixture();
         try {
-            const result = await fixture.runtime.handleIncomingMessage(directMessage(), { kind: 'trusted-server' });
+            const result = await fixture.runtime.admitIncomingMessage(directMessage(), { kind: 'trusted-server' });
             expect(result.right?.kind).toBe('admitted');
             expect(fixture.delivered).toEqual(['message']);
         }
@@ -150,13 +150,13 @@ describe('AL inbound canonical validation', () => {
         const fixture = createFixture();
         const message = directMessage();
         try {
-            const outside = await fixture.runtime.handleIncomingMessage({
+            const outside = await fixture.runtime.admitIncomingMessage({
                 ...message,
                 ordering: { orderingKey: 'ordered', seq: Number.MAX_SAFE_INTEGER }
             }, { kind: 'rtc-peer', peerId: 'sender' });
             expect(outside.right?.kind).toBe('resync-required');
             expect(fixture.delivered).toEqual([]);
-            const corrected = await fixture.runtime.handleIncomingMessage({
+            const corrected = await fixture.runtime.admitIncomingMessage({
                 ...message,
                 ordering: { orderingKey: 'ordered', seq: 1 }
             }, { kind: 'rtc-peer', peerId: 'sender' });
@@ -193,7 +193,7 @@ function createFixture() {
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore },
+            stores: { admissionStore, workQueue: admissionStore.workQueue },
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         }),
 

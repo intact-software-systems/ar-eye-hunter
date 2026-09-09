@@ -3,11 +3,13 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import type { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundWorkType } from './al-inbound-work-entry.ts';
+import type { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import { readALInboundWorkSelection } from './read-al-inbound-work-selection.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
@@ -21,6 +23,7 @@ export namespace ALInboundWorkHandler {
             > {
         readonly delivery: ALInboundAdmittedDelivery;
         readonly admission: ALInboundMessageAdmission;
+        readonly controlAdmission: ALInboundControlAdmission;
     }
 
     export interface Selection {
@@ -82,8 +85,7 @@ export class ALInboundWorkHandler {
     }
 
     async committed(): Promise<void> {
-        this.scan = { cursor: null, statusIndex: 0, nextReadyAt: undefined };
-        this.dependencies.queueEngine.wake();
+        this.startScan();
         if (this.processing === undefined) {
             await this.start();
         }
@@ -194,19 +196,35 @@ export class ALInboundWorkHandler {
         }
     }
 
+    private startScan(): void {
+        this.scan = { cursor: null, statusIndex: 0, nextReadyAt: undefined };
+        this.dependencies.queueEngine.wake();
+    }
+
+    /** Retained admissions run their own owner; every other effect is already-admitted delivery. */
+    private async admitOrDeliverClaimed(
+        effect: ALPersistedInboundEffect
+    ): Promise<ALInboundMessageAdmission.ReplayResult | 'non-retryable'> {
+        const payload = effect.payload;
+        if (payload.kind !== 'admit-message' && payload.kind !== 'admit-control') {
+            return await this.dependencies.delivery.deliver(effect);
+        }
+        const outcome = payload.kind === 'admit-message'
+            ? await this.dependencies.admission.replay(payload)
+            : toALInboundReplayResult(
+                await this.dependencies.controlAdmission.replay(payload),
+                this.dependencies.clock.nowMs()
+            );
+        if (outcome === 'completed') {
+            this.startScan();
+        }
+        return outcome;
+    }
+
     private async deliverClaimed(effect: ALPersistedInboundEffect): Promise<void> {
         let outcome: ALInboundMessageAdmission.ReplayResult | 'non-retryable';
         try {
-            if (effect.payload.kind === 'admit-message') {
-                outcome = await this.dependencies.admission.replay(effect.payload);
-                if (outcome === 'completed') {
-                    this.scan = { cursor: null, statusIndex: 0, nextReadyAt: undefined };
-                    this.dependencies.queueEngine.wake();
-                }
-            }
-            else {
-                outcome = await this.dependencies.delivery.deliver(effect);
-            }
+            outcome = await this.admitOrDeliverClaimed(effect);
         }
         catch (error) {
             outcome = error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException
@@ -248,4 +266,13 @@ export class ALInboundWorkHandler {
             retryAtMs: this.dependencies.clock.nowMs() + (decision.delayMs ?? 0)
         });
     }
+}
+
+function toALInboundReplayResult(
+    outcome: ALWorkOutcome,
+    nowMs: number
+): ALInboundMessageAdmission.ReplayResult | 'non-retryable' {
+    return outcome.status === 'not-ready'
+        ? { kind: 'not-ready', retryAfterMs: Math.max(0, outcome.readyAtMs - nowMs) }
+        : outcome.status;
 }

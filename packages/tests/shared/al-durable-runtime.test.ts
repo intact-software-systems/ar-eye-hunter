@@ -68,7 +68,7 @@ describe('AL state retained across runtime recreation', () => {
             { ttlMs: 30_000, reliability: 'at-least-once' }
         );
 
-        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         runtime1.dispose();
@@ -77,7 +77,7 @@ describe('AL state retained across runtime recreation', () => {
             dispatchedMsgIds
         );
 
-        await restartedRuntime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await restartedRuntime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -90,7 +90,7 @@ describe('AL state retained across runtime recreation', () => {
         const seq2 = createBufferedOrderedMessage(2, 'two');
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
-        await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
 
         runtime1.dispose();
@@ -100,7 +100,7 @@ describe('AL state retained across runtime recreation', () => {
             controlMessages
         );
 
-        await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
@@ -250,12 +250,14 @@ function createRetainedInboundStoreSet(
     const admissionState = existing?.admissionState ??
         createInMemoryALAdmissionState();
 
+    const backend = new InMemoryAdmissionBackend(admissionState, Date.now);
     return {
         admissionState,
         runtimeStores: {
+            workQueue: backend.workQueue,
             admissionStore: createALInboundAdmissionStore({
                 namespace: 'durable-test:inbound:admission',
-                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
+                backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()

@@ -433,7 +433,7 @@ export class WsQueueBoxClientService {
         if (message.id.senderId === this.sessionId) {
             return Either.ofRight({ kind: 'duplicate' });
         }
-        return await this.inboundRuntime.handleIncomingMessage(message, { kind: 'trusted-server' });
+        return await this.inboundRuntime.admitIncomingMessage(message, { kind: 'trusted-server' });
     }
 
     private reconnect() {

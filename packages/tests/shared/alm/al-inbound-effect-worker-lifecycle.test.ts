@@ -259,7 +259,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => runtime.dispose());
         const valid = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'valid-source', contextId: 'room' }, 'receiver', 'chat', {});
-        await runtime.handleIncomingMessage(valid, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(valid, { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(async () => {
             await engine.executeOnce();
             return resources.admissionStore.workQueue.getItem(work.entry.key);
@@ -345,7 +345,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ordering: { orderingKey: 'stream', seq: 1 }
         };
         const trackKey = toALOrderingTrackKey(message)!;
-        await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(async () => (await store.readOrderedDelivery(trackKey, 2)).completedThrough).toBe(1);
         runtime.dispose();
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
@@ -369,7 +369,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
-                stores: { admissionStore: store }
+                stores: { admissionStore: store, workQueue: store.workQueue }
             })
         });
         onTestFinished(() => restarted.dispose());
@@ -460,9 +460,9 @@ describe('inbound durable effect worker lifecycle', () => {
         const first = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'first', contextId: 'room' }, 'receiver', 'chat', {});
         const second = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {});
         try {
-            const firstAdmission = runtime.handleIncomingMessage(first, { kind: 'ws-client', peerId: 'sender' });
+            const firstAdmission = runtime.admitIncomingMessage(first, { kind: 'ws-client', peerId: 'sender' });
             await finalizationStarted.promise;
-            const secondAdmission = await runtime.handleIncomingMessage(second, { kind: 'ws-client', peerId: 'sender' });
+            const secondAdmission = await runtime.admitIncomingMessage(second, { kind: 'ws-client', peerId: 'sender' });
             expect(secondAdmission.right).toEqual({ kind: 'admitted' });
             releaseFinalization.resolve();
             await firstAdmission;
@@ -529,7 +529,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const advertised = engine.executeOnce();
         await readStarted.promise;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'overlapping-read', contextId: 'room' }, 'receiver', 'chat', {});
-        const admission = runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        const admission = runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
         await admissionWoke.promise;
         resumeRead.resolve();
         await Promise.all([advertised, admission]);
@@ -592,14 +592,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         try {
-            await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
             expect(attempts).toBe(1);
 
             runtime.dispose();
             vi.setSystemTime(Date.now() + 30_000);
             await resources.queueEngine.executeOnce();
             await runtime.ready();
-            await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
 
             expect(attempts).toBe(1);
         }
@@ -686,7 +686,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
-                stores: { admissionStore: store }
+                stores: { admissionStore: store, workQueue: store.workQueue }
             })
         });
         onTestFinished(() => restarted.dispose());

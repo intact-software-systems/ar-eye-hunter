@@ -31,13 +31,13 @@ describe('Postgres inbound ordered work recovery', () => {
         const received: string[] = [];
         const first = createRuntime(firstStore, received);
         const secondMessage = createMessage('second', 2);
-        await first.handleIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
+        await first.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
         expect(received).toEqual([]);
         first.dispose();
 
         const second = createRuntime(secondStore, received);
         const firstMessage = createMessage('first', 1);
-        await second.handleIncomingMessage(firstMessage, { kind: 'ws-client', peerId: 'sender' });
+        await second.admitIncomingMessage(firstMessage, { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(() => received).toEqual(['first', 'second']);
         const trackKey = toALOrderingTrackKey(firstMessage)!;
         await expect.poll(() => firstStore.readOrderedDelivery(trackKey, 3))
@@ -55,11 +55,11 @@ describe('Postgres inbound ordered work recovery', () => {
             await firstStore.workQueue.removeItem(entry.key);
         }
         const restarted = createRuntime(firstStore, received);
-        await restarted.handleIncomingMessage(createMessage('third', 3), { kind: 'ws-client', peerId: 'sender' });
+        await restarted.admitIncomingMessage(createMessage('third', 3), { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(() => received).toEqual(['first', 'second', 'third']);
         await expect.poll(() => secondStore.readOrderedDelivery(trackKey, 4))
             .toEqual({ completedThrough: 3, predecessor: undefined });
-        await restarted.handleIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
+        await restarted.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
         expect(received).toEqual(['first', 'second', 'third']);
     });
 
@@ -158,8 +158,8 @@ describe('Postgres inbound ordered work recovery', () => {
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
         const blocked = createMessage('blocked', 2);
-        await runtime.handleIncomingMessage(blocked, { kind: 'ws-client', peerId: 'sender' });
-        await runtime.handleIncomingMessage(createMessage('independent'), { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(blocked, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(createMessage('independent'), { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(() => received).toEqual(['independent']);
         await expect.poll(() =>
             controls.flatMap((message) => {
@@ -200,7 +200,7 @@ async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInbo
 function createRuntime(store: ALInboundAdmissionStore, received: string[], controls: ALMessage[] = []) {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'receiver',
-        stores: { admissionStore: store },
+        stores: { admissionStore: store, workQueue: store.workQueue },
 
         planIncomingMessage: (message, source, observations) =>
             planALMessageHandling(message, {

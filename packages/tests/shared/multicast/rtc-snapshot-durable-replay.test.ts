@@ -72,7 +72,7 @@ describe('RTC admitted-message consumption', () => {
             });
             const message = createMessage({ seq: 1, versioned: true, acknowledge: false });
             try {
-                await fixture.runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+                await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
                 expect(fixture.delivered).toEqual([]);
                 expect(fixture.forwarded).toEqual([]);
 
@@ -88,7 +88,7 @@ describe('RTC admitted-message consumption', () => {
                     return fixture.forwarded;
                 }).toEqual([message.id.msgId]);
                 expect(fixture.forwarded).toEqual([message.id.msgId]);
-                await fixture.runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+                await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
                 expect(fixture.delivered).toEqual([message.id.msgId]);
             }
             finally {
@@ -106,9 +106,9 @@ describe('RTC admitted-message consumption', () => {
             throw new Error('Ordered message must have an ordering track.');
         }
         try {
-            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             fixture.observed.snapshot = { ...createCurrentSnapshot(), group: { ...createCurrentSnapshot().group, snapshotVersion: 4 } };
-            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).toEqual([first.id.msgId]);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeDefined();
             expect(acknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
@@ -141,11 +141,11 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
         try {
-            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).toEqual([]);
             clearSnapshotAfterCommit.mockRestore();
             fixture.observed.snapshot = createCurrentSnapshot();
-            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).not.toContain(second.id.msgId);
             await fixture.engine.executeOnce();
             await expect.poll(async () => {
@@ -168,13 +168,13 @@ describe('RTC admitted-message consumption', () => {
             initial.observed.snapshot = undefined;
             return result;
         });
-        await initial.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
+        await initial.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
         expect(initial.delivered).toEqual([]);
         initial.runtime.dispose();
 
         const resumed = createReplayFixture(false, initial.stores);
         try {
-            await resumed.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            await resumed.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             await expect.poll(async () => {
                 await resumed.engine.executeOnce();
                 return resumed.delivered;
@@ -190,8 +190,8 @@ describe('RTC admitted-message consumption', () => {
         const second = createMessage({ seq: 2, versioned: true, acknowledge: true });
         const first = createMessage({ seq: 1, versioned: true, acknowledge: true });
         try {
-            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'upstream-relay' });
-            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'upstream-relay' });
+            await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'upstream-relay' });
+            await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'upstream-relay' });
             await expect.poll(async () => {
                 await fixture.engine.executeOnce();
                 return fixture.controls.map(parseALControlMessage).filter((control) =>
@@ -216,7 +216,7 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
 
-        await fixture.runtime.handleIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
+        await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
 
         expect(vi.getTimerCount()).toBe(0);
         fixture.observed.snapshot = createCurrentSnapshot();
@@ -240,11 +240,11 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
         try {
-            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             vi.setSystemTime(Date.now() + 1_000);
             fixture.observed.snapshot = createCurrentSnapshot();
 
-            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
 
             expect(fixture.delivered).toEqual([]);
             await expect.poll(async () => {
@@ -276,10 +276,10 @@ describe('RTC admitted-message consumption', () => {
             return result;
         });
         try {
-            await fixture.runtime.handleIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             vi.setSystemTime(Date.now() + 100);
             fixture.observed.snapshot = { ...createCurrentSnapshot(), group: { ...createCurrentSnapshot().group, snapshotVersion: 4 } };
-            await fixture.runtime.handleIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
+            await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             expect(fixture.delivered).toEqual([]);
             fixture.observed.snapshot = createCurrentSnapshot();
             await expect.poll(async () => {
@@ -303,7 +303,7 @@ describe('RTC admitted-message consumption', () => {
             return effects;
         });
 
-        await fixture.runtime.handleIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
+        await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
 
         expect(fixture.delivered).toEqual([]);
         expect(vi.getTimerCount()).toBe(0);

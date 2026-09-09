@@ -2,17 +2,20 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
+import { createALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
     ALInboundPlanner
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
+import { AL_INBOUND_WORK_LEASE_MS, toALInboundWorkType } from './al-inbound-work-entry.ts';
 import { ALInboundWorkHandler } from './al-inbound-work-handler.ts';
+import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
@@ -20,6 +23,7 @@ import { validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
+    readonly workQueue: QueueBoxResourceEntryRepository;
 }
 
 export namespace ALInboundMessageRuntime {
@@ -44,6 +48,7 @@ export namespace ALInboundMessageRuntime {
 
     export interface Resources {
         readonly admissionStore: ALInboundAdmissionStore;
+        readonly workQueue: QueueBoxResourceEntryRepository;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
         readonly effectWorkerId: string;
         readonly clock: Clock;
@@ -81,6 +86,7 @@ export class ALInboundMessageRuntime {
     private readonly readyPromise: Promise<void>;
 
     private readonly admission: ALInboundMessageAdmission;
+    private readonly controlAdmission: ALInboundControlAdmission;
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly effects: ALInboundWorkHandler;
     private disposed = false;
@@ -92,11 +98,25 @@ export class ALInboundMessageRuntime {
         this.admissionStore = dependencies.admissionStore;
         this.readyPromise = this.admissionStore.ready();
         this.admission = new ALInboundMessageAdmission(dependencies);
+        this.controlAdmission = new ALInboundControlAdmission({
+            admissionStore: this.admissionStore,
+            port: createALWorkQueuePort({
+                queue: dependencies.workQueue,
+                workTypes: new Set([toALInboundWorkType(this.admissionStore.namespace)]),
+                leaseMs: AL_INBOUND_WORK_LEASE_MS,
+                nowMs: () => dependencies.clock.nowMs(),
+                random: dependencies.random
+            }),
+            clock: dependencies.clock,
+            newControlId: dependencies.effectPreparation.newControlId,
+            retention: this.admissionStore.retention
+        });
         this.delivery = new ALInboundAdmittedDelivery(dependencies);
         this.effects = new ALInboundWorkHandler({
             ...dependencies,
             delivery: this.delivery,
-            admission: this.admission
+            admission: this.admission,
+            controlAdmission: this.controlAdmission
         });
         if (dependencies.ownsQueueEngine) {
             void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
@@ -116,7 +136,7 @@ export class ALInboundMessageRuntime {
         this.delivery.dispose();
     }
 
-    async handleIncomingMessage(
+    async admitIncomingMessage(
         value: unknown,
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner = this.dependencies.planIncomingMessage
@@ -138,7 +158,7 @@ export class ALInboundMessageRuntime {
             return Either.ofRight({ kind: 'disposed' });
         }
         if (isALControlTypeId(msg.payload.typeId)) {
-            return Either.ofRight(await this.handleControlMessage(msg));
+            return Either.ofRight(await this.admitControlMessage(msg));
         }
         const attempt = await this.admission.attempt(msg, source, planIncomingMessage);
         if (attempt.left) {
@@ -152,22 +172,19 @@ export class ALInboundMessageRuntime {
         return Either.ofRight(acceptance);
     }
 
-    private async handleControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
-        let acceptance: ALControlAcceptance;
-        try {
-            acceptance = await this.admissionStore.acceptControlMessage(msg);
-        }
-        catch (error) {
-            if (error instanceof ALAdmissionBackendConflictError) {
-                return { kind: 'not-admitted', reason: 'conflict' };
-            }
-            throw error;
-        }
+    private async admitControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
+        const admitted = await this.controlAdmission.admit(msg);
         const waitForEffects = !this.effects.hasActiveDrain();
         const effectDrain = this.effects.committed();
         if (waitForEffects) {
             await effectDrain;
         }
+        if (admitted.kind === 'pending-control') {
+            return { kind: 'pending-admission' };
+        }
+        const acceptance: ALControlAcceptance = admitted.kind === 'committed'
+            ? admitted.acceptance
+            : { handled: false, completedPendingAcks: [] };
         if (!this.disposed) {
             await this.dependencies.onControlMessage?.(msg, acceptance);
         }

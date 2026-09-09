@@ -113,7 +113,7 @@ describe('PSql admission optimistic retry', () => {
         conflictNextInboundCommit({ storage, namespace: store.namespace, msg, nowMs: Date.now });
         const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
 
-        const conflicted = await runtime.handleIncomingMessage(msg, source);
+        const conflicted = await runtime.admitIncomingMessage(msg, source);
 
         expect(conflicted.right).toEqual({ kind: 'pending-admission' });
         expect(deliveredMessageIds).toEqual([]);
@@ -136,7 +136,7 @@ describe('PSql admission optimistic retry', () => {
         await restarted.ready();
         await expect.poll(() => deliveredMessageIds).toEqual([msg.id.msgId]);
         expect((await readIncoming(restartedStore, msg, Date.now())).dedupExpiresAt).toBeGreaterThan(Date.now());
-        expect((await restarted.handleIncomingMessage(msg, source)).right).toEqual({ kind: 'duplicate' });
+        expect((await restarted.admitIncomingMessage(msg, source)).right).toEqual({ kind: 'duplicate' });
         expect(deliveredMessageIds).toEqual([msg.id.msgId]);
     });
 
@@ -273,7 +273,7 @@ function createInboundTestRuntime(
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
-        stores: { admissionStore: store },
+        stores: { admissionStore: store, workQueue: store.workQueue },
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',

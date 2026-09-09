@@ -22,6 +22,8 @@ import {
     toALInboundWorkKey,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
+import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     describe,
@@ -51,7 +53,20 @@ function createFixture() {
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    return { state, backend, store };
+    const control = new ALInboundControlAdmission({
+        admissionStore: store,
+        port: createALWorkQueuePort({
+            queue: store.workQueue,
+            workTypes: new Set([toALInboundWorkType(store.namespace)]),
+            leaseMs: 10_000,
+            nowMs: Date.now,
+            random: () => 0.5
+        }),
+        clock: { nowMs: Date.now },
+        newControlId: () => 'generated-control',
+        retention: store.retention
+    });
+    return { state, backend, store, control };
 }
 
 function readIncoming(store: ReturnType<typeof createFixture>['store'], candidate: ALMessage) {
@@ -593,7 +608,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('rejects an ambiguous acknowledgement without narrowing same-ID message admission', async () => {
-        const { state, store } = createFixture();
+        const { state, store, control } = createFixture();
         const expireAtTimestamp = Date.now() + 60_000;
         const firstIndex = {
             ambiguous: false,
@@ -616,10 +631,7 @@ describe('inbound admission persisted values', () => {
             }))
         ).toBe('committed');
 
-        expect(await store.acceptControlMessage(createAcknowledgement('receiver'))).toEqual({
-            handled: false,
-            completedPendingAcks: []
-        });
+        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'not-handled' });
         expect([...state.data.keys()].filter((key) => key.startsWith('inbound:control:pending:')).sort())
             .toEqual([
                 'inbound:control:pending:message:second-sender',
@@ -627,8 +639,8 @@ describe('inbound admission persisted values', () => {
             ]);
     });
 
-    it('reports a typed conflict when pending receipt progress changes after an ACK read', async () => {
-        const { backend, state, store } = createFixture();
+    it('retains admit-control work when pending receipt progress changes after an ACK read', async () => {
+        const { backend, state, store, control } = createFixture();
         await seedPendingAcknowledgement(store, ['receiver']);
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation) => {
@@ -652,13 +664,13 @@ describe('inbound admission persisted values', () => {
             return await write(operation);
         });
 
-        await expect(store.acceptControlMessage(createAcknowledgement('receiver')))
-            .rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'pending-control' });
         expect(state.data.has('inbound:control:acks:message:sender%3Awith%3Adelimiter')).toBe(false);
+        expect((await claimWork(store)).map((effect) => effect.payload.kind)).toEqual(['admit-control']);
     });
 
-    it('reports a typed conflict when another sender makes ACK ownership ambiguous after the read', async () => {
-        const { backend, state, store } = createFixture();
+    it('retains admit-control work when another sender makes ACK ownership ambiguous after the read', async () => {
+        const { backend, state, store, control } = createFixture();
         await seedPendingAcknowledgement(store, ['receiver']);
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation) => {
@@ -672,14 +684,14 @@ describe('inbound admission persisted values', () => {
             return await write(operation);
         });
 
-        await expect(store.acceptControlMessage(createAcknowledgement('receiver')))
-            .rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'pending-control' });
         expect(state.data.has('inbound:control:acks:message:sender%3Awith%3Adelimiter')).toBe(false);
         expect(state.data.get('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBeDefined();
+        expect((await claimWork(store)).map((effect) => effect.payload.kind)).toEqual(['admit-control']);
     });
 
     it('treats retained ACK state without provenance as typed corruption', async () => {
-        const { backend, store } = createFixture();
+        const { backend, control } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:owners:message', {
                 ambiguous: false,
@@ -697,12 +709,12 @@ describe('inbound admission persisted values', () => {
             });
         });
 
-        await expect(store.acceptControlMessage(createAcknowledgement('receiver')))
+        await expect(control.admit(createAcknowledgement('receiver')))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('caps ACK diagnostics while completing the independent frozen audience snapshot', async () => {
-        const { backend, state, store } = createFixture();
+        const { backend, state, store, control } = createFixture();
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `receiver-${index}`);
         await seedPendingAcknowledgement(store, expectedPeerIds, expectedPeerIds.slice(0, -1));
         const values = [
@@ -729,8 +741,9 @@ describe('inbound admission persisted values', () => {
             )
         );
 
-        expect(await store.acceptControlMessage(createAcknowledgement('receiver-255'))).toMatchObject({
-            handled: true
+        expect(await control.admit(createAcknowledgement('receiver-255'))).toMatchObject({
+            kind: 'committed',
+            acceptance: { handled: true }
         });
         expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(false);
         expect((await readIncoming(store, message)).acks).toHaveLength(256);

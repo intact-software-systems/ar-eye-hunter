@@ -11,9 +11,12 @@ import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-s
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALInboundAdmissionStore, ALInboundWriteRequest } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
+import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import {
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
@@ -163,7 +166,7 @@ describe('PostgreSQL inbound admission', () => {
                 }
             ]
         });
-        const acceptance = await store.acceptControlMessage(
+        const admitted = await createInboundControlAdmission(store).admit(
             newALAckControlMessage(
                 { v: 2, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2' },
                 {
@@ -176,7 +179,7 @@ describe('PostgreSQL inbound admission', () => {
             )
         );
 
-        expect(acceptance.handled).toBe(true);
+        expect(admitted).toMatchObject({ kind: 'committed', acceptance: { handled: true } });
         const pending = await repository.findEntry(namespace, `${namespace}:control:pending:msg-1:peer-1`);
         expect(JSON.parse(pending!.value)).toMatchObject({ value: { ackedFromPeerIds: ['peer-2'] } });
         const owner = await store.readStoredPlanningState({ msg: (await readIncoming(store)).msg, nowMs: Date.now() });
@@ -392,6 +395,22 @@ function decodePreparedOutboundSend(value: unknown, msg: ALMessage): TestPrepare
         throw new TypeError('Stored prepared send must match its outbound message');
     }
     return { kind: value.kind, msgId: value.msgId };
+}
+
+function createInboundControlAdmission(store: ALInboundAdmissionStore): ALInboundControlAdmission {
+    return new ALInboundControlAdmission({
+        admissionStore: store,
+        port: createALWorkQueuePort({
+            queue: store.workQueue,
+            workTypes: new Set([toALInboundWorkType(store.namespace)]),
+            leaseMs: 10_000,
+            nowMs: Date.now,
+            random: () => 0.5
+        }),
+        clock: { nowMs: Date.now },
+        newControlId: () => 'generated-control',
+        retention: store.retention
+    });
 }
 
 async function readIncoming(store: ALInboundAdmissionStore) {

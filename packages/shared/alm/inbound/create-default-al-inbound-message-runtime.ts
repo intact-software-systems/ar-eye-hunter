@@ -37,22 +37,10 @@ export function createDefaultALInboundRuntimeResources(
 ): ALInboundMessageRuntime.Resources {
     const nowMs = input.nowMs ?? Date.now;
     const newControlId = input.newControlId ?? crypto.randomUUID.bind(crypto);
-    const admissionStore = input.stores?.admissionStore ?? createALInboundAdmissionStore({
-        nowMs,
-        newControlId,
-        namespace: 'al-inbound-runtime',
-        backend: new InMemoryAdmissionBackend(
-            createInMemoryALAdmissionState(
-                new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
-            ),
-            nowMs
-        ),
-        orderingTrackTtlMs: 5 * 60_000,
-        supersedenceTrackTtlMs: 5 * 60_000,
-        retention: normalizeALRuntimeStoreRetention()
-    });
+    const stores = input.stores ?? createLocalALInboundRuntimeStores(nowMs);
     return {
-        admissionStore,
+        admissionStore: stores.admissionStore,
+        workQueue: stores.workQueue,
         effectWorkerId: `al-inbound:${crypto.randomUUID()}`,
         effectPreparation: {
             newControlId,
@@ -63,5 +51,20 @@ export function createDefaultALInboundRuntimeResources(
         random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         ownsQueueEngine: input.queueEngine === undefined
+    };
+}
+
+function createLocalALInboundRuntimeStores(nowMs: () => number): ALInboundRuntimeStores {
+    const workQueue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()));
+    return {
+        admissionStore: createALInboundAdmissionStore({
+            nowMs,
+            namespace: 'al-inbound-runtime',
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(workQueue), nowMs),
+            orderingTrackTtlMs: 5 * 60_000,
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        }),
+        workQueue
     };
 }

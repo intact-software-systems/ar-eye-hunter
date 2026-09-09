@@ -52,20 +52,22 @@ const DEFAULT_INDEXED_DB_NAME = 'rallar-al-runtime';
 export function createInMemoryALInboundRuntimeStores(
     input: CreateInMemoryALRuntimeStoresInput
 ): ALInboundRuntimeStores {
+    const backend = new InMemoryAdmissionBackend(
+        createInMemoryALAdmissionState(
+            new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
+        ),
+        input.nowMs
+    );
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,
-            backend: new InMemoryAdmissionBackend(
-                createInMemoryALAdmissionState(
-                    new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
-                ),
-                input.nowMs
-            ),
+            backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
-        })
+        }),
+        workQueue: backend.workQueue
     };
 }
 
@@ -93,21 +95,23 @@ export function createInMemoryALOutboundRuntimeStores(
 export function createIndexedDbALInboundRuntimeStores(
     input: CreateIndexedDbALRuntimeStoresInput
 ): ALInboundRuntimeStores {
+    const backend = new IndexedDbAdmissionBackend({
+        dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
+        storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+        nowMs: input.nowMs,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: input.observer
+    });
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,
-            backend: new IndexedDbAdmissionBackend({
-                dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-                storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-                nowMs: input.nowMs,
-                newWriteToken: crypto.randomUUID.bind(crypto),
-                observer: input.observer
-            }),
+            backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
-        })
+        }),
+        workQueue: backend.workQueue
     };
 }
 

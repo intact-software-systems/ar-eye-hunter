@@ -142,7 +142,7 @@ export class WebRtcRxStreamerService {
                 {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
                     onMessage: async (value) => {
-                        const acceptance = await this.inboundRuntime.handleIncomingMessage(value, {
+                        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, {
                             kind: 'rtc-peer',
                             peerId: peerDto.peerId
                         });

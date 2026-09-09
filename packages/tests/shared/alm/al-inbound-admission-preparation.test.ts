@@ -73,7 +73,7 @@ describe('inbound admission preparation boundary', () => {
         };
         try {
             expect(decodeALMessageValue(message).right).toBeDefined();
-            const result = await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
             expect(result.left).toBeUndefined();
             const parsed = controls.map((control) => decodeALControlMessage(control).right!);
             expect(parsed.map((control) => control.type)).toEqual(expect.arrayContaining(seq === 1 ? ['ack'] : ['nack', 'repair']));
@@ -267,7 +267,7 @@ describe('inbound admission preparation boundary', () => {
             planIncomingMessage: (message, source, observations) => withFreshnessPolicy(planIncomingMessage(message, source, observations))
         });
         try {
-            const result = await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
             expect(result.left?.code).toBe('oversized');
             const untouched = await readAdmission({ store: stores.admissionStore, message });
             expect(untouched.read.observations.messageOwner).toBeUndefined();
@@ -294,7 +294,7 @@ describe('inbound admission preparation boundary', () => {
         try {
             for (let seq = 2; seq <= 9; seq++) {
                 const message = toMessageWithEnvelopeSize(createMessage(seq), 130_000);
-                expect((await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' })).right?.kind)
+                expect((await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' })).right?.kind)
                     .toBe('admitted');
             }
             const message = toMessageWithEnvelopeSize(createMessage(10), AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes - 8 * 130_000);
@@ -303,7 +303,7 @@ describe('inbound admission preparation boundary', () => {
             expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
 
             freshnessEnabled = true;
-            const result = await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
             expect(result.right?.kind).toBe('resync-required');
             const remaining = await readAdmission({ store: stores.admissionStore, message });
             expect(remaining.read.observations.messageOwner).toBeUndefined();
@@ -389,7 +389,7 @@ describe('inbound admission preparation boundary', () => {
             }
         });
         try {
-            const first = await runtime.handleIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
+            const first = await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
             expect(first.right).toEqual({ kind: 'pending-admission' });
             expect(controls).toEqual([]);
 
@@ -420,7 +420,7 @@ describe('inbound admission preparation boundary', () => {
             }
         });
         try {
-            await runtime.handleIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
+            await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
             const firstAck = controls.find((message) => message.payload.typeId === 'al.control.ack.v1');
             expect(firstAck).toBeDefined();
             vi.setSystemTime(Date.now() + 10_000);
@@ -494,6 +494,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
 function createRuntimeDependencies(admissionStore: ALInboundAdmissionStore): ALInboundMessageRuntime.Dependencies {
     return {
         admissionStore,
+        workQueue: admissionStore.workQueue,
         planIncomingMessage,
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async () => {},

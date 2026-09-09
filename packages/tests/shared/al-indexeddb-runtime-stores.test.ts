@@ -13,9 +13,11 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import {
     ALOutboundMessageRuntime,
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -114,11 +116,11 @@ describe('IndexedDB AL runtime stores', () => {
         );
 
         const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime2.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -130,12 +132,12 @@ describe('IndexedDB AL runtime stores', () => {
         const seq2 = createOrderedMulticastMessage(2, 'two');
         const seq1 = createOrderedMulticastMessage(1, 'one');
 
-        await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
         runtime1.dispose();
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
     });
@@ -190,7 +192,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await inbox.getAllKeys();
         await runtime.ready();
-        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
         expect(await inbox.getAllKeys()).toEqual([]);
@@ -232,7 +234,7 @@ describe('IndexedDB AL runtime stores', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         runtime.dispose();
         pausedClaims.mockRestore();
 
@@ -279,6 +281,7 @@ describe('IndexedDB AL runtime stores', () => {
                 msgOwnerTtlMs: 20
             }
         });
+        const control = createInboundControlAdmission(stores);
         const msg = newALUnicastMessage(
             'peer-1',
             {
@@ -342,7 +345,7 @@ describe('IndexedDB AL runtime stores', () => {
             })
         ).toBe('committed');
 
-        await stores.admissionStore.acceptControlMessage(
+        await control.admit(
             newALAckControlMessage(
                 { v: 2, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2' },
                 {
@@ -368,7 +371,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await vi.advanceTimersByTimeAsync(21);
 
-        await expect(stores.admissionStore.acceptControlMessage(
+        await expect(control.admit(
             newALAckControlMessage(
                 { v: 2, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3' },
                 {
@@ -379,7 +382,7 @@ describe('IndexedDB AL runtime stores', () => {
                     observedAtEpochMs: 2
                 }
             )
-        )).resolves.toEqual({ handled: false, completedPendingAcks: [] });
+        )).resolves.toEqual({ kind: 'not-handled' });
 
         const afterReadAtMs = Date.now();
         const afterExpiry = await stores.admissionStore.readIncomingMessage({
@@ -889,6 +892,22 @@ async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessa
         source,
         nowMs,
         prePlan: createInboundPlanner()(msg, source, { nowMs })
+    });
+}
+
+function createInboundControlAdmission(stores: ALInboundRuntimeStores): ALInboundControlAdmission {
+    return new ALInboundControlAdmission({
+        admissionStore: stores.admissionStore,
+        port: createALWorkQueuePort({
+            queue: stores.workQueue,
+            workTypes: new Set([toALInboundWorkType(stores.admissionStore.namespace)]),
+            leaseMs: 10_000,
+            nowMs: Date.now,
+            random: () => 0.5
+        }),
+        clock: { nowMs: Date.now },
+        newControlId: () => 'generated-control',
+        retention: stores.admissionStore.retention
     });
 }
 

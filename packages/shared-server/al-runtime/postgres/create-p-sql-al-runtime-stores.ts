@@ -52,17 +52,16 @@ function createPSqlALRuntimeStores(
     const { repository, namespace } = input;
 
     if (direction === 'inbound') {
+        const backend = new PSqlAdmissionWorkBackend(repository.sql, `${namespace}:inbound:admission`);
         return {
             admissionStore: createALInboundAdmissionStore({
                 namespace: `${namespace}:inbound:admission`,
-                backend: new PSqlAdmissionWorkBackend(
-                    repository.sql,
-                    `${namespace}:inbound:admission`
-                ),
+                backend,
                 orderingTrackTtlMs: input.orderingTrackTtlMs,
                 supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
                 retention: normalizeALRuntimeStoreRetention(input.retention)
-            })
+            }),
+            workQueue: backend.workQueue
         };
     }
 

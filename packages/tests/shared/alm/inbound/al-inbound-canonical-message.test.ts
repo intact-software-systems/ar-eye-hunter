@@ -50,7 +50,7 @@ describe('inbound canonical message ownership', () => {
         const fixture = createCanonicalRuntime();
         const message = newInboundMessage('message', { orderingKey: 'stream', seq: 1 }, 'hello');
 
-        await fixture.runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await fixture.runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
 
         const stored = await fixture.admissionStore.readInboundMessage({
             senderId: 'sender',
@@ -71,7 +71,7 @@ describe('inbound canonical message ownership', () => {
         const fixture = createCanonicalRuntime();
         const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
 
-        await fixture.runtime.handleIncomingMessage(gapped, { kind: 'ws-client', peerId: 'sender' });
+        await fixture.runtime.admitIncomingMessage(gapped, { kind: 'ws-client', peerId: 'sender' });
 
         const buffered = [...fixture.state.data.values()].filter((value) => value.key.includes(':buffered:'));
         expect(buffered).toHaveLength(1);
@@ -174,7 +174,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
-        stores: { admissionStore }
+        stores: { admissionStore, workQueue: admissionStore.workQueue }
     });
     const delivered: string[] = [];
     const forwarded: string[] = [];

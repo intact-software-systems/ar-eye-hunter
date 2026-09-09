@@ -56,7 +56,7 @@ it.each(['memory', 'indexeddb'] as const)(
         const completed = await restartedStore.workQueue.getItem(fixture.work.entry.key);
         expect(completed?.status).toBe(EntityStatus.COMPLETED);
         // Recovery followed by a normal duplicate cannot dispatch another copy.
-        const duplicate = await restarted.handleIncomingMessage(fixture.message, { kind: 'rtc-peer', peerId: 'sender' });
+        const duplicate = await restarted.admitIncomingMessage(fixture.message, { kind: 'rtc-peer', peerId: 'sender' });
         expect(duplicate.right?.kind).toBe('duplicate');
         expect(delivered).toHaveLength(1);
     }
@@ -169,13 +169,13 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         observedAtEpochMs: Date.now()
     });
     const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
-    const malformed = await runtime.handleIncomingMessage({}, { kind: 'trusted-server' });
+    const malformed = await runtime.admitIncomingMessage({}, { kind: 'trusted-server' });
     expect(malformed.left).toMatchObject({ code: 'malformed' });
-    const forged = await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
+    const forged = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
     expect(forged.left).toMatchObject({ code: 'unauthorized' });
-    const unknownControl = await runtime.handleIncomingMessage(untrackedAck, source);
+    const unknownControl = await runtime.admitIncomingMessage(untrackedAck, source);
     expect(unknownControl.right).toEqual({ kind: 'control', handled: false });
-    const rejected = await runtime.handleIncomingMessage(message, source);
+    const rejected = await runtime.admitIncomingMessage(message, source);
     expect(rejected.right).toEqual({ kind: 'not-admitted', reason: 'Room authorization was revoked' });
 
     const nowMs = Date.now();
@@ -229,7 +229,7 @@ async function retainConflictedAdmission(store: ALInboundAdmissionStore) {
         ttlMs: 60_000,
         qos: { ack: { algo: 'hop' } }
     });
-    const result = await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+    const result = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
     expect(result.right).toEqual({ kind: 'pending-admission' });
     expect(delivered).toEqual([]);
     expect(controls).toEqual([]);
@@ -245,7 +245,7 @@ function runtimeDependencies(store: ALInboundAdmissionStore, delivered: ALMessag
     return {
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore: store },
+            stores: { admissionStore: store, workQueue: store.workQueue },
             queueEngine: new InboxOutboxEngine(),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
         }),

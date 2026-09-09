@@ -153,7 +153,8 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         'fromPeerId',
         'trackKey',
         'seq',
-        'source'
+        'source',
+        'expiresAtMs'
     ]);
     switch (effect.kind) {
         case 'admit-message': {
@@ -167,6 +168,15 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         case 'dispatch-local': {
             decodeALAdmissionRecord(effect, ['kind', 'message']);
             return { kind: effect.kind, message: decodeALInboundMessageReference(effect.message) };
+        }
+        case 'admit-control': {
+            decodeALAdmissionRecord(effect, ['kind', 'msg', 'expiresAtMs']);
+            const msg = decodePersistedALMessageValue(effect.msg);
+            const validated = decodeALControlMessage(msg);
+            if (validated.left) {
+                throw new TypeError(validated.left.message);
+            }
+            return { kind: effect.kind, msg, expiresAtMs: decodeALAdmissionNumber(effect.expiresAtMs) };
         }
         case 'send-control': {
             decodeALAdmissionRecord(effect, ['kind', 'msg']);
