@@ -798,7 +798,7 @@ export interface ALInboundPendingControl {
 `port.retainIfAbsent(computeALInboundWorkEntry({ payload: { kind: 'admit-control', msg, expiresAtMs }, ... }))`
 and returns `{ kind: 'pending-control' }`. Nothing in the file throws for an expected outcome.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts` with three cases:
 a valid ACK for a tracked message commits and returns `committed` with `acceptance.handled === true`;
@@ -808,12 +808,12 @@ backend whose `write` throws `ALAdmissionBackendConflictError` once, as
 `packages/tests/shared/alm/al-admission-backend.test.ts` does) returns `pending-control` and the work
 queue holds one `admit-control` row whose `replay` then commits.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Move the code and change the runtime**
+- [x] **Step 3: Move the code and change the runtime**
 
 Move the three functions and the read/write methods listed above into the new files verbatim,
 then replace `throw new ALAdmissionBackendConflictError(...)` inside the moved write path with a
@@ -827,12 +827,12 @@ block at lines 160-163. Add `admit-control` to `ALInboundDurableEffect` and to
 (`ws-queue-box-server-service.ts:402`, `ws-queue-box-client-service.ts:436`,
 `web-rtc-rx-streamer-service.ts:145`) and every test that names it.
 
-- [ ] **Step 4: Run the inbound suites**
+- [x] **Step 4: Run the inbound suites**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/services packages/tests/shared/webrtc packages/tests/shared/multicast`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/tests
