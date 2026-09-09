@@ -26,7 +26,7 @@ const FAULT_CARRIERS: readonly string[] = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES: readonly string[] = ['ack', 'nack', 'repair'];
 
 /** The RTC data channel treats a delay decision as pass, so arming one there would be inert. */
-export const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
+const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
 
 const DELIVERY_STATES: readonly string[] = [
     'rejected',

@@ -61,6 +61,13 @@ interface RtcClientOutcomeFailure {
     readonly message: string;
 }
 
+interface RtcSendAttempt {
+    readonly config: any;
+    readonly interaction: any;
+    readonly connectionName: string;
+    readonly payload: any;
+}
+
 interface RtcClientSendRecord {
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
@@ -256,6 +263,20 @@ function toRtcClientOutcomeFailure(sendResult: any): RtcClientOutcomeFailure | u
     };
 }
 
+function toRtcSendOutcomeFailureStatus(sendAttempt: RtcSendAttempt, sendResult: any): any {
+    const outcomeFailure = toRtcClientOutcomeFailure(sendResult);
+    if (!outcomeFailure) {
+        return undefined;
+    }
+    const { config, interaction, connectionName, payload } = sendAttempt;
+    return toRtcFailureStatus({
+        config,
+        interaction,
+        result: outcomeFailure.message,
+        details: { connection: connectionName, sent: payload, sendResult, code: outcomeFailure.code }
+    });
+}
+
 function rememberRtcClientSend(connection: any, record: RtcClientSendRecord): void {
     connection.lastSendStartedAtEpochMs = record.startedAtEpochMs;
     connection.lastSendEndedAtEpochMs = record.endedAtEpochMs;
@@ -361,6 +382,7 @@ class RtcClientProvider implements RtcProvider {
         const connection = context.rtcConnections[connectionName];
         const client: RtcClient | undefined = connection?.client;
         const payload = toRtcPayload(interaction.request);
+        const sendAttempt: RtcSendAttempt = { config, interaction, connectionName, payload };
         let sendStartedAtEpochMs: number | undefined;
 
         if (!client) {
@@ -378,14 +400,9 @@ class RtcClientProvider implements RtcProvider {
             const startedAt: number = context.dependencies.now();
             sendStartedAtEpochMs = startedAt;
             const sendResult = await client.send(payload, interaction);
-            const outcomeFailure = toRtcClientOutcomeFailure(sendResult);
-            if (outcomeFailure) {
-                return toRtcFailureStatus({
-                    config,
-                    interaction,
-                    result: outcomeFailure.message,
-                    details: { connection: connectionName, sent: payload, sendResult, code: outcomeFailure.code }
-                });
+            const outcomeFailureStatus = toRtcSendOutcomeFailureStatus(sendAttempt, sendResult);
+            if (outcomeFailureStatus) {
+                return outcomeFailureStatus;
             }
             rememberRtcClientSend(connection, {
                 startedAtEpochMs: startedAt,

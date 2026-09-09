@@ -1365,7 +1365,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'messages.cancel',
         title: 'Cancel ALM Send',
-        description: 'Cancels a pending messages.send handle before it reaches a terminal delivery state.',
+        description: 'Moves the local delivery ledger entry of a messages.send handle to cancelled ' +
+            'regardless of its current state; it does not recall a message the transport already accepted.',
         requiredFields: ['handleId'],
         optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
