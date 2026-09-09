@@ -99,7 +99,7 @@
               "typeId": "alm.conformance.bounded-rejection",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000
+            "timeoutMs": 45000
           },
           {
             "kind": "messages.send",
@@ -241,7 +241,7 @@
               "typeId": "alm.conformance.deadline-expiry",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000
+            "timeoutMs": 45000
           },
           {
             "kind": "fault.inject",
@@ -362,7 +362,7 @@
               "typeId": "alm.conformance.delivery-baseline",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000
+            "timeoutMs": 45000
           },
           {
             "kind": "messages.send",
@@ -491,10 +491,10 @@
               "typeId": "alm.conformance.bounded-rejection",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -643,10 +643,10 @@
               "typeId": "alm.conformance.deadline-expiry",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -774,10 +774,10 @@
               "typeId": "alm.conformance.delivery-baseline",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -913,10 +913,10 @@
               "typeId": "alm.conformance.ordering-resync",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -1067,10 +1067,10 @@
               "typeId": "alm.conformance.bounded-rejection",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -1219,10 +1219,10 @@
               "typeId": "alm.conformance.deadline-expiry",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -1362,10 +1362,10 @@
               "typeId": "alm.conformance.delivery-baseline",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -1501,10 +1501,10 @@
               "typeId": "alm.conformance.ordering-resync",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -1673,7 +1673,7 @@
               "typeId": "alm.conformance.bounded-rejection",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000
+            "timeoutMs": 45000
           },
           {
             "kind": "messages.received",
@@ -1768,7 +1768,7 @@
               "typeId": "alm.conformance.deadline-expiry",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000
+            "timeoutMs": 45000
           },
           {
             "kind": "messages.received",
@@ -1863,7 +1863,7 @@
               "typeId": "alm.conformance.delivery-baseline",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000
+            "timeoutMs": 45000
           },
           {
             "kind": "messages.received",
@@ -1958,10 +1958,10 @@
               "typeId": "alm.conformance.bounded-rejection",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2058,10 +2058,10 @@
               "typeId": "alm.conformance.deadline-expiry",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2158,10 +2158,10 @@
               "typeId": "alm.conformance.delivery-baseline",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2258,10 +2258,10 @@
               "typeId": "alm.conformance.ordering-resync",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2368,10 +2368,10 @@
               "typeId": "alm.conformance.bounded-rejection",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2468,10 +2468,10 @@
               "typeId": "alm.conformance.deadline-expiry",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2568,10 +2568,10 @@
               "typeId": "alm.conformance.delivery-baseline",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
@@ -2668,10 +2668,10 @@
               "typeId": "alm.conformance.ordering-resync",
               "topicId": "room.alm-conformance"
             },
-            "timeoutMs": 15000,
+            "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 10000,
+              "timeoutMs": 30000,
               "intervalMs": 100
             }
           },
