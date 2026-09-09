@@ -162,11 +162,10 @@ async function readMergedALWorkPage(
     let nextCursor: ResourceInboxWorkPage.Cursor | null = null;
 
     for (let index = startIndex; index < types.length; index += 1) {
-        const remaining = maxToRead - entries.length;
         const page = await queue.readWorkPage({
             typeId: types[index],
             status,
-            maxToRead: remaining > 0 ? remaining : maxToRead,
+            maxToRead: maxToRead - entries.length,
             cursor: index === cursorIndex ? cursor : null
         });
         entries.push(...page.entries);
