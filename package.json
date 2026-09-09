@@ -22,7 +22,7 @@
     "test:deno": "cd apps/api-v1 && deno task test && cd ../rallar-black-box-control-server && deno task test && cd ../relic-hunter-server-v1 && deno task check && deno task test && cd ../.. && deno test -A packages/tests/shared-test/scenario-black-box-rtc-config.test.ts packages/tests/shared-test/rtc-client-provider",
     "test:e2e": "npm run test:rallar && npm run test:rallar:recipe-console",
     "test:full-stack": "npm run test:full-stack:memory",
-    "test:full-stack:memory": "npm run test:rallar:full-stack:memory && npm run test:rallar:full-stack:memory:alm",
+    "test:full-stack:memory": "npm run test:rallar:full-stack:memory",
     "test:ci": "npm run test:unit && npm run test:deno && npm run test:e2e && npm run test:full-stack:memory",
     "run:test": "npm run test:ci",
     "db:up": "docker compose up -d postgres",

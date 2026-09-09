@@ -92,10 +92,14 @@ type ControlResult = Readonly<{
     commandId?: string;
     ok?: boolean;
     result?: unknown;
-    error?: Readonly<{
-        code?: string;
-        message?: string;
-    }>;
+    error?: ControlResultError;
+}>;
+
+type ControlResultError = Readonly<{
+    code?: string;
+    message?: string;
+    /** The failing child command's own error when a recipe fails. */
+    details?: ControlResultError;
 }>;
 
 export type ControlRunEvent = Readonly<{
@@ -886,9 +890,15 @@ function isConnectedEventPayload(payload: ControlRunEvent['payload']): boolean {
 }
 
 function toControlResultSummary(result: ControlResult): string {
-    return result.ok === true
-        ? 'ok'
-        : `${result.error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED'}: ${result.error?.message ?? 'no message'}`;
+    return result.ok === true ? 'ok' : toControlErrorSummary(result.error);
+}
+
+function toControlErrorSummary(error: ControlResultError | undefined): string {
+    const summary = `${error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED'}: ${error?.message ?? 'no message'}`;
+    const cause = error?.details;
+    return cause?.code === undefined && cause?.message === undefined
+        ? summary
+        : `${summary} Cause: ${toControlErrorSummary(cause)}`;
 }
 
 function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {

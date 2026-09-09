@@ -92,8 +92,9 @@ const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 
 const ENSURE_TIMEOUT_MS = 5_000;
-const CONNECT_TIMEOUT_MS = 15_000;
-const CONNECT_READINESS_TIMEOUT_MS = 10_000;
+/** A cold RTC handshake on a fresh server exceeds the message deadline; connect budgets are harness budgets. */
+const CONNECT_TIMEOUT_MS = 45_000;
+const CONNECT_READINESS_TIMEOUT_MS = 30_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
 const SEND_TIMEOUT_MS = 5_000;
 const FAULT_TIMEOUT_MS = 3_000;
@@ -408,11 +409,11 @@ function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestComm
         roomRef: toRoomRef(input.group),
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
         rallar: { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
-        timeoutMs: toBudgetMs(CONNECT_TIMEOUT_MS, input.deadlineMs),
+        timeoutMs: CONNECT_TIMEOUT_MS,
         ...(input.carrier === 'ws' ? {} : {
             readiness: {
                 minReadyPeers: 1,
-                timeoutMs: toBudgetMs(CONNECT_READINESS_TIMEOUT_MS, input.deadlineMs),
+                timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
                 intervalMs: CONNECT_READINESS_INTERVAL_MS
             }
         })
