@@ -96,15 +96,25 @@ const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 45_000;
 const CONNECT_READINESS_TIMEOUT_MS = 30_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
-const SEND_TIMEOUT_MS = 5_000;
+/** Hosted conformance may need more than five seconds to admit a non-expiring send. */
+const NON_EXPIRING_SEND_TIMEOUT_MS = 10_000;
+/** Admission must remain possible for every send that finishes inside the command contract. */
+const EXPIRY_TTL_MS = 5_000;
+const MESSAGE_CONTROL_TIMEOUT_MS = 5_000;
 const FAULT_TIMEOUT_MS = 3_000;
 const ASSERT_TIMEOUT_MS = 2_000;
 const STATS_TIMEOUT_MS = 3_000;
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
-const MINIMUM_RECEIVE_WINDOW_MS = 2_500;
-const MINIMUM_DEADLINE_MS = MINIMUM_RECEIVE_WINDOW_MS + RESPONSE_MARGIN_MS;
+/** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
+const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
+const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
+/** The absence window must contain pre-send faults, the message lifetime, and post-expiry proof. */
+const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS
+    + EXPIRY_TTL_MS
+    + MINIMUM_POST_EXPIRY_OBSERVATION_MS
+    + RESPONSE_MARGIN_MS;
 
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
@@ -112,7 +122,6 @@ const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 const OVERSIZED_PAYLOAD_BYTES = 70_000;
 const OVERSIZED_PAYLOAD_FILLER = 'x'.repeat(OVERSIZED_PAYLOAD_BYTES);
 const OVERSIZED_REJECTION_REASON = 'Payload exceeds';
-const EXPIRY_TTL_MS = 1_000;
 const FAULT_REMAINING = 100;
 const RESYNC_GAP_SEQ = 300;
 
@@ -432,7 +441,10 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand
         topicId: ALM_CONFORMANCE_TOPIC_ID,
         payload: send.payload,
         handleId: toSendHandleId(send),
-        timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, input.deadlineMs),
+        timeoutMs: toBudgetMs(
+            send.delivery.ttlMs ?? NON_EXPIRING_SEND_TIMEOUT_MS,
+            input.deadlineMs
+        ),
         ...(input.carrier === 'ws' ? {} : { roomRef: toRoomRef(input.group) }),
         ...send.delivery
     };
@@ -458,7 +470,7 @@ function toCancelCommand(cancel: AlmConformanceMessageStepInput): RallarBlackBox
         commandId: toCommandId(cancel, `cancel-${cancel.index}`),
         connection: cancel.input.senderConnection,
         handleId: toSendHandleId(cancel),
-        timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, cancel.input.deadlineMs)
+        timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, cancel.input.deadlineMs)
     };
 }
 
@@ -468,7 +480,7 @@ function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): RallarBlac
         commandId: toCommandId(receipts, `receipts-${receipts.index}`),
         connection: receipts.input.senderConnection,
         handleId: toSendHandleId(receipts),
-        timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, receipts.input.deadlineMs)
+        timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, receipts.input.deadlineMs)
     };
 }
 
@@ -505,9 +517,12 @@ function toSendAssertCommand(assertion: AlmConformanceAssertInput): RallarBlackB
     };
 }
 
-/** The window spans the sender's whole prologue, so a presence claim cannot race the sender's startup. */
+/**
+ * Positive observation starts before the sender's prologue, so it also owns the complete
+ * non-expiring send budget. Absence proof retains the requested evidence deadline.
+ */
 function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBoxTestCommand {
-    const deadlineMs = received.input.deadlineMs;
+    const timeoutMs = received.input.deadlineMs + (received.absent ? 0 : NON_EXPIRING_SEND_TIMEOUT_MS);
     return {
         kind: 'messages.received',
         commandId: toCommandId(received, `received-${received.index}`),
@@ -515,8 +530,8 @@ function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBo
         typeId: toScenarioTypeId(received),
         count: received.count,
         absent: received.absent,
-        windowMs: deadlineMs - RESPONSE_MARGIN_MS,
-        timeoutMs: deadlineMs
+        windowMs: timeoutMs - RESPONSE_MARGIN_MS,
+        timeoutMs
     };
 }
 

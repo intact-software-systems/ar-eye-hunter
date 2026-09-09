@@ -43,6 +43,14 @@ export namespace WebRtcRxStreamerService {
         mediaPolicy: QRtcMediaPolicy | undefined;
     }
 
+    export interface RoomAuthorityRefresh {
+        afterInboundAdmission(
+            message: ALMessage,
+            acceptance: ALInboundMessageRuntime.Acceptance
+        ): Promise<void>;
+        dispose(): void;
+    }
+
     export interface Input {
         readonly queueEngine?: InboxOutboxEngine;
         readonly multicast: WebRtcOverlayMulticastManager;
@@ -50,10 +58,7 @@ export namespace WebRtcRxStreamerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly nowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
-        readonly refreshRoomAuthorityIfNeeded?: (
-            message: ALMessage,
-            acceptance: ALInboundMessageRuntime.Acceptance
-        ) => Promise<void>;
+        readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
     }
 
     export interface Dependencies {
@@ -65,10 +70,7 @@ export namespace WebRtcRxStreamerService {
             readonly maxMissedPings: number;
             readonly pingFrequencyMsecs: number;
         };
-        readonly refreshRoomAuthorityIfNeeded: ((
-            message: ALMessage,
-            acceptance: ALInboundMessageRuntime.Acceptance
-        ) => Promise<void>) | undefined;
+        readonly roomAuthorityRefresh: RoomAuthorityRefresh | undefined;
     }
 }
 
@@ -161,7 +163,10 @@ export class WebRtcRxStreamerService {
                             return;
                         }
                         if (acceptance.right && message) {
-                            await this.dependencies.refreshRoomAuthorityIfNeeded?.(message, acceptance.right);
+                            await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
+                                message,
+                                acceptance.right
+                            );
                         }
                     }
                 }
@@ -223,6 +228,7 @@ export class WebRtcRxStreamerService {
 
     dispose(): void {
         this.disposed = true;
+        this.dependencies.roomAuthorityRefresh?.dispose();
         this.inboundRuntime.dispose();
         this.stopAllHeartbeats();
     }
@@ -469,6 +475,6 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
             maxMissedPings: defaultMaxMissedPings,
             pingFrequencyMsecs: defaultPingFrequencyMsecs
         },
-        refreshRoomAuthorityIfNeeded: input.refreshRoomAuthorityIfNeeded
+        roomAuthorityRefresh: input.roomAuthorityRefresh
     });
 }

@@ -235,10 +235,13 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('requests current room authority when durable admission waits for a newer snapshot', async () => {
-        const refreshRoomAuthorityIfNeeded = vi.fn(async () => undefined);
+        const roomAuthorityRefresh = {
+            afterInboundAdmission: vi.fn(async () => undefined),
+            dispose: vi.fn()
+        };
         const fixture = createRtcReceiveFixture(
             shared.createDefaultInMemoryALInboundRuntimeStores(),
-            refreshRoomAuthorityIfNeeded
+            roomAuthorityRefresh
         );
         const message = createMulticast({
             seq: 1,
@@ -248,10 +251,27 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
-        expect(refreshRoomAuthorityIfNeeded).toHaveBeenCalledWith(
+        expect(roomAuthorityRefresh.afterInboundAdmission).toHaveBeenCalledWith(
             message,
             { kind: 'not-admitted', reason: 'not-yet-in-sync' }
         );
+    });
+
+    it('disposes the owned room-authority refresh with the receive runtime', () => {
+        let disposed = false;
+        const fixture = createRtcReceiveFixture(
+            shared.createDefaultInMemoryALInboundRuntimeStores(),
+            {
+                afterInboundAdmission: async () => undefined,
+                dispose: () => {
+                    disposed = true;
+                }
+            }
+        );
+
+        fixture.service.dispose();
+
+        expect(disposed).toBe(true);
     });
 
     it.each([true, false])('routes exclusive delivery to a specific consumer when registered=%s, otherwise the catch-all', async (specific) => {
@@ -354,7 +374,7 @@ interface RtcReceiveFixture {
 
 function createRtcReceiveFixture(
     stores = shared.createDefaultInMemoryALInboundRuntimeStores(),
-    refreshRoomAuthorityIfNeeded?: shared.WebRtcRxStreamerService.Input['refreshRoomAuthorityIfNeeded']
+    roomAuthorityRefresh?: shared.WebRtcRxStreamerService.Input['roomAuthorityRefresh']
 ): RtcReceiveFixture {
     const transport = createRtcReceiveTransport();
     const multicast = createRtcRoomMulticast(transport.connections);
@@ -362,7 +382,7 @@ function createRtcReceiveFixture(
         multicast,
         sessionId: 'self',
         inboundStores: stores,
-        refreshRoomAuthorityIfNeeded
+        roomAuthorityRefresh
     });
     for (const peer of transport.peers.values()) {
         service.addPeer(peer);

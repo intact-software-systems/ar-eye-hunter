@@ -7,14 +7,21 @@ export namespace RtcGroupSnapshotRefresh {
     export interface Input {
         readonly refreshGroupSnapshot: (
             roomRef: GroupRef,
-            minSnapshotVersion: number
+            minSnapshotVersion: number,
+            signal: AbortSignal
         ) => Promise<void>;
     }
 }
 
+interface ActiveGroupSnapshotRefresh {
+    readonly controller: AbortController;
+    readonly task: Promise<void>;
+}
+
 export class RtcGroupSnapshotRefresh {
-    readonly #activeByGroup = new Map<string, Promise<void>>();
+    readonly #activeByGroup = new Map<string, ActiveGroupSnapshotRefresh>();
     readonly #input: RtcGroupSnapshotRefresh.Input;
+    #disposed = false;
 
     constructor(input: RtcGroupSnapshotRefresh.Input) {
         this.#input = input;
@@ -24,7 +31,10 @@ export class RtcGroupSnapshotRefresh {
         message: ALMessage,
         acceptance: ALInboundMessageRuntime.Acceptance
     ): Promise<void> {
-        if (acceptance.kind !== 'not-admitted' || acceptance.reason !== 'not-yet-in-sync') {
+        if (
+            this.#disposed || acceptance.kind !== 'not-admitted' ||
+            acceptance.reason !== 'not-yet-in-sync'
+        ) {
             return;
         }
         const targets = message.targets;
@@ -35,21 +45,31 @@ export class RtcGroupSnapshotRefresh {
         const groupKey = toScopedGroupKey(roomRef);
         const active = this.#activeByGroup.get(groupKey);
         if (active !== undefined) {
-            await active;
+            await active.task;
             return;
         }
 
+        const controller = new AbortController();
         const task = this.#input.refreshGroupSnapshot(
             roomRef,
-            targets.minSnapshotVersion ?? 0
+            targets.minSnapshotVersion ?? 0,
+            controller.signal
         ).catch(() => {
             // The point-read diagnostic and retained QueueBox retry own recovery evidence.
         }).finally(() => {
-            if (this.#activeByGroup.get(groupKey) === task) {
+            if (this.#activeByGroup.get(groupKey)?.task === task) {
                 this.#activeByGroup.delete(groupKey);
             }
         });
-        this.#activeByGroup.set(groupKey, task);
+        this.#activeByGroup.set(groupKey, { controller, task });
         await task;
+    }
+
+    dispose(): void {
+        this.#disposed = true;
+        for (const active of this.#activeByGroup.values()) {
+            active.controller.abort();
+        }
+        this.#activeByGroup.clear();
     }
 }

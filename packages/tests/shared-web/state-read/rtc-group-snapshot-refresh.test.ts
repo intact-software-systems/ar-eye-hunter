@@ -22,7 +22,11 @@ describe('RTC group-snapshot refresh', () => {
             { kind: 'not-admitted', reason: 'not-yet-in-sync' }
         );
 
-        expect(refreshGroupSnapshot).toHaveBeenCalledWith(roomRef, 6);
+        expect(refreshGroupSnapshot).toHaveBeenCalledWith(
+            roomRef,
+            6,
+            expect.any(AbortSignal)
+        );
     });
 
     it('does not read authority after successful admission', async () => {
@@ -65,6 +69,37 @@ describe('RTC group-snapshot refresh', () => {
         await refresh.afterInboundAdmission(message, acceptance);
 
         expect(refreshGroupSnapshot).toHaveBeenCalledTimes(2);
+    });
+
+    it('aborts an active refresh and ignores later admissions after disposal', async () => {
+        const response = Promise.withResolvers<void>();
+        let refreshSignal: AbortSignal | undefined;
+        let authorityAdopted = false;
+        const requestedSnapshotVersions: number[] = [];
+        const refreshGroupSnapshot = async (
+            _roomRef: typeof roomRef,
+            minSnapshotVersion: number,
+            signal: AbortSignal
+        ) => {
+            requestedSnapshotVersions.push(minSnapshotVersion);
+            refreshSignal = signal;
+            await response.promise;
+            signal.throwIfAborted();
+            authorityAdopted = true;
+        };
+        const refresh = new RtcGroupSnapshotRefresh({ refreshGroupSnapshot });
+        const acceptance = { kind: 'not-admitted' as const, reason: 'not-yet-in-sync' };
+
+        const active = refresh.afterInboundAdmission(roomMessage(6), acceptance);
+        await vi.waitFor(() => expect(refreshSignal).toBeDefined());
+        refresh.dispose();
+        response.resolve();
+        await active;
+        await refresh.afterInboundAdmission(roomMessage(7), acceptance);
+
+        expect(refreshSignal?.aborted).toBe(true);
+        expect(authorityAdopted).toBe(false);
+        expect(requestedSnapshotVersions).toEqual([6]);
     });
 });
 

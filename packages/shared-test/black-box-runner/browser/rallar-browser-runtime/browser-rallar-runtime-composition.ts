@@ -271,7 +271,7 @@ export async function hasBlackBoxBrowserMessageAdmission(
     const { admissionStore } = transport === 'rtc'
         ? resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId)
         : resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
-    return await admissionStore.readSentMessage(messageId) !== undefined;
+    return await admissionStore.hasSentMessageAdmission(messageId);
 }
 
 export async function refreshBlackBoxBrowserRoomState(

@@ -66,7 +66,7 @@ export interface InitialiseRtcRxStreamerInput {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
-    readonly refreshRoomAuthorityIfNeeded?: WebRtcRxStreamerService.Input['refreshRoomAuthorityIfNeeded'];
+    readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
 }
 
 export function initialiseRtcRxStreamer(
@@ -80,7 +80,7 @@ export function initialiseRtcRxStreamer(
         inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
         nowEpochMs: Date.now,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
-        refreshRoomAuthorityIfNeeded: input.refreshRoomAuthorityIfNeeded
+        roomAuthorityRefresh: input.roomAuthorityRefresh
     });
 }
 

@@ -647,7 +647,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     }
                 })),
                 send: vi.fn(),
-                refreshRoom: vi.fn(),
+                refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
                 health
             }
@@ -678,8 +678,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         ]));
     });
 
-    it('does not refresh room state when rtc.connect is already ready', async () => {
-        const refreshRoom = vi.fn();
+    it('refreshes room authority before accepting an already-ready RTC peer', async () => {
+        const refreshRoom = vi.fn(async () => undefined);
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
                 ...createBrowserRallarAlmMethodsTestDouble(),
@@ -709,8 +709,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         expect(result.ok).toBe(true);
         expect(result.value).toMatchObject({
             readiness: {
-                roomRefreshAttempts: 0,
-                roomRefreshSuccesses: 0,
+                roomRefreshAttempts: 1,
+                roomRefreshSuccesses: 1,
                 roomRefreshRetryableFailures: 0
             }
         });
@@ -936,6 +936,62 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         }
     });
 
+    it('does not trust already-ready RTC health after a transient room refresh failure', async () => {
+        vi.useFakeTimers();
+        try {
+            const refreshError = new Error('transient point-read failure');
+            const refreshRoom = vi.fn()
+                .mockRejectedValueOnce(refreshError)
+                .mockResolvedValueOnce(undefined);
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
+                    connect: vi.fn(async () => ({ connected: true })),
+                    send: vi.fn(),
+                    close: vi.fn(),
+                    health: vi.fn(async () => ({
+                        rtcStatus: {
+                            readyPeerIds: ['peer-a']
+                        }
+                    })),
+                    refreshRoom
+                }
+            });
+
+            const pending = runtime.execute({
+                kind: 'rtc.connect',
+                commandId: 'connect-after-stale-ready-health',
+                connection: 'rtc',
+                readiness: {
+                    minReadyPeers: 1,
+                    timeoutMs: 1_500,
+                    intervalMs: 100
+                }
+            });
+            await vi.advanceTimersByTimeAsync(0);
+
+            await vi.advanceTimersByTimeAsync(1_000);
+            const result = await pending;
+
+            expect(result.ok).toBe(true);
+            expect(result.value).toMatchObject({
+                readiness: {
+                    readyPeerIds: ['peer-a'],
+                    roomRefreshAttempts: 2,
+                    roomRefreshSuccesses: 1,
+                    roomRefreshRetryableFailures: 1,
+                    lastRefreshError: {
+                        name: 'Error',
+                        message: refreshError.message
+                    }
+                }
+            });
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
     it.each([
         [
             'HTTP authorization',
@@ -1029,7 +1085,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     }
                 })),
                 send: vi.fn(),
-                refreshRoom: vi.fn(),
+                refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
                 health
             }
@@ -1068,7 +1124,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     }
                 })),
                 send: vi.fn(),
-                refreshRoom: vi.fn(),
+                refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
                 health: vi.fn(async () => ({
                     rtcStatus: {
@@ -1116,7 +1172,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     results: [],
                     health: []
                 })),
-                refreshRoom: vi.fn(),
+                refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
                 health: vi.fn()
             }
@@ -1164,7 +1220,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     },
                     health: []
                 })),
-                refreshRoom: vi.fn(),
+                refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
                 health: vi.fn()
             }
