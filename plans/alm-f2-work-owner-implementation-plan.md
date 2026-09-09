@@ -660,7 +660,7 @@ git commit -m "feat(alm): add the generic ALM work handler"
   - Effect payloads `dispatch-local` and `forward-message` carry `readonly message: ALInboundMessageReference` instead of `entry`/`msg`; `send-control` keeps its small control envelope; buffered snapshots store the reference plus the plan.
   - `ALInboundAdmittedDelivery.deliver` reads the message through the store and builds the dispatch entry with the runtime's existing `toInboxEntry` port; a missing owner row is `ALAdmissionCorruptionError`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/inbound/al-inbound-canonical-message.test.ts` using
 `createDefaultALInboundRuntimeResources` as `al-inbound-effect-worker-lifecycle.test.ts` does:
@@ -690,12 +690,12 @@ it('stores one inbound message owner and references it from every effect and buf
 
 Write `readAllWorkRows` against the in-memory queue's `readWorkPage` for type `toALInboundWorkType(namespace)`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/inbound/al-inbound-canonical-message.test.ts`
 Expected: FAIL, `readInboundMessage` is not a function.
 
-- [ ] **Step 3: Implement the owner row, the references, and the key layout**
+- [x] **Step 3: Implement the owner row, the references, and the key layout**
 
 In `al-inbound-admission-store.ts` add the mutation kind to `ALInboundAdmissionMutation`, the
 `applyMutation` branch (`transaction.set(key, value, expireAtTimestamp)`), the decoder
@@ -725,13 +725,13 @@ and `plan` instead of `msg`.
 Change `toALInboundWorkKey` to the layout above and run
 `rg -n "AL_INBOUND/" packages` to update any literal key-string expectation.
 
-- [ ] **Step 4: Run the inbound suites**
+- [x] **Step 4: Run the inbound suites**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/al-durable-runtime.test.ts packages/tests/shared-web/al-runtime`
 Expected: PASS after rewriting assertions that read `payload.msg` or `payload.entry` to read the
 reference and the owner row.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/alm/inbound packages/tests
