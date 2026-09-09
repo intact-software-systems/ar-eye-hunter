@@ -258,21 +258,21 @@ describe('ALWorkHandler', () => {
         claimCallCount = 0;
 
         // Seed the claim that a mid-batch commit must reach only through the follow-up batch: wait
-        // for this batch's own claim() call to run and capture it before 'second' ever exists.
+        // for the claim() call of this batch to run and capture it before the second entry exists.
         pending.push(toFakeALWorkClaim('first'));
         handler.committed();
         expect(handler.hasActiveBatch()).toBe(true);
         await firstClaimEntered;
 
-        // A second commit lands, and its work becomes claimable, while 'first' is still in flight.
+        // A second commit lands, and its work becomes claimable, while the first entry is still in flight.
         pending.push(toFakeALWorkClaim('second'));
         handler.committed();
 
         releaseFirst?.();
         await expect.poll(() => released).toEqual(['first:completed', 'second:completed']);
 
-        // Two distinct claim() calls after ready() prove 'second' arrived through the follow-up
-        // batch that runBatch()'s .finally starts, not through the first batch's own claim() call.
+        // Two distinct claim() calls after ready() prove the second entry arrived through the follow-up
+        // batch that the finally block of runBatch() starts, not through the claim() call of the first batch.
         expect(claimCallCount).toBe(2);
         handler.dispose();
     });
