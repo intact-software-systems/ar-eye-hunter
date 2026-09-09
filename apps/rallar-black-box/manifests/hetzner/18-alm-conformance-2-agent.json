@@ -133,11 +133,28 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-ws-bounded-rejection-sender-observe-1",
+            "commandId": "alm-ws-bounded-rejection-sender-observe-rejected-1",
             "connection": "almConformanceSender",
             "handleId": "alm-ws-bounded-rejection-send-1",
             "state": [
               "rejected"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.cancel",
+            "commandId": "alm-ws-bounded-rejection-sender-cancel-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-bounded-rejection-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-bounded-rejection-sender-observe-cancelled-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-bounded-rejection-send-1",
+            "state": [
+              "cancelled"
             ],
             "timeoutMs": 3000
           },
@@ -254,7 +271,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-ws-deadline-expiry-sender-observe-1",
+            "commandId": "alm-ws-deadline-expiry-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-ws-deadline-expiry-send-1",
             "state": [
@@ -362,13 +379,34 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-ws-delivery-baseline-sender-observe-1",
+            "commandId": "alm-ws-delivery-baseline-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-baseline-send-1",
             "state": [
               "accepted"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-ws-delivery-baseline-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-delivery-baseline-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-delivery-baseline-sender-storage-counters",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-baseline-sender-assert-storage-counters-total",
+            "source": "resultCache.alm-ws-delivery-baseline-sender-storage-counters.value.total",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -497,11 +535,28 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-bounded-rejection-sender-observe-1",
+            "commandId": "alm-rtc-bounded-rejection-sender-observe-rejected-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-bounded-rejection-send-1",
             "state": [
               "rejected"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.cancel",
+            "commandId": "alm-rtc-bounded-rejection-sender-cancel-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-bounded-rejection-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-bounded-rejection-sender-observe-cancelled-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-bounded-rejection-send-1",
+            "state": [
+              "cancelled"
             ],
             "timeoutMs": 3000
           },
@@ -628,7 +683,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-deadline-expiry-sender-observe-1",
+            "commandId": "alm-rtc-deadline-expiry-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-deadline-expiry-send-1",
             "state": [
@@ -746,13 +801,34 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-delivery-baseline-sender-observe-1",
+            "commandId": "alm-rtc-delivery-baseline-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-baseline-send-1",
             "state": [
               "accepted"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-delivery-baseline-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-delivery-baseline-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-delivery-baseline-sender-storage-counters",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-baseline-sender-assert-storage-counters-total",
+            "source": "resultCache.alm-rtc-delivery-baseline-sender-storage-counters.value.total",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -868,7 +944,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-ordering-resync-sender-observe-1",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ordering-resync-send-1",
             "state": [
@@ -900,7 +976,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-ordering-resync-sender-observe-2",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-accepted-2",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ordering-resync-send-2",
             "state": [
@@ -1035,11 +1111,28 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-observe-1",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-observe-rejected-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-bounded-rejection-send-1",
             "state": [
               "rejected"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.cancel",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-cancel-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-bounded-rejection-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-observe-cancelled-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-bounded-rejection-send-1",
+            "state": [
+              "cancelled"
             ],
             "timeoutMs": 3000
           },
@@ -1178,7 +1271,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-observe-1",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-deadline-expiry-send-1",
             "state": [
@@ -1296,13 +1389,34 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-observe-1",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-baseline-send-1",
             "state": [
               "accepted"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-delivery-baseline-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-storage-counters",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-assert-storage-counters-total",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-baseline-sender-storage-counters.value.total",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -1418,7 +1532,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-1",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-1",
             "state": [
@@ -1450,7 +1564,7 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-2",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-accepted-2",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-2",
             "state": [

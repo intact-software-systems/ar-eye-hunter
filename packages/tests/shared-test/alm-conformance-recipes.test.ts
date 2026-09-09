@@ -183,16 +183,78 @@ describe('alm-conformance recipe family', () => {
         expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_500 })).not.toThrow();
     });
 
-    it('tags bounded-rejection and delivery-baseline as smoke', () => {
-        const scenarios = createAlmConformanceRecipes(conformanceInput('ws'));
-
+    it('tags every ws scenario as smoke and keeps ordering-resync full-only', () => {
         expect(
-            scenarios.filter((scenario) => scenario.tags.includes('smoke')).map((scenario) => scenario.scenarioId)
-        ).toEqual(['bounded-rejection', 'delivery-baseline']);
-        expect(scenarios.map((scenario) => scenario.tags)).toEqual([
+            createAlmConformanceRecipes(conformanceInput('ws'))
+                .filter((scenario) => scenario.tags.includes('smoke'))
+                .map((scenario) => scenario.scenarioId)
+        ).toEqual(['bounded-rejection', 'deadline-expiry', 'delivery-baseline']);
+        expect(
+            createAlmConformanceRecipes(conformanceInput('rtc')).map((scenario) => scenario.tags)
+        ).toEqual([
             ['smoke', 'full'],
-            ['full'],
-            ['smoke', 'full']
+            ['smoke', 'full'],
+            ['smoke', 'full'],
+            ['full']
+        ]);
+    });
+
+    it('gives every ALM command kind a live cell in the family', () => {
+        const kinds = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))
+                .flatMap((recipe) => recipe.commands.map((command) => command.kind))
+        );
+
+        expect(new Set(kinds)).toEqual(
+            new Set([
+                'http.request',
+                'rtc.connect',
+                'messages.send',
+                'messages.observe',
+                'messages.cancel',
+                'messages.receipts',
+                'messages.received',
+                'fault.inject',
+                'storage.counters',
+                'assert',
+                'stats'
+            ])
+        );
+    });
+
+    it('asserts the storage counters the delivery-baseline sender reads', () => {
+        const baseline = createAlmConformanceRecipes(conformanceInput('ws'))
+            .find((scenario) => scenario.scenarioId === 'delivery-baseline');
+        const commands = baseline?.sender.commands ?? [];
+
+        expect(commands.map((command) => command.commandId)).toEqual([
+            'alm-ws-delivery-baseline-sender-ensure-group',
+            'alm-ws-delivery-baseline-sender-ensure-member',
+            'alm-ws-delivery-baseline-sender-connect',
+            'alm-ws-delivery-baseline-sender-send-1',
+            'alm-ws-delivery-baseline-sender-observe-accepted-1',
+            'alm-ws-delivery-baseline-sender-receipts-1',
+            'alm-ws-delivery-baseline-sender-storage-counters',
+            'alm-ws-delivery-baseline-sender-assert-storage-counters-total',
+            'alm-ws-delivery-baseline-sender-stats'
+        ]);
+        expect(commands.at(-2)).toMatchObject({
+            kind: 'assert',
+            source: 'resultCache.alm-ws-delivery-baseline-sender-storage-counters.value.total',
+            operator: 'gt',
+            expected: 0
+        });
+    });
+
+    it('cancels the rejected bounded-rejection handle and observes the cancelled state', () => {
+        const rejection = createAlmConformanceRecipes(conformanceInput('ws'))
+            .find((scenario) => scenario.scenarioId === 'bounded-rejection');
+
+        expect((rejection?.sender.commands ?? []).slice(-4).map((command) => command.commandId)).toEqual([
+            'alm-ws-bounded-rejection-sender-observe-rejected-1',
+            'alm-ws-bounded-rejection-sender-cancel-1',
+            'alm-ws-bounded-rejection-sender-observe-cancelled-1',
+            'alm-ws-bounded-rejection-sender-stats'
         ]);
     });
 });

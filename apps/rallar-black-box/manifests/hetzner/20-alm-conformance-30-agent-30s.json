@@ -725,15 +725,7 @@
     "loadEstimate": {
       "streamFrames": 600,
       "logicalFanoutMessages": 17400
-    },
-    "almMetrics": [
-      "receiptLatencyMs",
-      "alOwnedIndexedDbOperations",
-      "retainedRows",
-      "retries",
-      "repairs",
-      "terminalCounts"
-    ]
+    }
   },
   "description": "Layers an ALM storage-counters read onto a principal RTC messages multicast tree run for ALM delivery-metric evidence at 30 agents."
 }

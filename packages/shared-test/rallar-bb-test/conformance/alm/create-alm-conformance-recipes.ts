@@ -59,7 +59,7 @@ interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
 }
 
 interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
-    readonly state: 'accepted' | 'rejected';
+    readonly state: 'accepted' | 'rejected' | 'cancelled';
 }
 
 interface AlmConformanceAssertInput extends AlmConformanceMessageStepInput {
@@ -99,6 +99,7 @@ const SEND_TIMEOUT_MS = 5_000;
 const FAULT_TIMEOUT_MS = 3_000;
 const ASSERT_TIMEOUT_MS = 2_000;
 const STATS_TIMEOUT_MS = 3_000;
+const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 const MINIMUM_RECEIVE_WINDOW_MS = 2_500;
@@ -124,7 +125,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     },
     {
         scenarioId: 'deadline-expiry',
-        tags: FULL_TAGS,
+        tags: SMOKE_TAGS,
         carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeadlineExpirySenderCommands,
         toReceiverCommands: toDeadlineExpiryReceiverCommands
@@ -215,7 +216,9 @@ function toBoundedRejectionSenderCommands(
             operator: 'contains',
             expected: OVERSIZED_REJECTION_REASON
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'rejected' })
+        toObserveCommand({ ...sender, index: 1, state: 'rejected' }),
+        toCancelCommand({ ...sender, index: 1 }),
+        toObserveCommand({ ...sender, index: 1, state: 'cancelled' })
     ];
 }
 
@@ -255,7 +258,10 @@ function toDeliveryBaselineSenderCommands(
             payload: { marker: sender.scenarioId },
             delivery: {}
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' })
+        toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
+        toReceiptsCommand({ ...sender, index: 1 }),
+        toStorageCountersCommand(sender),
+        toStorageCountersAssertCommand(sender)
     ];
 }
 
@@ -434,7 +440,7 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand
 function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestCommand {
     return {
         kind: 'messages.observe',
-        commandId: toCommandId(observe, `observe-${observe.index}`),
+        commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),
         connection: observe.input.senderConnection,
         handleId: toSendHandleId(observe),
         state: [observe.state],
@@ -442,6 +448,47 @@ function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTe
             OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS,
             observe.input.deadlineMs
         )
+    };
+}
+
+function toCancelCommand(cancel: AlmConformanceMessageStepInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'messages.cancel',
+        commandId: toCommandId(cancel, `cancel-${cancel.index}`),
+        connection: cancel.input.senderConnection,
+        handleId: toSendHandleId(cancel),
+        timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, cancel.input.deadlineMs)
+    };
+}
+
+function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'messages.receipts',
+        commandId: toCommandId(receipts, `receipts-${receipts.index}`),
+        connection: receipts.input.senderConnection,
+        handleId: toSendHandleId(receipts),
+        timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, receipts.input.deadlineMs)
+    };
+}
+
+function toStorageCountersCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'storage.counters',
+        commandId: toCommandId(step, 'storage-counters'),
+        reset: false,
+        timeoutMs: toBudgetMs(STORAGE_COUNTERS_TIMEOUT_MS, step.input.deadlineMs)
+    };
+}
+
+/** The spec's own acceptance criterion: an admitted ALM send leaves AL-owned IndexedDB work behind. */
+function toStorageCountersAssertCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'assert',
+        commandId: toCommandId(step, 'assert-storage-counters-total'),
+        source: `resultCache.${toCommandId(step, 'storage-counters')}.value.total`,
+        operator: 'gt',
+        expected: 0,
+        timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
     };
 }
 

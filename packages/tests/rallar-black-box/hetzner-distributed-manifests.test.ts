@@ -109,7 +109,6 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
-            'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
         ]);
         expect(extendedPaths).toEqual(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER);
@@ -131,6 +130,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json'
@@ -998,10 +998,12 @@ describe('Hetzner distributed manifest catalog', () => {
             .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));
 
         expect(entry).toBeDefined();
-        expect(entry?.mainline).toBe(true);
+        // Nothing has run this manifest on Hetzner yet, so it stays out of the required set.
+        expect(entry?.mainline).toBe(false);
         expect(entry?.diagnostic).toBe(false);
         expect(entry?.agentCount).toBe(2);
-        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).toContain(entry?.filePath);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(entry?.filePath);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
         expect(entry?.manifest.targetPolicy).toMatchObject({
             mode: 'role-map',
             expectedParticipantCount: 2,
@@ -1035,16 +1037,7 @@ describe('Hetzner distributed manifest catalog', () => {
             expect(entry?.mainline).toBe(false);
             expect(entry?.agentCount).toBe(agentCount);
             expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
-            expect(entry?.manifest.metadata).toMatchObject({
-                almMetrics: [
-                    'receiptLatencyMs',
-                    'alOwnedIndexedDbOperations',
-                    'retainedRows',
-                    'retries',
-                    'repairs',
-                    'terminalCounts'
-                ]
-            });
+            expect(entry?.manifest.metadata).not.toHaveProperty('almMetrics');
             expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
             expect(entry?.manifest.recipes[0]?.recipe?.commands.at(-1)).toMatchObject({
                 kind: 'storage.counters',

@@ -131,10 +131,6 @@ describe('risk-scoped supported Hetzner workflow', () => {
                         manifest_path: 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
                     },
                     {
-                        manifest_id: '18-alm-conformance-2-agent',
-                        manifest_path: 'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json'
-                    },
-                    {
                         manifest_id: '05a-rtc-realtime-stability-2-agent-5s',
                         manifest_path: 'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
                     }

@@ -44,7 +44,6 @@ export const HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
-    'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
 ] as const;
 
@@ -66,6 +65,7 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
     'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
     'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
     'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json'
@@ -115,14 +115,6 @@ const ALM_CONFORMANCE_DEADLINE_MS = 15_000;
 const ALM_CONFORMANCE_SENDER_CONNECTION = 'almConformanceSender';
 const ALM_CONFORMANCE_RECEIVER_CONNECTION = 'almConformanceReceiver';
 const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
-const ALM_CONFORMANCE_METRICS = [
-    'receiptLatencyMs',
-    'alOwnedIndexedDbOperations',
-    'retainedRows',
-    'retries',
-    'repairs',
-    'terminalCounts'
-] as const;
 
 export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistributedManifestEntry[] {
     return [
@@ -175,9 +167,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: true,
             mainline: true
         }),
-        buildAlmConformance2AgentEntry(),
         buildManifestEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[5],
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[4],
             title: 'RTC realtime stability 2-agent 5s',
             description: 'Lower-risk 5 Hz RTC realtime stream for green stability and first-pass pacing evidence.',
             distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-5s',
@@ -442,6 +433,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: true,
             groupAssertions: createHetznerGroupAssertions(2)
         }),
+        buildAlmConformance2AgentEntry(),
         ...buildAlmConformanceExtendedEntries(),
         buildManifestEntry({
             filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
@@ -825,7 +817,7 @@ function buildAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
     const scenarios = almConformanceScenariosForAllCarriers();
 
     return buildManifestEntry({
-        filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[4],
+        filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (bounded rejection, deadline expiry, delivery ' +
             'baseline, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers.',
@@ -835,9 +827,8 @@ function buildAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
             toAlmConformanceCombinedRecipe(scenarios, 'receiver')
         ],
         agentCount: 2,
-        profiles: ['alm', 'conformance', '2-agent', 'github-free-smoke'],
+        profiles: ['alm', 'conformance', '2-agent', 'github-free-smoke', 'extended'],
         live: true,
-        mainline: true,
         targetAgentIds: ['controller-01', 'controller-02'],
         targetPolicyMode: 'role-map',
         rolePattern: 'sender-receiver',
@@ -885,7 +876,7 @@ function almConformanceScenarioIds(
 function buildAlmConformanceExtendedEntries(): readonly HetznerDistributedManifestEntry[] {
     return ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS.map((participantCount, index) =>
         buildAlmConformanceExtendedEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17 + index]!,
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[18 + index]!,
             participantCount
         })
     );
@@ -942,26 +933,23 @@ function almConformanceExtendedProfiles(participantCount: number): readonly stri
 
 function almConformanceExtendedMetadata(
     participantCount: number
-): ReturnType<typeof multicastManifestMetadata> & Readonly<{ almMetrics: typeof ALM_CONFORMANCE_METRICS; }> {
-    return {
-        ...multicastManifestMetadata({
-            topologyProfile: 'tree',
-            treeMeshMinSize: participantCount + 1,
-            participantCount,
-            senderCount: 1,
-            durationSeconds: 30,
-            rateHz: 20,
-            minReceiveRatio: 0.95,
-            receiverExpectedFrames: 600,
-            recommendedTerminalTimeoutSeconds: 330
-        }),
-        almMetrics: ALM_CONFORMANCE_METRICS
-    };
+): ReturnType<typeof multicastManifestMetadata> {
+    return multicastManifestMetadata({
+        topologyProfile: 'tree',
+        treeMeshMinSize: participantCount + 1,
+        participantCount,
+        senderCount: 1,
+        durationSeconds: 30,
+        rateHz: 20,
+        minReceiveRatio: 0.95,
+        receiverExpectedFrames: 600,
+        recommendedTerminalTimeoutSeconds: 330
+    });
 }
 
 function withStorageCountersCommand(
     recipe: RallarBlackBoxTestRecipe,
-    agentId: string
+    role: 'sender' | 'receiver'
 ): RallarBlackBoxTestRecipe {
     return {
         ...recipe,
@@ -969,7 +957,7 @@ function withStorageCountersCommand(
             ...recipe.commands,
             {
                 kind: 'storage.counters',
-                commandId: `alm-storage-counters-${agentId}`,
+                commandId: `alm-storage-counters-${role}`,
                 reset: false,
                 timeoutMs: 5_000
             }
