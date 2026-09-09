@@ -43,9 +43,15 @@ function readResultValue(
 }
 
 describe('group formation lifecycle driver', () => {
-    it('accepts a newer active publication after the lifecycle-stage receipt', async () => {
+    it('waits for exact current membership and accepts a newer active publication', async () => {
         const commands: LiveRtcControlClient.ExecuteInput[] = [];
         const topologyStates: Array<'removed' | 'active'> = ['removed', 'active'];
+        const activeSessionIds = [
+            ['stale-session', 'session-a'],
+            ['session-a'],
+            ['session-a', 'session-b'],
+            ['session-a', 'session-b', 'session-c']
+        ];
         const control: LiveRtcControlPort = {
             executeOk: async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
@@ -68,7 +74,12 @@ describe('group formation lifecycle driver', () => {
             executeResult: async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
                 if (input.command.kind === 'http.request' && input.command.request.path?.endsWith('/groups/group')) {
-                    return successfulResult(input, { body: { causalRevision: { presenceRevision: 3 } } });
+                    return successfulResult(input, {
+                        body: {
+                            causalRevision: { presenceRevision: 40 },
+                            activeSessions: (activeSessionIds.shift() ?? []).map((sessionId) => ({ sessionId }))
+                        }
+                    });
                 }
                 return successfulResult(input, {
                     body: {
@@ -116,6 +127,10 @@ describe('group formation lifecycle driver', () => {
             readinessScope: 'owner'
         });
 
+        const presenceReads = commands.filter((command) => command.commandId.startsWith('group-presence-'));
+        const connectBIndex = commands.findIndex((command) => command.agentId === 'agent-b' && command.command.kind === 'rtc.connect');
+        expect(presenceReads).toHaveLength(4);
+        expect(commands.indexOf(presenceReads[1])).toBeLessThan(connectBIndex);
         expect(commands.find((command) => lifecycleOperation(command) === 'connect')).toMatchObject({
             command: {
                 request: {
