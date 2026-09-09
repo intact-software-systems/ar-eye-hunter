@@ -21,6 +21,12 @@ export interface ALWorkHandlerDependencies {
     readonly ownsQueueEngine: boolean;
     readonly clock: { nowMs(): number; };
     readonly pageSize: number;
+    /**
+     * Decides when the engine should run a batch. A non-negative safe integer (epoch ms) at or before
+     * `clock.nowMs()` starts one; a later value only reschedules; undefined means no work. Owners whose
+     * eligibility rules defer rows pass their own probe so deferred rows never advertise as due.
+     */
+    readonly readNextReadyAtMs: (port: ALWorkQueuePort) => Promise<number | undefined>;
     /** Reads eligible work; the port owns reservation. */
     readonly selectReady: (
         port: ALWorkQueuePort,
@@ -105,7 +111,7 @@ export class ALWorkHandler {
         if (this.shutdown.signal.aborted || this.batch !== undefined) {
             return false;
         }
-        const next = await this.dependencies.port.peekNextReadyAt();
+        const next = await this.dependencies.readNextReadyAtMs(this.dependencies.port);
         this.dependencies.queueEngine.wakeAt(this.dependencies.workerId, next);
         return next !== undefined && next <= this.dependencies.clock.nowMs();
     }

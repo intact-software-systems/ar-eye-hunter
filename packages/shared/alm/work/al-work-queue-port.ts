@@ -44,6 +44,7 @@ export interface ALWorkQueuePort {
     claim(input: ClaimALWorkInput): Promise<readonly ALWorkClaim[]>;
     finalizeExhausted(maxCount: number): Promise<readonly ALWorkClaim[]>;
     release(claim: ALWorkClaim, outcome: ALWorkOutcome): Promise<void>;
+    /** Retained work is due now; retried work is due at its earliest `nextTs`. Undefined means no work. */
     peekNextReadyAt(): Promise<number | undefined>;
     readEntry(key: Key): Promise<ResourceEntry | undefined>;
 }
@@ -90,7 +91,7 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
             return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, nowMs() + leaseMs));
         },
         release: (claim, outcome) => releaseALWorkClaim(queue, claim, toReleaseDisposition(outcome, claim, input)),
-        peekNextReadyAt: () => readALWorkNextReadyAtMs(queue, workTypes),
+        peekNextReadyAt: () => readALWorkNextReadyAtMs(queue, workTypes, nowMs()),
         readEntry: (key) => queue.getItem(key)
     };
 }
@@ -178,20 +179,34 @@ async function readMergedALWorkPage(
     return { entries, nextCursor };
 }
 
+/**
+ * Retained work carries no schedule, so a single new row of any type makes the answer `readyNowMs`;
+ * retried work answers with its own `nextTs`. The earliest of the two is what the handler waits for.
+ */
 async function readALWorkNextReadyAtMs(
     queue: QueueBoxResourceEntryRepository,
-    workTypes: ReadonlySet<string>
+    workTypes: ReadonlySet<string>,
+    readyNowMs: number
 ): Promise<number | undefined> {
     const due: number[] = [];
     for (const typeId of workTypes) {
-        const page = await queue.readWorkPage({
+        const retained = await queue.readWorkPage({
+            typeId,
+            status: EntityStatus.NEW,
+            maxToRead: 1,
+            cursor: null
+        });
+        if (retained.entries.length > 0) {
+            due.push(readyNowMs);
+        }
+        const retried = await queue.readWorkPage({
             typeId,
             status: EntityStatus.RETRY,
             maxToRead: 16,
             cursor: null
         });
         due.push(
-            ...page.entries
+            ...retried.entries
                 .map((entry) => entry.dequeueAudit.nextTs?.epochMilliseconds)
                 .filter((value): value is number => value !== undefined)
         );

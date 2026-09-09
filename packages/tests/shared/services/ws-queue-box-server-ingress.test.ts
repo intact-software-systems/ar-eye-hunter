@@ -20,14 +20,13 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
-import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
 
 interface ServerIngressFixture {
     readonly service: WsQueueBoxServerService;
@@ -130,7 +129,7 @@ describe('WS server bounded and authorized admission', () => {
 
         await fixture.service.acceptIncomingMessage(message, 'session-1');
 
-        await waitForSettledIngress(fixture.admission.workQueue);
+        await waitForSettledALInboundWork(fixture.admission.workQueue);
         expect(delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
         expect(fixture.delivered).toEqual(offsetMs < 0 ? [message] : []);
     });
@@ -603,14 +602,4 @@ function roomMessage(): ALMessage {
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room-1' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
     };
-}
-
-/** Delivery no longer runs inside admission: wait until every retained row reaches a terminal status. */
-async function waitForSettledIngress(workQueue: QueueBoxResourceEntryRepository): Promise<void> {
-    await expect.poll(async () => {
-        const entries = await Promise.all(
-            (await workQueue.getAllKeys()).map((key) => workQueue.getItem(key))
-        );
-        return entries.every((entry) => entry === undefined || !NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
-    }).toBe(true);
 }

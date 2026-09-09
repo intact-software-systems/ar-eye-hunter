@@ -125,12 +125,13 @@ export class ALInboundMessageRuntime {
         });
         this.work = new ALWorkHandler({
             workerId: dependencies.effectWorkerId,
-            // The rotation, not the queue port, answers readiness: it observes new and reserved work too.
-            port: { ...workPort, peekNextReadyAt: () => this.workSelector.readNextReadyAtMs(workPort) },
+            port: workPort,
             queueEngine: dependencies.queueEngine,
             ownsQueueEngine: dependencies.ownsQueueEngine,
             clock: dependencies.clock,
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
+            // The rotation answers readiness: work the eligibility rules defer must not report as due.
+            readNextReadyAtMs: (port) => this.workSelector.readNextReadyAtMs(port),
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
             runClaim: (claim) => this.runInboundClaim(claim),
             diagnostics: undefined
@@ -210,6 +211,7 @@ export class ALInboundMessageRuntime {
         this.work.committed();
     }
 
+    /** The old handler rescanned after every replay; the readyNow rotation and the batch-end wake cover that. */
     private async runInboundClaim(claim: ALWorkClaim): Promise<ALWorkOutcome> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
         const payload = effect.payload;

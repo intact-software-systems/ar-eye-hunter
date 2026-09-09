@@ -39,7 +39,7 @@ const esbuildBin = path.join(
 const budgetedEntries: readonly BundleBoundary[] = [
     {
         // Maintainer approved necessary ALM growth; the inbound control-admission owner
-        // measures 200.109375 KiB. Keep an explicit 201 KiB ceiling.
+        // measures 200.2412109375 KiB. Keep an explicit 201 KiB ceiling.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',

@@ -19,7 +19,7 @@ import { toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-
 import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
@@ -34,7 +34,13 @@ describe('Postgres inbound ordered work recovery', () => {
         const received: string[] = [];
         const first = createRuntime(firstStores, received);
         const secondMessage = createMessage('second', 2);
+        const trackKey = toALOrderingTrackKey(secondMessage)!;
         await first.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
+
+        // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
+        await waitForSettledInboundWork(firstStores);
+        await expect.poll(() => firstStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() }))
+            .toBeDefined();
         expect(received).toEqual([]);
         first.dispose();
 
@@ -42,7 +48,6 @@ describe('Postgres inbound ordered work recovery', () => {
         const firstMessage = createMessage('first', 1);
         await second.admitIncomingMessage(firstMessage, { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(() => received).toEqual(['first', 'second']);
-        const trackKey = toALOrderingTrackKey(firstMessage)!;
         await expect.poll(() => firstStore.readOrderedDelivery(trackKey, 3))
             .toEqual({ completedThrough: 2, predecessor: undefined });
         second.dispose();
@@ -63,6 +68,9 @@ describe('Postgres inbound ordered work recovery', () => {
         await expect.poll(() => secondStore.readOrderedDelivery(trackKey, 4))
             .toEqual({ completedThrough: 3, predecessor: undefined });
         await restarted.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
+
+        // The redelivered duplicate must not dispatch again: settle every retained row before reading.
+        await waitForSettledInboundWork(firstStores);
         expect(received).toEqual(['first', 'second', 'third']);
     });
 
@@ -178,6 +186,23 @@ describe('Postgres inbound ordered work recovery', () => {
         ).toContain(blocked.id.msgId);
     });
 });
+
+/**
+ * Delivery no longer runs inside admission: wait until every retained row reaches a terminal status.
+ * Scoped to this namespace because a Postgres queue reports keys for the whole shared table.
+ */
+async function waitForSettledInboundWork(stores: ALInboundRuntimeStores): Promise<void> {
+    const typeId = toALInboundWorkType(stores.admissionStore.namespace);
+    await expect.poll(async () => {
+        for (const status of NOT_COMPLETED_RETRYABLE_STATUSES) {
+            const page = await stores.workQueue.readWorkPage({ typeId, status, maxToRead: 1, cursor: null });
+            if (page.entries.length > 0) {
+                return false;
+            }
+        }
+        return true;
+    }).toBe(true);
+}
 
 async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInboundRuntimeStores]> {
     const namespace = `inbound-work-recovery-${crypto.randomUUID()}`;

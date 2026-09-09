@@ -12,20 +12,21 @@ const SCAN_START = { cursor: null, statusIndex: 0, nextReadyAtMs: undefined } as
 
 export const AL_INBOUND_WORK_PAGE_SIZE = 16;
 
-export interface ALInboundWorkScan {
+interface ALInboundWorkScan {
     readonly cursor: ResourceInboxWorkPage.Cursor | null;
     readonly statusIndex: number;
     readonly nextReadyAtMs: number | undefined;
 }
 
-export interface ALInboundWorkSelectionReadInput {
+interface ALInboundWorkSelectionReadInput {
     readonly port: ALWorkQueuePort;
     readonly scan: ALInboundWorkScan;
     readonly namespace: string;
+    readonly pageSize: number;
     readonly nowMs: number;
 }
 
-export interface ALInboundWorkSelection {
+interface ALInboundWorkSelection {
     /** Entries the port may reserve, in observation order. */
     readonly claimable: readonly ResourceEntry[];
     /** Reservations without a lease start: timeout reservation can never reach them, so they are released as observed. */
@@ -37,7 +38,7 @@ export interface ALInboundWorkSelection {
     readonly nextReadyAtMs: number | undefined;
 }
 
-export interface ALInboundWorkSelectorDependencies {
+interface ALInboundWorkSelectorDependencies {
     readonly delivery: ALInboundAdmittedDelivery;
     readonly namespace: string;
     readonly nowMs: () => number;
@@ -45,8 +46,8 @@ export interface ALInboundWorkSelectorDependencies {
 
 export interface ALInboundWorkSelector {
     /**
-     * The readiness probe the handler asks for. The generic port reads retry readiness alone, which
-     * cannot advertise new work an earlier batch or another server committed.
+     * The readiness probe the handler asks for. The port reports every retained row as due; inbound
+     * eligibility defers rows whose predecessor or consumer is missing, so the rotation answers instead.
      */
     readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined>;
     selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection>;
@@ -55,13 +56,13 @@ export interface ALInboundWorkSelector {
 }
 
 /** Reads message eligibility before reservation so waiting work does not spend processing attempts. */
-export async function readALInboundWorkSelection(
+async function readALInboundWorkSelection(
     input: ALInboundWorkSelectionReadInput,
     delivery: ALInboundAdmittedDelivery
 ): Promise<ALInboundWorkSelection> {
     const page = await input.port.readPage({
         status: SCAN_STATUSES[input.scan.statusIndex],
-        maxToRead: AL_INBOUND_WORK_PAGE_SIZE,
+        maxToRead: input.pageSize,
         cursor: input.scan.cursor
     });
     const claimable: ResourceEntry[] = [];
@@ -125,12 +126,13 @@ export function createALInboundWorkSelector(
     let scan: ALInboundWorkScan = SCAN_START;
     let observed: Promise<ALInboundWorkSelection> | undefined;
 
-    const readSelection = (port: ALWorkQueuePort): Promise<ALInboundWorkSelection> => {
+    const readSelection = (port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection> => {
         const scanned = scan;
         const pending = observed ?? readALInboundWorkSelection({
             port,
             scan: scanned,
             namespace: dependencies.namespace,
+            pageSize,
             nowMs: dependencies.nowMs()
         }, dependencies.delivery).then((selection) => {
             if (scan === scanned) {
@@ -148,7 +150,7 @@ export function createALInboundWorkSelector(
     };
     return {
         readNextReadyAtMs: async (port) => {
-            const pending = readSelection(port);
+            const pending = readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
             let selection: ALInboundWorkSelection;
             try {
                 selection = await pending;
@@ -164,7 +166,7 @@ export function createALInboundWorkSelector(
             return selection.nextReadyAtMs;
         },
         selectReady: async (port, pageSize) => {
-            const pending = readSelection(port);
+            const pending = readSelection(port, pageSize);
             forgetSelection(pending);
             const selection = await pending;
             const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });

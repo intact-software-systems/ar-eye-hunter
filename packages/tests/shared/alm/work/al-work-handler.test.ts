@@ -22,6 +22,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -52,6 +53,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -93,6 +95,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -130,6 +133,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -180,6 +184,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => Date.now() },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -200,6 +205,72 @@ describe('ALWorkHandler', () => {
             await engine.executeOnce();
             return released;
         }).toEqual(['engine-driven:completed']);
+
+        handler.dispose();
+    });
+
+    it('drives readiness from the injected probe, not from the port', async () => {
+        const released: string[] = [];
+        const pending: ALWorkClaim[] = [];
+        let peekCallCount = 0;
+        const port = fakePort({
+            claims: [],
+            onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`)
+        });
+        const probing: ALWorkQueuePort = {
+            ...port,
+            claim: async ({ maxCount }) => pending.splice(0, maxCount),
+            peekNextReadyAt: async () => {
+                peekCallCount += 1;
+                return undefined;
+            }
+        };
+        let nowMs = 10_000;
+        let probedReadyAtMs: number | undefined;
+        const engine = createEngine();
+        const wakeAtCalls: (number | undefined)[] = [];
+        const wakeAt = engine.wakeAt.bind(engine);
+        vi.spyOn(engine, 'wakeAt').mockImplementation((taskId, readyAtMs) => {
+            wakeAtCalls.push(readyAtMs);
+            wakeAt(taskId, readyAtMs);
+        });
+        const handler = new ALWorkHandler({
+            workerId: 'probe-worker',
+            port: probing,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readNextReadyAtMs: async () => {
+                const next = probedReadyAtMs;
+                probedReadyAtMs = undefined;
+                return next;
+            },
+            selectReady: async (p, size) => ({
+                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        wakeAtCalls.length = 0;
+
+        // A future probe answer only reschedules: the engine must not run the batch that would claim it.
+        pending.push(toFakeALWorkClaim('later'));
+        probedReadyAtMs = nowMs + 60_000;
+        await engine.executeOnce();
+        expect(wakeAtCalls).toContain(nowMs + 60_000);
+        expect(released).toEqual([]);
+
+        // The same probe reporting a due time starts the batch, through the engine alone.
+        probedReadyAtMs = nowMs;
+        await expect.poll(async () => {
+            await engine.executeOnce();
+            return released;
+        }).toEqual(['later:completed']);
+        expect(peekCallCount).toBe(0);
 
         handler.dispose();
     });
@@ -239,6 +310,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -288,6 +360,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady: async () => {
                 throw new ALAdmissionCorruptionError('bootstrap-path', new TypeError('bad admission state'));
             },
@@ -314,6 +387,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
             selectReady,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined

@@ -49,6 +49,7 @@ import '../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createFlakyOutboundAdmissionStore, enqueueOutboundOrThrow } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
@@ -122,8 +123,17 @@ describe('IndexedDB AL runtime stores', () => {
         await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
-        const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
+        const restartedStores = createDefaultIndexedDbALInboundRuntimeStores({ dbName, namespace });
+        const runtime2 = createDefaultInboundRuntime({
+            dbName: dbName,
+            namespace: namespace,
+            dispatchedMsgIds: dispatchedMsgIds,
+            stores: restartedStores
+        });
         await runtime2.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+
+        // The redelivered duplicate must not dispatch again: settle every retained row before reading.
+        await waitForSettledALInboundWork(restartedStores.workQueue);
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -131,11 +141,27 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = createTestDatabaseName();
         const namespace = 'rtc-inbound';
         const dispatchedMsgIds: string[] = [];
-        const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
+        const stores = createDefaultIndexedDbALInboundRuntimeStores({ dbName, namespace });
+        const runtime1 = createDefaultInboundRuntime({
+            dbName: dbName,
+            namespace: namespace,
+            dispatchedMsgIds: dispatchedMsgIds,
+            stores
+        });
         const seq2 = createOrderedMulticastMessage(2, 'two');
         const seq1 = createOrderedMulticastMessage(1, 'one');
 
         await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+
+        // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
+        await waitForSettledALInboundWork(stores.workQueue);
+        await expect.poll(() =>
+            stores.admissionStore.readBufferedRelease({
+                trackKey: toALOrderingTrackKey(seq2)!,
+                seq: 2,
+                nowMs: Date.now()
+            })
+        ).toBeDefined();
         expect(dispatchedMsgIds).toEqual([]);
         runtime1.dispose();
 

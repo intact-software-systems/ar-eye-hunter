@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     planALMessageHandling,
@@ -435,6 +436,61 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(acceptance.right).toEqual({ kind: 'admitted' });
         await dispatchStarted.promise;
         releaseDispatch.resolve();
+    });
+
+    it('returns from control admission without waiting for the delivery it committed', async () => {
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const sendStarted = Promise.withResolvers<void>();
+        const releaseSend = Promise.withResolvers<void>();
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async () => {
+                sendStarted.resolve();
+                await releaseSend.promise;
+            }
+        });
+        onTestFinished(() => {
+            releaseSend.resolve();
+            runtime.dispose();
+        });
+        await runtime.ready();
+
+        // Retained control work gives the batch a delivery to hold, so the admission below must outlive it.
+        const forwarded = computeALInboundWorkEntry({
+            namespace: resources.admissionStore.namespace,
+            effectId: 'forwarded-control',
+            observedAtMs: Date.now(),
+            expireAtTimestamp: Date.now() + 60_000,
+            payload: {
+                kind: 'send-control',
+                msg: newALAckControlMessage({ v: 2, msgId: 'forwarded-ack', ts: 1, senderId: 'receiver' }, {
+                    ackedMsgId: 'tracked-message',
+                    fromPeerId: 'receiver',
+                    toPeerId: 'sender',
+                    status: 'accepted',
+                    observedAtEpochMs: 1
+                })
+            }
+        });
+        await resources.workQueue.enqueueIfAbsent(forwarded.entry);
+        const ack = newALAckControlMessage({ v: 2, msgId: 'inbound-ack', ts: 1, senderId: 'sender' }, {
+            ackedMsgId: 'untracked-message',
+            fromPeerId: 'sender',
+            toPeerId: 'receiver',
+            status: 'accepted',
+            observedAtEpochMs: 1
+        });
+
+        const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
+
+        expect(acceptance.right).toEqual({ kind: 'control', handled: false });
+        await sendStarted.promise;
+        releaseSend.resolve();
     });
 
     it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {

@@ -3,6 +3,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
@@ -42,6 +43,8 @@ function createFixture() {
     const stores = { admissionStore, workQueue: state.workQueue };
     return {
         backend,
+        // Captured before any spy so a recorder can call the real commit without re-entering itself.
+        write: backend.write.bind(backend),
         admissionStore,
         workQueue: state.workQueue,
         control: createTestALInboundControlAdmission({
@@ -116,6 +119,43 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
     );
 }
 
+interface ALInboundCommitObservation {
+    readonly storeKeys: string[];
+    readonly workKinds: string[];
+}
+
+/** Records what each backend write commits, so a commit boundary can be asserted rather than coexistence. */
+function recordALInboundCommits(
+    backend: InMemoryAdmissionBackend,
+    write: InMemoryAdmissionBackend['write'],
+    namespace: string
+): readonly ALInboundCommitObservation[] {
+    const commits: ALInboundCommitObservation[] = [];
+    vi.spyOn(backend, 'write').mockImplementation((run, executionExpiresAtMs) => {
+        const commit: ALInboundCommitObservation = { storeKeys: [], workKinds: [] };
+        commits.push(commit);
+        return write(async (tx) =>
+            await run({
+                read: <V>(key: string, decode: ALAdmissionDecoder<V>) => tx.read(key, decode),
+                list: <V>(prefix: string, decode: ALAdmissionDecoder<V>) => tx.list(prefix, decode),
+                set: async <V>(key: string, value: V, expireAtTimestamp?: number) => {
+                    commit.storeKeys.push(key);
+                    await tx.set(key, value, expireAtTimestamp);
+                },
+                remove: async (key: string) => {
+                    commit.storeKeys.push(key);
+                    await tx.remove(key);
+                },
+                readWork: (key) => tx.readWork(key),
+                writeWork: (entry) => {
+                    commit.workKinds.push(decodeALInboundWorkEntry(entry, namespace).payload.kind);
+                    tx.writeWork(entry);
+                }
+            }), executionExpiresAtMs);
+    });
+    return commits;
+}
+
 async function readRetainedWork(
     admissionStore: ALInboundAdmissionStore,
     workQueue: QueueBoxResourceEntryRepository
@@ -157,7 +197,7 @@ describe('inbound control admission', () => {
     });
 
     it('retains admit-control work for a conflicting commit and replays it to completion', async () => {
-        const { backend, admissionStore, workQueue, control } = createFixture();
+        const { backend, write, admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
         vi.spyOn(backend, 'write').mockImplementationOnce(() => {
             throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
@@ -177,6 +217,8 @@ describe('inbound control admission', () => {
             throw new Error('Expected retained admit-control work');
         }
 
+        const commits = recordALInboundCommits(backend, write, admissionStore.namespace);
+
         const replayed = await control.replay(payload);
 
         expect(replayed.outcome).toEqual({ status: 'completed' });
@@ -184,7 +226,10 @@ describe('inbound control admission', () => {
         const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
         expect(state.acks.map((ack) => ack.fromPeerId)).toEqual(['receiver']);
         expect(state.pendingAck).toBeUndefined();
-        // The forwarded acknowledgement and the replayed admission share one commit.
+        // One commit carries the accepted acknowledgement and the control it forwards; a split write fails here.
+        expect(commits).toHaveLength(1);
+        expect(commits[0]!.workKinds).toEqual(['send-control']);
+        expect(commits[0]!.storeKeys).toContainEqual(expect.stringContaining(':control:acks:'));
         expect((await readRetainedWork(admissionStore, workQueue)).map((work) => work.payload.kind).toSorted())
             .toEqual(['admit-control', 'send-control']);
     });

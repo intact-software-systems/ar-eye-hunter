@@ -34,6 +34,7 @@ import {
 } from '@shared/mod.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 interface RetainedAdmissionState {
     readonly admissionState: ALAdmissionMemoryState;
@@ -72,12 +73,13 @@ describe('AL state retained across runtime recreation', () => {
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         runtime1.dispose();
-        const restartedRuntime = createDefaultInboundRuntime(
-            createRetainedInboundStoreSet(stores),
-            dispatchedMsgIds
-        );
+        const restartedStores = createRetainedInboundStoreSet(stores);
+        const restartedRuntime = createDefaultInboundRuntime(restartedStores, dispatchedMsgIds);
 
         await restartedRuntime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+
+        // The redelivered duplicate must not dispatch again: settle every retained row before reading.
+        await waitForSettledALInboundWork(restartedStores.runtimeStores.workQueue);
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -91,6 +93,16 @@ describe('AL state retained across runtime recreation', () => {
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
         await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+
+        // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
+        await waitForSettledALInboundWork(stores.runtimeStores.workQueue);
+        await expect.poll(() =>
+            stores.runtimeStores.admissionStore.readBufferedRelease({
+                trackKey: toALOrderingTrackKey(seq2)!,
+                seq: 2,
+                nowMs: Date.now()
+            })
+        ).toBeDefined();
         expect(dispatchedMsgIds).toEqual([]);
 
         runtime1.dispose();
