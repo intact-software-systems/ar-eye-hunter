@@ -157,7 +157,7 @@ const configSchema: JsonSchema = {
         actor: stringSchema,
         sessionId: stringSchema,
         roomId: stringSchema,
-        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'ws', 'http'] },
+        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'messages.ws', 'ws', 'http'] },
         rallar: recordSchema,
         browser: recordSchema,
         control: recordSchema,
@@ -177,6 +177,10 @@ const configSchema: JsonSchema = {
 };
 
 const rtcTransportSchema: JsonSchema = { type: 'string', enum: ['realtime', 'messages.rtc'] };
+const rtcConnectTransportSchema: JsonSchema = {
+    type: 'string',
+    enum: ['realtime', 'messages.rtc', 'messages.ws']
+};
 const rtcConnectReadinessSchema: JsonSchema = {
     type: 'object',
     properties: {
@@ -504,6 +508,34 @@ const loopThresholdsSchema: JsonSchema = {
     additionalProperties: false
 };
 
+const messagesCarrierSchema: JsonSchema = { type: 'string', enum: ['ws', 'rtc', 'rtc-with-ws-fallback'] };
+const messagesReliabilitySchema: JsonSchema = { type: 'string', enum: ['best-effort', 'at-least-once'] };
+const messagesScopeSchema: JsonSchema = { type: 'string', enum: ['room', 'world', 'all'] };
+const messagesAckSchema: JsonSchema = {
+    type: 'string',
+    enum: ['none', 'receiver', 'all-logical-recipients', 'group-leader']
+};
+const faultMatchSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        controlType: { type: 'string', enum: ['ack', 'nack', 'repair'] },
+        typeId: stringSchema,
+        msgId: stringSchema
+    },
+    additionalProperties: false
+};
+const faultActionSchema: JsonSchema = {
+    oneOf: [
+        { type: 'string', enum: ['drop'] },
+        {
+            type: 'object',
+            required: ['delayMs'],
+            properties: { delayMs: numberSchema },
+            additionalProperties: false
+        }
+    ]
+};
+
 const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], JsonSchema>> = {
     configure: strictCommandSchema('configure', ['config'], {
         config: configSchema
@@ -577,7 +609,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         scope: recordSchema,
         roomRef: recordSchema,
         minSnapshotVersion: numberSchema,
-        transport: rtcTransportSchema,
+        transport: rtcConnectTransportSchema,
         rallar: recordSchema,
         readiness: rtcConnectReadinessSchema
     }),
@@ -629,6 +661,59 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             }
         ]
     },
+    'messages.send': strictCommandSchema('messages.send', ['carrier', 'typeId', 'payload'], {
+        connection: stringSchema,
+        carrier: messagesCarrierSchema,
+        typeId: stringSchema,
+        topicId: stringSchema,
+        payload: anySchema,
+        roomRef: recordSchema,
+        scope: messagesScopeSchema,
+        reliability: messagesReliabilitySchema,
+        ack: messagesAckSchema,
+        ttlMs: { type: 'integer', minimum: 0 },
+        orderingKey: stringSchema,
+        seq: numberSchema,
+        handleId: stringSchema
+    }),
+    'messages.observe': strictCommandSchema('messages.observe', ['handleId', 'state'], {
+        connection: stringSchema,
+        handleId: stringSchema,
+        state: { type: 'array', items: stringSchema }
+    }),
+    'messages.cancel': strictCommandSchema('messages.cancel', ['handleId'], {
+        connection: stringSchema,
+        handleId: stringSchema
+    }),
+    'messages.received': strictCommandSchema('messages.received', ['typeId', 'count', 'windowMs'], {
+        connection: stringSchema,
+        typeId: stringSchema,
+        msgId: stringSchema,
+        count: { type: 'integer', minimum: 0 },
+        absent: booleanSchema,
+        windowMs: { type: 'integer', minimum: 0 }
+    }),
+    'messages.receipts': strictCommandSchema('messages.receipts', ['handleId'], {
+        connection: stringSchema,
+        handleId: stringSchema
+    }),
+    'fault.inject': strictCommandSchema(
+        'fault.inject',
+        ['faultId', 'carrier', 'match', 'action', 'remaining'],
+        {
+            faultId: stringSchema,
+            carrier: { type: 'string', enum: ['ws', 'rtc'] },
+            match: faultMatchSchema,
+            action: faultActionSchema,
+            remaining: numberSchema
+        }
+    ),
+    'storage.counters': strictCommandSchema('storage.counters', [], {
+        reset: booleanSchema
+    }),
+    'agent.reload': strictCommandSchema('agent.reload', ['readyTimeoutMs'], {
+        readyTimeoutMs: { type: 'integer', minimum: 0 }
+    }),
     'ws.open': strictCommandSchema('ws.open', [], {
         connection: stringSchema,
         url: stringSchema,
@@ -1219,6 +1304,182 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 maxDroppedFrames: 0
             },
             timeoutMs: 10_000
+        }
+    },
+    {
+        kind: 'messages.send',
+        title: 'Send ALM Message',
+        description:
+            'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status.',
+        requiredFields: ['carrier', 'typeId', 'payload'],
+        optionalFields: [
+            'connection',
+            'topicId',
+            'roomRef',
+            'scope',
+            'reliability',
+            'ack',
+            'ttlMs',
+            'orderingKey',
+            'seq',
+            'handleId',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['send result with handleId, carrier, and admission status'],
+        example: {
+            kind: 'messages.send',
+            commandId: 'send-alm-message',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            handleId: 'alm-send-1'
+        }
+    },
+    {
+        kind: 'messages.observe',
+        title: 'Observe ALM Send',
+        description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
+            'The states are rejected, accepted, queued, transport-accepted, acknowledged, expired, ' +
+            'superseded, failed, and cancelled; this release derives them from the local admission ' +
+            'ledger, so a send settles on accepted or rejected and never advances on a peer receipt.',
+        requiredFields: ['handleId', 'state'],
+        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['observed delivery state', 'submitted flag and attempt count'],
+        example: {
+            kind: 'messages.observe',
+            commandId: 'observe-alm-send',
+            handleId: 'alm-send-1',
+            state: ['accepted']
+        }
+    },
+    {
+        kind: 'messages.cancel',
+        title: 'Cancel ALM Send',
+        description: 'Moves the local delivery ledger entry of a messages.send handle to cancelled ' +
+            'regardless of its current state; it does not recall a message the transport already accepted.',
+        requiredFields: ['handleId'],
+        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['cancel result for the handle'],
+        example: {
+            kind: 'messages.cancel',
+            commandId: 'cancel-alm-send',
+            handleId: 'alm-send-1'
+        }
+    },
+    {
+        kind: 'messages.received',
+        title: 'Assert ALM Messages Received',
+        description: 'Counts messages of a typeId (optionally one msgId) on the whole inbound event log and ' +
+            'compares against an expected count. A presence claim settles as soon as the count is ' +
+            'reached; absent holds the whole windowMs and then passes only if fewer than count ' +
+            '(at least one) arrived.',
+        requiredFields: ['typeId', 'count', 'windowMs'],
+        optionalFields: [
+            'connection',
+            'msgId',
+            'absent',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['received-count result', 'window evaluation diagnostics'],
+        example: {
+            kind: 'messages.received',
+            commandId: 'assert-alm-received',
+            typeId: 'alm.conformance',
+            count: 1,
+            windowMs: 5_000
+        }
+    },
+    {
+        kind: 'messages.receipts',
+        title: 'Read ALM Receipts',
+        description: 'Reads the delivery ledger observation recorded for a messages.send handle. This release ' +
+            'derives that observation from local admission, so confirmedPeerIds and unconfirmedPeerIds ' +
+            'stay empty until real acknowledgements land.',
+        requiredFields: ['handleId'],
+        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['ledger observation for the handle'],
+        example: {
+            kind: 'messages.receipts',
+            commandId: 'read-alm-receipts',
+            handleId: 'alm-send-1'
+        }
+    },
+    {
+        kind: 'fault.inject',
+        title: 'Inject Transport Fault',
+        description:
+            'Schedules a scripted drop or delay for matching ws/rtc traffic, bounded by a remaining-match count.',
+        requiredFields: ['faultId', 'carrier', 'match', 'action', 'remaining'],
+        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: [],
+        artifactExpectations: ['fault registration result'],
+        example: {
+            kind: 'fault.inject',
+            commandId: 'inject-nack-drop',
+            faultId: 'drop-one-nack',
+            carrier: 'ws',
+            match: { controlType: 'nack' },
+            action: 'drop',
+            remaining: 1
+        }
+    },
+    {
+        kind: 'storage.counters',
+        title: 'Read Storage Counters',
+        description: 'Reads (and optionally resets) the AL-owned IndexedDB operation counters by owner ' +
+            '(al-admission, al-work) and by operation kind. The scripted storage observer is only ' +
+            'attached when the active connection names an application.',
+        requiredFields: [],
+        optionalFields: ['reset', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: [],
+        artifactExpectations: ['total/byOwner/byKind storage counters'],
+        example: {
+            kind: 'storage.counters',
+            commandId: 'read-storage-counters'
+        }
+    },
+    {
+        kind: 'agent.reload',
+        title: 'Reload Agent',
+        description: 'Asks the control agent to reload its page and resume the run when it is ready again. ' +
+            'On the spa-local surface nothing reloads and the command only records the request.',
+        requiredFields: ['readyTimeoutMs'],
+        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: [],
+        artifactExpectations: ['reload readiness result'],
+        example: {
+            kind: 'agent.reload',
+            commandId: 'reload-agent',
+            readyTimeoutMs: 10_000
         }
     },
     {

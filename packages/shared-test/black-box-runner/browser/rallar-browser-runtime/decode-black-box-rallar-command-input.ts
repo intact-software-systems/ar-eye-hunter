@@ -8,7 +8,10 @@ import type {
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarWsSendInput } from './black-box-rallar-runtime-contract.ts';
 
-export function isBlackBoxCommandRecord(value: unknown): value is Record<string, unknown> {
+/** A decoded command envelope whose fields the decoders below narrow one at a time. */
+export type BlackBoxRallarCommandRecord = Record<string, unknown>;
+
+export function isBlackBoxCommandRecord(value: unknown): value is BlackBoxRallarCommandRecord {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
@@ -52,7 +55,7 @@ function decodePeerIds(value: unknown): readonly string[] | undefined {
         : undefined;
 }
 
-function decodeAck(value: unknown): ALAckMode | undefined {
+export function decodeBlackBoxCommandAck(value: unknown): ALAckMode | undefined {
     if (value === undefined) {
         return undefined;
     }
@@ -62,7 +65,7 @@ function decodeAck(value: unknown): ALAckMode | undefined {
     throw new Error('Rallar command ack mode is invalid.');
 }
 
-function decodeMessageFields(record: Record<string, unknown>): BlackBoxRallarSendInput {
+function decodeMessageFields(record: BlackBoxRallarCommandRecord): BlackBoxRallarSendInput {
     return {
         ...('payload' in record ? { payload: record.payload } : {}),
         ...('data' in record ? { data: record.data } : {}),
@@ -80,13 +83,13 @@ function decodeMessageFields(record: Record<string, unknown>): BlackBoxRallarSen
         reliability: record.reliability === 'best-effort' || record.reliability === 'at-least-once'
             ? record.reliability
             : undefined,
-        ack: decodeAck(record.ack),
+        ack: decodeBlackBoxCommandAck(record.ack),
         ownership: record.ownership === 'shared' || record.ownership === 'exclusive' ? record.ownership : undefined,
         minSnapshotVersion: decodeBlackBoxCommandNumber(record.minSnapshotVersion)
     };
 }
 
-function isRealtimeSendEnvelope(input: Record<string, unknown>): boolean {
+function isRealtimeSendEnvelope(input: BlackBoxRallarCommandRecord): boolean {
     return [
         'data',
         'laneId',

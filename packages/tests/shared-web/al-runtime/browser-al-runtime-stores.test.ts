@@ -23,6 +23,7 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
@@ -31,6 +32,8 @@ import {
     type ALOutboundAdmissionStore,
     type ALOutboundSentMessageSnapshot
 } from '@shared/mod.ts';
+import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     afterEach,
     beforeEach,
@@ -39,6 +42,8 @@ import {
     it,
     vi
 } from 'vitest';
+
+const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
 describe('Browser AL runtime IndexedDB stores', () => {
     beforeEach(async () => {
@@ -65,8 +70,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const currentSessionId = `current-${crypto.randomUUID()}`;
         const oldSessionId = `old-${crypto.randomUUID()}`;
         const unrelatedRuntimeName = `unrelated-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(currentSessionId, { retention });
-        configureBrowserALRuntimeStores(oldSessionId, { retention });
+        configureBrowserALRuntimeStores(currentSessionId, { retention, diagnosticsPorts });
+        configureBrowserALRuntimeStores(oldSessionId, { retention, diagnosticsPorts });
         const currentAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId).admissionStore;
         const oldAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId).admissionStore;
         const unrelatedAdmissionStore = createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention }).admissionStore;
@@ -112,7 +117,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ]);
 
         const freshSessionId = `fresh-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(freshSessionId, { retention });
+        configureBrowserALRuntimeStores(freshSessionId, { retention, diagnosticsPorts });
         const freshSessionAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(freshSessionId).admissionStore;
 
         expect(await readSentMessageIds(freshSessionAdmissionStore)).toEqual([]);
@@ -130,8 +135,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         };
         const sessionId = `restore-${crypto.randomUUID()}`;
         const replacementSessionId = `replacement-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(sessionId, { retention });
-        configureBrowserALRuntimeStores(replacementSessionId, { retention });
+        configureBrowserALRuntimeStores(sessionId, { retention, diagnosticsPorts });
+        configureBrowserALRuntimeStores(replacementSessionId, { retention, diagnosticsPorts });
         const firstSessionAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
         const persistedMsgId = 'restore-unexpired';
 
@@ -156,8 +161,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const currentSessionId = `cleanup-current-${crypto.randomUUID()}`;
         const oldSessionId = `cleanup-old-${crypto.randomUUID()}`;
         const unrelatedRuntimeName = `cleanup-unrelated-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(currentSessionId, { retention });
-        configureBrowserALRuntimeStores(oldSessionId, { retention });
+        configureBrowserALRuntimeStores(currentSessionId, { retention, diagnosticsPorts });
+        configureBrowserALRuntimeStores(oldSessionId, { retention, diagnosticsPorts });
         const currentAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId).admissionStore;
         const oldAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId).admissionStore;
         const unrelatedAdmissionStore = createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention }).admissionStore;
@@ -233,7 +238,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         { label: 'negative-zero expiry', expireAtTimestamp: -0 }
     ])('preserves a corrupt browser admission row with $label', async ({ expireAtTimestamp }) => {
         const sessionId = `corrupt-cleanup-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(sessionId);
+        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
         await resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.ready();
         const key = `${toBrowserOutboundSentPrefix(toBrowserWsClientALRuntimeStoreId(sessionId))}:corrupt`;
         await putRawBrowserALRuntimeEntry({
@@ -258,8 +263,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         };
         const targetSessionId = `expired-target-${crypto.randomUUID()}`;
         const otherSessionId = `expired-other-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(targetSessionId, { retention });
-        configureBrowserALRuntimeStores(otherSessionId, { retention });
+        configureBrowserALRuntimeStores(targetSessionId, { retention, diagnosticsPorts });
+        configureBrowserALRuntimeStores(otherSessionId, { retention, diagnosticsPorts });
         const targetAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId).admissionStore;
         const otherAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId).admissionStore;
 
@@ -296,7 +301,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const sessionId = `owner-retention-${crypto.randomUUID()}`;
         const msgId = 'browser-owner-short-lived';
         const expireAtTimestamp = Date.now() + 15_000;
-        configureBrowserALRuntimeStores(sessionId, { retention: { msgOwnerTtlMs: 15_000, controlHistoryTtlMs: 15_000 } });
+        configureBrowserALRuntimeStores(sessionId, {
+            retention: { msgOwnerTtlMs: 15_000, controlHistoryTtlMs: 15_000 },
+            diagnosticsPorts
+        });
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
         await stores.admissionStore.commitBundle({
             senderId: sessionId,
@@ -339,8 +347,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         };
         const targetSessionId = `purge-target-${crypto.randomUUID()}`;
         const otherSessionId = `purge-other-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(targetSessionId, { retention });
-        configureBrowserALRuntimeStores(otherSessionId, { retention });
+        configureBrowserALRuntimeStores(targetSessionId, { retention, diagnosticsPorts });
+        configureBrowserALRuntimeStores(otherSessionId, { retention, diagnosticsPorts });
         const targetWsAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId).admissionStore;
         const targetOverlayAdmissionStore = resolveBrowserRtcOverlayALOutboundRuntimeStores(targetSessionId).admissionStore;
         const otherAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId).admissionStore;
@@ -389,7 +397,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const sessionId = `cleanup-race-${crypto.randomUUID()}`;
         const keyPrefix = `${toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId))}inbound:admission`;
         const key = `${keyPrefix}:refreshed`;
-        configureBrowserALRuntimeStores(sessionId);
+        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
         await resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.ready();
         await putRawBrowserALRuntimeEntry({
             key,
@@ -470,6 +478,22 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await secondEviction;
 
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
+    });
+
+    it('routes IndexedDB operations to the configured observer', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const sessionId = `observer-${crypto.randomUUID()}`;
+        configureBrowserALRuntimeStores(sessionId, {
+            diagnosticsPorts: {
+                transportFaultPort: createPassThroughTransportFaultPort(),
+                indexedDbOperationObserver: observer
+            }
+        });
+        const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
+        await stores.admissionStore.ready();
+        await stores.admissionStore.readSentMessage('never-persisted');
+
+        expect(observer.getCounts().total).toBeGreaterThan(0);
     });
 });
 

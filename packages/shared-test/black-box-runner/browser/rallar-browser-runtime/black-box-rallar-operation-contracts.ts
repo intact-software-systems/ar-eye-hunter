@@ -41,7 +41,7 @@ import type {
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 
-export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc';
+export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc' | 'messages.ws';
 
 export interface BlackBoxRallarScope {
     readonly applicationId?: string;
@@ -240,6 +240,63 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly result: RallarMessageSendResult;
     readonly wsStatus: RallarWsStatus;
     readonly rtcStatus: RallarRtcStatus;
+}
+
+export interface BlackBoxRallarMessageSendInput {
+    readonly connection: string;
+    readonly carrier: 'ws' | 'rtc' | 'rtc-with-ws-fallback';
+    readonly typeId: string;
+    readonly topicId: string | undefined;
+    readonly payload: unknown;
+    readonly roomRef: BlackBoxRallarRoomRef | undefined;
+    readonly scope: 'room' | 'world' | 'all' | undefined;
+    readonly reliability: 'best-effort' | 'at-least-once' | undefined;
+    readonly ack: ALAckMode | undefined;
+    readonly ttlMs: number | undefined;
+    readonly orderingKey: string | undefined;
+    readonly seq: number | undefined;
+    readonly handleId: string;
+}
+
+export interface BlackBoxRallarMessageSendDiagnostics {
+    readonly handleId: string;
+    readonly msgId: string | undefined;
+    readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
+    readonly status: string;
+    readonly reason: string | undefined;
+    readonly message: RallarMessageSendResult | undefined;
+}
+
+export interface BlackBoxRallarDeliveryObservation {
+    readonly handleId: string;
+    readonly state:
+        | 'rejected'
+        | 'accepted'
+        | 'queued'
+        | 'transport-accepted'
+        | 'acknowledged'
+        | 'expired'
+        | 'superseded'
+        | 'failed'
+        | 'cancelled';
+    readonly submitted: boolean;
+    readonly confirmedPeerIds: readonly string[];
+    readonly unconfirmedPeerIds: readonly string[];
+    readonly attempts: number;
+}
+
+export interface BlackBoxRallarDeliveryHandleInput {
+    readonly connection: string;
+    readonly handleId: string;
+}
+
+export interface BlackBoxRallarDeliveryObserveInput extends BlackBoxRallarDeliveryHandleInput {
+    readonly state: readonly string[];
+    readonly timeoutMs: number;
+}
+
+export interface BlackBoxRallarStorageCountersInput {
+    readonly reset: boolean;
 }
 
 export interface BlackBoxRallarCloseDiagnostics {

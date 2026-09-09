@@ -13,6 +13,7 @@ import {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
     type WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -42,7 +43,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
                 throw new Error('ticket response lost');
             }
             return `ws://test?requestId=${options.requestId}`;
-        });
+        }, createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(socket, {
             newConnectionRequestId: () => 'reconnect-request-1',
             reconnect: {
@@ -78,7 +79,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         const socket = new JsonWebSocketClient((options) => {
             requestIds.push(options.requestId);
             return `ws://test?requestId=${options.requestId}`;
-        });
+        }, createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(socket, {
             newConnectionRequestId: () => `reconnect-request-${++requestSequence}`,
             reconnect: {
@@ -111,7 +112,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
     });
 
     it('reconnects after an unexpected WebSocket close while reconnect is enabled', async () => {
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(client);
         const first = await openInitialConnection(client);
         service.enableReconnect();
@@ -131,7 +132,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
 
     it('does not reconnect after an intentional service close', async () => {
         vi.useFakeTimers();
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(client);
         const socket = await openInitialConnection(client);
         service.enableReconnect();
@@ -156,7 +157,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
                 throw new Error('offline');
             }
             return 'ws://test';
-        });
+        }, createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(client);
         const socket = await openInitialConnection(client);
         service.enableReconnect();
@@ -184,7 +185,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
                 throw new Error('offline');
             }
             return 'ws://test';
-        });
+        }, createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(client, {
             reconnect: { maxAttempts: 3, retryIntervalMsecs: 0, maxRetryIntervalMsecs: 0 }
         });
@@ -207,7 +208,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
     it('aborts the real pending socket when an individual reconnect attempt times out', async () => {
         vi.useFakeTimers();
         vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(client, {
             reconnect: { maxAttempts: 1, connectTimeoutMsecs: 25, retryIntervalMsecs: 0, maxRetryIntervalMsecs: 0 }
         });
@@ -236,7 +237,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
 
     it('does not reconnect when reconnect eligibility is false', async () => {
         vi.useFakeTimers();
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const service = createDefaultReconnectService(client, { reconnect: { canReconnect: () => false } });
         const socket = await openInitialConnection(client);
         service.enableReconnect();

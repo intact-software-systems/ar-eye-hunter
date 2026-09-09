@@ -1,4 +1,5 @@
 import { validateJsonMessageSize, type JsonMessageRejection } from '../api/json-message-validation.ts';
+import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 
 export interface WebSocketClientCallbacks {
     onOpen?: (ev: Event) => void;
@@ -26,11 +27,13 @@ export class JsonWebSocketClient {
     public ws?: WebSocket = undefined;
     private connectPromise?: Promise<void> = undefined;
     private readonly urlProvider: WebSocketUrlProvider;
+    private readonly faultPort: TransportFaultPort;
 
     private readonly webSocketClientCallbacks = new Map<string, WebSocketClientCallbacks>();
     private readonly onMessageCallbacks = new Map<string, OnWebSocketMessageCallback>();
 
-    constructor(url: string | WebSocketUrlProvider) {
+    constructor(url: string | WebSocketUrlProvider, faultPort: TransportFaultPort) {
+        this.faultPort = faultPort;
         if (typeof url === 'string') {
             this.url = url;
             this.urlProvider = () => url;
@@ -224,11 +227,31 @@ export class JsonWebSocketClient {
     }
 
     sendAsJsonString(data: string): void {
+        const decision = this.faultPort.decideSend('ws', data);
+        if (decision.kind === 'drop') {
+            return;
+        }
+        if (decision.kind === 'delay') {
+            setTimeout(() => this.writeToSocketIfOpen(data), decision.delayMs);
+            return;
+        }
+
+        this.writeToSocket(data);
+    }
+
+    private writeToSocket(data: string): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             throw new Error('WebSocketClient: cannot send; socket is not open.');
         }
 
         this.ws.send(data);
+    }
+
+    /** A delayed frame settles quietly if the socket closed while it was waiting. */
+    private writeToSocketIfOpen(data: string): void {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(data);
+        }
     }
 
     close(code?: number, reason?: string): void {

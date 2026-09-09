@@ -4,6 +4,7 @@ import {
     type RallarValidationIssue,
     type RallarValidationResult
 } from '@shared/api/rallar-validation.ts';
+import { validateAlmControlCommand } from './alm/control-protocol-alm-commands.ts';
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from './distributed-run.ts';
 import { parseControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
 import {
@@ -722,6 +723,10 @@ function validateWsCommand(command: Record<string, unknown>): ControlCommandVali
     return { ok: true };
 }
 
+/** Only a connect accepts messages.ws: it subscribes the typed inbound channel with no RTC lane. */
+const RTC_CONNECT_TRANSPORTS = ['realtime', 'messages.rtc', 'messages.ws'];
+const RTC_SEND_TRANSPORTS = ['realtime', 'messages.rtc'];
+
 function validateRtcCommand(command: Record<string, unknown>): ControlCommandValidationResult {
     for (const field of ['connection', 'actor', 'roomId', 'applicationId', 'workspaceId']) {
         const result = validateStringField(command, field, 'rtc');
@@ -751,12 +756,11 @@ function validateRtcCommand(command: Record<string, unknown>): ControlCommandVal
     if (!minSnapshotVersion.ok) {
         return minSnapshotVersion;
     }
-    if (
-        command.transport !== undefined &&
-        command.transport !== 'realtime' &&
-        command.transport !== 'messages.rtc'
-    ) {
-        return fail('rtc.transport must be realtime or messages.rtc.');
+    const transports = command.kind === 'rtc.connect'
+        ? RTC_CONNECT_TRANSPORTS
+        : RTC_SEND_TRANSPORTS;
+    if (command.transport !== undefined && !transports.includes(String(command.transport))) {
+        return fail(`rtc.transport must be ${transports.join(' or ')}.`);
     }
     if (command.kind === 'rtc.connect') {
         const readiness = validateRtcConnectReadiness(command.readiness);
@@ -1313,6 +1317,15 @@ export function validateRallarBlackBoxTestCommand(
             }
             result = validateRtcCommand(command);
             return !result.ok ? result : validateRtcStreamCommand(command);
+        case 'messages.send':
+        case 'messages.observe':
+        case 'messages.cancel':
+        case 'messages.received':
+        case 'messages.receipts':
+        case 'fault.inject':
+        case 'storage.counters':
+        case 'agent.reload':
+            return validateAlmControlCommand({ command, kind: value.kind, baseFields: base });
         case 'ws.open':
             result = validateKeys(command, [...base, 'connection', 'url', 'protocols', 'headers'], 'ws.open');
             return !result.ok ? result : validateWsCommand(command);

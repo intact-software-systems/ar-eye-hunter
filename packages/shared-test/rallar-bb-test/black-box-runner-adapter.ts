@@ -6,10 +6,44 @@ import {
 } from '../black-box-runner/rtc-provider.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestEvent,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestRuntime
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestTransport
 } from './types.ts';
+
+// The eight ALM kinds only exist inside a browser agent: this client owns an RTC connection, not a
+// Rallar page runtime, so translating one of them into an rtc.send would hide the gap.
+const BROWSER_ONLY_COMMAND_KINDS: ReadonlySet<string> = new Set([
+    'messages.send',
+    'messages.observe',
+    'messages.cancel',
+    'messages.received',
+    'messages.receipts',
+    'fault.inject',
+    'storage.counters',
+    'agent.reload'
+]);
+
+export function toBrowserOnlyCommandOutcome(
+    request: RallarBlackBoxTestRecord
+): RallarBlackBoxTestCommandOutcome | undefined {
+    const kind = resolveBrowserOnlyCommandKind(request);
+    return kind === undefined ? undefined : {
+        status: 'failed',
+        error: {
+            code: 'browser-only-command',
+            message: `${kind} requires a browser agent`
+        }
+    };
+}
+
+function resolveBrowserOnlyCommandKind(request: RallarBlackBoxTestRecord): string | undefined {
+    const named = typeof request.kind === 'string' ? request.kind : request.action;
+    return typeof named === 'string' && BROWSER_ONLY_COMMAND_KINDS.has(named) ? named : undefined;
+}
 
 export type RallarBlackBoxRtcClientAdapterOptions = Readonly<{
     commandIdPrefix?: string;
@@ -107,9 +141,21 @@ function toConnectionName(request: any): string {
     ));
 }
 
-function toRtcTransport(value: any): 'realtime' | 'messages.rtc' | undefined {
-    return value === 'realtime' || value === 'messages.rtc'
-        ? value
+type RtcSendTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+type RtcConnectTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'messages.ws'>;
+
+const RTC_SEND_TRANSPORTS: readonly RtcSendTransport[] = ['realtime', 'messages.rtc'];
+const RTC_CONNECT_TRANSPORTS: readonly RtcConnectTransport[] = ['realtime', 'messages.rtc', 'messages.ws'];
+
+function decodeRtcSendTransport(value: unknown): RtcSendTransport | undefined {
+    return typeof value === 'string'
+        ? RTC_SEND_TRANSPORTS.find((transport) => transport === value)
+        : undefined;
+}
+
+function decodeRtcConnectTransport(value: unknown): RtcConnectTransport | undefined {
+    return typeof value === 'string'
+        ? RTC_CONNECT_TRANSPORTS.find((transport) => transport === value)
         : undefined;
 }
 
@@ -165,8 +211,35 @@ function toRtcMessage(event: RallarBlackBoxTestEvent): unknown {
 }
 
 function isCloseEvent(event: RallarBlackBoxTestEvent): boolean {
-    return event.kind === 'event' &&
-        (event.topic.includes('closed') || event.topic.includes('close'));
+    return event.kind === 'event' && event.topic.includes('close');
+}
+
+interface RtcClientEventSubscriptionInput {
+    readonly runtime: RallarBlackBoxTestRuntime;
+    readonly connection: string;
+    readonly seenEventIds: Set<string>;
+    readonly matches: (event: RallarBlackBoxTestEvent) => boolean;
+    readonly deliver: (event: RallarBlackBoxTestEvent) => void;
+}
+
+function subscribeToRtcClientEvents(input: RtcClientEventSubscriptionInput): () => void {
+    input.runtime.state().events.forEach((event) => {
+        input.seenEventIds.add(event.eventId);
+    });
+    return input.runtime.subscribe((state) => {
+        state.events.forEach((event) => {
+            if (
+                input.seenEventIds.has(event.eventId) ||
+                !input.matches(event) ||
+                !eventBelongsToConnection(event, input.connection)
+            ) {
+                return;
+            }
+
+            input.seenEventIds.add(event.eventId);
+            input.deliver(event);
+        });
+    });
 }
 
 function toConnectCommand(
@@ -181,7 +254,7 @@ function toConnectCommand(
         request.apiBaseUrl,
         request.rallarApiBaseUrl
     );
-    const transport = toRtcTransport(firstDefined(rallar.transport, request.transport));
+    const transport = decodeRtcConnectTransport(firstDefined(rallar.transport, request.transport));
 
     return {
         kind: 'rtc.connect',
@@ -233,7 +306,7 @@ function toSendCommand(
         send,
         expect: interaction?.response,
         ...scopeFields,
-        transport: toRtcTransport(firstDefined(rallar.transport, request.transport)),
+        transport: decodeRtcSendTransport(firstDefined(rallar.transport, request.transport)),
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),
             blackBoxRunner: request
@@ -264,8 +337,16 @@ export function createRallarBlackBoxRtcClient(
             assertCommandSucceeded(result);
         },
 
-        async send(message: unknown, interaction?: any): Promise<void> {
+        async send(
+            message: unknown,
+            interaction?: any
+        ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
             const sendRequest = interaction?.request ?? request;
+            const browserOnly = toBrowserOnlyCommandOutcome(asRecord(sendRequest));
+            if (browserOnly) {
+                return browserOnly;
+            }
+
             const result = await runtime.execute(toSendCommand(
                 sendRequest,
                 connection,
@@ -300,43 +381,23 @@ export function createRallarBlackBoxRtcClient(
 
         onMessage(handler: (message: unknown) => void): void {
             unsubscribeMessages?.();
-            runtime.state().events.forEach((event) => {
-                seenMessageEventIds.add(event.eventId);
-            });
-            unsubscribeMessages = runtime.subscribe((state) => {
-                state.events.forEach((event) => {
-                    if (
-                        seenMessageEventIds.has(event.eventId) ||
-                        event.kind !== 'message' ||
-                        !eventBelongsToConnection(event, connection)
-                    ) {
-                        return;
-                    }
-
-                    seenMessageEventIds.add(event.eventId);
-                    handler(toRtcMessage(event));
-                });
+            unsubscribeMessages = subscribeToRtcClientEvents({
+                runtime,
+                connection,
+                seenEventIds: seenMessageEventIds,
+                matches: (event) => event.kind === 'message',
+                deliver: (event) => handler(toRtcMessage(event))
             });
         },
 
         onClose(handler: (event: unknown) => void): void {
             unsubscribeClose?.();
-            runtime.state().events.forEach((event) => {
-                seenCloseEventIds.add(event.eventId);
-            });
-            unsubscribeClose = runtime.subscribe((state) => {
-                state.events.forEach((event) => {
-                    if (
-                        seenCloseEventIds.has(event.eventId) ||
-                        !isCloseEvent(event) ||
-                        !eventBelongsToConnection(event, connection)
-                    ) {
-                        return;
-                    }
-
-                    seenCloseEventIds.add(event.eventId);
-                    handler(event.payload ?? event);
-                });
+            unsubscribeClose = subscribeToRtcClientEvents({
+                runtime,
+                connection,
+                seenEventIds: seenCloseEventIds,
+                matches: isCloseEvent,
+                deliver: (event) => handler(event.payload ?? event)
             });
         }
     };

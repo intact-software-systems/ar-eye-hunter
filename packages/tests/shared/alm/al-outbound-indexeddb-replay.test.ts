@@ -24,6 +24,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
     createDefaultOutboundTestRuntime,
     createFlakyOutboundAdmissionStore,
@@ -177,7 +178,13 @@ describe('outbound IndexedDB durable queue replay', () => {
         const dbName = `outbound-queue-owner-${crypto.randomUUID()}`;
         const store = createALOutboundAdmissionStore({
             namespace: 'outbound',
-            backend: new IndexedDbAdmissionBackend({ dbName: dbName, storeName: 'admission', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) }),
+            backend: new IndexedDbAdmissionBackend({
+                dbName: dbName,
+                storeName: 'admission',
+                nowMs: Date.now,
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
+            }),
             supersedenceTrackTtlMs: 1_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -192,7 +199,8 @@ describe('outbound IndexedDB durable queue replay', () => {
         onTestFinished(() => database.close());
         const queue = new IndexedDbQueueBox({
             connection: new IndexedDbConnection(async () => database),
-            storeName: AL_ADMISSION_WORK_STORE_NAME
+            storeName: AL_ADMISSION_WORK_STORE_NAME,
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const keys = await queue.getAllKeys();
         expect(keys).toHaveLength(3);
@@ -375,7 +383,8 @@ function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
             dbName: `outbound-replay-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
     const store = createALOutboundAdmissionStore({
         namespace: 'outbound',

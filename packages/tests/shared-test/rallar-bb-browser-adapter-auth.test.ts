@@ -4,6 +4,7 @@ import { isApiMutationRequestId } from '@shared/api/mutation/api-mutation-reques
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { createBrowserRallarAlmMethodsTestDouble } from './browser-rallar-alm-methods-test-double.ts';
 
 function installStorage(): Storage {
     const values = new Map<string, string>();
@@ -156,6 +157,7 @@ describe('rallar-bb browser adapter auth', () => {
                 });
             }) as typeof fetch,
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 authenticate: async (config) => {
                     authenticateConfigs.push(config);
                     storage.setItem(
@@ -231,6 +233,7 @@ describe('rallar-bb browser adapter auth', () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: (async () => new Response('{}', { status: 200 })) as typeof fetch,
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async (config) => {
                     connectConfigs.push(config);
                     storage.setItem(
@@ -291,6 +294,7 @@ describe('rallar-bb browser adapter auth', () => {
                         }
                     })) as typeof fetch,
                 rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
                     authenticate: async (config) => {
                         authenticateConfigs.push(config);
                         const rallar = (config as { rallar?: { username?: string; password?: string; }; }).rallar;
@@ -479,6 +483,7 @@ describe('rallar-bb browser adapter auth', () => {
                     });
                 }) as typeof fetch,
                 rallarRuntime: {
+                    ...createBrowserRallarAlmMethodsTestDouble(),
                     authenticate: async (config) => {
                         authenticateConfigs.push(config);
                         storage.setItem(
@@ -746,6 +751,7 @@ describe('rallar-bb browser adapter auth', () => {
                 });
             }) as typeof fetch,
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => {
                     operations.push('RTC connect');
                     return { connected: true };
@@ -829,6 +835,7 @@ describe('rallar-bb browser adapter auth', () => {
         const sentPayloads: unknown[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async (input) => {
                     sentPayloads.push(input);
@@ -1120,6 +1127,7 @@ describe('rallar-bb browser adapter auth', () => {
         const sends: unknown[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async (input) => {
                     sends.push(input);
@@ -1174,6 +1182,7 @@ describe('rallar-bb browser adapter auth', () => {
         const sends: unknown[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
                 sendWs: async (input) => {

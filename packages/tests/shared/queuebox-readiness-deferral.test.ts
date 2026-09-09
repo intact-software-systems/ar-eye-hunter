@@ -3,6 +3,7 @@
 import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -21,7 +22,9 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
         vi.useFakeTimers({ toFake: ['Date'] });
         const startedAt = Date.parse('2026-01-01T00:00:00Z');
         vi.setSystemTime(startedAt);
-        const queue = backend === 'memory' ? new InMemoryQueueBox() : new IndexedDbQueueBox({ dbName: `expired-release-${crypto.randomUUID()}` });
+        const queue = backend === 'memory'
+            ? new InMemoryQueueBox()
+            : new IndexedDbQueueBox({ dbName: `expired-release-${crypto.randomUUID()}`, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry();
         await queue.enqueue(original);
         const reserved =
@@ -36,7 +39,9 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
     it('bounds readiness scheduling by the original deadline and never claims at exact expiry', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        const queue = backend === 'memory' ? new InMemoryQueueBox() : new IndexedDbQueueBox({ dbName: `deadline-${crypto.randomUUID()}` });
+        const queue = backend === 'memory'
+            ? new InMemoryQueueBox()
+            : new IndexedDbQueueBox({ dbName: `deadline-${crypto.randomUUID()}`, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry();
         await queue.enqueue(original);
         const reserved =
@@ -50,7 +55,9 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
     it('refunds only the readiness reservation after a real failed attempt', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        const queue = backend === 'memory' ? new InMemoryQueueBox() : new IndexedDbQueueBox({ dbName: `failure-${crypto.randomUUID()}` });
+        const queue = backend === 'memory'
+            ? new InMemoryQueueBox()
+            : new IndexedDbQueueBox({ dbName: `failure-${crypto.randomUUID()}`, observer: createPassThroughIndexedDbOperationObserver() });
         await queue.enqueue(createEntry());
         const request = { typeIds: new Set(['waiting']), statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]), reservationInput: 1 };
         const failed = [...(await queue.reserveEntries(request)).values()][0];
@@ -73,7 +80,7 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
         const queue = backend === 'memory'
             ? new InMemoryQueueBox()
-            : new IndexedDbQueueBox({ dbName: `readiness-${crypto.randomUUID()}` });
+            : new IndexedDbQueueBox({ dbName: `readiness-${crypto.randomUUID()}`, observer: createPassThroughIndexedDbOperationObserver() });
         const original = createEntry();
         await queue.enqueue(original);
 

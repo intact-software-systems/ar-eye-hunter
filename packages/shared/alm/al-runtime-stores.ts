@@ -1,4 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    createPassThroughIndexedDbOperationObserver,
+    type IndexedDbOperationObserver
+} from '../persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '../persistence/indexed-db-string-persistence-provider.ts';
 import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
 import {
@@ -27,6 +31,7 @@ export interface CreateInMemoryALRuntimeStoresInput {
 
 export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRuntimeStoresInput {
     readonly dbName: string | undefined;
+    readonly observer: IndexedDbOperationObserver;
 }
 
 export interface CreateDefaultALRuntimeStoresInput {
@@ -38,6 +43,7 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly orderingTrackTtlMs?: number;
     readonly supersedenceTrackTtlMs?: number;
     readonly retention?: ALRuntimeStoreRetentionConfig;
+    readonly observer?: IndexedDbOperationObserver;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -95,7 +101,8 @@ export function createIndexedDbALInboundRuntimeStores(
                 dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
                 storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
                 nowMs: input.nowMs,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: input.observer
             }),
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
@@ -117,7 +124,8 @@ export function createIndexedDbALOutboundRuntimeStores(
                     dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
                     storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
                     nowMs: input.nowMs,
-                    newWriteToken: crypto.randomUUID.bind(crypto)
+                    newWriteToken: crypto.randomUUID.bind(crypto),
+                    observer: input.observer
                 }),
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
@@ -172,6 +180,7 @@ function toDefaultIndexedDbInput(
 ): CreateIndexedDbALRuntimeStoresInput {
     return {
         ...toDefaultInMemoryInput(options),
-        dbName: options.dbName
+        dbName: options.dbName,
+        observer: options.observer ?? createPassThroughIndexedDbOperationObserver()
     };
 }

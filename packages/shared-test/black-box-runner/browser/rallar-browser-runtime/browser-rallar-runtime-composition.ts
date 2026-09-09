@@ -51,7 +51,15 @@ import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type CountingIndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import {
+    createScriptedTransportFaultPort,
+    type ScriptedTransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import type {
     BlackBoxRallarDirectorOutputRecord,
     BlackBoxRallarEvent
@@ -120,6 +128,7 @@ export interface BlackBoxBrowserRallarRuntimeDependency extends
     readonly rtc: BlackBoxBrowserRtcDependency;
     readonly crdt: BlackBoxBrowserCrdtDependency;
     readonly director: BlackBoxBrowserDirectorDependency;
+    readonly diagnostics: BlackBoxBrowserDiagnosticsDependency;
 }
 
 export interface BlackBoxBrowserAuthDependency
@@ -135,7 +144,13 @@ export interface BlackBoxBrowserRoomsDependency {
     formation(room: Parameters<BrowserRallarRooms['formation']>[0]): RallarRoomFormation;
 }
 
-export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'rtc' | 'ws'> {}
+export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
+
+/** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
+export interface BlackBoxBrowserDiagnosticsDependency {
+    readonly faults: ScriptedTransportFaultPort;
+    readonly storage: CountingIndexedDbOperationObserver;
+}
 
 export interface BlackBoxBrowserRealtimeDependency
     extends Pick<RallarRealtimeFacade, 'sendJson' | 'onJson' | 'health'> {}
@@ -162,6 +177,8 @@ export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFa
 }
 
 export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserRallarRuntimeDependency {
+    const faults = createScriptedTransportFaultPort();
+    const storage = createCountingIndexedDbOperationObserver();
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,
@@ -209,7 +226,15 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         state,
         messaging
     });
-    return toBlackBoxBrowserRuntimeDependency({ session, rooms, messaging, realtime, crdt, director });
+    return toBlackBoxBrowserRuntimeDependency({
+        session,
+        rooms,
+        messaging,
+        realtime,
+        crdt,
+        director,
+        diagnostics: { faults, storage }
+    });
 }
 
 export async function readBlackBoxRtcMessageNacks(
@@ -359,11 +384,12 @@ interface BlackBoxBrowserRuntimeComponents {
     readonly realtime: BrowserRealtimeCoreComposition;
     readonly crdt: BrowserCrdtComposition;
     readonly director: BrowserDirectorComposition;
+    readonly diagnostics: BlackBoxBrowserDiagnosticsDependency;
 }
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents
 ): BlackBoxBrowserRallarRuntimeDependency {
-    const { session, rooms, messaging, realtime, crdt, director } = components;
+    const { session, rooms, messaging, realtime, crdt, director, diagnostics } = components;
     return {
         ...session.connection,
         connect: async (options) => {
@@ -396,6 +422,7 @@ function toBlackBoxBrowserRuntimeDependency(
         ws: realtime.wsController.facade,
         rtc: realtime.rtc,
         crdt: crdt.crdt,
-        director: director.director
+        director: director.director,
+        diagnostics
     };
 }

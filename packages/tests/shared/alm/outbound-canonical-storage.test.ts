@@ -27,6 +27,7 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
@@ -42,7 +43,13 @@ describe('canonical outbound payload storage', () => {
         });
         vi.setSystemTime(1_000);
         const dbName = `canonical-cleanup-${crypto.randomUUID()}`;
-        const backend = new IndexedDbAdmissionBackend({ dbName: dbName, storeName: 'entries', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) });
+        const backend = new IndexedDbAdmissionBackend({
+            dbName: dbName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
         const store = createALOutboundAdmissionStore({
             namespace: 'canonical-cleanup',
             backend,
@@ -64,7 +71,8 @@ describe('canonical outbound payload storage', () => {
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto)
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
         });
         const otherStore = createALOutboundAdmissionStore({
             namespace: 'another-session:rtc',
@@ -95,8 +103,13 @@ describe('canonical outbound payload storage', () => {
         expect(await restarted.workQueue.getItem(toALOutboundIdentityKey(admitted.entry.key))).toBeDefined();
         expect((await store.readSentMessage(message.id.msgId))?.msg).toEqual(message);
         vi.setSystemTime(2_000);
-        const expiryQueue =
-            new IndexedDbAdmissionBackend({ dbName: dbName, storeName: 'entries', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) }).workQueue;
+        const expiryQueue = new IndexedDbAdmissionBackend({
+            dbName: dbName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        }).workQueue;
         await expiryQueue.cleanupAsync();
         const afterExpiry = await readRawCanonicalWorkKeys(dbName);
         expect(afterExpiry).toHaveLength(3);
@@ -112,7 +125,8 @@ describe('canonical outbound payload storage', () => {
                 dbName: `canonical-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: Date.now,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
             });
         const admissionStore = createALOutboundAdmissionStore({
             namespace: 'canonical-test',

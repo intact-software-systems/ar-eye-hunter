@@ -6,6 +6,7 @@ import {
     selectRallarBlackBoxDiagnostics,
     type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { createBrowserRallarAlmMethodsTestDouble } from './browser-rallar-alm-methods-test-double.ts';
 
 describe('rallar-bb-test runtime diagnostics', () => {
     it('normalizes transport diagnostics so wait and assert can match them', async () => {
@@ -103,6 +104,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     it('normalizes browser-adapter RTC send failures as structured diagnostics', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
+                ...createBrowserRallarAlmMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
                 send: async () => ({
                     status: 'no-peers',

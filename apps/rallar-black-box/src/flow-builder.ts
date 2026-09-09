@@ -726,6 +726,14 @@ function runnerStepForCommand(
         case 'director.relay.stop':
         case 'formation.command':
         case 'formation.readiness':
+        case 'messages.send':
+        case 'messages.observe':
+        case 'messages.cancel':
+        case 'messages.received':
+        case 'messages.receipts':
+        case 'fault.inject':
+        case 'storage.counters':
+        case 'agent.reload':
             return {
                 ...base,
                 type: command.kind,

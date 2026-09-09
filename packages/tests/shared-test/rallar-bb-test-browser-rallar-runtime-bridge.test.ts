@@ -10,6 +10,7 @@ import {
     installSpaBrowserRallarEventBridge
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
+import { createBrowserRallarAlmMethodsTestDouble } from './browser-rallar-alm-methods-test-double.ts';
 
 describe('browser Rallar runtime bridge', () => {
     afterEach(() => {
@@ -19,6 +20,7 @@ describe('browser Rallar runtime bridge', () => {
     it('delegates SPA browser Rallar runtime calls to the window runtime', async () => {
         const refreshRoom = vi.fn(async (input) => ({ action: 'refreshRoom', input }));
         const runtime: RallarBlackBoxBrowserRallarRuntime = {
+            ...createBrowserRallarAlmMethodsTestDouble(),
             authenticate: vi.fn(async (input) => ({ action: 'authenticate', input })),
             connect: vi.fn(async (input) => ({ action: 'connect', input })),
             send: vi.fn(async (input) => ({ action: 'send', input })),
@@ -100,6 +102,7 @@ describe('browser Rallar runtime bridge', () => {
 
     it('rejects missing authentication capability without starting a full connection', async () => {
         const runtime: RallarBlackBoxBrowserRallarRuntime = {
+            ...createBrowserRallarAlmMethodsTestDouble(),
             connect: vi.fn(async (input) => ({ action: 'connect', input })),
             send: vi.fn(async (input) => ({ action: 'send', input })),
             refreshRoom: vi.fn(async () => ({ action: 'refreshRoom' })),

@@ -16,6 +16,7 @@ import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
@@ -746,6 +747,7 @@ function createConnectionService(connectedPeerIds: readonly string[], readyState
     const connectionService = new shared.WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
         sessionId: 'self',
         token: 'test-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
@@ -763,7 +765,11 @@ function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPe
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
     });
-    const channel = new shared.QRtcDataChannel(connection, { peerId, dataChannelName: 'test' });
+    const channel = new shared.QRtcDataChannel(connection, {
+        faultPort: createPassThroughTransportFaultPort(),
+        peerId,
+        dataChannelName: 'test'
+    });
     const health = channel.readHealth();
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState });
     vi.spyOn(channel, 'sendJson').mockImplementation((message) => {

@@ -101,6 +101,90 @@ in the browser runtime's own room resolution, not in the control protocol.
 The capabilities are the source for UI help, catalog filtering, and future
 distributed recipe preflight checks.
 
+A control agent's own registration carries a second, separate capability
+document. `parseControlAgentCapabilities` requires a `messaging` block beside
+`crdt`, and rejects the registration outright when it is absent or malformed:
+
+```json
+{
+  "supported": true,
+  "carriers": ["ws", "rtc", "rtc-with-ws-fallback"],
+  "faults": true,
+  "storageCounters": true,
+  "reload": true
+}
+```
+
+An agent built before the ALM commands landed therefore cannot register against
+a current control server.
+
+## ALM Commands
+
+Eight command kinds drive the Application Layer Messaging surface. All eight are
+browser-only: the in-process runner adapter refuses them with the
+`browser-only-command` code rather than translating one into an `rtc.send`, and
+that refusal fails the step.
+
+`messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
+and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
+`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq` and `handleId`. It returns
+`{ handleId, msgId?, carrier, status, reason? }`. `handleId` defaults to the
+command's own `commandId`, and every later delivery command addresses the send
+through that handle. Supersedence (`key`) and unicast targeting (`toPeerId`) are
+not part of this release; naming either one fails recipe validation.
+
+`messages.observe` waits for a handle to reach one of the states it lists, and
+`messages.receipts` reads the same observation without waiting. The states are
+`rejected`, `accepted`, `queued`, `transport-accepted`, `acknowledged`,
+`expired`, `superseded`, `failed` and `cancelled`. **This release derives the
+ledger from local admission only.** A send settles on `accepted` or `rejected`
+at admission time and never advances on a peer receipt, and both
+`confirmedPeerIds` and `unconfirmedPeerIds` stay empty. An observe that names a
+state admission cannot produce burns its whole timeout and then fails.
+`messages.cancel` moves a handle to `cancelled` locally; it does not recall a
+message the transport already accepted.
+
+The delivery ledger lives on the connection. Connecting clears it, so every
+observe, receipts or cancel for a handle must run before the next
+`rtc.connect` on that connection.
+
+`messages.received` counts inbound messages of a `typeId` (optionally one
+`msgId`). It scans the **whole** inbound event log rather than a trailing
+window, so a scenario that legitimately produced the same message earlier needs
+a distinct `typeId` to say which occurrence it means. A presence claim settles
+as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
+passes only when fewer than `max(count, 1)` messages arrived.
+
+`fault.inject` schedules a scripted `drop` or `{ delayMs }` for the next
+`remaining` matching frames on the `ws` or `rtc` carrier. The matcher reads the
+**AL envelope**, not the recipe's own fields: `match.typeId` compares against
+`payload.typeId`, `match.msgId` against `id.msgId` — or, for an ACK, NACK or
+repair, against the original message id parsed out of the control payload's own
+`resource` JSON — and `match.controlType` selects the ACK, NACK or repair type
+id. A top-level `typeId` never matches. The fault's observations are not
+readable from a recipe in this release, so a fault's effect can only be inferred
+from what the receiver did or did not get.
+
+`storage.counters` reads the AL-owned IndexedDB operation counters as
+`{ total, byOwner: { 'al-admission', 'al-work' }, byKind }`, and `reset: true`
+reads and then clears them. The scripted storage observer and transport fault
+port are attached only when the active connection names an application, so both
+`storage.counters` and `fault.inject` refuse a connection without one instead of
+reporting zeros.
+
+`agent.reload` asks the control agent to reload its page and resume the run. The
+agent records the run id, its agent id and the command ids it already completed
+in `localStorage` under `rallar-bb-agent-resume`, replays that record on
+re-register, and the coordinator continues from the next command. On the
+`spa-local` surface nothing reloads and the command only records the request.
+
+### The `messages.ws` Connect Transport
+
+`rtc.connect` accepts `transport: 'messages.ws'` beside `realtime` and
+`messages.rtc`. It subscribes the typed inbound channel over the WebSocket and
+opens no RTC lane, which is what lets the `ws` carrier run without a peer. It is
+a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
+
 ## RTC Connect Readiness
 
 `rtc.connect.readiness` waits for actual ready-peer health before the command

@@ -90,6 +90,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             sessionId: session.sessionId,
             scope,
             operationOptions,
+            diagnosticsPorts: this.input.connectionRuntime.readDefaults()?.diagnosticsPorts,
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
             isSessionCurrent: () => readSession()?.sessionId === session.sessionId,
             onAuthInvalid: async (error) => await this.handleAuthInvalidError(error)

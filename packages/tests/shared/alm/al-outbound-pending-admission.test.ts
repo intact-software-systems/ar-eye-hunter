@@ -11,6 +11,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
@@ -30,7 +31,13 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     const dbName = `outbound-pending-${crypto.randomUUID()}`;
     const backend = kind === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
-        : new IndexedDbAdmissionBackend({ dbName: dbName, storeName: 'entries', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) });
+        : new IndexedDbAdmissionBackend({
+            dbName: dbName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
     const options = { namespace: 'outbound-pending', backend, supersedenceTrackTtlMs: 60_000, retention: normalizeALRuntimeStoreRetention() };
     const store = createALOutboundAdmissionStore(options);
     const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-sender-version'));
@@ -72,7 +79,13 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         ...options,
         backend: kind === 'memory'
             ? backend
-            : new IndexedDbAdmissionBackend({ dbName: dbName, storeName: 'entries', nowMs: Date.now, newWriteToken: crypto.randomUUID.bind(crypto) })
+            : new IndexedDbAdmissionBackend({
+                dbName: dbName,
+                storeName: 'entries',
+                nowMs: Date.now,
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
+            })
     });
     const engine = new InboxOutboxEngine();
     const sent: string[] = [];

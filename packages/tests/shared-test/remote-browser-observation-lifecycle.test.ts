@@ -9,6 +9,7 @@ import type { WsInteraction } from '../../shared-test/black-box-runner/ws/ws-wai
 
 import { executeRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import { decodeRemoteBrowserObservations } from '../../shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts';
 
 function emptySnapshot(): Response {
     return Response.json({ runId: 'observation-run', results: [], events: [] });
@@ -81,6 +82,34 @@ describe('remote-browser observation lifecycle', () => {
             await waiting;
         }
         expect(settled).toBe(true);
+    });
+
+    it('decodes an event carrying the messages.ws connect transport', () => {
+        const decoded = decodeRemoteBrowserObservations({
+            runId: 'observation-run',
+            value: {
+                runId: 'observation-run',
+                results: [],
+                events: [{
+                    kind: 'event',
+                    protocolVersion: 1,
+                    runId: 'observation-run',
+                    agentId: 'agent',
+                    eventId: 'ws-carrier-event',
+                    atEpochMs: 1,
+                    payload: {
+                        kind: 'message',
+                        eventId: 'ws-carrier-event',
+                        topic: 'rallar.browser.messages.ws.message',
+                        connection: 'alice',
+                        atEpochMs: 1,
+                        transport: 'messages.ws'
+                    }
+                }]
+            }
+        });
+
+        expect(decoded.events[0].payload.transport).toBe('messages.ws');
     });
 });
 

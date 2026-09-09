@@ -446,20 +446,22 @@ overrides.
 
 These are read by tests under `tests/playwright/rallar-black-box`.
 
-| Variable                                    | Required | Default                          | Usage                                                                       |
-| ------------------------------------------- | -------- | -------------------------------- | --------------------------------------------------------------------------- |
-| `RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES`      | No       | Disabled                         | Boolean gate for live distributed recipe tests.                             |
-| `RALLAR_BLACK_BOX_LIVE_DISTRIBUTED_RECIPES` | No       | Disabled                         | Alternate boolean gate for live distributed recipe tests.                   |
-| `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX`          | No       | Disabled                         | Boolean gate for the live three-browser RTC matrix.                         |
-| `RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS`       | No       | Disabled                         | Boolean gate for exhaustive live RTC scenarios.                             |
-| `VITE_RALLAR_GROUP_ID`                      | No       | None                             | Alias for `VITE_RALLAR_ROOM_ID` in the live RTC matrix.                     |
-| `VITE_RALLAR_CLIENT_ID`                     | No       | Derived from username or default | Client ID for generic agent A full-stack helpers and restore-session smoke. |
-| `VITE_RALLAR_EXPIRES_AT_EPOCH_MS`           | No       | Future test fallback             | Expiry timestamp for generic restored-session smoke.                        |
-| `VITE_RALLAR_REAL_PEER_IDS`                 | No       | Empty                            | Comma-separated peer IDs for live real-provider direct or multicast sends.  |
-| `VITE_RALLAR_MESSAGES_RTC_TYPE_ID`          | No       | Test default                     | Type ID for `messages.rtc` tests.                                           |
-| `VITE_RALLAR_TYPE_ID`                       | No       | Test default                     | Fallback type ID for `messages.rtc` tests.                                  |
-| `VITE_RALLAR_MESSAGES_RTC_TOPIC_ID`         | No       | Test default                     | Topic ID for `messages.rtc` tests.                                          |
-| `VITE_RALLAR_TOPIC_ID`                      | No       | Test default                     | Fallback topic ID for `messages.rtc` tests.                                 |
+| Variable                                    | Required | Default                          | Usage                                                                              |
+| ------------------------------------------- | -------- | -------------------------------- | ---------------------------------------------------------------------------------- |
+| `RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES`      | No       | Disabled                         | Boolean gate for live distributed recipe tests.                                    |
+| `RALLAR_BLACK_BOX_LIVE_DISTRIBUTED_RECIPES` | No       | Disabled                         | Alternate boolean gate for live distributed recipe tests.                          |
+| `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX`          | No       | Disabled                         | Boolean gate for the live three-browser RTC matrix.                                |
+| `RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS`       | No       | Disabled                         | Boolean gate for exhaustive live RTC scenarios.                                    |
+| `RALLAR_BLACK_BOX_ALM_SCOPE`                | No       | `smoke`                          | Scenario coverage for the ALM conformance lane. Supported values: `smoke`, `full`. |
+| `RALLAR_BLACK_BOX_ALM_SKIP`                 | No       | Empty                            | Comma-separated ALM conformance scenario IDs withheld from the lane.               |
+| `VITE_RALLAR_GROUP_ID`                      | No       | None                             | Alias for `VITE_RALLAR_ROOM_ID` in the live RTC matrix.                            |
+| `VITE_RALLAR_CLIENT_ID`                     | No       | Derived from username or default | Client ID for generic agent A full-stack helpers and restore-session smoke.        |
+| `VITE_RALLAR_EXPIRES_AT_EPOCH_MS`           | No       | Future test fallback             | Expiry timestamp for generic restored-session smoke.                               |
+| `VITE_RALLAR_REAL_PEER_IDS`                 | No       | Empty                            | Comma-separated peer IDs for live real-provider direct or multicast sends.         |
+| `VITE_RALLAR_MESSAGES_RTC_TYPE_ID`          | No       | Test default                     | Type ID for `messages.rtc` tests.                                                  |
+| `VITE_RALLAR_TYPE_ID`                       | No       | Test default                     | Fallback type ID for `messages.rtc` tests.                                         |
+| `VITE_RALLAR_MESSAGES_RTC_TOPIC_ID`         | No       | Test default                     | Topic ID for `messages.rtc` tests.                                                 |
+| `VITE_RALLAR_TOPIC_ID`                      | No       | Test default                     | Fallback topic ID for `messages.rtc` tests.                                        |
 
 Agent-specific test variables are accepted in both long and short forms in
 some tests:

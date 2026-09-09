@@ -11,7 +11,7 @@ export interface BrowserTransportRuntimePort {
     requireMiddleware(): ApiMiddleware;
     isReady(): boolean;
     isInitializing(): boolean;
-    init(options?: MiddlewareInitOptions): Promise<ApiMiddleware>;
+    init(options: MiddlewareInitOptions): Promise<ApiMiddleware>;
     shutdown(reason?: string): void;
 }
 
@@ -41,7 +41,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         return this.pendingMiddleware !== undefined;
     }
 
-    public init(options: MiddlewareInitOptions = {}): Promise<ApiMiddleware> {
+    public init(options: MiddlewareInitOptions): Promise<ApiMiddleware> {
         if (this.activeMiddleware) {
             return Promise.resolve(this.activeMiddleware);
         }

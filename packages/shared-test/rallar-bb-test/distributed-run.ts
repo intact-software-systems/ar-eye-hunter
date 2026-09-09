@@ -10,6 +10,7 @@ import {
 import type {
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCrdtTransport,
+    RallarBlackBoxTestMessagesCarrier,
     RallarBlackBoxTestRecipe
 } from './types.ts';
 
@@ -128,6 +129,15 @@ export type RallarBlackBoxControlAgentIdentity = Readonly<{
 export type RallarBlackBoxControlAgentCapabilities = Readonly<{
     crdt?: RallarBlackBoxControlAgentCrdtCapability;
     assertions?: RallarBlackBoxControlAgentAssertionsCapability;
+    messaging: RallarBlackBoxControlAgentMessagingCapability;
+}>;
+
+export type RallarBlackBoxControlAgentMessagingCapability = Readonly<{
+    supported: boolean;
+    carriers: readonly RallarBlackBoxTestMessagesCarrier[];
+    faults: boolean;
+    storageCounters: boolean;
+    reload: boolean;
 }>;
 
 export type RallarBlackBoxControlAgentAssertionsCapability = Readonly<{

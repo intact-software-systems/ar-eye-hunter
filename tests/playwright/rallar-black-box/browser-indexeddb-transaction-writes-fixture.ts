@@ -12,6 +12,7 @@ import {
     writeIndexedDbAdmissionMutations,
     type WriteIndexedDbAdmissionMutationsInput
 } from '../../../packages/shared/alm/write-indexed-db-admission-mutations.ts';
+import { createPassThroughIndexedDbOperationObserver } from '../../../packages/shared/persistence/indexed-db-operation-observer.ts';
 import {
     readIndexedDbRequest,
     readIndexedDbTransaction
@@ -65,9 +66,17 @@ export async function runIndexedDbTransactionWriteBrowserProbe(
 ): Promise<IndexedDbTransactionWriteBrowserProbe> {
     const dbName = `playwright-indexeddb-queue-${databaseId}`;
     const storedEntry = createQueueEntry('stored', 'stored-value');
-    const firstQueue = new IndexedDbQueueBox({ dbName, storeName: STORE_NAME });
+    const firstQueue = new IndexedDbQueueBox({
+        dbName,
+        storeName: STORE_NAME,
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
     await firstQueue.enqueue(storedEntry);
-    const secondQueue = new IndexedDbQueueBox({ dbName, storeName: STORE_NAME });
+    const secondQueue = new IndexedDbQueueBox({
+        dbName,
+        storeName: STORE_NAME,
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
     const [firstRead, secondRead] = await Promise.all([
         firstQueue.getItem(storedEntry.key),
         secondQueue.getItem(storedEntry.key)
@@ -148,7 +157,8 @@ async function runAtomicAdmissionStorageProbe(dbName: string): Promise<IndexedDb
     const reopened = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
     const queue = new IndexedDbQueueBox({
         connection: new IndexedDbConnection(async () => reopened),
-        storeName: AL_ADMISSION_WORK_STORE_NAME
+        storeName: AL_ADMISSION_WORK_STORE_NAME,
+        observer: createPassThroughIndexedDbOperationObserver()
     });
     try {
         const reserved = await queue.reserveEntries({

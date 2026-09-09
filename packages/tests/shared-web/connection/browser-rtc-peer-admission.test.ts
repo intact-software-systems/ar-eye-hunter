@@ -7,6 +7,7 @@ import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-life
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcSignalingChannel, QRtcSignalingMsgType, QRtcSignalingType, type QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import {
     createNativeRtcConnectionFixture,
@@ -235,6 +236,7 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
     const connection = createNativeRtcConnectionFixture({
         sessionId: 'self',
         token: 'fixture-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc'

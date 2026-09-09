@@ -45,6 +45,8 @@ export type {
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
+    RallarDiagnosticsPorts,
+    RallarDiagnosticsPortsInput,
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
     RallarListPeopleEventsOptions,

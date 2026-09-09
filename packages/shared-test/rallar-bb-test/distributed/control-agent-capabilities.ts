@@ -11,6 +11,10 @@ import type {
     RallarBlackBoxTestCrdtTransport,
     RallarBlackBoxTestRecipe
 } from '../types.ts';
+import {
+    CONTROL_AGENT_MESSAGING_CAPABILITY,
+    decodeControlAgentMessagingCapability
+} from './control-agent-messaging-capability.ts';
 
 const CONTROL_AGENT_CRDT_TRANSPORTS = [
     'local-only',
@@ -64,7 +68,8 @@ export function toControlAgentCapabilities(
             absence: true,
             untilLoop: true,
             operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
-        }
+        },
+        messaging: CONTROL_AGENT_MESSAGING_CAPABILITY
     };
 }
 
@@ -76,6 +81,10 @@ export function parseControlAgentCapabilities(
     }
     const crdt = isRecord(value.crdt) ? value.crdt : undefined;
     if (!crdt || typeof crdt.supported !== 'boolean') {
+        return undefined;
+    }
+    const messaging = decodeControlAgentMessagingCapability(value.messaging);
+    if (!messaging) {
         return undefined;
     }
 
@@ -96,6 +105,7 @@ export function parseControlAgentCapabilities(
                 ? crdt.apiBaseUrlConfigured
                 : undefined
         },
+        messaging,
         ...(assertions ? { assertions } : {})
     };
 }

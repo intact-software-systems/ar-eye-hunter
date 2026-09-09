@@ -1,16 +1,25 @@
 import type {
+    RallarMessage,
+    RallarMessageSendResult,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
     RallarRtcSendInput,
+    RallarTypedMessageChannel,
+    RallarTypedMessageSendOptions,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarDeliveryObservation,
     BlackBoxRallarEvent,
+    BlackBoxRallarMessageSendDiagnostics,
+    BlackBoxRallarMessageSendInput,
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarTransport,
@@ -25,6 +34,8 @@ import {
     decodeBlackBoxRallarSendInput,
     decodeBlackBoxRallarWsSendInput
 } from './decode-black-box-rallar-command-input.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './messaging/black-box-rallar-delivery-error-message-prefixes.ts';
+import { decodeBlackBoxRallarMessageSendInput } from './messaging/decode-black-box-rallar-messaging-input.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
 
 export interface BlackBoxRallarMessagingLease {
@@ -119,6 +130,116 @@ interface WsSendContext
     readonly transport: 'ws';
 }
 
+function typedSelectorKey(typeId: string, topicId: string | undefined): string {
+    return JSON.stringify({ kind: 'typed', typeId, topicId });
+}
+
+interface TypedChannelRoute {
+    readonly typeId: string;
+    readonly topicId: string | undefined;
+    readonly roomRef: GroupRef | undefined;
+}
+
+function toTypedSendOptions(
+    send: BlackBoxRallarMessageSendInput
+): RallarTypedMessageSendOptions<unknown> {
+    return {
+        strategy: send.carrier,
+        ...(send.reliability === undefined ? {} : { reliability: send.reliability }),
+        ...(send.ack === undefined ? {} : { ack: send.ack }),
+        ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
+        ...(send.orderingKey === undefined ? {} : { orderingKey: send.orderingKey }),
+        ...(send.seq === undefined ? {} : { seq: send.seq }),
+        ...(send.scope === undefined ? {} : { scope: send.scope })
+    };
+}
+
+type TypedSendAdmission = Either<string, RallarMessageSendResult>;
+
+function toDeliveryObservationState(
+    status: RallarMessageSendResult['status']
+): BlackBoxRallarDeliveryObservation['state'] {
+    switch (status) {
+        case 'enqueued':
+        case 'accepted':
+        case 'skipped':
+        case 'duplicate':
+            return 'accepted';
+        case 'pending-admission':
+            return 'queued';
+        case 'superseded':
+            return 'superseded';
+        case 'expired':
+            return 'expired';
+        case 'rate-limited':
+            return 'rejected';
+        default:
+            return 'failed';
+    }
+}
+
+async function readTypedSendAdmission(
+    sent: Promise<RallarMessageSendResult>
+): Promise<TypedSendAdmission> {
+    try {
+        return Either.ofRight(await sent);
+    }
+    catch (caught) {
+        if (!isRallarValidationError(caught)) {
+            throw caught;
+        }
+        return Either.ofLeft(caught.message);
+    }
+}
+
+function toDeliveryObservationFromAdmission(
+    handleId: string,
+    admission: TypedSendAdmission
+): BlackBoxRallarDeliveryObservation {
+    return admission.fold<BlackBoxRallarDeliveryObservation>(
+        () => ({
+            handleId,
+            state: 'rejected',
+            submitted: false,
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: [],
+            attempts: 1
+        }),
+        (result) => ({
+            handleId,
+            state: toDeliveryObservationState(result.status),
+            submitted: result.status === 'enqueued' || result.status === 'accepted',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: [],
+            attempts: 1
+        })
+    );
+}
+
+function toMessageSendDiagnostics(
+    send: BlackBoxRallarMessageSendInput,
+    admission: TypedSendAdmission
+): BlackBoxRallarMessageSendDiagnostics {
+    return admission.fold<BlackBoxRallarMessageSendDiagnostics>(
+        (reason) => ({
+            handleId: send.handleId,
+            msgId: undefined,
+            carrier: send.carrier,
+            status: 'rejected',
+            reason,
+            message: undefined
+        }),
+        (result) => ({
+            handleId: send.handleId,
+            msgId: result.message.id.msgId,
+            carrier: send.carrier,
+            status: result.status,
+            reason: result.reason,
+            message: result
+        })
+    );
+}
+
 function messageRoutingDiagnostics(
     request: RallarRtcSendInput<unknown> | RallarWsSendInput<unknown>
 ): MessageRoutingDiagnostics {
@@ -158,6 +279,7 @@ export namespace BlackBoxRallarMessagingController {
 export class BlackBoxRallarMessagingController {
     readonly #options: BlackBoxRallarMessagingController.Input;
     readonly #resources: BlackBoxRallarMessagingResourceController;
+    readonly #deliveries = new Map<string, BlackBoxRallarDeliveryObservation>();
     constructor(options: BlackBoxRallarMessagingController.Input) {
         this.#options = options;
         this.#resources = createBlackBoxRallarMessagingResourceController(options);
@@ -467,5 +589,128 @@ export class BlackBoxRallarMessagingController {
         }
     };
 
+    private emitTypedChannelMessage = (
+        config: BlackBoxRallarConnectionConfig,
+        topic: string,
+        transport: BlackBoxRallarEvent['transport'],
+        message: RallarMessage<unknown>
+    ): void => {
+        this.#options.emit({
+            kind: 'message',
+            topic,
+            connection: config.connection,
+            actor: config.actor,
+            transport,
+            roomId: message.roomId ?? config.roomId,
+            ...this.#options.scopeDiagnostics(config),
+            senderId: message.senderId,
+            typeId: message.typeId,
+            topicId: message.topicId,
+            contextId: message.contextId,
+            resourceId: message.resourceId,
+            data: {
+                msgId: message.raw.id.msgId,
+                typeId: message.typeId,
+                topicId: message.topicId,
+                transport: message.transport,
+                payload: message.payload
+            }
+        });
+    };
+
+    private ensureTypedChannelSubscription = (
+        config: BlackBoxRallarConnectionConfig,
+        route: TypedChannelRoute
+    ): RallarTypedMessageChannel<unknown> => {
+        const channel = this.#options.facade.messages.room<unknown>({
+            typeId: route.typeId,
+            topicId: route.topicId,
+            roomId: config.roomId,
+            roomRef: route.roomRef
+        });
+        this.#resources.ensureWsSubscription(typedSelectorKey(route.typeId, route.topicId), () => {
+            const unsubscribeWs = channel.onWs((_payload, message) => {
+                this.emitTypedChannelMessage(config, 'rallar.browser.ws.message', 'ws', message);
+            });
+            const unsubscribeRtc = channel.onRtc((_payload, message) => {
+                this.emitTypedChannelMessage(config, 'rallar.browser.messages.rtc.message', 'messages.rtc', message);
+            });
+            return () => {
+                unsubscribeWs();
+                unsubscribeRtc();
+            };
+        });
+        return channel;
+    };
+
+    /** A receiver that only connects still needs the inbound topics a send would otherwise install. */
+    subscribeTypedChannel = (config: BlackBoxRallarConnectionConfig): void => {
+        this.ensureTypedChannelSubscription(config, {
+            typeId: this.#options.typeIdOf(config),
+            topicId: this.#options.topicIdOf(config),
+            roomRef: this.#options.roomRefOf(config)
+        });
+    };
+
+    private sendTypedMessage = async (
+        send: BlackBoxRallarMessageSendInput,
+        config: BlackBoxRallarConnectionConfig,
+        lease: BlackBoxRallarMessagingLease
+    ): Promise<BlackBoxRallarMessageSendDiagnostics> => {
+        const roomRef = this.#options.roomRefOf(config, { roomRef: send.roomRef });
+        const channel = this.ensureTypedChannelSubscription(config, {
+            typeId: send.typeId,
+            topicId: send.topicId,
+            roomRef
+        });
+        this.#options.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
+            handleId: send.handleId,
+            carrier: send.carrier,
+            typeId: send.typeId,
+            topicId: send.topicId,
+            roomId: config.roomId,
+            roomRef
+        });
+        const admission = await readTypedSendAdmission(
+            channel.send(send.payload, toTypedSendOptions(send))
+        );
+        this.#resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
+        this.#deliveries.set(send.handleId, toDeliveryObservationFromAdmission(send.handleId, admission));
+        const diagnostics = toMessageSendDiagnostics(send, admission);
+        this.#options.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
+        return diagnostics;
+    };
+
+    sendMessage = async (input: unknown): Promise<BlackBoxRallarMessageSendDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.#resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
+        return await this.sendTypedMessage(decodeBlackBoxRallarMessageSendInput(input), config, lease);
+    };
+
+    readDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
+        const observation = this.#deliveries.get(handleId);
+        if (observation === undefined) {
+            throw new TypeError(
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.unknownDeliveryHandle} ${handleId}`
+            );
+        }
+        return observation;
+    };
+
+    cancelDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
+        const cancelled: BlackBoxRallarDeliveryObservation = {
+            ...this.readDelivery(handleId),
+            state: 'cancelled'
+        };
+        this.#deliveries.set(handleId, cancelled);
+        return cancelled;
+    };
+
     cleanupWsSubscriptions = (): number => this.#resources.cleanupWsSubscriptions();
+
+    /** Handles are per-connection: a reconnect starts a fresh ledger, so observes must precede it. */
+    resetDeliveryLedger = (): void => {
+        this.#deliveries.clear();
+    };
 }

@@ -14,6 +14,7 @@ import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -123,7 +124,7 @@ function createMediaPeerFixture(): MediaPeerFixture {
         iceCandidates,
         isPolite: false
     });
-    const channel = new QRtcDataChannel(connection, { peerId: 'peer-1', dataChannelName: 'test' });
+    const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const media = new QRtcMediaChannel(connection, { peerId: 'peer-1' });
     const subscription = vi.spyOn(connection, 'onRemoteStreamDo');
     media.connect();

@@ -1,3 +1,4 @@
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { CreateDefaultALRuntimeStoresInput } from '@shared/alm/al-runtime-stores.ts';
 import {
@@ -25,6 +26,10 @@ import {
 } from './browser-al-runtime-identity.ts';
 
 type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
+
+export interface ConfigureBrowserALRuntimeStoresInput extends Omit<BrowserALRuntimeOptions, 'observer'> {
+    readonly diagnosticsPorts: RallarDiagnosticsPorts;
+}
 
 type RuntimeStoreDirection = 'inbound' | 'outbound';
 
@@ -152,10 +157,12 @@ export function createBrowserALOutboundRuntimeStores(
 
 export function configureBrowserALRuntimeStores(
     sessionId: string,
-    options: BrowserALRuntimeOptions = {}
+    input: ConfigureBrowserALRuntimeStoresInput
 ): void {
-    const scoped = {
+    const { diagnosticsPorts, ...options } = input;
+    const scoped: BrowserALRuntimeOptions = {
         ...options,
+        observer: diagnosticsPorts.indexedDbOperationObserver,
         canonicalScope: `browser-session:${sessionId}`,
         outboundBackend: !isIndexedDbALRuntimeStoreSupported()
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)

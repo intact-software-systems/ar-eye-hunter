@@ -45,6 +45,7 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
 } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
+import type { RallarBlackBoxControlAgentCapabilities } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
     configuredDistributedRecipeCatalogItem as sharedConfiguredDistributedRecipeCatalogItem,
     createRallarBlackBoxTestRuntime,
@@ -57,6 +58,14 @@ import {
     validateDistributedRunManifest
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import type { RallarBlackBoxTestCrdtOpenCommand, RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+
+const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {
+    supported: true,
+    carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
+    faults: true,
+    storageCounters: true,
+    reload: true
+};
 
 const runSnapshot: ControlRunSnapshot = {
     runId: 'run-1',
@@ -1401,7 +1410,8 @@ describe('distributed recipes helpers', () => {
                                             'ws-then-rtc',
                                             'rtc-with-ws-fallback'
                                         ]
-                                    }
+                                    },
+                                    messaging: FULL_MESSAGING_CAPABILITY
                                 }
                             }
                         }
@@ -1453,7 +1463,8 @@ describe('distributed recipes helpers', () => {
                         crdt: {
                             supported: true,
                             transports: ['ws']
-                        }
+                        },
+                        messaging: FULL_MESSAGING_CAPABILITY
                     }
                 }
             }]
@@ -1528,7 +1539,8 @@ describe('distributed recipes helpers', () => {
                         crdt: {
                             supported: true,
                             transports: ['ws']
-                        }
+                        },
+                        messaging: FULL_MESSAGING_CAPABILITY
                     }
                 }
             }]
@@ -1583,7 +1595,8 @@ describe('distributed recipes helpers', () => {
                         crdt: {
                             supported: true,
                             transports: ['ws']
-                        }
+                        },
+                        messaging: FULL_MESSAGING_CAPABILITY
                     }
                 }
             }]

@@ -56,6 +56,25 @@ interface RtcClientSendFailureInput {
     readonly error: unknown;
 }
 
+interface RtcClientOutcomeFailure {
+    readonly code: string;
+    readonly message: string;
+}
+
+interface RtcSendAttempt {
+    readonly config: any;
+    readonly interaction: any;
+    readonly connectionName: string;
+    readonly payload: any;
+}
+
+interface RtcClientSendRecord {
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
+    readonly sendResult: unknown;
+    readonly diagnostics: unknown;
+}
+
 interface RtcSentMessageDetails {
     readonly sentConnection: string;
     readonly sent: unknown;
@@ -232,6 +251,44 @@ function toRtcClientSendFailure(input: RtcClientSendFailureInput): any {
     });
 }
 
+/** An adapter that refuses a send reports it as a value; the step it came from has to fail with it. */
+function toRtcClientOutcomeFailure(sendResult: any): RtcClientOutcomeFailure | undefined {
+    if (sendResult?.status !== 'failed') {
+        return undefined;
+    }
+    const error = sendResult.error ?? {};
+    return {
+        code: typeof error.code === 'string' ? error.code : 'rtc-send-refused',
+        message: typeof error.message === 'string' ? error.message : 'RTC send was refused'
+    };
+}
+
+function toRtcSendOutcomeFailureStatus(sendAttempt: RtcSendAttempt, sendResult: any): any {
+    const outcomeFailure = toRtcClientOutcomeFailure(sendResult);
+    if (!outcomeFailure) {
+        return undefined;
+    }
+    const { config, interaction, connectionName, payload } = sendAttempt;
+    return toRtcFailureStatus({
+        config,
+        interaction,
+        result: outcomeFailure.message,
+        details: { connection: connectionName, sent: payload, sendResult, code: outcomeFailure.code }
+    });
+}
+
+function rememberRtcClientSend(connection: any, record: RtcClientSendRecord): void {
+    connection.lastSendStartedAtEpochMs = record.startedAtEpochMs;
+    connection.lastSendEndedAtEpochMs = record.endedAtEpochMs;
+    connection.lastSendLatencyMs = record.endedAtEpochMs - record.startedAtEpochMs;
+    if (record.sendResult !== undefined) {
+        connection.lastSendResult = record.sendResult;
+    }
+    if (record.diagnostics !== undefined) {
+        connection.diagnostics = record.diagnostics;
+    }
+}
+
 function waitForRtcSendResult(input: RtcSendWaitInput): Promise<any> {
     const response = input.interaction.response;
     if (response?.count !== undefined) {
@@ -325,6 +382,7 @@ class RtcClientProvider implements RtcProvider {
         const connection = context.rtcConnections[connectionName];
         const client: RtcClient | undefined = connection?.client;
         const payload = toRtcPayload(interaction.request);
+        const sendAttempt: RtcSendAttempt = { config, interaction, connectionName, payload };
         let sendStartedAtEpochMs: number | undefined;
 
         if (!client) {
@@ -342,17 +400,16 @@ class RtcClientProvider implements RtcProvider {
             const startedAt: number = context.dependencies.now();
             sendStartedAtEpochMs = startedAt;
             const sendResult = await client.send(payload, interaction);
-            const sendEndedAtEpochMs = context.dependencies.now();
-            const diagnostics = client.diagnostics?.();
-            connection.lastSendStartedAtEpochMs = sendStartedAtEpochMs;
-            connection.lastSendEndedAtEpochMs = sendEndedAtEpochMs;
-            connection.lastSendLatencyMs = sendEndedAtEpochMs - startedAt;
-            if (sendResult !== undefined) {
-                connection.lastSendResult = sendResult;
+            const outcomeFailureStatus = toRtcSendOutcomeFailureStatus(sendAttempt, sendResult);
+            if (outcomeFailureStatus) {
+                return outcomeFailureStatus;
             }
-            if (diagnostics !== undefined) {
-                connection.diagnostics = diagnostics;
-            }
+            rememberRtcClientSend(connection, {
+                startedAtEpochMs: startedAt,
+                endedAtEpochMs: context.dependencies.now(),
+                sendResult,
+                diagnostics: client.diagnostics?.()
+            });
         }
         catch (e) {
             const sendFailedAtEpochMs = context.dependencies.now();

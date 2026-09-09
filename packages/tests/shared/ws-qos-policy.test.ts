@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import * as shared from '@shared/mod.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
@@ -656,7 +657,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
 function createFakeWsSocket() {
     const native = new RecordingWebSocket();
-    const client = new shared.JsonWebSocketClient('ws://client-qos-policy-test');
+    const client = new shared.JsonWebSocketClient('ws://client-qos-policy-test', createPassThroughTransportFaultPort());
     client.ws = native;
     const callbacks: OnWebSocketMessageCallback[] = [];
     vi.spyOn(client, 'onWebSocketMessageDo').mockImplementation((_id, callback) => {

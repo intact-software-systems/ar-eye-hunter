@@ -98,6 +98,8 @@ export type {
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
+    RallarDiagnosticsPorts,
+    RallarDiagnosticsPortsInput,
     RallarDirectorAppointOptions,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,

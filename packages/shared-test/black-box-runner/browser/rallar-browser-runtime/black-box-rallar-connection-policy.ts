@@ -17,10 +17,13 @@ export function resolveBlackBoxRallarTransport(config: BlackBoxRallarConnectionC
 export function resolveBlackBoxRallarLaneId(config: BlackBoxRallarConnectionConfig): string {
     return config.rallar.laneId ?? DEFAULT_LANE_ID;
 }
+export function isBlackBoxRallarTypedMessagesTransport(transport: BlackBoxRallarTransport): boolean {
+    return transport === 'messages.rtc' || transport === 'messages.ws';
+}
 export function resolveBlackBoxRallarTypeId(config: BlackBoxRallarConnectionConfig): string {
     const typeId = config.rallar.typeId;
     if (!typeId) {
-        throw new Error('rallar.typeId is required for messages.rtc transport.');
+        throw new Error('rallar.typeId is required for messages.rtc and messages.ws transports.');
     }
 
     return typeId;

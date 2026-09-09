@@ -16,6 +16,7 @@ import {
 } from '../../../shared/alm/al-runtime-stores.ts';
 import { InMemoryQueueBox } from '../../../shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService } from '../../../shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '../../../shared/transport-faults/transport-fault-port.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
@@ -47,7 +48,7 @@ it.each([
         ? createDefaultIndexedDbALOutboundRuntimeStores(database)
         : createDefaultInMemoryALOutboundRuntimeStores(database);
     await Promise.all([inboundStores.admissionStore.ready(), outboundStores.admissionStore.ready()]);
-    const client = new JsonWebSocketClient('ws://signaling-test');
+    const client = new JsonWebSocketClient('ws://signaling-test', createPassThroughTransportFaultPort());
     const connecting = client.connect();
     await Promise.resolve();
     const socket = TestWebSocket.instances.at(-1)!;

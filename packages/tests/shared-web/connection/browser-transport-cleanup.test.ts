@@ -1,5 +1,6 @@
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
@@ -244,7 +245,7 @@ describe('Browser transport cleanup', () => {
         );
         const transportRuntime = new BrowserTransportRuntime();
 
-        const pending = transportRuntime.init();
+        const pending = transportRuntime.init({ diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         transportRuntime.shutdown();
         resolveMiddleware?.(middleware.middleware);
 
@@ -413,6 +414,7 @@ function toConnectionInput(sessionId: string): RallarSessionConnectionInput {
         sessionId,
         scope: undefined,
         operationOptions: {},
+        diagnosticsPorts: undefined,
         hasAuthEndInProgress: () => false,
         isSessionCurrent: () => true,
         onAuthInvalid: async () => undefined

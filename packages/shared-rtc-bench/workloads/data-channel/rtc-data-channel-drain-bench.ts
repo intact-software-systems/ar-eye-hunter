@@ -1,6 +1,7 @@
 import { RtcBenchmarkNativeChannel } from '../native-rtc/rtc-benchmark-native-channel.ts';
 import { createRtcBenchmarkPeerConnection } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelPayload } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
@@ -86,6 +87,7 @@ export async function runRtcDataChannelDrain(
     const peerFixture = createRtcBenchmarkPeerConnection('rtc-b02-peer');
     peerFixture.native.pendingChannels.push(dependencies.nativeChannel);
     const dataChannel = new QRtcDataChannel(peerFixture.peer, {
+        faultPort: createPassThroughTransportFaultPort(),
         peerId: 'rtc-b02-peer',
         dataChannelName: 'realtime',
         flowControl: {

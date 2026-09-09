@@ -66,6 +66,14 @@ const entries = [
         brotliBudgetKiB: 10
     },
     {
+        // Measured 1.69921875 KiB; types erase and the runtime surface is rallar-core.ts's own. The
+        // budget starts tight so this entry can detect a regression rather than absorb one.
+        label: 'browser/rallar-messages.ts',
+        entry: 'packages/shared-web/browser/rallar-messages.ts',
+        output: 'rallar-browser-messages.min.js',
+        brotliBudgetKiB: 3
+    },
+    {
         label: 'shared-web/mod.ts',
         entry: 'packages/shared-web/mod.ts',
         output: 'rallar-shared-web-mod.min.js'

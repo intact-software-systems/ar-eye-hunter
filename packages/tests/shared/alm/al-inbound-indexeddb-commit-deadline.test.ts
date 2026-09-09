@@ -16,6 +16,7 @@ import { AL_ADMISSION_REVISION_KEY, openIndexedDbAdmissionDatabase } from '@shar
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -29,7 +30,8 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
-                newWriteToken: crypto.randomUUID.bind(crypto)
+                newWriteToken: crypto.randomUUID.bind(crypto),
+                observer: createPassThroughIndexedDbOperationObserver()
             });
             const store = createALInboundAdmissionStore({
                 namespace: 'deadline',

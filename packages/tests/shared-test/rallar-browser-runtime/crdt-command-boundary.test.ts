@@ -218,7 +218,11 @@ it('preserves nested live bootstrap identity and RTC lane defaults', async () =>
             roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
         },
         realtime: { laneId: 'authored-documents', openTimeoutMs: 500 },
-        rtc: { dataChannelLanes }
+        rtc: { dataChannelLanes },
+        diagnosticsPorts: {
+            transportFaultPort: facade.rallar.diagnostics.faults,
+            indexedDbOperationObserver: facade.rallar.diagnostics.storage
+        }
     });
     const defaults = facade.records.defaultWrites.at(-1);
     expect(defaults?.rtc?.dataChannelLanes?.[0]?.flowControl).toStrictEqual({ maxQueueItems: 20 });

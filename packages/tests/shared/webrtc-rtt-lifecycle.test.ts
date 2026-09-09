@@ -16,6 +16,7 @@ import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -174,7 +175,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         iceCandidates,
         isPolite: false
     });
-    const channel = new QRtcDataChannel(connection, { peerId: peerSessionId, dataChannelName: 'rtc-test' });
+    const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: peerSessionId, dataChannelName: 'rtc-test' });
     const wire = new LoopbackDataChannel();
     vi.spyOn(connection, 'createDataChannel').mockReturnValue(wire);
     const peer: QRtcPeerDto = {
@@ -189,6 +190,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         token: 'test-token',
         iceCandidates,
         dataChannelName: 'rtc-test',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
     });
     const multicast = new WebRtcOverlayMulticastManager({

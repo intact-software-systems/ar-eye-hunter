@@ -1,5 +1,6 @@
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
@@ -7,10 +8,12 @@ import type {
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarCrdtRuntime,
+    BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDirectorRuntime,
     BlackBoxRallarFormationRuntime,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
+    BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarWsSendDiagnostics
@@ -52,6 +55,12 @@ export interface BlackBoxRallarRuntime {
     connect(config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics>;
     send(input: unknown): Promise<BlackBoxRallarSendDiagnostics>;
     sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
+    sendMessage(input: unknown): Promise<BlackBoxRallarMessageSendDiagnostics>;
+    observeDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
+    cancelDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
+    readReceipts(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
+    injectFault(input: unknown): Promise<void>;
+    readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly crdt: BlackBoxRallarCrdtRuntime;

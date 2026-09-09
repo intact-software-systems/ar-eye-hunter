@@ -9,6 +9,7 @@ import {
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
     createNativeRtcConnectionFixture,
@@ -201,6 +202,7 @@ async function createNativeRoomFixture(snapshots: readonly GroupSnapshot[]): Pro
     const fixture = createNativeRtcConnectionFixture({
         sessionId: 'session-1',
         token: 'fixture-token',
+        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc',
         dataChannelName: 'reliable',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }

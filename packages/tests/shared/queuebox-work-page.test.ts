@@ -24,6 +24,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 interface QueueWorkQueryPlan {
@@ -290,7 +291,7 @@ async function createIndexedDbQueue() {
         db.close();
         await readIndexedDbRequest(indexedDB.deleteDatabase(dbName));
     });
-    return { db, queue: new IndexedDbQueueBox({ connection, storeName: 'entries' }) };
+    return { db, queue: new IndexedDbQueueBox({ connection, storeName: 'entries', observer: createPassThroughIndexedDbOperationObserver() }) };
 }
 
 function createEntry(resourceId: string): ResourceEntry {

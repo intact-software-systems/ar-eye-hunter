@@ -9,13 +9,24 @@ import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-
 import type { DistributedRunAgentProgressRow } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
 import { createControlSnapshotSelectionIndex } from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxControlAgentCapabilities,
+    RallarBlackBoxDistributedGroupRef
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
 const group: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
     groupId: 'bb-group'
+};
+
+const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {
+    supported: true,
+    carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
+    faults: true,
+    storageCounters: true,
+    reload: true
 };
 
 function agent(
@@ -51,7 +62,8 @@ function agent(
                             'ws-then-rtc',
                             'rtc-with-ws-fallback'
                         ]
-                    }
+                    },
+                    messaging: FULL_MESSAGING_CAPABILITY
                 }
                 : undefined
         };
@@ -562,7 +574,8 @@ describe('control agent board derivation', () => {
                     crdt: {
                         supported: true,
                         transports: ['ws']
-                    }
+                    },
+                    messaging: FULL_MESSAGING_CAPABILITY
                 }
             }
         }]);

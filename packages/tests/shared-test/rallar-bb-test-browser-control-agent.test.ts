@@ -69,7 +69,8 @@ describe('browser control-agent lifecycle', () => {
             url: 'ws://control.example.test/control',
             runId: 'run-4',
             agentId: 'agent-4',
-            token: undefined
+            token: undefined,
+            completedCommandIds: []
         });
         expect(agent.getSnapshot().lastAction).toBe('Remote control agent configured; connecting');
 

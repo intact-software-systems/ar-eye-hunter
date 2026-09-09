@@ -16,6 +16,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
@@ -382,6 +383,7 @@ function createRtcReceiveTransport(): RtcReceiveTransport {
     const connections = new shared.WebRtcConnectionService(signaler, {
         sessionId: 'self',
         token: 'test-token',
+        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates,
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
@@ -413,7 +415,11 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
         iceCandidates: ports.iceCandidates,
         isPolite: false
     });
-    const channel = new shared.QRtcDataChannel(connection, { peerId, dataChannelName: 'test' });
+    const channel = new shared.QRtcDataChannel(connection, {
+        faultPort: createPassThroughTransportFaultPort(),
+        peerId,
+        dataChannelName: 'test'
+    });
     vi.spyOn(channel, 'onRtcMessageDo').mockImplementation((_id, callback) => {
         ports.receivers.set(peerId, callback);
         return channel;

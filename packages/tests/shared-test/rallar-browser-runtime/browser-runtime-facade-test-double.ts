@@ -1,6 +1,7 @@
 import type {
     BlackBoxBrowserAuthDependency,
     BlackBoxBrowserCrdtDependency,
+    BlackBoxBrowserDiagnosticsDependency,
     BlackBoxBrowserDirectorDependency,
     BlackBoxBrowserMessagesDependency,
     BlackBoxBrowserRallarRuntimeDependency,
@@ -12,7 +13,11 @@ import type {
 import type {
     RallarMessageHandler,
     RallarMessagePayload,
-    RallarMessageSendResult
+    RallarMessageSendResult,
+    RallarRoomMessageChannelDefinition,
+    RallarTypedMessageChannel,
+    RallarTypedMessageSendOptions,
+    RallarTypedPayloadHandler
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
@@ -22,6 +27,14 @@ import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/ra
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type CountingIndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
+import {
+    createScriptedTransportFaultPort,
+    type ScriptedTransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import { vi } from 'vitest';
 
 export interface BrowserRuntimeFacadeRecords {
@@ -57,6 +70,14 @@ export interface BrowserRuntimeFacadeRecords {
     ]>;
     wsMessageUnsubscribeCount: number;
     readonly wsMessageSends: Array<Parameters<BlackBoxBrowserMessagesDependency['ws']['send']>>;
+    readonly typedChannelOpens: RallarRoomMessageChannelDefinition[];
+    readonly typedSends: Array<[
+        RallarMessagePayload,
+        RallarTypedMessageSendOptions<RallarMessagePayload> | undefined
+    ]>;
+    readonly typedWsHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
+    readonly typedRtcHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
+    typedUnsubscribeCount: number;
     readonly rtcDiagnosticsReads: Array<Parameters<BlackBoxBrowserRtcDependency['diagnostics']>>;
     readonly crdtOpens: Array<Parameters<BlackBoxBrowserCrdtDependency['open']>>;
     readonly directorAppointments: Array<Parameters<BlackBoxBrowserDirectorDependency['appoint']>>;
@@ -86,6 +107,11 @@ const records: BrowserRuntimeFacadeRecords = {
     wsMessageSubscriptions: [],
     wsMessageUnsubscribeCount: 0,
     wsMessageSends: [],
+    typedChannelOpens: [],
+    typedSends: [],
+    typedWsHandlers: [],
+    typedRtcHandlers: [],
+    typedUnsubscribeCount: 0,
     rtcDiagnosticsReads: [],
     crdtOpens: [],
     directorAppointments: []
@@ -140,6 +166,12 @@ export const facadeBehavior = {
             selector: Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>[0],
             handler: RallarMessageHandler<RallarMessagePayload>
         ) => () => void
+    >(),
+    typedSend: vi.fn<
+        (
+            payload: RallarMessagePayload,
+            options: RallarTypedMessageSendOptions<RallarMessagePayload> | undefined
+        ) => Promise<RallarMessageSendResult>
     >(),
     crdtOpen: vi.fn<BlackBoxBrowserCrdtDependency['open']>(),
     directorAppoint: vi.fn<BlackBoxBrowserDirectorDependency['appoint']>(),
@@ -217,6 +249,10 @@ const realtime: BlackBoxBrowserRealtimeDependency = {
 };
 
 const messages: BlackBoxBrowserMessagesDependency = {
+    room: <T>(definition: RallarRoomMessageChannelDefinition): RallarTypedMessageChannel<T> => {
+        records.typedChannelOpens.push(definition);
+        return createTypedChannelTestDouble<T>();
+    },
     rtc: {
         send: async (input) => {
             records.rtcMessageSends.push([input]);
@@ -288,6 +324,18 @@ const director: BlackBoxBrowserDirectorDependency = {
     createRelay: facadeBehavior.directorCreateRelay
 };
 
+let scriptedFaults = createScriptedTransportFaultPort();
+let countingStorage = createCountingIndexedDbOperationObserver();
+
+const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
+    get faults(): ScriptedTransportFaultPort {
+        return scriptedFaults;
+    },
+    get storage(): CountingIndexedDbOperationObserver {
+        return countingStorage;
+    }
+};
+
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     readRtcMessageNacks: async () => [],
     configure: (config) => {
@@ -320,12 +368,15 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     rtc,
     ws,
     crdt,
-    director
+    director,
+    diagnostics
 };
 
 export function resetBrowserRuntimeFacadeTestDouble(): void {
     vi.resetAllMocks();
     clearRecords();
+    scriptedFaults = createScriptedTransportFaultPort();
+    countingStorage = createCountingIndexedDbOperationObserver();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);
@@ -364,6 +415,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.rtcMessageOnMessage.mockReturnValue(() => undefined);
     facadeBehavior.wsMessageSend.mockResolvedValue(defaultWsMessageSendResult);
     facadeBehavior.wsMessageOnMessage.mockReturnValue(() => undefined);
+    facadeBehavior.typedSend.mockResolvedValue(defaultWsMessageSendResult);
 }
 
 function clearRecords(): void {
@@ -385,6 +437,10 @@ function clearRecords(): void {
             records.rtcMessageSends,
             records.wsMessageSubscriptions,
             records.wsMessageSends,
+            records.typedChannelOpens,
+            records.typedSends,
+            records.typedWsHandlers,
+            records.typedRtcHandlers,
             records.rtcDiagnosticsReads,
             records.crdtOpens,
             records.directorAppointments
@@ -399,6 +455,34 @@ function clearRecords(): void {
     records.realtimeUnsubscribeCount = 0;
     records.rtcMessageUnsubscribeCount = 0;
     records.wsMessageUnsubscribeCount = 0;
+    records.typedUnsubscribeCount = 0;
+}
+
+function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
+    const unsupported = (): never => {
+        throw new Error('The facade test double only drives typed channel send and subscribe.');
+    };
+    return {
+        send: async (payload, options) => {
+            const sendOptions = options as RallarTypedMessageSendOptions<RallarMessagePayload> | undefined;
+            records.typedSends.push([payload as RallarMessagePayload, sendOptions]);
+            return await facadeBehavior.typedSend(payload as RallarMessagePayload, sendOptions);
+        },
+        sendRtc: unsupported,
+        sendWs: unsupported,
+        onWs: (handler) => {
+            records.typedWsHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
+            return () => {
+                records.typedUnsubscribeCount += 1;
+            };
+        },
+        onRtc: (handler) => {
+            records.typedRtcHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
+            return () => {
+                records.typedUnsubscribeCount += 1;
+            };
+        }
+    };
 }
 
 export { records as facadeRecords };

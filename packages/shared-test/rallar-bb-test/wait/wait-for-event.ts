@@ -14,6 +14,12 @@ const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 
 type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string; }>;
 
+/** The timeout and deadline bounds any windowed command shares with the wait command. */
+export type RallarBlackBoxTestWaitWindow = Readonly<{
+    timeoutMs?: number;
+    deadlineEpochMs?: number;
+}>;
+
 export interface WaitForEventInput {
     readonly command: WaitCommandWithId;
     readonly now: () => number;
@@ -160,23 +166,26 @@ async function holdForEventAbsence(
     };
 }
 
-function waitDeadlineEpochMs(command: WaitCommandWithId, now: () => number): number {
-    const timeoutMs = command.timeoutMs === undefined
-        ? command.deadlineEpochMs === undefined
+export function waitDeadlineEpochMs(
+    bounds: RallarBlackBoxTestWaitWindow,
+    now: () => number
+): number {
+    const timeoutMs = bounds.timeoutMs === undefined
+        ? bounds.deadlineEpochMs === undefined
             ? DEFAULT_WAIT_TIMEOUT_MS
             : undefined
-        : Math.max(0, command.timeoutMs);
+        : Math.max(0, bounds.timeoutMs);
     const timeoutDeadline = timeoutMs === undefined
         ? undefined
         : now() + timeoutMs;
 
-    if (command.deadlineEpochMs === undefined) {
+    if (bounds.deadlineEpochMs === undefined) {
         return timeoutDeadline ?? (now() + DEFAULT_WAIT_TIMEOUT_MS);
     }
 
     return timeoutDeadline === undefined
-        ? command.deadlineEpochMs
-        : Math.min(timeoutDeadline, command.deadlineEpochMs);
+        ? bounds.deadlineEpochMs
+        : Math.min(timeoutDeadline, bounds.deadlineEpochMs);
 }
 
 function toWaitResultValue(

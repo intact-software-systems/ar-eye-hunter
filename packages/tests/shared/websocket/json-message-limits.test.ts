@@ -7,6 +7,7 @@ import {
 } from 'vitest';
 
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
     ConnectionContext,
@@ -39,7 +40,7 @@ describe('JSON websocket subscription wire limits', () => {
 
     it('rejects oversized client frames before parsing and keeps accepting bounded traffic', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const rejected: string[] = [];
         const delivered: unknown[] = [];
         client.onWebSocketMessageDo('alm', {

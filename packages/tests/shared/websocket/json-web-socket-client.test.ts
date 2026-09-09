@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from './test-web-socket.ts';
@@ -20,7 +21,7 @@ describe('JsonWebSocketClient', () => {
     it('reuses a single pending connection and dispatches parsed messages', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const lifecycle: string[] = [];
         const messages: string[] = [];
 
@@ -68,7 +69,7 @@ describe('JsonWebSocketClient', () => {
     it('rejects the initial connection on close before open without notifying a removed lifecycle callback', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         let closeNotifications = 0;
 
         client.onWebsocketCallbacksDo('close', {
@@ -96,7 +97,7 @@ describe('JsonWebSocketClient', () => {
     it('rejects the initial connection on error before open and can reconnect', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         let errorNotifications = 0;
 
         client.onWebsocketCallbacksDo('error', {
@@ -128,7 +129,7 @@ describe('JsonWebSocketClient', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 
         let sequence = 0;
-        const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`);
+        const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`, createPassThroughTransportFaultPort());
 
         const firstConnect = client.connect();
         await Promise.resolve();
@@ -151,7 +152,7 @@ describe('JsonWebSocketClient', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 
         let sequence = 0;
-        const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`);
+        const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`, createPassThroughTransportFaultPort());
         let reconnectPromise: Promise<void> | undefined;
 
         client.onWebsocketCallbacksDo('reconnect', {
@@ -185,7 +186,7 @@ describe('JsonWebSocketClient', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 
         const controller = new AbortController();
-        const client = new JsonWebSocketClient('ws://test');
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
 
         const connectPromise = client.connect({
             signal: controller.signal

@@ -23,6 +23,7 @@ import {
     createDefaultWebRtcRxStreamerService,
     WebRtcRxStreamerService
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
@@ -61,6 +62,7 @@ export class RtcEndpointFixture {
             token: 'fixture-token',
             iceCandidates,
             dataChannelName: 'test',
+            faultPort: createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc'
         });
         for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {
@@ -207,6 +209,6 @@ function createPeer(sessionId: string, peerId: string): QRtcPeerDto {
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
     });
-    const channel = new QRtcDataChannel(connection, { peerId, dataChannelName: 'test' });
+    const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'test' });
     return { peerId, connection, channel, channels: new Map([['reliable', channel]]), media: new QRtcMediaChannel(connection, { peerId }) };
 }

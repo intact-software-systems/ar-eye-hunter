@@ -1,4 +1,8 @@
 import {
+    writeAgentResumeRecord,
+    type AgentResumeWriteStatus
+} from './alm/browser-control-agent-resume.ts';
+import {
     parseControlServerMessage,
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     toControlEventEnvelope,
@@ -85,6 +89,7 @@ export type RallarBlackBoxControlConnectOptions = Readonly<{
     agentId: string;
     token?: string;
     finalReportUploadUrl?: string;
+    completedCommandIds?: readonly string[];
 }>;
 
 const OPEN_STATE = 1;
@@ -358,6 +363,39 @@ function cleanupBrowserStorage(): Readonly<{
     };
 }
 
+function toAgentReloadResult(
+    commandId: string,
+    readyTimeoutMs: number,
+    written: AgentResumeWriteStatus
+): RallarBlackBoxTestResult {
+    const atEpochMs = Date.now();
+    const base = {
+        commandId,
+        kind: 'agent.reload',
+        startedAtEpochMs: atEpochMs,
+        endedAtEpochMs: atEpochMs,
+        durationMs: 0
+    } as const;
+
+    return written === 'written'
+        ? {
+            ...base,
+            status: 'ok',
+            ok: true,
+            value: { reloading: true, readyTimeoutMs }
+        }
+        : {
+            ...base,
+            status: 'failed',
+            ok: false,
+            error: {
+                code: 'RALLAR_BLACK_BOX_AGENT_RELOAD_UNAVAILABLE',
+                message: 'Session storage is unavailable, so the agent cannot resume after a reload.',
+                details: { sessionStorage: written, readyTimeoutMs }
+            }
+        };
+}
+
 export class RallarBlackBoxControlClient {
     private readonly runtime: RallarBlackBoxTestRuntime;
     private readonly webSocketFactory: RallarBlackBoxControlWebSocketFactory;
@@ -566,6 +604,11 @@ export class RallarBlackBoxControlClient {
             command: envelope.command
         }, envelope.commandId);
 
+        if (command.kind === 'agent.reload') {
+            this.reloadAgent(envelope.commandId, command.readyTimeoutMs);
+            return;
+        }
+
         if (command.kind === 'reset') {
             this.recordDiagnostic(
                 'rallar.bb.control.browser_storage_cleaned',
@@ -577,6 +620,33 @@ export class RallarBlackBoxControlClient {
 
         const result = await this.runtime.execute(command);
         this.sendResult(result);
+    }
+
+    // sendResult only buffers on the socket, so the reload waits one macrotask to give that write a
+    // turn to flush before the page is torn down. Without a persisted resume record the reloaded
+    // agent could not tell the coordinator what it had already run, so the command fails instead.
+    private reloadAgent(commandId: string, readyTimeoutMs: number): void {
+        const options = this.requireOptions();
+        const written = writeAgentResumeRecord({
+            runId: options.runId,
+            agentId: options.agentId,
+            completedCommandIds: this.resolveCompletedCommandIds([commandId])
+        });
+        this.sendResult(toAgentReloadResult(commandId, readyTimeoutMs, written));
+        if (written === 'written') {
+            setTimeout(() => globalThis.location.reload(), 0);
+        }
+    }
+
+    private resolveCompletedCommandIds(extra: readonly string[]): readonly string[] {
+        const options = this.requireOptions();
+        return [
+            ...new Set([
+                ...options.completedCommandIds ?? [],
+                ...Object.keys(this.runtime.state().resultCache),
+                ...extra
+            ])
+        ];
     }
 
     private sendRegister(): void {
@@ -592,7 +662,7 @@ export class RallarBlackBoxControlClient {
             atEpochMs: Date.now(),
             identity,
             resume: {
-                completedCommandIds: Object.keys(this.runtime.state().resultCache)
+                completedCommandIds: this.resolveCompletedCommandIds([])
             }
         });
     }

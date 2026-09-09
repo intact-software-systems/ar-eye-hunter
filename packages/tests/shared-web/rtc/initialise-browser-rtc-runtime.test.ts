@@ -12,6 +12,7 @@ import '../../setup-browser-indexeddb.ts';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager
@@ -35,6 +36,7 @@ import {
     createDefaultWsQueueBoxClientService,
     WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -45,18 +47,20 @@ import {
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
+
 describe('browser RTC runtime composition', () => {
     afterEach(() => vi.restoreAllMocks());
     beforeEach(() => {
         configureTestCacheRepositories();
-        configureBrowserALRuntimeStores('self');
+        configureBrowserALRuntimeStores('self', { diagnosticsPorts });
     });
 
     it('rejects an incoming offer while signaling starts, then admits the selected accepted peer', async () => {
         const nativeRuntime = installNativeRtcRuntime();
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
-        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid');
+        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
         vi.spyOn(socket, 'connect').mockImplementation(() => {
             networkConnectStarted.resolve();
             return networkConnect.promise;
@@ -72,7 +76,8 @@ describe('browser RTC runtime composition', () => {
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'test',
-            rtcSignalingTopicId: 'rtc'
+            rtcSignalingTopicId: 'rtc',
+            faultPort: diagnosticsPorts.transportFaultPort
         });
 
         try {
@@ -142,6 +147,7 @@ describe('browser RTC runtime composition', () => {
         const fixture = createNativeRtcConnectionFixture({
             sessionId: 'self',
             token: 'fixture-token',
+            faultPort: createPassThroughTransportFaultPort(),
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc'

@@ -73,7 +73,8 @@ function decodeEventProjection(value: unknown): RallarBlackBoxTestEvent {
     }
     if (
         value.transport !== undefined &&
-        (typeof value.transport !== 'string' || !['realtime', 'messages.rtc', 'ws', 'http'].includes(value.transport))
+        (typeof value.transport !== 'string' ||
+            !['realtime', 'messages.rtc', 'messages.ws', 'ws', 'http'].includes(value.transport))
     ) {
         throw new Error('Invalid remote browser snapshot: invalid event transport.');
     }

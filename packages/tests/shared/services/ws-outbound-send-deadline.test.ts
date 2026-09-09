@@ -2,6 +2,7 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
@@ -24,7 +25,7 @@ describe('WS outbound callback deadline', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         vi.stubGlobal('WebSocket', TestWebSocket);
-        const socket = new JsonWebSocketClient(() => 'ws://deadline-test');
+        const socket = new JsonWebSocketClient(() => 'ws://deadline-test', createPassThroughTransportFaultPort());
         const service = createDefaultWsQueueBoxClientService({ socket, sessionId: 'self', outbox: new InMemoryQueueBox() });
         onTestFinished(() => service.close());
         const connect = socket.connect();

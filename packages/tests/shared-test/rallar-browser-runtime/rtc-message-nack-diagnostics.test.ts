@@ -3,6 +3,7 @@ import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-
 import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores, resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
@@ -13,10 +14,12 @@ import {
 } from 'vitest';
 import '../../setup-browser-indexeddb.ts';
 
+const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
+
 describe('RTC message diagnostic receipts', () => {
     it('reads the admitted receiver receipt without creating sent messages or changing the evidence', async () => {
         const sessionId = `nack-diagnostics-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(sessionId);
+        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
         try {
             const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);

@@ -3,6 +3,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import '../setup-browser-indexeddb.ts';
 
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
@@ -101,16 +102,18 @@ describe('PersistenceProvider (QueueBox implementations)', () => {
     });
 
     describe('IndexedDbQueueBox', () => {
-        runSharedTests(async () => new IndexedDbQueueBox({ dbName: `test-db-${crypto.randomUUID()}` }));
+        runSharedTests(async () =>
+            new IndexedDbQueueBox({ dbName: `test-db-${crypto.randomUUID()}`, observer: createPassThroughIndexedDbOperationObserver() })
+        );
 
         it('should persist items across instances', async () => {
             const dbName = `persist-test-${crypto.randomUUID()}`;
-            const provider1 = new IndexedDbQueueBox({ dbName });
+            const provider1 = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
             const entry = createEntry('cross-instance-item');
 
             await provider1.setItem(entry.key, entry, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
 
-            const provider2 = new IndexedDbQueueBox({ dbName });
+            const provider2 = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
             const retrieved = await provider2.getItem(entry.key);
 
             expect(retrieved).toBeDefined();

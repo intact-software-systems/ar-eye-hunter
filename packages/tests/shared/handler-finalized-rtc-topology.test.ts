@@ -12,6 +12,7 @@ import {
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import {
@@ -46,7 +47,8 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
         name: 'IndexedDB',
         release: async (reserved, current) => {
             const queue = new IndexedDbQueueBox({
-                dbName: `indexeddb-rtc-finalized-${crypto.randomUUID()}`
+                dbName: `indexeddb-rtc-finalized-${crypto.randomUUID()}`,
+                observer: createPassThroughIndexedDbOperationObserver()
             });
             await queue.enqueue(current);
             return firstValue(

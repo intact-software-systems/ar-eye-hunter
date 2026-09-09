@@ -4,13 +4,15 @@ import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-co
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 it('commits queue-only ownership despite an unrelated metadata commit', async () => {
     const backend = new IndexedDbAdmissionBackend({
         dbName: `work-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto)
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: createPassThroughIndexedDbOperationObserver()
     });
     const entry = workEntry();
     await expect(backend.write(async (tx) => {
@@ -28,7 +30,8 @@ it.each(['read', 'list'] as const)('guards a metadata %s even when only queue ro
         dbName: `metadata-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto)
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: createPassThroughIndexedDbOperationObserver()
     });
     const entry = workEntry();
     await expect(backend.write(async (tx) => {
@@ -46,7 +49,8 @@ it('guards every queue observation and atomically aborts sibling ownership on re
         dbName: `queue-race-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto)
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: createPassThroughIndexedDbOperationObserver()
     });
     const entry = workEntry();
     const sibling = workEntry();
@@ -74,7 +78,8 @@ it('permits post-deadline bookkeeping when no execution admission deadline appli
         dbName: `late-control-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: () => nowMs,
-        newWriteToken: crypto.randomUUID.bind(crypto)
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: createPassThroughIndexedDbOperationObserver()
     });
     const entry = workEntry();
     await expect(backend.write(async (tx) => {

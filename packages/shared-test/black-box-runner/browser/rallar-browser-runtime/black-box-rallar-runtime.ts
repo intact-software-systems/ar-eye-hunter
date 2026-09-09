@@ -1,11 +1,13 @@
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
+import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import {
     DEFAULT_LANE_ID,
+    isBlackBoxRallarTypedMessagesTransport,
     resolveBlackBoxRallarLaneId,
     resolveBlackBoxRallarMessageSelector,
     resolveBlackBoxRallarTopicId,
@@ -26,6 +28,7 @@ import type {
     BlackBoxRallarCloseDiagnostics,
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarDeliveryObservation,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
 import {
@@ -53,6 +56,13 @@ import {
     type BlackBoxRallarLifecycleOperationContext
 } from './lifecycle-controller.ts';
 import { BlackBoxRallarMessagingController } from './messaging-controller.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './messaging/black-box-rallar-delivery-error-message-prefixes.ts';
+import {
+    decodeBlackBoxRallarDeliveryHandleInput,
+    decodeBlackBoxRallarDeliveryObserveInput,
+    decodeBlackBoxRallarFaultInput,
+    decodeBlackBoxRallarStorageCountersInput
+} from './messaging/decode-black-box-rallar-messaging-input.ts';
 
 export type {
     BlackBoxRallarAuthenticateDiagnostics,
@@ -71,6 +81,7 @@ export type {
     BlackBoxRallarCrdtWaitCondition,
     BlackBoxRallarCrdtWaitInput,
     BlackBoxRallarCrdtWaitOperator,
+    BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDirectorAppointInput,
     BlackBoxRallarDirectorCommandDiagnostics,
     BlackBoxRallarDirectorHandleInput,
@@ -85,6 +96,8 @@ export type {
     BlackBoxRallarEvent,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
+    BlackBoxRallarMessageSendDiagnostics,
+    BlackBoxRallarMessageSendInput,
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarTransport,
@@ -95,6 +108,8 @@ export type {
     BlackBoxRallarRoomRefreshOptions,
     BlackBoxRallarRuntime
 } from './black-box-rallar-runtime-contract.ts';
+
+const DELIVERY_POLL_INTERVAL_MS = 25;
 
 interface RuntimeConnectionAttempt {
     readonly config: BlackBoxRallarConnectionConfig;
@@ -277,7 +292,16 @@ class BlackBoxRallarConnectionRuntime {
     ): Parameters<BlackBoxBrowserRallarRuntimeDependency['setDefaults']>[0] => {
         this.#rallar.configure({ apiBaseUrl: config.rallar.apiBaseUrl });
         const defaults = toBlackBoxRallarDefaults(config);
-        this.#rallar.setDefaults(defaults);
+        // A connection that names no application has no defaults to carry the scripted ports.
+        this.#rallar.setDefaults(
+            defaults === undefined ? undefined : {
+                ...defaults,
+                diagnosticsPorts: {
+                    transportFaultPort: this.#rallar.diagnostics.faults,
+                    indexedDbOperationObserver: this.#rallar.diagnostics.storage
+                }
+            }
+        );
         return defaults;
     };
     #cleanupRuntimeSubscriptions = (
@@ -308,6 +332,7 @@ class BlackBoxRallarConnectionRuntime {
         if (runtimeState?.unsubscribeConsoleDiagnostics) {
             runtimeState.unsubscribeConsoleDiagnostics();
         }
+        this.#messagingController.resetDeliveryLedger();
         unsubscribed += this.#messagingController.cleanupWsSubscriptions();
         if (unsubscribed > 0 && topicConfig) {
             this.#runtimeDiagnostics.emitDiagnostic(topicConfig, 'rallar.browser.cleanup.unsubscribe_completed', {
@@ -388,8 +413,9 @@ class BlackBoxRallarConnectionRuntime {
         attempt.phase = 'transport-config';
         this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, { transport });
         const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
-        const typeId = transport === 'messages.rtc' ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = transport === 'messages.rtc' ? resolveBlackBoxRallarTopicId(config) : undefined;
+        const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
+        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
         this.#runtimeDiagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             transport,
             laneId,
@@ -471,6 +497,15 @@ class BlackBoxRallarConnectionRuntime {
             })
             : undefined;
     };
+    /**
+     * The connect cleanup drops every typed subscription the runtime holds, so the inbound topics a
+     * receiver needs are installed after it rather than inside #subscribeConnection.
+     */
+    #subscribeTypedMessages = (config: BlackBoxRallarConnectionConfig): void => {
+        if (isBlackBoxRallarTypedMessagesTransport(resolveBlackBoxRallarTransport(config))) {
+            this.#messagingController.subscribeTypedChannel(config);
+        }
+    };
     #subscribeMessages = (
         config: BlackBoxRallarConnectionConfig,
         session: BlackBoxRallarConnectionState.Session
@@ -505,9 +540,10 @@ class BlackBoxRallarConnectionRuntime {
         const { config } = attempt;
         const transport = resolveBlackBoxRallarTransport(config);
         const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
-        const typeId = transport === 'messages.rtc' ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = transport === 'messages.rtc' ? resolveBlackBoxRallarTopicId(config) : undefined;
-        attempt.phase = transport === 'realtime' ? 'subscribe-realtime' : 'subscribe-messages.rtc';
+        const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
+        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
+        attempt.phase = transport === 'realtime' ? 'subscribe-realtime' : `subscribe-${transport}`;
         this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, {
             laneId,
             typeId,
@@ -536,8 +572,9 @@ class BlackBoxRallarConnectionRuntime {
         const { config, session } = state;
         const transport = resolveBlackBoxRallarTransport(config);
         const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
-        const typeId = transport === 'messages.rtc' ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = transport === 'messages.rtc' ? resolveBlackBoxRallarTopicId(config) : undefined;
+        const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
+        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
         return {
             status: 'connected',
             connection: config.connection,
@@ -583,6 +620,7 @@ class BlackBoxRallarConnectionRuntime {
             await this.#openConnection(attempt);
             const state = this.#subscribeConnection(attempt, session);
             this.#cleanupRuntimeSubscriptions(previousState, config);
+            this.#subscribeTypedMessages(config);
             this.#connectionState.set(state);
             const diagnostics = this.#connectionDiagnostics(state);
             this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.connect_completed', diagnostics);
@@ -905,6 +943,51 @@ class BlackBoxRallarConnectionRuntime {
             }
         }, activeCrdtOpens);
     };
+    #observeDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> => {
+        const observe = decodeBlackBoxRallarDeliveryObserveInput(input);
+        const deadlineEpochMs = this.#now() + observe.timeoutMs;
+        let observation = this.#messagingController.readDelivery(observe.handleId);
+        while (!observe.state.includes(observation.state)) {
+            if (this.#now() >= deadlineEpochMs) {
+                throw new TypeError(
+                    `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.deliveryStateTimeout} ` +
+                        `${observe.handleId} did not reach [${observe.state.join(', ')}]; ` +
+                        `last state ${observation.state}`
+                );
+            }
+            await this.#wait(DELIVERY_POLL_INTERVAL_MS);
+            observation = this.#messagingController.readDelivery(observe.handleId);
+        }
+        return observation;
+    };
+    #cancelDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
+        this.#messagingController.cancelDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+    // F1 derives receipts from the admission ledger, so the peer-id lists stay empty until S1
+    // carries real acknowledgements.
+    #readReceipts = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
+        this.#messagingController.readDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+    #requireScriptedPorts = (command: string): void => {
+        const config = this.#connectionState.get()?.config;
+        if (config === undefined || toBlackBoxRallarDefaults(config) === undefined) {
+            throw new TypeError(
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.scriptedPortsUnavailable}: ` +
+                    `${command} needs a connection that names an application.`
+            );
+        }
+    };
+    #injectFault = async (input: unknown): Promise<void> => {
+        this.#requireScriptedPorts('fault.inject');
+        this.#rallar.diagnostics.faults.inject(decodeBlackBoxRallarFaultInput(input));
+    };
+    #readStorageCounters = async (input: unknown): Promise<IndexedDbOperationCounts> => {
+        this.#requireScriptedPorts('storage.counters');
+        const counters = decodeBlackBoxRallarStorageCountersInput(input);
+        const counts = this.#rallar.diagnostics.storage.getCounts();
+        if (counters.reset) {
+            this.#rallar.diagnostics.storage.reset();
+        }
+        return counts;
+    };
     #refreshRoom = async (options: BlackBoxRallarRoomRefreshOptions): Promise<void> => {
         const config = this.#requireState().config;
         const roomRef = blackBoxRallarRoomRefOf(config);
@@ -927,6 +1010,12 @@ class BlackBoxRallarConnectionRuntime {
             connect: this.#connect,
             send: this.#messagingController.send,
             sendWs: this.#messagingController.sendWs,
+            sendMessage: this.#messagingController.sendMessage,
+            observeDelivery: this.#observeDelivery,
+            cancelDelivery: this.#cancelDelivery,
+            readReceipts: this.#readReceipts,
+            injectFault: this.#injectFault,
+            readStorageCounters: this.#readStorageCounters,
             refreshRoom: this.#refreshRoom,
             readRtcMessageNacks: (messageId) => this.#rallar.readRtcMessageNacks(messageId),
             crdt: this.#crdtController,

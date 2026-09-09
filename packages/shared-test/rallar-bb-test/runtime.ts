@@ -245,6 +245,7 @@ function stringValue(value: unknown): string | undefined {
 function transportValue(value: unknown): RallarBlackBoxTestTransport | undefined {
     return value === 'realtime' ||
             value === 'messages.rtc' ||
+            value === 'messages.ws' ||
             value === 'ws' ||
             value === 'http'
         ? value

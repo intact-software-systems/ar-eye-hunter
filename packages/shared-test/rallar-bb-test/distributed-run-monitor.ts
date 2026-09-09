@@ -3406,7 +3406,7 @@ function distributedRunRuntimeDiagnosticCounts(
         info: diagnostics.filter((row) => row.severity === 'info' || row.severity === 'debug').length,
         warning: diagnostics.filter((row) => row.severity === 'warning').length,
         error: diagnostics.filter((row) => row.severity === 'error').length,
-        ws: diagnostics.filter((row) => row.transport === 'ws').length,
+        ws: diagnostics.filter((row) => row.transport === 'ws' || row.transport === 'messages.ws').length,
         rtc: diagnostics.filter((row) => row.transport === 'realtime' || row.transport === 'messages.rtc').length,
         http: diagnostics.filter((row) => row.transport === 'http').length,
         runtime: diagnostics.filter((row) => row.transport === undefined).length
@@ -3530,7 +3530,7 @@ function distributedFailureExplanations(
             category: 'diagnostic',
             title: `${diagnostic.transport ?? 'Runtime'} diagnostic`,
             likelyCause: diagnostic.summary || diagnostic.message,
-            nextAction: diagnostic.transport === 'ws'
+            nextAction: diagnostic.transport === 'ws' || diagnostic.transport === 'messages.ws'
                 ? 'Inspect the WebSocket topic/payload and confirm every agent is subscribed before the recipe sends.'
                 : diagnostic.transport === 'realtime' || diagnostic.transport === 'messages.rtc'
                 ? 'Inspect RTC peer, lane, group, and topic evidence; mismatched lane or peer metadata usually means agents joined different realtime contexts.'
@@ -4605,6 +4605,7 @@ function looksLikeTransportDiagnostic(
         data.reason
     ].filter(Boolean).join(' ').toLowerCase();
     return transport === 'ws' ||
+        transport === 'messages.ws' ||
         transport === 'realtime' ||
         transport === 'messages.rtc' ||
         text.includes('websocket') ||
@@ -4636,7 +4637,13 @@ function diagnosticSeverityTone(severity: RallarBlackBoxTestSeverity): string {
 }
 
 function diagnosticTransport(value: string | undefined): RallarBlackBoxTestTransport | undefined {
-    if (value === 'ws' || value === 'http' || value === 'realtime' || value === 'messages.rtc') {
+    if (
+        value === 'ws' ||
+        value === 'messages.ws' ||
+        value === 'http' ||
+        value === 'realtime' ||
+        value === 'messages.rtc'
+    ) {
         return value;
     }
     return undefined;

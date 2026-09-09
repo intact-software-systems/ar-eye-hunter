@@ -129,7 +129,11 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json',
             'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
-            'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json'
+            'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json'
         ]);
         expect(diagnosticPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
@@ -167,7 +171,10 @@ describe('Hetzner distributed manifest catalog', () => {
                 workspaceId: 'default',
                 groupId: 'hetzner-headless-room'
             });
-            if (entry.filePath.endsWith('/05e-rtc-realtime-stability-2-agent-30s-20hz.json')) {
+            if (
+                entry.filePath.endsWith('/05e-rtc-realtime-stability-2-agent-30s-20hz.json') ||
+                entry.filePath.endsWith('/18-alm-conformance-2-agent.json')
+            ) {
                 expect(manifest.targetPolicy).toMatchObject({
                     mode: 'role-map',
                     expectedParticipantCount: entry.agentCount,
@@ -182,7 +189,10 @@ describe('Hetzner distributed manifest catalog', () => {
                 ]);
                 expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
             }
-            else if (entry.filePath.includes('rtc-messages-principal-')) {
+            else if (
+                entry.filePath.includes('rtc-messages-principal-') ||
+                (entry.filePath.includes('alm-conformance') && entry.agentCount > 2)
+            ) {
                 const receivers = Array.from({ length: entry.agentCount - 1 }, (_, index) => `controller-${String(index + 2).padStart(2, '0')}`);
 
                 expect(manifest.targetPolicy).toMatchObject({
@@ -246,7 +256,12 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('configures matching selectors for every messages.rtc connection', () => {
+        // The alm-conformance family intentionally connects messages.rtc with its own per-scenario
+        // typeId and the room.alm-conformance topic, not the shared multicast-position selector.
         for (const entry of buildHetznerDistributedManifestCatalog()) {
+            if (entry.manifest.metadata?.family === 'alm-conformance') {
+                continue;
+            }
             for (const command of manifestCommands(entry.manifest)) {
                 if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
                     continue;
@@ -281,7 +296,10 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
             ['apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
             ['apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json', { peers: 1, timeoutMs: 10_000 }]
+            ['apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', { peers: 1, timeoutMs: 45_000 }]
         ]);
 
         for (const entry of buildHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
@@ -439,7 +457,11 @@ describe('Hetzner distributed manifest catalog', () => {
 
         for (
             const entry of buildHetznerDistributedManifestCatalog()
-                .filter((candidate) => !candidate.diagnostic && !candidate.filePath.includes('rtc-messages-'))
+                .filter((candidate) =>
+                    !candidate.diagnostic &&
+                    !candidate.filePath.includes('rtc-messages-') &&
+                    !candidate.filePath.includes('alm-conformance')
+                )
         ) {
             const commands = manifestCommands(entry.manifest);
             const stream = commands.find((command) => command.kind === 'rtc.stream');
@@ -968,6 +990,65 @@ describe('Hetzner distributed manifest catalog', () => {
                     expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(allPeer?.filePath);
                 }
             }
+        }
+    });
+
+    it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
+        const entry = buildHetznerDistributedManifestCatalog()
+            .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));
+
+        expect(entry).toBeDefined();
+        // Nothing has run this manifest on Hetzner yet, so it stays out of the required set.
+        expect(entry?.mainline).toBe(false);
+        expect(entry?.diagnostic).toBe(false);
+        expect(entry?.agentCount).toBe(2);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(entry?.filePath);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
+        expect(entry?.manifest.targetPolicy).toMatchObject({
+            mode: 'role-map',
+            expectedParticipantCount: 2,
+            roles: { sender: ['controller-01'], receiver: ['controller-02'] }
+        });
+        expect(entry?.manifest.roleAssignments).toEqual([
+            { role: 'sender', agentId: 'controller-01', required: true },
+            { role: 'receiver', agentId: 'controller-02', required: true }
+        ]);
+        expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
+        expect(entry?.manifest.metadata).toMatchObject({
+            family: 'alm-conformance',
+            carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
+            scenarios: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
+        });
+
+        const rtcConnects = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+            .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
+        expect(rtcConnects.length).toBeGreaterThan(0);
+        expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
+    });
+
+    it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {
+        const catalog = buildHetznerDistributedManifestCatalog();
+
+        for (const agentCount of [15, 30, 50]) {
+            const entry = catalog.find((candidate) => candidate.filePath.endsWith(`-alm-conformance-${agentCount}-agent-30s.json`));
+
+            expect(entry, `${agentCount}-agent`).toBeDefined();
+            expect(entry?.diagnostic).toBe(false);
+            expect(entry?.mainline).toBe(false);
+            expect(entry?.agentCount).toBe(agentCount);
+            expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
+            expect(entry?.manifest.metadata).not.toHaveProperty('almMetrics');
+            expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
+            expect(entry?.manifest.recipes[0]?.recipe?.commands.at(-1)).toMatchObject({
+                kind: 'storage.counters',
+                commandId: 'alm-storage-counters-sender',
+                reset: false
+            });
+            expect(entry?.manifest.recipes[1]?.recipe?.commands.at(-1)).toMatchObject({
+                kind: 'storage.counters',
+                commandId: 'alm-storage-counters-receiver',
+                reset: false
+            });
         }
     });
 });

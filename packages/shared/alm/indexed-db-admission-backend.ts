@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
 import { IndexedDbConnection } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { decodeStoredResourceEntry, type StoredResourceEntry } from '../queuebox/indexed-db-queue-box-entry-codec.ts';
@@ -51,6 +52,7 @@ export namespace IndexedDbAdmissionBackend {
         readonly storeName: string;
         readonly nowMs: () => number;
         readonly newWriteToken: () => string;
+        readonly observer: IndexedDbOperationObserver;
     }
 }
 
@@ -60,17 +62,20 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     readonly #storeName: string;
     readonly #nowMs: () => number;
     readonly #newWriteToken: () => string;
+    readonly #observer: IndexedDbOperationObserver;
 
     constructor(input: IndexedDbAdmissionBackend.Input) {
         this.#storeName = input.storeName;
         this.#nowMs = input.nowMs;
         this.#newWriteToken = input.newWriteToken;
+        this.#observer = input.observer;
         this.#connection = new IndexedDbConnection(() => openIndexedDbAdmissionDatabase(input.dbName, input.storeName));
         this.workQueue = new IndexedDbQueueBox({
             now: () => Temporal.Instant.fromEpochMilliseconds(this.#nowMs()),
             connection: this.#connection,
             storeName: AL_ADMISSION_WORK_STORE_NAME,
-            completedRetention: AL_ADMISSION_WORK_COMPLETED_RETENTION
+            completedRetention: AL_ADMISSION_WORK_COMPLETED_RETENTION,
+            observer: input.observer
         });
     }
 
@@ -79,6 +84,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+        this.#observer.observe({ owner: 'al-admission', kind: 'read' });
         const db = await this.#connection.open();
         const snapshot = await readIndexedDbAdmissionSnapshot(
             db,
@@ -107,6 +113,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
+        this.#observer.observe({ owner: 'al-admission', kind: 'list' });
         const db = await this.#connection.open();
         const snapshot = await readIndexedDbAdmissionSnapshot(
             db,
@@ -143,6 +150,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
         executionExpiresAtMs: number | null = null
     ): Promise<T> {
+        this.#observer.observe({ owner: 'al-admission', kind: 'write' });
         const db = await this.#connection.open();
         const expectedRevision = (
             await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'revision' })

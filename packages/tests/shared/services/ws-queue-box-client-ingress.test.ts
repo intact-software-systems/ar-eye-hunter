@@ -21,6 +21,7 @@ import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient, type OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -76,7 +77,7 @@ describe('WS client typed ingress and transport effects', () => {
         engine.start();
         const replay = createDefaultWsQueueBoxClientService({
             outbox: new InMemoryQueueBox(),
-            socket: new JsonWebSocketClient('ws://configured-server'),
+            socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
             sessionId: 'self',
             inboundStores: { admissionStore: fixture.admissionStore },
             queueEngine: ownership === 'shared' ? engine : undefined
@@ -289,7 +290,7 @@ async function createClientIngressFixture(
     beforeMessage: OnWebSocketMessageCallback | undefined = undefined
 ): Promise<ClientIngressFixture> {
     vi.stubGlobal('WebSocket', TestWebSocket);
-    const client = new JsonWebSocketClient('ws://configured-server');
+    const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
     if (beforeMessage) {
         client.onWebSocketMessageDo('earlier-listener', beforeMessage);
     }

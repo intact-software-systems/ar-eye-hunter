@@ -446,6 +446,10 @@ describe('shared rallar black-box control client', () => {
                         crdt: {
                             supported: true,
                             apiBaseUrlConfigured: true
+                        },
+                        messaging: {
+                            supported: true,
+                            carriers: expect.arrayContaining(['ws', 'rtc', 'rtc-with-ws-fallback'])
                         }
                     }
                 }
@@ -473,6 +477,10 @@ describe('shared rallar black-box control client', () => {
                         crdt: {
                             supported: true,
                             transports: expect.arrayContaining(['local-only', 'ws', 'rtc'])
+                        },
+                        messaging: {
+                            supported: true,
+                            carriers: expect.arrayContaining(['ws', 'rtc', 'rtc-with-ws-fallback'])
                         }
                     }
                 }

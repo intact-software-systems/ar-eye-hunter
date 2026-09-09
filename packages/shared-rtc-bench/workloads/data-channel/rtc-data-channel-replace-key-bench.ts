@@ -4,6 +4,7 @@ import {
     type RtcBenchmarkPeerConnection
 } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelCounters } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
@@ -82,6 +83,7 @@ function createReplaceKeyChannel(queueDepth: number): RtcDataChannelReplaceKeyCh
     const nativeChannel = new RtcBenchmarkNativeChannel('realtime');
     peerFixture.native.pendingChannels.push(nativeChannel);
     const dataChannel = new QRtcDataChannel(peerFixture.peer, {
+        faultPort: createPassThroughTransportFaultPort(),
         peerId: 'peer-1',
         dataChannelName: 'realtime',
         flowControl: {

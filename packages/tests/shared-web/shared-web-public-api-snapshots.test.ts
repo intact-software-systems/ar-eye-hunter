@@ -76,6 +76,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDataStoreDefinition',
                 'RallarDataStoreOptions',
                 'RallarDefaults',
+                'RallarDiagnosticsPorts',
+                'RallarDiagnosticsPortsInput',
                 'RallarDirectorAppointOptions',
                 'RallarDirectorRelayConfig',
                 'RallarDirectorRelayEnvelope',
@@ -271,6 +273,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarConnectionOperations',
                 'RallarCreateRoomInput',
                 'RallarDefaults',
+                'RallarDiagnosticsPorts',
+                'RallarDiagnosticsPortsInput',
                 'RallarJoinRoomOptions',
                 'RallarLeaveRoomOptions',
                 'RallarListPeopleEventsOptions',
@@ -489,6 +493,36 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarCrdtUndoRedoGroupInput'
             ],
             starExports: [],
+            namespaceExports: []
+        }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rallar-messages.ts',
+        expected: {
+            values: [],
+            types: [
+                'RallarMessage',
+                'RallarMessageHandler',
+                'RallarMessageLane',
+                'RallarMessagePayload',
+                'RallarMessageSendBase',
+                'RallarMessageSendResult',
+                'RallarMessageTransport',
+                'RallarMessagesOperations',
+                'RallarRoomMessageChannelDefinition',
+                'RallarRtcMessageLane',
+                'RallarRtcSendInput',
+                'RallarTypedMessageChannel',
+                'RallarTypedMessageChannelDefinition',
+                'RallarTypedMessageSendOptions',
+                'RallarTypedMessageSendStrategy',
+                'RallarTypedPayloadHandler',
+                'RallarTypedRtcSendOptions',
+                'RallarTypedWsSendOptions',
+                'RallarWsMessageLane',
+                'RallarWsSendInput'
+            ],
+            starExports: ['@shared-web/browser/rallar-core.ts'],
             namespaceExports: []
         }
     },
