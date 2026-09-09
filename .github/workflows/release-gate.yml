@@ -118,20 +118,6 @@ jobs:
       - name: Run root CI suite
         run: npm run test:ci
 
-      # Non-blocking until the hosted runner completes a typed ws send and a cold RTC handshake
-      # inside the recipe budgets; the uploaded run snapshots are the diagnostic.
-      - name: Observe the ALM conformance lane
-        continue-on-error: true
-        run: npm run test:rallar:full-stack:memory:alm
-
-      - name: Upload ALM conformance lane results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: alm-conformance-lane-${{ github.sha }}
-          path: apps/rallar-black-box/test-results
-          if-no-files-found: ignore
-
       - name: Build deployable apps
         run: |
           npm run build:ar-eye-hunter-v1
@@ -199,3 +185,59 @@ jobs:
         run: |
           npm run test:postgres:presence-expiry
           npm run test:postgres:presence-expiry
+
+  # Non-blocking and off the gate's critical path until the hosted runner completes a typed ws send
+  # and a cold RTC handshake inside the recipe budgets; the uploaded run snapshots are the diagnostic.
+  alm-conformance-observation:
+    name: ALM conformance observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Restore Deno cache without save permission
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cache/deno
+            ~/.deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Observe the ALM conformance lane
+        run: npm run test:rallar:full-stack:memory:alm
+
+      - name: Upload ALM conformance lane results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: alm-conformance-lane-${{ github.sha }}
+          path: apps/rallar-black-box/test-results
+          if-no-files-found: ignore
