@@ -19,6 +19,7 @@ import {
 
 const config = readFullStackConfig();
 const scope = process.env.RALLAR_BLACK_BOX_ALM_SCOPE === 'full' ? 'full' : 'smoke';
+const carriers = toCarrierSelection(process.env.RALLAR_BLACK_BOX_ALM_CARRIERS);
 
 /** Comma-separated scenario ids withheld from the lane; each one needs a recorded ruling. */
 const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
@@ -40,13 +41,33 @@ const CARRIER_TEST_TIMEOUT_MS = 300_000;
  */
 const RUN_ID_BUDGET = 43;
 
+/** Comma-separated carriers; empty runs every carrier. The CI scripts pass `ws` while a cold RTC handshake on a hosted runner reports no ready peer. */
+function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
+    const requested = (value ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+    if (requested.length === 0) {
+        return ALM_CONFORMANCE_CARRIERS;
+    }
+    const unknown = requested.filter((entry) => !isAlmConformanceCarrier(entry));
+    if (unknown.length > 0) {
+        throw new Error(`RALLAR_BLACK_BOX_ALM_CARRIERS names unknown carriers: ${unknown.join(', ')}`);
+    }
+    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
+}
+
+function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
+    return (ALM_CONFORMANCE_CARRIERS as readonly string[]).includes(value);
+}
+
 test.describe('ALM conformance lane', () => {
-    // A cold RTC handshake intermittently reports no ready peer within the readiness budget; the
-    // retry costs one extra run of a carrier instead of widening any readiness wait.
+    // A cold RTC handshake intermittently reports no ready peer even within the widened readiness
+    // budget; the retry costs one extra run of a carrier, and hosted runners select `ws` only.
     test.describe.configure({ retries: 1 });
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
 
-    for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+    for (const carrier of carriers) {
         test(`baseline family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
             test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
 
