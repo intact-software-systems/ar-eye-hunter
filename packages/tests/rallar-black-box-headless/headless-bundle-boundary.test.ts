@@ -54,8 +54,8 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // The maintainer approved necessary ALM and formation-command growth.
         // Keep the smallest whole-KiB strict limit containing the measured
         // behavior, with all operator dependency exclusions intact.
-        // Measured 252.02 KiB brotli after the inbound owner-row retention clamp and the
-        // shared buffered-slot resolver landed (F2 R22/R24); raised to the next whole KiB.
+        // Measured 252.87 KiB brotli after the inbound runtime composed on the generic work
+        // handler (F2 Task 5); the limit was raised to the next whole KiB at 252.02 (R22/R24).
         expect(result.brotliKiB).toBeLessThan(253);
     });
 });

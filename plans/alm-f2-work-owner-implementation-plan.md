@@ -67,6 +67,30 @@ counters.
   manager's `this.outbox` becomes the stores bundle's `workQueue`.
 - R18: `peekNextReadyAt` reads one fixed 16-entry RETRY page per type (the existing handler's
   bound); the engine's idle schedule covers an under-report; polling bounds are measured in V1.
+- R22/R24 (Task 3): the owner row carries `retainUntilMs`; every buffered-slot re-extension is
+  clamped to it; every consumer of a buffered slot resolves its owner row.
+- R27 (Task 4/5): a replayed `admit-control` that commits surfaces its acceptance through
+  `onControlMessage`; `replay` returns `{ outcome, acceptance }`.
+- R30/R31 (Task 5): the port's `peekNextReadyAt` advertises NEW work as ready now (one NEW row per
+  type) merged with RETRY readiness; readiness is a handler dependency
+  (`ALWorkHandlerDependencies.readNextReadyAtMs`) — the inbound runtime passes its eligibility-aware
+  selector probe, the outbound runtime passes its own probe (Task 6).
+- R32 (Task 6): the port's peek skips expired rows (`readWorkPage` applies no expiry filter, so an
+  expired NEW row would otherwise read as ready forever); the outbound probe keeps today's
+  semantics (unleased RESERVED rows are ready now, expired rows are skipped).
+- R29 (Task 6/11): warn-tier-or-worse ALM files after Task 4 were compute-al-inbound-admission (64),
+  validate-al-inbound-commit-bundle (58), al-outbound-admission-effect-store (68),
+  al-outbound-message-runtime (55), al-outbound-repair-admission (60), al-outbound-admission-store
+  (124); Task 6 lands the four outbound files under the warn tier, Task 11 splits the rest along
+  real boundaries and makes `validateALInboundControlAdmission` return every issue.
+- H5 (Task 6, from the runner diagnosis of the F1 lane): outbound admission of a typed send is a
+  serialized chain of IndexedDB round trips with the batch awaited inline before and after the
+  commit; Task 6 replaces the awaited `processCommitted()` with the non-blocking
+  `ALWorkHandler.committed()`, wires the existing `outboundDiagnostics` sink
+  (`initialise-browser-middleware.ts`, no caller today) from the black-box composition beside
+  `RallarDiagnosticsPorts`, and raises the conformance `EXPIRY_TTL_MS` above the measured admission
+  latency so `deadline-expiry` asserts what it claims. The lane returns to `test:ci` when Task 12
+  proves it on the runner (observation job).
 
 ---
 
@@ -865,7 +889,7 @@ git commit -m "refactor(alm): lift inbound control admission into its own owner 
   `admit-message` → `admission.replay`, `admit-control` → `controlAdmission.replay`, everything else →
   `delivery.deliver(effect)`, mapping `'completed' | 'retry'` and `{ retryAfterMs }` to `ALWorkOutcome`.
 
-- [ ] **Step 1: Rewrite the lifecycle test first**
+- [x] **Step 1: Rewrite the lifecycle test first**
 
 Rewrite `al-inbound-effect-worker-lifecycle.test.ts` so each case retains work through
 `resources.workQueue.enqueueIfAbsent(...)`, drives the engine, and asserts outcomes through
@@ -875,12 +899,12 @@ Add the crash-convergence case the spec's F2 acceptance names: a progress commit
 claim released as `retry` before the effect completed, and redelivery converging on the next batch
 (ruling R17). Add a case that `committed()` returns synchronously and never awaits delivery (R16).
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
 Expected: FAIL on the new cases (synchronous `committed()`, crash convergence) while the old handler is still composed.
 
-- [ ] **Step 3: Compose**
+- [x] **Step 3: Compose**
 
 In the runtime constructor replace `new ALInboundWorkHandler({...})` with (the port is the one
 the constructor already built from `dependencies.workQueue` in Task 4; the inbound `selectReady`
@@ -911,12 +935,12 @@ this.work = new ALWorkHandler({
 `admitControlMessage` before `onControlMessage` runs (ruling R16). Delete the old handler file
 and every import of it.
 
-- [ ] **Step 4: Run the suites and the typecheck**
+- [x] **Step 4: Run the suites and the typecheck**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/services packages/tests/shared-web/al-runtime && npx tsc -p packages/shared/tsconfig.json --noEmit`
 Expected: PASS and exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/tests
@@ -1040,9 +1064,20 @@ Change `CreateALOutboundAdmissionStoreInput` and the interface as listed; delete
 decoder parameters. Add the `dequeue-message` payload and decoder branch. Add `workQueue` to the
 resources and `dequeue` to the dependencies, build the port in the constructor, compose `ALWorkHandler` as Task 5 did with
 `selectReady: (port, size) => port.claim({ maxCount: size, observedEntries: undefined }).then((claims) => ({ claims, nextReadyAtMs: undefined }))`
-and `runClaim: (claim) => this.runOutboundClaim(claim)` (decode → `runDurableEffect`). Delete
+and `runClaim: (claim) => this.runOutboundClaim(claim)` (decode → `runDurableEffect`), and
+`readNextReadyAtMs: (port) => this.readOutboundReadyAt(port)` keeping the old handler's probe
+semantics (NEW and unleased RESERVED are ready now, RETRY at `nextTs`, expired rows skipped) (R31,
+R32; also make the port's own `peekNextReadyAt` skip expired rows). Delete
 `dequeue()`, rename `handlePendingAckTimeout` → `retryPendingAck` and `executeRepairFromHint` →
-`retransmitFromRepairHint`. Delete `al-outbound-work-handler.ts`. In
+`retransmitFromRepairHint`. Delete `al-outbound-work-handler.ts`. The awaited inline
+`processCommitted()` after a send is gone with it: `send`/`admit` end with the synchronous
+`committed()` (H5). Wire the middleware's existing `outboundDiagnostics` sink from the black-box
+page composition (beside the F1 diagnostics ports) so `sender-queue-wait`, `browser-lock-wait`,
+`browser-lock-hold` and `effect-drain` durations land in the agent event log, and raise
+`EXPIRY_TTL_MS` in `create-alm-conformance-recipes.ts` above the admission latency the runner
+measured (1.3–5 s) while staying below the receive window. Land `al-outbound-admission-store.ts`,
+`al-outbound-admission-effect-store.ts`, `al-outbound-message-runtime.ts` and
+`al-outbound-repair-admission.ts` under the cognitive-load warn tier (R29). In
 `create-default-al-outbound-message-runtime.ts` return the stores' `workQueue` as a resource (the
 backend is the composition root's own value, so the store no longer exposes the queue).
 
