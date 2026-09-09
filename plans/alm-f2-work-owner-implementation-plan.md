@@ -431,7 +431,7 @@ awaited (`al-inbound-message-runtime.ts:151`). Corruption (`ALAdmissionCorruptio
 `NonRetryableException` from `runClaim` release the claim as `non-retryable`; any other thrown error
 releases as `retry`; a `retained` result releases when `settled` resolves.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/work/al-work-handler.test.ts` with a fake port (in-memory arrays)
 and `new InboxOutboxEngine(...)` as `packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
@@ -479,12 +479,12 @@ Write the second test fully with a claim whose `runClaim` throws `new ALAdmissio
 one that throws `new Error('transient')`, and one returning `{ status: 'retained', settled: Promise.resolve({ status: 'completed' }) }`;
 await one macrotask and assert `['c-1:non-retryable', 'c-2:retry', 'c-3:completed']`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-handler.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Write the handler**
+- [x] **Step 3: Write the handler**
 
 Create `packages/shared/alm/work/al-work-handler.ts`:
 
@@ -625,12 +625,12 @@ export class ALWorkHandler {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-handler.test.ts`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/alm/work packages/tests/shared/alm/work
