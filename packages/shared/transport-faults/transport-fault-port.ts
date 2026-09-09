@@ -42,6 +42,11 @@ export interface ScriptedTransportFaultPort extends TransportFaultPort {
     getObservations(): readonly TransportFaultObservation[];
 }
 
+/**
+ * Both carriers write `JSON.stringify(ALMessage)`, so these facts are read out of the AL envelope:
+ * the typeId sits under `payload`, and a control payload's own identities are a JSON string in
+ * `payload.resource`.
+ */
 interface SerializedFrameFacts {
     readonly typeId: string | undefined;
     readonly msgId: string | undefined;
@@ -126,11 +131,27 @@ function decodeSerializedFrameFacts(value: unknown): SerializedFrameFacts | unde
     }
     const id: ApiJsonObject = isRecord(value.id) ? value.id : {};
     const payload: ApiJsonObject = isRecord(value.payload) ? value.payload : {};
+    const typeId = typeof payload.typeId === 'string' ? payload.typeId : undefined;
     return {
-        typeId: typeof value.typeId === 'string' ? value.typeId : undefined,
+        typeId,
         msgId: typeof id.msgId === 'string' ? id.msgId : undefined,
-        ackedMsgId: typeof payload.ackedMsgId === 'string' ? payload.ackedMsgId : undefined
+        ackedMsgId: typeId === CONTROL_TYPE_IDS.ack ? decodeAckedMsgId(payload.resource) : undefined
     };
+}
+
+function decodeAckedMsgId(resource: unknown): string | undefined {
+    if (typeof resource !== 'string') {
+        return undefined;
+    }
+    try {
+        const acknowledgement = JSON.parse(resource);
+        return isRecord(acknowledgement) && typeof acknowledgement.ackedMsgId === 'string'
+            ? acknowledgement.ackedMsgId
+            : undefined;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 function isRecord(value: unknown): value is ApiJsonObject {

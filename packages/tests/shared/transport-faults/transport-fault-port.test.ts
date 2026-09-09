@@ -1,20 +1,28 @@
-import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import {
     createPassThroughTransportFaultPort,
     createScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { describe, expect, it } from 'vitest';
 
-const ackFrame = JSON.stringify({
-    id: { v: 2, msgId: 'ctl-1', senderId: 'b', ts: 1 },
-    typeId: AL_CONTROL_ACK_TYPE_ID,
-    payload: { ackedMsgId: 'msg-1', fromPeerId: 'b', toPeerId: 'a' }
-});
-const dataFrame = JSON.stringify({
-    id: { v: 2, msgId: 'msg-1', senderId: 'a', ts: 1 },
-    typeId: 'chat',
-    payload: {}
-});
+/** Both carriers put `JSON.stringify(ALMessage)` on the wire, so the frames here are built, not hand-written. */
+const ackFrame = JSON.stringify(newALAckControlMessage(
+    { v: 2, msgId: 'ctl-1', senderId: 'b', ts: 1 },
+    {
+        ackedMsgId: 'msg-1',
+        fromPeerId: 'b',
+        toPeerId: 'a',
+        status: 'delivered',
+        observedAtEpochMs: 1
+    }
+));
+const dataFrame = JSON.stringify(newALUntargetedMessage(
+    'a',
+    newALRoute('room.chat', 'room-1', 'resource-1'),
+    'chat',
+    { text: 'hello' }
+));
 
 describe('transport fault port', () => {
     it('passes everything through by default', () => {
@@ -60,5 +68,21 @@ describe('transport fault port', () => {
         expect(port.decideSend('rtc', 'not json')).toEqual({ kind: 'pass' });
         port.clear();
         expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'pass' });
+    });
+
+    it('matches an envelope typeId that a frame carries under its payload', () => {
+        const port = createScriptedTransportFaultPort();
+        port.inject({
+            faultId: 'drop-chat',
+            carrier: 'rtc',
+            match: { controlType: undefined, typeId: 'chat', msgId: undefined },
+            action: 'drop',
+            remaining: 1
+        });
+
+        // A top-level typeId is not the AL wire shape and must never match.
+        expect(port.decideSend('rtc', JSON.stringify({ id: { msgId: 'm' }, typeId: 'chat' })))
+            .toEqual({ kind: 'pass' });
+        expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'drop', faultId: 'drop-chat' });
     });
 });

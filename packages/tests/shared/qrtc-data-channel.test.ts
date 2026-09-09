@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
     createPassThroughTransportFaultPort,
     createScriptedTransportFaultPort
@@ -947,8 +948,16 @@ describe('QRtcDataChannel', () => {
         await native.open();
 
         const settlements: QRtcDataChannel.SendSettlement[] = [];
+        // The overlay multicaster hands this channel a whole ALMessage, so the fault port only ever
+        // sees the AL envelope: its typeId lives under `payload`, never at the top level.
         const result = channel.sendJson(
-            { id: { msgId: '1' }, typeId: 'chat' },
+            newALMulticastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'room-1', 'resource-1'),
+                { applicationId: 'app', workspaceId: 'ws', groupId: 'room-1' },
+                'chat',
+                { text: 'hello' }
+            ),
             {
                 onSettled: (settlement) => {
                     settlements.push(settlement);

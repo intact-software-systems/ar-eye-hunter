@@ -23,6 +23,7 @@ import {
 import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import type { RallarMessageSendResult } from '../../../packages/shared-web/browser/messages/rallar-message-contracts.ts';
+import { newALRoute, newALUntargetedMessage } from '../../../packages/shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueStatus } from '../../../packages/shared/alm/outbound/al-outbound-message-runtime.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 
@@ -220,7 +221,12 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
             });
             expect(faults.decideSend(
                 'ws',
-                JSON.stringify({ typeId: 'alm.conformance', id: { msgId: 'msg-1' } })
+                JSON.stringify(newALUntargetedMessage(
+                    'alice',
+                    newALRoute('room.alm-conformance', 'room-1', 'resource-1'),
+                    'alm.conformance',
+                    { marker: 'drop-me' }
+                ))
             )).toEqual({ kind: 'drop', faultId: 'drop-once' });
             expect(faults.getObservations()).toEqual([
                 { faultId: 'drop-once', carrier: 'ws', decision: 'drop' }
