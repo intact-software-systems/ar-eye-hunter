@@ -7,6 +7,7 @@ import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore } from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
+import { toALInboundPendingControlId } from '../al-inbound-pending-admission.ts';
 import { toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
 import {
@@ -37,8 +38,10 @@ export interface ALInboundPendingControl {
     readonly expiresAtMs: number;
 }
 
-export function toALInboundPendingControlId(msg: ALMessage): string {
-    return JSON.stringify(['admit-control', msg.id.senderId, msg.id.msgId]);
+/** A replay that commits owes its caller the same acceptance the inline admission returned. */
+export interface ALInboundControlReplayResult {
+    readonly outcome: ALWorkOutcome;
+    readonly acceptance: ALControlAcceptance | undefined;
 }
 
 /** One conditional admission per call; a conflict becomes retained work the inbound worker replays. */
@@ -76,12 +79,15 @@ export class ALInboundControlAdmission {
         return await this.commitControlAdmission(msg, validated.right!, nowMs);
     }
 
-    async replay(payload: ALInboundPendingControl): Promise<ALWorkOutcome> {
+    async replay(payload: ALInboundPendingControl): Promise<ALInboundControlReplayResult> {
         if (payload.expiresAtMs <= this.clock.nowMs()) {
-            return { status: 'completed' };
+            return { outcome: { status: 'completed' }, acceptance: undefined };
         }
         const result = await this.admit(payload.msg);
-        return result.kind === 'pending-control' ? { status: 'retry' } : { status: 'completed' };
+        return {
+            outcome: { status: result.kind === 'pending-control' ? 'retry' : 'completed' },
+            acceptance: result.kind === 'committed' ? result.acceptance : undefined
+        };
     }
 
     private async commitControlAdmission(

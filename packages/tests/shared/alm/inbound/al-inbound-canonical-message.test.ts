@@ -174,14 +174,13 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
-        stores: { admissionStore, workQueue: admissionStore.workQueue }
+        stores: { admissionStore, workQueue: state.workQueue }
     });
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
         ...resources,
         planIncomingMessage,
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

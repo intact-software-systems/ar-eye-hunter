@@ -109,7 +109,7 @@ describe('RTC admitted-message consumption', () => {
             await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             fixture.observed.snapshot = { ...createCurrentSnapshot(), group: { ...createCurrentSnapshot().group, snapshotVersion: 4 } };
             await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
-            expect(fixture.delivered).toEqual([first.id.msgId]);
+            await expect.poll(() => fixture.delivered).toEqual([first.id.msgId]);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeDefined();
             expect(acknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
 
@@ -294,13 +294,13 @@ describe('RTC admitted-message consumption', () => {
 
     it('leaves claimed work unconsumed when disposed while its storage read is in flight', async () => {
         const fixture = createReplayFixture(false);
-        const claim = fixture.stores.admissionStore.claimReadyEffects.bind(fixture.stores.admissionStore);
-        vi.spyOn(fixture.stores.admissionStore, 'claimReadyEffects').mockImplementation(async (...args) => {
-            const effects = await claim(...args);
-            if (effects.length > 0) {
+        const reserve = fixture.stores.workQueue.reserveEntries.bind(fixture.stores.workQueue);
+        vi.spyOn(fixture.stores.workQueue, 'reserveEntries').mockImplementation(async (request) => {
+            const reserved = await reserve(request);
+            if (reserved.size > 0) {
                 fixture.runtime.dispose();
             }
-            return effects;
+            return reserved;
         });
 
         await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
@@ -354,7 +354,6 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         stores,
         queueEngine: engine,
         planIncomingMessage: planner,
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);

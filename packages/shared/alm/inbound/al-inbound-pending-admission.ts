@@ -8,5 +8,13 @@ export interface ALInboundPendingAdmission {
 }
 
 export function toALInboundPendingAdmissionId(msg: ALMessage): string {
-    return JSON.stringify(['admit-message', msg.id.senderId, msg.id.msgId]);
+    return toPendingId('admit-message', msg);
+}
+
+export function toALInboundPendingControlId(msg: ALMessage): string {
+    return toPendingId('admit-control', msg);
+}
+
+function toPendingId(kind: 'admit-message' | 'admit-control', msg: ALMessage): string {
+    return [kind, msg.id.senderId, msg.id.msgId].map((part) => encodeURIComponent(part)).join(':');
 }

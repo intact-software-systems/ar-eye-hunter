@@ -12,6 +12,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -561,10 +562,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(msg);
 
         expect(callbackCount).toBe(0);
-        const keys = await stores.admissionStore.workQueue.getAllKeys();
+        const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         await engine.executeOnce();
-        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({
+        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({
             status: shared.EntityStatus.NEW,
             dequeueAudit: { attempts: 0 }
         });
@@ -675,6 +676,7 @@ function createFakeWsSocket() {
             for (const callback of callbacks) {
                 await callback.onMessage(message, new MessageEvent('message', { data: JSON.stringify(message) }));
             }
+            await waitForALInboundWork();
         }
     };
 }

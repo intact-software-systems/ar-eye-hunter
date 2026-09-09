@@ -6,19 +6,24 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import { createALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import { ALWorkHandler } from '../work/al-work-handler.ts';
+import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
     ALInboundPlanner
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
-import { AL_INBOUND_WORK_LEASE_MS, toALInboundWorkType } from './al-inbound-work-entry.ts';
-import { ALInboundWorkHandler } from './al-inbound-work-handler.ts';
+import { AL_INBOUND_WORK_LEASE_MS, decodeALInboundWorkEntry, toALInboundWorkType } from './al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
+import {
+    AL_INBOUND_WORK_PAGE_SIZE,
+    createALInboundWorkSelector,
+    type ALInboundWorkSelector
+} from './read-al-inbound-work-selection.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export interface ALInboundRuntimeStores {
@@ -61,7 +66,6 @@ export namespace ALInboundMessageRuntime {
         readonly planIncomingMessage: ALInboundPlanner;
         /** Rechecks asynchronous ingress authority before pending data enters conditional admission. */
         readonly readPendingAdmissionAuthority?: (msg: ALMessage, source: Source) => Promise<PendingAuthority>;
-        readonly readStoredEntry: (entry: ResourceEntry) => Readonly<ALMessage>;
         readonly dispatchInboxEntry: (
             entry: ResourceEntry,
             plan: ALMessageHandlingPlan,
@@ -88,7 +92,8 @@ export class ALInboundMessageRuntime {
     private readonly admission: ALInboundMessageAdmission;
     private readonly controlAdmission: ALInboundControlAdmission;
     private readonly delivery: ALInboundAdmittedDelivery;
-    private readonly effects: ALInboundWorkHandler;
+    private readonly workSelector: ALInboundWorkSelector;
+    private readonly work: ALWorkHandler;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -97,26 +102,38 @@ export class ALInboundMessageRuntime {
         this.dependencies = dependencies;
         this.admissionStore = dependencies.admissionStore;
         this.readyPromise = this.admissionStore.ready();
-        this.admission = new ALInboundMessageAdmission(dependencies);
+        const workPort = createALWorkQueuePort({
+            queue: dependencies.workQueue,
+            workTypes: new Set([toALInboundWorkType(this.admissionStore.namespace)]),
+            leaseMs: AL_INBOUND_WORK_LEASE_MS,
+            nowMs: () => dependencies.clock.nowMs(),
+            random: dependencies.random
+        });
+        this.admission = new ALInboundMessageAdmission({ ...dependencies, workPort });
         this.controlAdmission = new ALInboundControlAdmission({
             admissionStore: this.admissionStore,
-            port: createALWorkQueuePort({
-                queue: dependencies.workQueue,
-                workTypes: new Set([toALInboundWorkType(this.admissionStore.namespace)]),
-                leaseMs: AL_INBOUND_WORK_LEASE_MS,
-                nowMs: () => dependencies.clock.nowMs(),
-                random: dependencies.random
-            }),
+            port: workPort,
             clock: dependencies.clock,
             newControlId: dependencies.effectPreparation.newControlId,
             retention: this.admissionStore.retention
         });
         this.delivery = new ALInboundAdmittedDelivery(dependencies);
-        this.effects = new ALInboundWorkHandler({
-            ...dependencies,
+        this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
-            admission: this.admission,
-            controlAdmission: this.controlAdmission
+            namespace: this.admissionStore.namespace,
+            nowMs: () => dependencies.clock.nowMs()
+        });
+        this.work = new ALWorkHandler({
+            workerId: dependencies.effectWorkerId,
+            // The rotation, not the queue port, answers readiness: it observes new and reserved work too.
+            port: { ...workPort, peekNextReadyAt: () => this.workSelector.readNextReadyAtMs(workPort) },
+            queueEngine: dependencies.queueEngine,
+            ownsQueueEngine: dependencies.ownsQueueEngine,
+            clock: dependencies.clock,
+            pageSize: AL_INBOUND_WORK_PAGE_SIZE,
+            selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
+            runClaim: (claim) => this.runInboundClaim(claim),
+            diagnostics: undefined
         });
         if (dependencies.ownsQueueEngine) {
             void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
@@ -126,13 +143,13 @@ export class ALInboundMessageRuntime {
     async ready(): Promise<void> {
         await this.readyPromise;
 
-        await this.effects.startOnce();
+        await this.work.ready();
     }
 
     dispose(): void {
         this.disposed = true;
         this.admission.dispose();
-        this.effects.dispose();
+        this.work.dispose();
         this.delivery.dispose();
     }
 
@@ -168,17 +185,13 @@ export class ALInboundMessageRuntime {
         const acceptance = result.kind === 'completed' ? result.acceptance : result.pending === undefined
             ? { kind: 'not-admitted' as const, reason: 'conflict' }
             : await this.admission.retainPending(result.pending);
-        await this.effects.committed();
+        this.commitWork();
         return Either.ofRight(acceptance);
     }
 
     private async admitControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
         const admitted = await this.controlAdmission.admit(msg);
-        const waitForEffects = !this.effects.hasActiveDrain();
-        const effectDrain = this.effects.committed();
-        if (waitForEffects) {
-            await effectDrain;
-        }
+        this.commitWork();
         if (admitted.kind === 'pending-control') {
             return { kind: 'pending-admission' };
         }
@@ -190,4 +203,38 @@ export class ALInboundMessageRuntime {
         }
         return { kind: 'control', handled: acceptance.handled };
     }
+
+    /** A commit lands behind the running rotation; the worker restarts it and never waits for delivery. */
+    private commitWork(): void {
+        this.workSelector.restartScan();
+        this.work.committed();
+    }
+
+    private async runInboundClaim(claim: ALWorkClaim): Promise<ALWorkOutcome> {
+        const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
+        const payload = effect.payload;
+        if (payload.kind === 'admit-message') {
+            return toALInboundReplayOutcome(
+                await this.admission.replay(payload),
+                this.dependencies.clock.nowMs()
+            );
+        }
+        if (payload.kind === 'admit-control') {
+            const replayed = await this.controlAdmission.replay(payload);
+            if (replayed.acceptance !== undefined && !this.disposed) {
+                await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
+            }
+            return replayed.outcome;
+        }
+        return { status: await this.delivery.deliver(effect) };
+    }
+}
+
+function toALInboundReplayOutcome(
+    result: ALInboundMessageAdmission.ReplayResult,
+    nowMs: number
+): ALWorkOutcome {
+    return typeof result === 'string'
+        ? { status: result }
+        : { status: 'not-ready', readyAtMs: nowMs + result.retryAfterMs };
 }

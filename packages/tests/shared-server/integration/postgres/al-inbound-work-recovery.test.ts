@@ -13,6 +13,7 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
@@ -27,15 +28,17 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 
 describe('Postgres inbound ordered work recovery', () => {
     postgresIt('retains ordered completion across runtime restart and work-row cleanup', async () => {
-        const [firstStore, secondStore] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const firstStore = firstStores.admissionStore;
+        const secondStore = secondStores.admissionStore;
         const received: string[] = [];
-        const first = createRuntime(firstStore, received);
+        const first = createRuntime(firstStores, received);
         const secondMessage = createMessage('second', 2);
         await first.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
         expect(received).toEqual([]);
         first.dispose();
 
-        const second = createRuntime(secondStore, received);
+        const second = createRuntime(secondStores, received);
         const firstMessage = createMessage('first', 1);
         await second.admitIncomingMessage(firstMessage, { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(() => received).toEqual(['first', 'second']);
@@ -44,7 +47,7 @@ describe('Postgres inbound ordered work recovery', () => {
             .toEqual({ completedThrough: 2, predecessor: undefined });
         second.dispose();
 
-        const completed = await firstStore.workQueue.readWorkPage({
+        const completed = await firstStores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(firstStore.namespace),
             status: EntityStatus.COMPLETED,
             maxToRead: 16,
@@ -52,9 +55,9 @@ describe('Postgres inbound ordered work recovery', () => {
         });
         expect(completed.entries.length).toBeGreaterThan(0);
         for (const entry of completed.entries) {
-            await firstStore.workQueue.removeItem(entry.key);
+            await firstStores.workQueue.removeItem(entry.key);
         }
-        const restarted = createRuntime(firstStore, received);
+        const restarted = createRuntime(firstStores, received);
         await restarted.admitIncomingMessage(createMessage('third', 3), { kind: 'ws-client', peerId: 'sender' });
         await expect.poll(() => received).toEqual(['first', 'second', 'third']);
         await expect.poll(() => secondStore.readOrderedDelivery(trackKey, 4))
@@ -64,7 +67,9 @@ describe('Postgres inbound ordered work recovery', () => {
     });
 
     postgresIt('rejects stale delivery progress after another connection completes the predecessor', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         const message = createMessage('first', 1);
         await admit(first, message);
         const trackKey = toALOrderingTrackKey(message)!;
@@ -91,7 +96,9 @@ describe('Postgres inbound ordered work recovery', () => {
     });
 
     postgresIt('preserves an extended deadline when another connection completes from a stale read', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         const message = createMessage('first', 1);
         await admit(first, message);
         const trackKey = toALOrderingTrackKey(message)!;
@@ -135,9 +142,11 @@ describe('Postgres inbound ordered work recovery', () => {
     });
 
     postgresIt('terminalizes a malformed predecessor, requests resynchronization and delivers unrelated work', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         await admit(first, createMessage('malformed', 1));
-        const page = await first.workQueue.readWorkPage({
+        const page = await firstStores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(first.namespace),
             status: EntityStatus.NEW,
             maxToRead: 16,
@@ -147,13 +156,13 @@ describe('Postgres inbound ordered work recovery', () => {
         if (!predecessor) {
             throw new Error('Expected durable work for the first message');
         }
-        expect(await first.workQueue.replaceIfObserved(predecessor, { ...predecessor, resource: '{invalid-json' }))
+        expect(await firstStores.workQueue.replaceIfObserved(predecessor, { ...predecessor, resource: '{invalid-json' }))
             .not.toBeNull();
         const received: string[] = [];
         const controls: ALMessage[] = [];
-        const runtime = createRuntime(second, received, controls);
+        const runtime = createRuntime(secondStores, received, controls);
         await runtime.ready();
-        expect(await first.workQueue.getItem(predecessor.key)).toMatchObject({
+        expect(await firstStores.workQueue.getItem(predecessor.key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
@@ -170,7 +179,7 @@ describe('Postgres inbound ordered work recovery', () => {
     });
 });
 
-async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInboundAdmissionStore]> {
+async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInboundRuntimeStores]> {
     const namespace = `inbound-work-recovery-${crypto.randomUUID()}`;
     const queueContext = toALInboundWorkKey(namespace, '').contextId;
     const first = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
@@ -191,16 +200,24 @@ async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInbo
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     };
+    const firstBackend = new PSqlAdmissionWorkBackend(first, namespace);
+    const secondBackend = new PSqlAdmissionWorkBackend(second, namespace);
     return [
-        createALInboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(first, namespace) }),
-        createALInboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(second, namespace) })
+        {
+            admissionStore: createALInboundAdmissionStore({ ...configuration, backend: firstBackend }),
+            workQueue: firstBackend.workQueue
+        },
+        {
+            admissionStore: createALInboundAdmissionStore({ ...configuration, backend: secondBackend }),
+            workQueue: secondBackend.workQueue
+        }
     ];
 }
 
-function createRuntime(store: ALInboundAdmissionStore, received: string[], controls: ALMessage[] = []) {
+function createRuntime(stores: ALInboundRuntimeStores, received: string[], controls: ALMessage[] = []) {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'receiver',
-        stores: { admissionStore: store, workQueue: store.workQueue },
+        stores,
 
         planIncomingMessage: (message, source, observations) =>
             planALMessageHandling(message, {
@@ -209,7 +226,6 @@ function createRuntime(store: ALInboundAdmissionStore, received: string[], contr
                 ...observations
             }),
         toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async (entry) => {
             received.push(decodePersistedALMessage(entry.resource).route.resourceId);
         },

@@ -211,7 +211,6 @@ export class WsQueueBoxServerService {
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.hasInboxConsumer(message),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: (entry, plan, source) => this.dispatchInboxEntry(entry, plan, source),
             sendControlMessage: (message) => this.sendControlMessage(message),
             onControlMessage: async (message) => {

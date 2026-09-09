@@ -69,7 +69,7 @@ describe('AL state retained across runtime recreation', () => {
         );
 
         await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
-        expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
+        await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         runtime1.dispose();
         const restartedRuntime = createDefaultInboundRuntime(
@@ -284,7 +284,6 @@ function createDefaultInboundRuntime(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);

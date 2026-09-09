@@ -209,7 +209,6 @@ export class WsQueueBoxClientService {
                 ...resources,
                 planIncomingMessage: (msg, source, observations) => this.planIncomingMessage(msg, source, observations),
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
-                readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),
                 sendControlMessage: async (msg) => {
                     await this.enqueueOutboxIfAbsent(msg);

@@ -6,6 +6,7 @@ import { NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.t
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -28,7 +29,9 @@ export namespace ALInboundMessageAdmission {
             | 'forwardMessage'
             | 'canForwardMessage'
             | 'readPendingAdmissionAuthority'
-        > {}
+        > {
+        readonly workPort: ALWorkQueuePort;
+    }
 
     export type ReplayResult = 'completed' | 'retry' | { readonly kind: 'not-ready'; readonly retryAfterMs: number; };
 
@@ -113,7 +116,7 @@ export class ALInboundMessageAdmission {
             expireAtTimestamp: deadline
         });
         decodeALInboundWorkEntry(work.entry, admissionStore.namespace);
-        const observed = await admissionStore.workQueue.enqueueIfAbsent(work.entry);
+        const observed = await this.dependencies.workPort.retainIfAbsent(work.entry);
         const stored = decodeALInboundWorkEntry(observed, admissionStore.namespace);
         if (!jsonEquals(stored.payload, pending) || stored.expireAtTimestamp !== deadline) {
             throw new ALAdmissionCorruptionError(

@@ -5,6 +5,7 @@ import {
     vi
 } from 'vitest';
 
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -48,6 +49,11 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 });
             const admission = new ALInboundMessageAdmission({
                 admissionStore: store,
+                workPort: createTestALInboundWorkPort({
+                    admissionStore: store,
+                    workQueue: backend.workQueue,
+                    nowMs: () => nowMs
+                }),
                 clock: { nowMs: () => nowMs },
                 planIncomingMessage: planner,
                 effectPreparation: {

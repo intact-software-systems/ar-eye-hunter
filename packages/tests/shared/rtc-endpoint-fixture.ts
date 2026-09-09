@@ -30,6 +30,7 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -123,9 +124,11 @@ export class RtcEndpointFixture {
     }
 
     async waitForDeliveries(): Promise<void> {
-        while (this.pendingDeliveries.length > 0) {
+        do {
             await Promise.all(this.pendingDeliveries.splice(0));
+            await waitForALInboundWork();
         }
+        while (this.pendingDeliveries.length > 0);
     }
 
     private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {

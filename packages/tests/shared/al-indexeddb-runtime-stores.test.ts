@@ -10,14 +10,17 @@ import {
     vi
 } from 'vitest';
 
+import {
+    createTestALInboundControlAdmission,
+    createTestALInboundWorkPort
+} from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import {
     ALOutboundMessageRuntime,
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -117,7 +120,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
-        expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
+        await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime2.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
@@ -166,7 +169,6 @@ describe('IndexedDB AL runtime stores', () => {
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                     ...observations
                 }),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
             dispatchInboxEntry: async (entry) => {
                 const msg = decodePersistedALMessage(entry.resource);
@@ -194,7 +196,7 @@ describe('IndexedDB AL runtime stores', () => {
         await runtime.ready();
         await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
-        expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
+        await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
         expect(await inbox.getAllKeys()).toEqual([]);
     });
 
@@ -205,7 +207,7 @@ describe('IndexedDB AL runtime stores', () => {
             dbName,
             namespace
         });
-        const pausedClaims = vi.spyOn(stores.admissionStore, 'claimReadyEffects').mockResolvedValue([]);
+        const pausedClaims = vi.spyOn(stores.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         const runtime = createDefaultInboundRuntime({
             dbName: dbName,
             namespace: namespace,
@@ -238,16 +240,10 @@ describe('IndexedDB AL runtime stores', () => {
         runtime.dispose();
         pausedClaims.mockRestore();
 
-        const page = await stores.admissionStore.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(stores.admissionStore.namespace),
-            status: EntityStatus.NEW,
-            maxToRead: 10,
-            cursor: null
-        });
-        const claimed = await stores.admissionStore.claimReadyEffects({
-            maxCount: 10,
-            entries: page.entries
-        });
+        const port = createTestALInboundWorkPort({ ...stores, nowMs: Date.now });
+        const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
+        const claimed = (await port.claim({ maxCount: 10, observedEntries: page.entries }))
+            .map((claim) => decodeALInboundWorkEntry(claim.entry, stores.admissionStore.namespace));
         const delivery = claimed.find((effect) => effect.payload.kind === 'dispatch-local');
 
         expect(delivery).toBeDefined();
@@ -746,7 +742,6 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
                 fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 ...observations
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
@@ -896,18 +891,10 @@ async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessa
 }
 
 function createInboundControlAdmission(stores: ALInboundRuntimeStores): ALInboundControlAdmission {
-    return new ALInboundControlAdmission({
-        admissionStore: stores.admissionStore,
-        port: createALWorkQueuePort({
-            queue: stores.workQueue,
-            workTypes: new Set([toALInboundWorkType(stores.admissionStore.namespace)]),
-            leaseMs: 10_000,
-            nowMs: Date.now,
-            random: () => 0.5
-        }),
-        clock: { nowMs: Date.now },
-        newControlId: () => 'generated-control',
-        retention: stores.admissionStore.retention
+    return createTestALInboundControlAdmission({
+        ...stores,
+        nowMs: Date.now,
+        newControlId: () => 'generated-control'
     });
 }
 

@@ -8,17 +8,19 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPlanningObservations
 } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
-import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -30,7 +32,8 @@ import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/p
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supersedence in %s', (storage) => {
     it('admits independent messages from the same sender using their original reads', async () => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         const first = await readDecision(store, createMessage('same-sender', 1, 'first-topic'));
         const second = await readDecision(store, createMessage('same-sender', 2, 'second-topic'));
         const original = JSON.stringify(second.bundle);
@@ -39,11 +42,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
         expect(await store.commitBundle(second.bundle)).toBe('committed');
 
         expect(JSON.stringify(second.bundle)).toBe(original);
-        expect(await completeEffects(store)).toEqual(expect.arrayContaining([first.read.msg.id.msgId, second.read.msg.id.msgId]));
+        expect(await completeEffects(stores)).toEqual(expect.arrayContaining([first.read.msg.id.msgId, second.read.msg.id.msgId]));
     });
 
     it('still conflicts when two decisions admit the same message', async () => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         const message = createMessage('same-sender', 1);
         const first = await readDecision(store, message);
         const duplicate = await readDecision(store, message);
@@ -51,11 +55,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
         expect(await store.commitBundle(first.bundle)).toBe('committed');
         expect(await store.commitBundle(duplicate.bundle)).toBe('conflict');
         expect((await readDecision(store, message)).plan.dropReason).toContain('Duplicate message');
-        expect(await completeEffects(store)).toEqual([message.id.msgId]);
+        expect(await completeEffects(stores)).toEqual([message.id.msgId]);
     });
 
     it('conflicts on a shared semantic dedup key across otherwise independent senders', async () => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         const firstMessage = createMessage('sender-a', 1, 'first-topic');
         const secondMessage = createMessage('sender-b', 2, 'second-topic');
         const dedup = { algo: 'semantic-key' as const, opts: { semanticKey: 'same-command' } };
@@ -68,11 +73,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
         const retry = await readDecision(store, second.read.msg);
         expect(retry.plan.dropReason).toContain('Duplicate message');
         expect(retry.read.observations.messageOwner).toBeUndefined();
-        expect(await completeEffects(store)).toEqual([firstMessage.id.msgId]);
+        expect(await completeEffects(stores)).toEqual([firstMessage.id.msgId]);
     });
 
     it('recomputes a shared ordering track after a different message advances it', async () => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         const first = { ...createMessage('same-sender', 1, 'first-topic'), ordering: { orderingKey: 'ordered', seq: 1 } };
         const second = { ...createMessage('same-sender', 2, 'second-topic'), ordering: { orderingKey: 'ordered', seq: 2 } };
         const firstDecision = await readDecision(store, first);
@@ -86,11 +92,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
     });
 
     it.each([false, true])('rejects a stale sender decision without recording its delivery or deduplication (populated: %s)', async (populated) => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         if (populated) {
             const seed = await readDecision(store, createMessage('seed', 0));
             expect(await store.commitBundle(seed.bundle)).toBe('committed');
-            await completeEffects(store);
+            await completeEffects(stores);
         }
         const older = createMessage('sender-a', 1);
         const newer = createMessage('sender-b', 2);
@@ -109,11 +116,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
         expect(refreshed.read.dedupExpiresAt).toBeUndefined();
         expect(refreshed.plan.supersedence.status).toBe('superseded');
         expect(refreshed.read.supersedence.latest?.latestMsgId).toBe(newer.id.msgId);
-        expect(await completeEffects(store)).toEqual([newer.id.msgId]);
+        expect(await completeEffects(stores)).toEqual([newer.id.msgId]);
     });
 
     it('allows unrelated work and recomputes a newer message after conflict', async () => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         const older = createMessage('sender-a', 1);
         const newer = createMessage('sender-b', 2);
         const unrelated = createMessage('sender-c', 3, 'other-topic');
@@ -136,12 +144,13 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
     });
 
     it('rejects a buffered-release decision when another sender changes its original observation', async () => {
-        const store = await createStore(storage);
+        const stores = await createStore(storage);
+        const store = stores.admissionStore;
         const older = { ...createMessage('sender-a', 1), ordering: { orderingKey: 'ordered-topic', seq: 1 } };
         const newer = { ...createMessage('sender-b', 2), ordering: { orderingKey: 'ordered-topic', seq: 1 } };
         const admitted = await readDecision(store, older);
         expect(await store.commitBundle(admitted.bundle)).toBe('committed');
-        expect(await completeEffects(store)).toEqual([older.id.msgId]);
+        expect(await completeEffects(stores)).toEqual([older.id.msgId]);
         const trackKey = toALOrderingTrackKey(older);
         if (trackKey === undefined) {
             throw new Error('Ordered message requires a track key');
@@ -171,7 +180,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
         expect(JSON.stringify(buffered)).toBe(originalCandidate);
         expect((await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() }))?.supersedence.latest?.latestMsgId)
             .toBe(newer.id.msgId);
-        expect(await completeEffects(store)).toEqual([newer.id.msgId]);
+        expect(await completeEffects(stores)).toEqual([newer.id.msgId]);
     });
 });
 
@@ -198,13 +207,16 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
             observer: createPassThroughIndexedDbOperationObserver()
         })
         : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace);
-    return createALInboundAdmissionStore({
-        namespace,
-        backend,
-        orderingTrackTtlMs: 60_000,
-        supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
-    });
+    return {
+        admissionStore: createALInboundAdmissionStore({
+            namespace,
+            backend,
+            orderingTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        }),
+        workQueue: backend.workQueue
+    };
 }
 
 function createMessage(senderId: string, version: number, supersedenceKey = 'shared-topic'): ALMessage {
@@ -249,15 +261,17 @@ function readEffectFacts(nowMs: number) {
     });
 }
 
-async function completeEffects(store: ALInboundAdmissionStore): Promise<string[]> {
-    const page = await store.workQueue.readWorkPage({ typeId: toALInboundWorkType(store.namespace), status: EntityStatus.NEW, maxToRead: 10, cursor: null });
-    const effects = await store.claimReadyEffects({ entries: page.entries, maxCount: 10 });
+async function completeEffects(stores: ALInboundRuntimeStores): Promise<string[]> {
+    const namespace = stores.admissionStore.namespace;
+    const port = createTestALInboundWorkPort({ ...stores, nowMs: Date.now });
+    const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
     const deliveries: string[] = [];
-    for (const effect of effects) {
+    for (const claim of await port.claim({ maxCount: 10, observedEntries: page.entries })) {
+        const effect = decodeALInboundWorkEntry(claim.entry, namespace);
         if (effect.payload.kind === 'dispatch-local') {
             deliveries.push(effect.payload.message.msgId);
         }
-        await store.completeEffect(effect.entry);
+        await port.release(claim, { status: 'completed' });
     }
     return deliveries;
 }

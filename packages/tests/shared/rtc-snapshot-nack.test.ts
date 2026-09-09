@@ -57,15 +57,15 @@ describe('RTC snapshot rejection controls', () => {
         const fixture = createSnapshotAdmissionFixture(seq, false);
         try {
             await fixture.runtime.admitIncomingMessage(fixture.message, source);
-            expect(fixture.delivered).toEqual([]);
-            expect(fixture.controls.map(parseALControlMessage)).toEqual([
+            await expect.poll(() => fixture.controls.map(parseALControlMessage)).toEqual([
                 { type: 'nack', payload: expect.objectContaining({ msgId: fixture.message.id.msgId, toPeerId: 'sender', reason: 'not-yet-in-sync' }) }
             ]);
+            expect(fixture.delivered).toEqual([]);
             if (seq === 1) {
                 fixture.observed.snapshot = createCurrentSnapshot();
                 await fixture.runtime.admitIncomingMessage(fixture.message, source);
                 await fixture.runtime.admitIncomingMessage(fixture.message, source);
-                expect(fixture.delivered).toEqual([fixture.message.id.msgId]);
+                await expect.poll(() => fixture.delivered).toEqual([fixture.message.id.msgId]);
             }
         }
         finally {
@@ -80,11 +80,11 @@ describe('RTC snapshot rejection controls', () => {
             vi.useRealTimers();
         });
         const fixture = createSnapshotAdmissionFixture(1, true);
-        const claim = vi.spyOn(fixture.stores.admissionStore, 'claimReadyEffects').mockResolvedValue([]);
+        const claim = vi.spyOn(fixture.stores.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         try {
             fixture.observed.snapshot = createCurrentSnapshot();
             await fixture.runtime.admitIncomingMessage(fixture.message, source);
-            expect(await fixture.stores.admissionStore.workQueue.getAllKeys()).not.toHaveLength(0);
+            expect(await fixture.stores.workQueue.getAllKeys()).not.toHaveLength(0);
             fixture.observed.snapshot = undefined;
             claim.mockRestore();
             await vi.advanceTimersByTimeAsync(1_000);
@@ -129,7 +129,6 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
                 nowMs: observations.nowMs
             });
         },
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox'),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);

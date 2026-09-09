@@ -15,6 +15,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundAdmissionRead, ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
@@ -98,13 +99,14 @@ describe('PSql admission optimistic retry', () => {
         const storage = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:runtime-retry';
         const options = { namespace, repository: storage.repository };
-        const store = createDefaultPSqlALInboundRuntimeStores(options).admissionStore;
+        const stores = createDefaultPSqlALInboundRuntimeStores(options);
+        const store = stores.admissionStore;
         const deliveredMessageIds: string[] = [];
         const controls: ALMessage[] = [];
-        const runtime = createInboundTestRuntime(store, deliveredMessageIds, controls);
+        const runtime = createInboundTestRuntime(stores, deliveredMessageIds, controls);
         await runtime.ready();
-        const retain = store.workQueue.enqueueIfAbsent.bind(store.workQueue);
-        const retention = vi.spyOn(store.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+        const retain = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+        const retention = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
             const observed = await retain(entry);
             runtime.dispose(); // Stop after durable retention, before its first worker claim.
             return observed;
@@ -119,7 +121,7 @@ describe('PSql admission optimistic retry', () => {
         expect(deliveredMessageIds).toEqual([]);
         expect(controls).toEqual([]);
         expect((await readIncoming(store, msg, Date.now())).dedupExpiresAt).toBeUndefined();
-        const page = await store.workQueue.readWorkPage({
+        const page = await stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(store.namespace),
             status: EntityStatus.NEW,
             maxToRead: 2,
@@ -131,8 +133,9 @@ describe('PSql admission optimistic retry', () => {
         expect(pending.expireAtTimestamp).toBe(msg.constraints?.expiresAtMs);
         retention.mockRestore();
 
-        const restartedStore = createDefaultPSqlALInboundRuntimeStores(options).admissionStore;
-        const restarted = createInboundTestRuntime(restartedStore, deliveredMessageIds, controls);
+        const restartedStores = createDefaultPSqlALInboundRuntimeStores(options);
+        const restartedStore = restartedStores.admissionStore;
+        const restarted = createInboundTestRuntime(restartedStores, deliveredMessageIds, controls);
         await restarted.ready();
         await expect.poll(() => deliveredMessageIds).toEqual([msg.id.msgId]);
         expect((await readIncoming(restartedStore, msg, Date.now())).dedupExpiresAt).toBeGreaterThan(Date.now());
@@ -267,13 +270,13 @@ describe('PSql admission optimistic retry', () => {
 });
 
 function createInboundTestRuntime(
-    store: ALInboundAdmissionStore,
+    stores: ALInboundRuntimeStores,
     deliveredMessageIds: string[],
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
-        stores: { admissionStore: store, workQueue: store.workQueue },
+        stores,
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
@@ -283,7 +286,6 @@ function createInboundTestRuntime(
                 overlayNeighborPeerIds: [],
                 ...observations
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry) => {
             deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);

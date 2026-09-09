@@ -9,14 +9,12 @@ import { computeOutboundTestAdmission } from '../shared/alm/outbound-runtime-tes
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
+import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALInboundAdmissionStore, ALInboundWriteRequest } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
-import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import {
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
@@ -120,9 +118,10 @@ describe('PostgreSQL inbound admission', () => {
     it('records inbound receipt progress while retaining message provenance', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALInboundAdmissionStore({
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace),
+            backend,
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
@@ -166,7 +165,12 @@ describe('PostgreSQL inbound admission', () => {
                 }
             ]
         });
-        const admitted = await createInboundControlAdmission(store).admit(
+        const admitted = await createTestALInboundControlAdmission({
+            admissionStore: store,
+            workQueue: backend.workQueue,
+            nowMs: Date.now,
+            newControlId: () => 'generated-control'
+        }).admit(
             newALAckControlMessage(
                 { v: 2, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2' },
                 {
@@ -395,22 +399,6 @@ function decodePreparedOutboundSend(value: unknown, msg: ALMessage): TestPrepare
         throw new TypeError('Stored prepared send must match its outbound message');
     }
     return { kind: value.kind, msgId: value.msgId };
-}
-
-function createInboundControlAdmission(store: ALInboundAdmissionStore): ALInboundControlAdmission {
-    return new ALInboundControlAdmission({
-        admissionStore: store,
-        port: createALWorkQueuePort({
-            queue: store.workQueue,
-            workTypes: new Set([toALInboundWorkType(store.namespace)]),
-            leaseMs: 10_000,
-            nowMs: Date.now,
-            random: () => 0.5
-        }),
-        clock: { nowMs: Date.now },
-        newControlId: () => 'generated-control',
-        retention: store.retention
-    });
 }
 
 async function readIncoming(store: ALInboundAdmissionStore) {

@@ -21,6 +21,7 @@ import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -50,7 +51,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
-        const rejectedPage = await fixture.stores.admissionStore.workQueue.readWorkPage({
+        const rejectedPage = await fixture.stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
             status: EntityStatus.NON_RETRYABLE,
             maxToRead: 10,
@@ -63,7 +64,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(message, 'peer-1');
 
         expect(rejected).toEqual([message.id.msgId]);
-        expect(await fixture.stores.admissionStore.workQueue.getItem(rejectedPage.entries[0].key)).toMatchObject({
+        expect(await fixture.stores.workQueue.getItem(rejectedPage.entries[0].key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
@@ -73,9 +74,9 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         const fixture = createRtcReceiveFixture();
         const message = createUnicast({ acknowledge: false, exclusive: false });
         await fixture.receive(message, 'peer-1');
-        const keys = await fixture.stores.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await fixture.stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+        expect(await fixture.stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
         const delivered: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async (incoming) => {
@@ -83,7 +84,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             }
         });
 
-        await expect.poll(() => fixture.stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+        await expect.poll(() => fixture.stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
         expect(delivered).toEqual([message.id.msgId]);
     });
 
@@ -101,8 +102,8 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         });
 
         await expect.poll(() => delivered).toEqual([message.id.msgId]);
-        const keys = await fixture.stores.admissionStore.workQueue.getAllKeys();
-        expect(await fixture.stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+        const keys = await fixture.stores.workQueue.getAllKeys();
+        expect(await fixture.stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
     });
 
     it.each([-1, 0, 1])('checks remaining consumer expiry after a handler returns at deadline %+i ms', async (offsetMs) => {
@@ -145,7 +146,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
-        const retryPage = await fixture.stores.admissionStore.workQueue.readWorkPage({
+        const retryPage = await fixture.stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
             status: EntityStatus.RETRY,
             maxToRead: 10,
@@ -159,7 +160,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         vi.setSystemTime(retry.dequeueAudit.nextTs!.epochMilliseconds);
         await fixture.receive(message, 'peer-1');
 
-        await expect.poll(() => fixture.stores.admissionStore.workQueue.getItem(retry.key)).toMatchObject({
+        await expect.poll(() => fixture.stores.workQueue.getItem(retry.key)).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 2, nextTs: undefined }
         });
@@ -353,7 +354,10 @@ function createRtcReceiveFixture(stores = shared.createDefaultInMemoryALInboundR
     return {
         service,
         stores,
-        receive: transport.receive,
+        async receive(message: shared.ALMessage, peerId: string): Promise<void> {
+            await transport.receive(message, peerId);
+            await waitForALInboundWork();
+        },
         async outbound(): Promise<shared.ALMessage[]> {
             return [...transport.sent];
         }
@@ -565,10 +569,11 @@ describe('RTC receiver consumer dispatch', () => {
 
         await sender.sendAndWaitForDelivery(message);
 
-        expect(receivedByType).toEqual([message.id.msgId]);
+        await expect.poll(() => receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
+        await expect.poll(() => receiver.sent.filter((entry) => entry.payload.typeId === AL_CONTROL_ACK_TYPE_ID))
+            .toHaveLength(1);
         const acknowledgements = receiver.sent.filter((entry) => entry.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
-        expect(acknowledgements).toHaveLength(1);
         expect(JSON.parse(acknowledgements[0].payload.resource)).toMatchObject({
             fromPeerId: 'receiver',
             toPeerId: 'sender',

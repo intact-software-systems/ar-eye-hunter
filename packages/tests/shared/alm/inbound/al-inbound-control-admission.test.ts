@@ -1,3 +1,4 @@
+import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
@@ -9,12 +10,10 @@ import {
     type ALInboundAdmissionStore
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
-    AL_INBOUND_WORK_LEASE_MS,
     decodeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
-import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     describe,
@@ -40,20 +39,17 @@ function createFixture() {
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    const control = new ALInboundControlAdmission({
+    const stores = { admissionStore, workQueue: state.workQueue };
+    return {
+        backend,
         admissionStore,
-        port: createALWorkQueuePort({
-            queue: admissionStore.workQueue,
-            workTypes: new Set([toALInboundWorkType(admissionStore.namespace)]),
-            leaseMs: AL_INBOUND_WORK_LEASE_MS,
+        workQueue: state.workQueue,
+        control: createTestALInboundControlAdmission({
+            ...stores,
             nowMs: Date.now,
-            random: () => 0.5
-        }),
-        clock: { nowMs: Date.now },
-        newControlId: () => 'generated-control',
-        retention: admissionStore.retention
-    });
-    return { backend, admissionStore, control };
+            newControlId: () => 'generated-control'
+        })
+    };
 }
 
 async function seedPendingAcknowledgement(admissionStore: ALInboundAdmissionStore): Promise<void> {
@@ -120,8 +116,11 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
     );
 }
 
-async function readRetainedWork(admissionStore: ALInboundAdmissionStore) {
-    const page = await admissionStore.workQueue.readWorkPage({
+async function readRetainedWork(
+    admissionStore: ALInboundAdmissionStore,
+    workQueue: QueueBoxResourceEntryRepository
+) {
+    const page = await workQueue.readWorkPage({
         typeId: toALInboundWorkType(admissionStore.namespace),
         status: EntityStatus.NEW,
         maxToRead: 10,
@@ -145,7 +144,7 @@ describe('inbound control admission', () => {
     });
 
     it('writes nothing for an acknowledgement from a peer that does not own the message', async () => {
-        const { admissionStore, control } = createFixture();
+        const { admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
 
         const result = await control.admit(createAcknowledgement('intruder'));
@@ -154,11 +153,11 @@ describe('inbound control admission', () => {
         const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
         expect(state.acks).toEqual([]);
         expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
-        expect(await readRetainedWork(admissionStore)).toEqual([]);
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
     });
 
     it('retains admit-control work for a conflicting commit and replays it to completion', async () => {
-        const { backend, admissionStore, control } = createFixture();
+        const { backend, admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
         vi.spyOn(backend, 'write').mockImplementationOnce(() => {
             throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
@@ -169,14 +168,24 @@ describe('inbound control admission', () => {
         expect(conflicted).toEqual({ kind: 'pending-control' });
         expect((await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId)).acks)
             .toEqual([]);
-        const retained = await readRetainedWork(admissionStore);
+        const retained = await readRetainedWork(admissionStore, workQueue);
         expect(retained).toHaveLength(1);
         expect(retained[0]!.payload.kind).toBe('admit-control');
 
         const payload = retained[0]!.payload;
-        expect(payload.kind === 'admit-control' && await control.replay(payload)).toEqual({ status: 'completed' });
+        if (payload.kind !== 'admit-control') {
+            throw new Error('Expected retained admit-control work');
+        }
+
+        const replayed = await control.replay(payload);
+
+        expect(replayed.outcome).toEqual({ status: 'completed' });
+        expect(replayed.acceptance?.handled).toBe(true);
         const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
         expect(state.acks.map((ack) => ack.fromPeerId)).toEqual(['receiver']);
         expect(state.pendingAck).toBeUndefined();
+        // The forwarded acknowledgement and the replayed admission share one commit.
+        expect((await readRetainedWork(admissionStore, workQueue)).map((work) => work.payload.kind).toSorted())
+            .toEqual(['admit-control', 'send-control']);
     });
 });

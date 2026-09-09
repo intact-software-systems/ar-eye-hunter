@@ -1,19 +1,57 @@
+import type { ResourceInboxWorkPage } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
+import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { decodeALInboundWorkEntry, resolveALInboundWorkReadyAt } from './al-inbound-work-entry.ts';
 
+const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
+const SCAN_START = { cursor: null, statusIndex: 0, nextReadyAtMs: undefined } as const;
+
+export const AL_INBOUND_WORK_PAGE_SIZE = 16;
+
+export interface ALInboundWorkScan {
+    readonly cursor: ResourceInboxWorkPage.Cursor | null;
+    readonly statusIndex: number;
+    readonly nextReadyAtMs: number | undefined;
+}
+
 export interface ALInboundWorkSelectionReadInput {
-    readonly entries: readonly ResourceEntry[];
+    readonly port: ALWorkQueuePort;
+    readonly scan: ALInboundWorkScan;
     readonly namespace: string;
     readonly nowMs: number;
 }
 
 export interface ALInboundWorkSelection {
-    readonly entries: readonly ResourceEntry[];
-    readonly rejectedReservations: readonly ResourceEntry[];
-    readonly nextReadyAt: number | undefined;
+    /** Entries the port may reserve, in observation order. */
+    readonly claimable: readonly ResourceEntry[];
+    /** Reservations without a lease start: timeout reservation can never reach them, so they are released as observed. */
+    readonly unleasedReservations: readonly ALWorkClaim[];
+    readonly scan: ALInboundWorkScan;
+    /** Claimable work, or a rotation that still owes a page: one status never hides work on the next. */
+    readonly readyNow: boolean;
+    /** `nowMs` when work is ready now, the earliest scanned readiness otherwise. */
+    readonly nextReadyAtMs: number | undefined;
+}
+
+export interface ALInboundWorkSelectorDependencies {
+    readonly delivery: ALInboundAdmittedDelivery;
+    readonly namespace: string;
+    readonly nowMs: () => number;
+}
+
+export interface ALInboundWorkSelector {
+    /**
+     * The readiness probe the handler asks for. The generic port reads retry readiness alone, which
+     * cannot advertise new work an earlier batch or another server committed.
+     */
+    readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined>;
+    selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection>;
+    /** A commit writes new work behind the rotation; the next page read starts over. */
+    restartScan(): void;
 }
 
 /** Reads message eligibility before reservation so waiting work does not spend processing attempts. */
@@ -21,22 +59,27 @@ export async function readALInboundWorkSelection(
     input: ALInboundWorkSelectionReadInput,
     delivery: ALInboundAdmittedDelivery
 ): Promise<ALInboundWorkSelection> {
-    const entries: ResourceEntry[] = [];
-    const rejectedReservations: ResourceEntry[] = [];
-    let nextReadyAt: number | undefined;
-    for (const entry of input.entries) {
+    const page = await input.port.readPage({
+        status: SCAN_STATUSES[input.scan.statusIndex],
+        maxToRead: AL_INBOUND_WORK_PAGE_SIZE,
+        cursor: input.scan.cursor
+    });
+    const claimable: ResourceEntry[] = [];
+    const unleasedReservations: ALWorkClaim[] = [];
+    let readyAtMs: number | undefined;
+    for (const entry of page.entries) {
         if (entry.audit.expiryTs.epochMilliseconds <= input.nowMs) {
             continue;
         }
         try {
             const readyAt = resolveALInboundWorkReadyAt(entry);
             if (readyAt > input.nowMs) {
-                nextReadyAt = Math.min(nextReadyAt ?? readyAt, readyAt, entry.audit.expiryTs.epochMilliseconds);
+                readyAtMs = Math.min(readyAtMs ?? readyAt, readyAt, entry.audit.expiryTs.epochMilliseconds);
                 continue;
             }
             const effect = decodeALInboundWorkEntry(entry, input.namespace);
             if (effect.payload.kind === 'admit-message' || await delivery.readReadiness(effect, input.nowMs)) {
-                entries.push(entry);
+                claimable.push(entry);
             }
         }
         catch (error) {
@@ -44,13 +87,98 @@ export async function readALInboundWorkSelection(
                 throw error;
             }
             if (entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined) {
-                // A missing lease timestamp cannot enter normal timeout reservation.
-                rejectedReservations.push(entry);
+                unleasedReservations.push(toUnleasedALWorkClaim(entry, input.nowMs));
             }
             else {
-                entries.push(entry);
+                claimable.push(entry);
             }
         }
     }
-    return { entries, rejectedReservations, nextReadyAt };
+    const statusIndex = page.nextCursor === null
+        ? (input.scan.statusIndex + 1) % SCAN_STATUSES.length
+        : input.scan.statusIndex;
+    const continueScan = page.nextCursor !== null || statusIndex !== 0;
+    const scannedReadyAtMs = readyAtMs === undefined
+        ? input.scan.nextReadyAtMs
+        : Math.min(input.scan.nextReadyAtMs ?? readyAtMs, readyAtMs);
+    const readyNow = claimable.length > 0 || unleasedReservations.length > 0 || continueScan;
+    return {
+        claimable,
+        unleasedReservations,
+        readyNow,
+        scan: {
+            cursor: page.nextCursor,
+            statusIndex,
+            nextReadyAtMs: continueScan ? scannedReadyAtMs : undefined
+        },
+        nextReadyAtMs: readyNow ? input.nowMs : scannedReadyAtMs
+    };
+}
+
+/**
+ * Rotates one bounded page across NEW, RETRY and RESERVED. The readiness probe and the batch that
+ * follows it share one page read, so advertised work is the work the batch claims.
+ */
+export function createALInboundWorkSelector(
+    dependencies: ALInboundWorkSelectorDependencies
+): ALInboundWorkSelector {
+    let scan: ALInboundWorkScan = SCAN_START;
+    let observed: Promise<ALInboundWorkSelection> | undefined;
+
+    const readSelection = (port: ALWorkQueuePort): Promise<ALInboundWorkSelection> => {
+        const scanned = scan;
+        const pending = observed ?? readALInboundWorkSelection({
+            port,
+            scan: scanned,
+            namespace: dependencies.namespace,
+            nowMs: dependencies.nowMs()
+        }, dependencies.delivery).then((selection) => {
+            if (scan === scanned) {
+                scan = selection.scan;
+            }
+            return selection;
+        });
+        observed = pending;
+        return pending;
+    };
+    const forgetSelection = (pending: Promise<ALInboundWorkSelection>): void => {
+        if (observed === pending) {
+            observed = undefined;
+        }
+    };
+    return {
+        readNextReadyAtMs: async (port) => {
+            const pending = readSelection(port);
+            let selection: ALInboundWorkSelection;
+            try {
+                selection = await pending;
+            }
+            catch (error) {
+                forgetSelection(pending);
+                throw error;
+            }
+            if (!selection.readyNow) {
+                // An exhausted rotation must observe a fresh page on the next probe.
+                forgetSelection(pending);
+            }
+            return selection.nextReadyAtMs;
+        },
+        selectReady: async (port, pageSize) => {
+            const pending = readSelection(port);
+            forgetSelection(pending);
+            const selection = await pending;
+            const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
+            return {
+                claims: [...selection.unleasedReservations, ...claims],
+                nextReadyAtMs: selection.nextReadyAtMs
+            };
+        },
+        restartScan: () => {
+            scan = SCAN_START;
+        }
+    };
+}
+
+function toUnleasedALWorkClaim(entry: ResourceEntry, nowMs: number): ALWorkClaim {
+    return { entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs: nowMs };
 }

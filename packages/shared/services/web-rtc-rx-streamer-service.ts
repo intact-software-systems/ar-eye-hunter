@@ -103,7 +103,6 @@ export class WebRtcRxStreamerService {
                     return this.multicast.planIncomingMessage(msg, source, observations);
                 },
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
-                readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry, plan) => {
                     return await this.dispatchInboxEntry(entry, plan);
                 },

@@ -109,7 +109,7 @@ describe('AL inbound canonical validation', () => {
             expect(fixture.controls).toEqual([]);
             const accepted = await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
             expect(accepted.right?.kind).toBe('admitted');
-            expect(fixture.delivered).toEqual(['message']);
+            await expect.poll(() => fixture.delivered).toEqual(['message']);
         }
         finally {
             fixture.runtime.dispose();
@@ -139,7 +139,7 @@ describe('AL inbound canonical validation', () => {
         try {
             const result = await fixture.runtime.admitIncomingMessage(directMessage(), { kind: 'trusted-server' });
             expect(result.right?.kind).toBe('admitted');
-            expect(fixture.delivered).toEqual(['message']);
+            await expect.poll(() => fixture.delivered).toEqual(['message']);
         }
         finally {
             fixture.runtime.dispose();
@@ -161,7 +161,7 @@ describe('AL inbound canonical validation', () => {
                 ordering: { orderingKey: 'ordered', seq: 1 }
             }, { kind: 'rtc-peer', peerId: 'sender' });
             expect(corrected.right?.kind).toBe('admitted');
-            expect(fixture.delivered).toEqual(['message']);
+            await expect.poll(() => fixture.delivered).toEqual(['message']);
         }
         finally {
             fixture.runtime.dispose();
@@ -193,7 +193,7 @@ function createFixture() {
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore, workQueue: admissionStore.workQueue },
+            stores: { admissionStore, workQueue: state.workQueue },
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         }),
 
@@ -203,7 +203,6 @@ function createFixture() {
                 selfPeerId: 'receiver',
                 fromPeerId: source.kind === 'trusted-server' ? message.id.senderId : source.peerId
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

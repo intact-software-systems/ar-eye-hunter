@@ -14,7 +14,6 @@ import {
     PersistenceWriteExpiredError,
     requireLivePersistenceWrite
 } from '../../persistence/persistence-write-deadline.ts';
-import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
@@ -344,7 +343,6 @@ export interface CreateALInboundAdmissionStoreInput {
 
 export interface ALInboundAdmissionStore extends ALReadyable {
     readonly namespace: string;
-    readonly workQueue: QueueBoxResourceEntryRepository;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readIncomingMessage(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead>;
 
@@ -372,32 +370,6 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     commitBundle(
         bundle: ALInboundCommitBundle
     ): Promise<'committed' | 'conflict' | 'expired'>;
-
-    claimReadyEffects(input: ClaimALInboundEffectsInput): Promise<readonly ALPersistedInboundEffect[]>;
-
-    finalizeExhaustedEffects(input: FinalizeALInboundEffectsInput): Promise<void>;
-
-    completeEffect(reservation: ResourceEntry): Promise<void>;
-
-    rejectEffect(reservation: ResourceEntry): Promise<void>;
-
-    rescheduleEffect(input: RescheduleALInboundEffectInput): Promise<void>;
-}
-
-export interface ClaimALInboundEffectsInput {
-    readonly entries: readonly ResourceEntry[];
-    readonly maxCount: number;
-}
-
-export interface FinalizeALInboundEffectsInput {
-    readonly maxCount: number;
-    readonly signal: AbortSignal;
-}
-
-export interface RescheduleALInboundEffectInput {
-    readonly reason?: 'not-ready';
-    readonly reservation: ResourceEntry;
-    readonly retryAtMs: number;
 }
 
 export function createALInboundAdmissionStore(
@@ -432,7 +404,6 @@ namespace ProviderBackedALInboundAdmissionStore {
 
 class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     readonly namespace: string;
-    readonly workQueue: QueueBoxResourceEntryRepository;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly orderingTrackTtlMs: number;
     private readonly supersedenceTrackTtlMs: number;
@@ -442,14 +413,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
-        this.workQueue = input.backend.workQueue;
         this.orderingTrackTtlMs = input.orderingTrackTtlMs;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
         this.backend = input.backend;
         this.nowMs = input.nowMs;
         this.effects = new ALInboundDurableEffectStore({
-            nowMs: this.nowMs,
             backend: input.backend,
             namespace: input.namespace
         });
@@ -738,26 +707,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         ) {
             throw new ALAdmissionBackendConflictError('Inbound admission observations changed');
         }
-    }
-
-    async claimReadyEffects(input: ClaimALInboundEffectsInput): Promise<readonly ALPersistedInboundEffect[]> {
-        return await this.effects.claimReadyEffects(input);
-    }
-
-    async finalizeExhaustedEffects(input: FinalizeALInboundEffectsInput): Promise<void> {
-        await this.effects.finalizeExhaustedEffects(input);
-    }
-
-    async completeEffect(reservation: ResourceEntry): Promise<void> {
-        await this.effects.completeEffect(reservation);
-    }
-
-    async rejectEffect(reservation: ResourceEntry): Promise<void> {
-        await this.effects.rejectEffect(reservation);
-    }
-
-    async rescheduleEffect(input: RescheduleALInboundEffectInput): Promise<void> {
-        await this.effects.rescheduleEffect(input);
     }
 
     private async readSupersedenceState(

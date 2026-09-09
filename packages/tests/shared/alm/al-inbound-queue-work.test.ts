@@ -17,8 +17,9 @@ import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-ad
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -49,7 +50,6 @@ it('terminalizes a malformed reservation without starving independent timeout re
         ...resources,
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         canDispatchMessage: () => available,
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -60,7 +60,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     for (const sequence of [1, 2]) {
         await runtime.admitIncomingMessage({ ...message(sequence), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
     }
-    const queue = resources.admissionStore.workQueue;
+    const queue = resources.workQueue;
     const keys = await queue.getAllKeys();
     const first = (await queue.getItem(keys[0]))!;
     const claimed = await queue.reserveEntries({
@@ -110,7 +110,6 @@ it('retries durable local delivery after restart with a single admission work ow
                     selfPeerId: 'receiver',
                     fromPeerId: source.kind === 'trusted-server' ? incoming.id.senderId : source.peerId
                 }),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 attempts.push(decodePersistedALMessage(entry.resource).id.msgId);
                 if (attempts.length === 1) {
@@ -125,10 +124,10 @@ it('retries durable local delivery after restart with a single admission work ow
 
     await first.admitIncomingMessage(incoming, { kind: 'rtc-peer', peerId: 'sender' });
 
-    expect(attempts).toEqual([incoming.id.msgId]);
-    const keys = await resources.admissionStore.workQueue.getAllKeys();
+    await expect.poll(() => attempts).toEqual([incoming.id.msgId]);
+    const keys = await resources.workQueue.getAllKeys();
     expect(keys).toHaveLength(1);
-    const owner = (await resources.admissionStore.workQueue.getItem(keys[0]))!;
+    const owner = (await resources.workQueue.getItem(keys[0]))!;
     expect(owner).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
     first.dispose();
 
@@ -138,7 +137,7 @@ it('retries durable local delivery after restart with a single admission work ow
     await restarted.ready();
     await expect.poll(async () => {
         await engine.executeOnce();
-        return resources.admissionStore.workQueue.getItem(owner.key);
+        return resources.workQueue.getItem(owner.key);
     }).toMatchObject({ status: EntityStatus.COMPLETED, resource: owner.resource, dequeueAudit: { attempts: 2 } });
     expect(attempts).toEqual([incoming.id.msgId, incoming.id.msgId]);
 });
@@ -158,7 +157,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
             queueEngine: engine,
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
         });
-        vi.spyOn(resources.admissionStore.workQueue, 'releaseEntries').mockRejectedValueOnce(
+        vi.spyOn(resources.workQueue, 'releaseEntries').mockRejectedValueOnce(
             new Error('Queue finalization temporarily unavailable')
         );
         const deliveries: string[] = [];
@@ -167,7 +166,6 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
                 ...resources,
                 planIncomingMessage: (incoming, _source, observations) =>
                     planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
-                readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry) => {
                     deliveries.push(decodePersistedALMessage(entry.resource).id.msgId);
                     if (outcome === 'non-retryable') {
@@ -182,11 +180,11 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         const initial = createRuntime();
         onTestFinished(() => initial.dispose());
         await initial.admitIncomingMessage({ ...message(1), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
-        const keys = await resources.admissionStore.workQueue.getAllKeys();
+        await expect.poll(() => deliveries).toEqual(['message-1']);
+        const keys = await resources.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        const owner = (await resources.admissionStore.workQueue.getItem(keys[0]))!;
+        const owner = (await resources.workQueue.getItem(keys[0]))!;
         expect(owner).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
-        expect(deliveries).toEqual(['message-1']);
         initial.dispose();
 
         vi.setSystemTime(Number(owner.dequeueAudit.startTs!.epochMilliseconds) + 10_001);
@@ -195,7 +193,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         await resumed.ready();
         await expect.poll(async () => {
             await engine.executeOnce();
-            return resources.admissionStore.workQueue.getItem(owner.key);
+            return resources.workQueue.getItem(owner.key);
         }).toMatchObject({
             status: outcome === 'non-retryable' ? EntityStatus.NON_RETRYABLE : EntityStatus.COMPLETED,
             resource: owner.resource,
@@ -225,11 +223,11 @@ it.each([
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
     });
     const store = resources.admissionStore;
-    const claim = store.claimReadyEffects.bind(store);
+    const reserve = resources.workQueue.reserveEntries.bind(resources.workQueue);
     let reserved = false;
-    vi.spyOn(store, 'claimReadyEffects').mockImplementation(async (input) => {
-        const claimed = await claim(input);
-        reserved = claimed.length > 0;
+    vi.spyOn(resources.workQueue, 'reserveEntries').mockImplementation(async (request) => {
+        const claimed = await reserve(request);
+        reserved = claimed.size > 0;
         return claimed;
     });
     const read = store.readStoredPlanningState.bind(store);
@@ -245,7 +243,6 @@ it.each([
         ...resources,
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async (entry) => {
             deliveries.push(`local:${decodePersistedALMessage(entry.resource).id.msgId}`);
         },
@@ -264,6 +261,7 @@ it.each([
 
     await runtime.admitIncomingMessage(incoming, { kind: 'ws-client', peerId: 'sender' });
 
+    await waitForSettledWork(resources.workQueue);
     expect(deliveries).toEqual(delivered);
     expect(incoming.constraints?.expiresAtMs).toBe(admittedAt + 1_000);
 });
@@ -275,7 +273,8 @@ it('retains predecessor completion through the longest admitted deadline across 
         vi.useRealTimers();
     });
     const admittedAt = Date.now();
-    const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
+    const state = createInMemoryALAdmissionState();
+    const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALInboundAdmissionStore({
         namespace: 'retained-ordering-completion',
         backend,
@@ -289,13 +288,12 @@ it('retains predecessor completion through the longest admitted deadline across 
         new ALInboundMessageRuntime({
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                stores: { admissionStore: store, workQueue: store.workQueue },
+                stores: { admissionStore: store, workQueue: state.workQueue },
                 queueEngine: engine,
                 toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
             }),
             planIncomingMessage: (incoming, _source, observations) =>
                 planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
@@ -304,8 +302,8 @@ it('retains predecessor completion through the longest admitted deadline across 
     const initial = createRuntime();
     onTestFinished(() => initial.dispose());
     await initial.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
-    expect(delivered).toEqual(['message-1']);
-    const paused = vi.spyOn(store, 'claimReadyEffects').mockResolvedValue([]);
+    await expect.poll(() => delivered).toEqual(['message-1']);
+    const paused = vi.spyOn(state.workQueue, 'reserveEntries').mockResolvedValue(new Map());
     await initial.admitIncomingMessage({ ...message(2), constraints: { expiresAtMs: admittedAt + 10_000 } }, { kind: 'rtc-peer', peerId: 'sender' });
     await initial.admitIncomingMessage(message(3), { kind: 'rtc-peer', peerId: 'sender' });
     initial.dispose();
@@ -344,13 +342,12 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore: store, workQueue: store.workQueue },
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             queueEngine: engine,
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
         }),
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         canDispatchMessage: () => available,
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -413,7 +410,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            stores: { admissionStore: store, workQueue: store.workQueue },
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
         }),
 
@@ -423,7 +420,6 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
                 selfPeerId: 'receiver',
                 fromPeerId: source.kind === 'trusted-server' ? incoming.id.senderId : source.peerId
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async (entry) => {
             if (!available && entry.key.resourceId === 'message-2') {
                 throw new Error('Application temporarily unavailable');
@@ -481,7 +477,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         const runtime = new ALInboundMessageRuntime({
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                stores: { admissionStore: store, workQueue: store.workQueue },
+                stores: { admissionStore: store, workQueue: backend.workQueue },
                 queueEngine: engine,
                 toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
             }),
@@ -492,7 +488,6 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
                     selfPeerId: 'receiver',
                     fromPeerId: source.kind === 'trusted-server' ? message.id.senderId : source.peerId
                 }),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 if (!available) {
                     return 'retry';
@@ -570,7 +565,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         const runtime = new ALInboundMessageRuntime({
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                stores: { admissionStore: store, workQueue: store.workQueue },
+                stores: { admissionStore: store, workQueue: state.workQueue },
                 queueEngine: engine,
                 toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
             }),
@@ -581,7 +576,6 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
                     selfPeerId: 'receiver',
                     fromPeerId: source.kind === 'trusted-server' ? message.id.senderId : source.peerId
                 }),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 if (unavailable) {
                     return 'retry';
@@ -634,8 +628,18 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
 
     const afterCleanup = createRuntime();
     await afterCleanup.runtime.admitIncomingMessage(message(257), { kind: 'rtc-peer', peerId: 'sender' });
-    expect(delivered).toEqual(Array.from({ length: 257 }, (_, index) => index + 1));
+    await expect.poll(() => delivered).toEqual(Array.from({ length: 257 }, (_, index) => index + 1));
 }, 45_000);
+
+/** The worker no longer drains inside admission: wait for every retained row to reach a terminal status. */
+async function waitForSettledWork(workQueue: QueueBoxResourceEntryRepository): Promise<void> {
+    await expect.poll(async () => {
+        const entries = await Promise.all(
+            (await workQueue.getAllKeys()).map((key) => workQueue.getItem(key))
+        );
+        return entries.every((entry) => entry === undefined || !NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
+    }).toBe(true);
+}
 
 async function readMessageWork(input: ReadMessageWorkInput) {
     const work = [];

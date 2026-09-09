@@ -20,6 +20,8 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -49,16 +51,16 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.socket.sent).toEqual([]);
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
-        expect(fixture.delivered).toEqual([message]);
+        await expect.poll(() => fixture.delivered).toEqual([message]);
     });
 
     it('keeps admitted work unclaimed until an application consumer registers', async () => {
         const fixture = await createServerIngressFixture();
         fixture.service.removeAnyInboxMessageCallback('observer');
         await fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1');
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await fixture.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+        expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
         fixture.service.onAnyInboxMessageDo('observer', {
             onMessage: async (message) => {
                 fixture.delivered.push(message);
@@ -67,7 +69,7 @@ describe('WS server bounded and authorized admission', () => {
 
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
-            return fixture.admissionStore.workQueue.getItem(keys[0]);
+            return fixture.admission.workQueue.getItem(keys[0]);
         }).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
         expect(fixture.delivered).toEqual([incomingMessage()]);
     });
@@ -91,7 +93,7 @@ describe('WS server bounded and authorized admission', () => {
             name: 'server',
             socket: fixture.server,
             outbox: new InMemoryQueueBox(),
-            inboundStores: { admissionStore: fixture.admissionStore, workQueue: fixture.admissionStore.workQueue }
+            inboundStores: { admissionStore: fixture.admissionStore, workQueue: fixture.admission.workQueue }
         });
         onTestFinished(() => resumed.dispose());
         const delivered: ALMessage[] = [];
@@ -102,8 +104,8 @@ describe('WS server bounded and authorized admission', () => {
         });
 
         await expect.poll(() => delivered).toEqual([message]);
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
-        expect(await fixture.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+        const keys = await fixture.admission.workQueue.getAllKeys();
+        expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
     });
 
     it.each([-1, 0, 1])('checks remaining consumer expiry after a handler returns at deadline %+i ms', async (offsetMs) => {
@@ -128,6 +130,7 @@ describe('WS server bounded and authorized admission', () => {
 
         await fixture.service.acceptIncomingMessage(message, 'session-1');
 
+        await waitForSettledIngress(fixture.admission.workQueue);
         expect(delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
         expect(fixture.delivered).toEqual(offsetMs < 0 ? [message] : []);
     });
@@ -165,13 +168,17 @@ describe('WS server bounded and authorized admission', () => {
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
 
+        // A forward that beat the deadline leaves its local dispatch retained; everything else drains.
+        await expect.poll(async () => {
+            fixture.admission.workQueue.cleanup();
+            return (await fixture.admission.workQueue.getAllKeys()).length;
+        }).toBe(offsetMs < 0 && effect === 'forward' ? 1 : 0);
         const observed = effect === 'local' ? fixture.delivered : recipient.sent;
         expect(observed).toHaveLength(offsetMs < 0 ? 1 : 0);
-        fixture.admission.workQueue.cleanup();
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         if (offsetMs < 0 && effect === 'forward') {
             expect(keys).toHaveLength(1);
-            const pending = await fixture.admissionStore.workQueue.getItem(keys[0]);
+            const pending = await fixture.admission.workQueue.getItem(keys[0]);
             expect(pending).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
             expect(pending?.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
             const retained = decodeALInboundWorkEntry(pending!, 'ws-server-ingress');
@@ -208,9 +215,9 @@ describe('WS server bounded and authorized admission', () => {
             expect(status).toBe('conflict');
             return status;
         });
-        const enqueue = fixture.admissionStore.workQueue.enqueueIfAbsent.bind(fixture.admissionStore.workQueue);
+        const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
         let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
-        vi.spyOn(fixture.admissionStore.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+        vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
             const retained = await enqueue(entry);
             observedMetadata = new Map(fixture.admission.data);
             pending = true;
@@ -224,18 +231,18 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.admission.data).toEqual(observedMetadata);
         expect(fixture.socket.sent).toEqual([]);
         expect(fixture.delivered).toEqual([]);
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect((await fixture.admissionStore.workQueue.getItem(keys[0]))?.status).toBe(reason === 'unauthorized' ? 'COMPLETED' : 'RETRY');
+        expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'unauthorized' ? 'COMPLETED' : 'RETRY');
         if (reason === 'not-yet-in-sync') {
-            const waiting = await fixture.admissionStore.workQueue.getItem(keys[0]);
+            const waiting = await fixture.admission.workQueue.getItem(keys[0]);
             expect(waiting?.dequeueAudit.attempts).toBe(0);
             expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
             nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
             for (let pass = 0; pass < 4; pass++) {
                 await fixture.engine.executeOnce();
             }
-            const stillWaiting = await fixture.admissionStore.workQueue.getItem(keys[0]);
+            const stillWaiting = await fixture.admission.workQueue.getItem(keys[0]);
             expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
             expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
             pending = false;
@@ -262,7 +269,7 @@ describe('WS server bounded and authorized admission', () => {
         const message: ALMessage = { ...roomMessage(), qos: { ack: { algo: 'hop' }, durability: { algo: 'local-inbox' } } };
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left?.code).toBe('unauthorized');
         expect(fixture.admission.data.size).toBe(0);
-        expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
         if (sendNack) {
             const controls = fixture.socket.sent.map((frame) => decodePersistedALMessage(String(frame)));
             expect(controls).toMatchObject([{
@@ -301,7 +308,7 @@ describe('WS server bounded and authorized admission', () => {
         }
         expect(fixture.socket.sent).toEqual([]);
         expect(fixture.admission.data.size).toBe(0);
-        expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
         expect(fixture.delivered).toEqual([]);
     });
 
@@ -323,7 +330,7 @@ describe('WS server bounded and authorized admission', () => {
             }
             expect(fixture.socket.sent).toEqual([]);
             expect(fixture.admission.data.size).toBe(0);
-            expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+            expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
             expect(fixture.delivered).toEqual([]);
         }
     );
@@ -397,7 +404,7 @@ describe('WS server bounded and authorized admission', () => {
         expect(parse.mock.calls.some(([value]) => value === serialized)).toBe(false);
         expect(fixture.admission.data.size).toBe(0);
         await fixture.socket.receive(JSON.stringify(message));
-        expect(fixture.delivered).toEqual([message]);
+        await expect.poll(() => fixture.delivered).toEqual([message]);
     });
 
     it('rechecks the connection generation after asynchronous authorization', async () => {
@@ -432,7 +439,7 @@ describe('WS server bounded and authorized admission', () => {
 
     it('rechecks room authority before delivering already queued messages', async () => {
         const fixture = await createServerIngressFixture();
-        const claim = vi.spyOn(fixture.admissionStore, 'claimReadyEffects').mockResolvedValue([]);
+        const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         let authorized = true;
         fixture.service.authorizeInboundMessagesWith({
             authorize: async () =>
@@ -442,22 +449,22 @@ describe('WS server bounded and authorized admission', () => {
         });
         const message: ALMessage = { ...roomMessage(), qos: { durability: { algo: 'local-inbox' } } };
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
-        expect(await fixture.admissionStore.workQueue.getAllKeys()).toHaveLength(1);
+        expect(await fixture.admission.workQueue.getAllKeys()).toHaveLength(1);
         expect(fixture.delivered).toEqual([]);
         authorized = false;
 
         claim.mockRestore();
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
-            const keys = await fixture.admissionStore.workQueue.getAllKeys();
-            return (await fixture.admissionStore.workQueue.getItem(keys[0]))?.status;
+            const keys = await fixture.admission.workQueue.getAllKeys();
+            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
         }).toBe('COMPLETED');
         expect(fixture.delivered).toEqual([]);
     });
 
     it('leaves queued delivery retryable while current room evidence catches up', async () => {
         const fixture = await createServerIngressFixture();
-        const claim = vi.spyOn(fixture.admissionStore, 'claimReadyEffects').mockResolvedValue([]);
+        const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         let catchingUp = false;
         fixture.service.authorizeInboundMessagesWith({
             authorize: async () =>
@@ -473,11 +480,11 @@ describe('WS server bounded and authorized admission', () => {
         await fixture.engine.executeOnce();
 
         expect(fixture.delivered).toEqual([]);
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
-            return (await fixture.admissionStore.workQueue.getItem(keys[0]))?.status;
+            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
         }).toBe('RETRY');
     });
 
@@ -529,11 +536,11 @@ describe('WS server bounded and authorized admission', () => {
         });
         await fixture.service.acceptIncomingMessage(message, 'session-1');
 
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
-            return (await fixture.admissionStore.workQueue.getItem(keys[0]))?.status;
+            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
         }).toBe('RETRY');
     });
 });
@@ -566,7 +573,7 @@ async function createServerIngressFixture(
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
         validateInboundMessage,
-        inboundStores: { admissionStore, workQueue: admissionStore.workQueue },
+        inboundStores: { admissionStore, workQueue: admission.workQueue },
         queueEngine: engine
     });
     const delivered: ALMessage[] = [];
@@ -596,4 +603,14 @@ function roomMessage(): ALMessage {
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room-1' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
     };
+}
+
+/** Delivery no longer runs inside admission: wait until every retained row reaches a terminal status. */
+async function waitForSettledIngress(workQueue: QueueBoxResourceEntryRepository): Promise<void> {
+    await expect.poll(async () => {
+        const entries = await Promise.all(
+            (await workQueue.getAllKeys()).map((key) => workQueue.getItem(key))
+        );
+        return entries.every((entry) => entry === undefined || !NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
+    }).toBe(true);
 }

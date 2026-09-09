@@ -87,7 +87,7 @@ describe('middleware pre-admission', () => {
 
             await sender.receive(JSON.stringify(valid));
 
-            expect(receiver.sent).toEqual([JSON.stringify(valid)]);
+            await expect.poll(() => receiver.sent).toEqual([JSON.stringify(valid)]);
             expect(admission.data.size).toBeGreaterThan(0);
         }
     );

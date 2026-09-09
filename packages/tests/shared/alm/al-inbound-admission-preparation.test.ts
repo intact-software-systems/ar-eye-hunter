@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
-import { decodeALMessageValue, decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
@@ -14,7 +14,7 @@ import type {
     ALInboundAdmissionStore,
     ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import {
@@ -60,7 +60,7 @@ describe('inbound admission preparation boundary', () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
-            ...createRuntimeDependencies(stores.admissionStore),
+            ...createRuntimeDependencies(stores),
             sendControlMessage: async (message) => {
                 controls.push(message);
             }
@@ -75,8 +75,9 @@ describe('inbound admission preparation boundary', () => {
             expect(decodeALMessageValue(message).right).toBeDefined();
             const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
             expect(result.left).toBeUndefined();
+            await expect.poll(() => controls.map((control) => decodeALControlMessage(control).right!.type))
+                .toEqual(expect.arrayContaining(seq === 1 ? ['ack'] : ['nack', 'repair']));
             const parsed = controls.map((control) => decodeALControlMessage(control).right!);
-            expect(parsed.map((control) => control.type)).toEqual(expect.arrayContaining(seq === 1 ? ['ack'] : ['nack', 'repair']));
             for (const control of parsed) {
                 expect(control.payload).toMatchObject(control.type === 'ack' ? { ackedMsgId: message.id.msgId } : { msgId: message.id.msgId });
             }
@@ -263,7 +264,7 @@ describe('inbound admission preparation boundary', () => {
         expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
 
         const runtime = new ALInboundMessageRuntime({
-            ...createRuntimeDependencies(stores.admissionStore),
+            ...createRuntimeDependencies(stores),
             planIncomingMessage: (message, source, observations) => withFreshnessPolicy(planIncomingMessage(message, source, observations))
         });
         try {
@@ -272,7 +273,7 @@ describe('inbound admission preparation boundary', () => {
             const untouched = await readAdmission({ store: stores.admissionStore, message });
             expect(untouched.read.observations.messageOwner).toBeUndefined();
             expect(untouched.read.bufferedSnapshots).toEqual([]);
-            expect(await stores.admissionStore.workQueue.getAllKeys()).toEqual([]);
+            expect(await stores.workQueue.getAllKeys()).toEqual([]);
         }
         finally {
             runtime.dispose();
@@ -285,7 +286,7 @@ describe('inbound admission preparation boundary', () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         let freshnessEnabled = false;
         const runtime = new ALInboundMessageRuntime({
-            ...createRuntimeDependencies(stores.admissionStore),
+            ...createRuntimeDependencies(stores),
             planIncomingMessage: (message, source, observations) => {
                 const plan = planIncomingMessage(message, source, observations);
                 return freshnessEnabled ? withFreshnessPolicy(plan) : plan;
@@ -383,7 +384,7 @@ describe('inbound admission preparation boundary', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
-            ...createRuntimeDependencies(stores.admissionStore),
+            ...createRuntimeDependencies(stores),
             sendControlMessage: async (message) => {
                 controls.push(message);
             }
@@ -411,7 +412,7 @@ describe('inbound admission preparation boundary', () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
-            ...createRuntimeDependencies(stores.admissionStore),
+            ...createRuntimeDependencies(stores),
             sendControlMessage: async (message) => {
                 controls.push(message);
                 if (controls.length === 1) {
@@ -421,8 +422,8 @@ describe('inbound admission preparation boundary', () => {
         });
         try {
             await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
+            await expect.poll(() => controls.some((message) => message.payload.typeId === 'al.control.ack.v1')).toBe(true);
             const firstAck = controls.find((message) => message.payload.typeId === 'al.control.ack.v1');
-            expect(firstAck).toBeDefined();
             vi.setSystemTime(Date.now() + 10_000);
             await expect.poll(() => controls.filter((message) => message.payload.typeId === 'al.control.ack.v1'))
                 .toEqual([firstAck, firstAck]);
@@ -491,12 +492,11 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
     };
 }
 
-function createRuntimeDependencies(admissionStore: ALInboundAdmissionStore): ALInboundMessageRuntime.Dependencies {
+function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMessageRuntime.Dependencies {
     return {
-        admissionStore,
-        workQueue: admissionStore.workQueue,
+        admissionStore: stores.admissionStore,
+        workQueue: stores.workQueue,
         planIncomingMessage,
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async () => {},
         sendControlMessage: async () => {},
         effectPreparation: createPreparationDependencies(),

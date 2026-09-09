@@ -42,7 +42,7 @@ describe('WS server inbound identity', () => {
             expect(received).toEqual([]);
 
             await socket.dispatchMessage(matching);
-            expect(received).toEqual([matching]);
+            await expect.poll(() => received).toEqual([matching]);
         }
         finally {
             service.dispose();

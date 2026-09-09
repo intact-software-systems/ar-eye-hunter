@@ -16,6 +16,7 @@ import {
     ConnectionContext,
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it.each([
@@ -767,6 +768,7 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
             throw new TypeError(`Unknown test connection: ${connectionId}`);
         }
         await socket.receive(message);
+        await waitForALInboundWork();
     }
 }
 

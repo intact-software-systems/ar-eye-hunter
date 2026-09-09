@@ -5,6 +5,7 @@ import {
     vi
 } from 'vitest';
 
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -41,6 +42,11 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 });
             const admission = new ALInboundMessageAdmission({
                 admissionStore: store,
+                workPort: createTestALInboundWorkPort({
+                    admissionStore: store,
+                    workQueue: state.workQueue,
+                    nowMs: Date.now
+                }),
                 clock: { nowMs: Date.now },
                 effectPreparation: {
                     newControlId: crypto.randomUUID.bind(crypto),

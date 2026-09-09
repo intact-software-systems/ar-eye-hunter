@@ -6,12 +6,14 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
-import { toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry, toALInboundWorkKey } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -23,7 +25,9 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 
 describe('Postgres inbound shared supersedence', () => {
     postgresIt('admits independent messages from the same sender across concurrent connections', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         const firstDecision = await readDecision(first, createMessage('same-sender', 1, 'first-topic'));
         const secondDecision = await readDecision(second, createMessage('same-sender', 2, 'second-topic'));
 
@@ -34,18 +38,14 @@ describe('Postgres inbound shared supersedence', () => {
             ])
         ).toEqual(['committed', 'committed']);
 
-        const page = await first.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(first.namespace),
-            status: EntityStatus.NEW,
-            maxToRead: 10,
-            cursor: null
-        });
-        const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
+        const effects = await claimWork(firstStores);
         expect(effects).toHaveLength(2);
     });
 
     postgresIt('admits one concurrent copy of the same message across independent connections', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         const message = createMessage('same-sender', 1);
         const firstDecision = await readDecision(first, message);
         const secondDecision = await readDecision(second, message);
@@ -55,17 +55,13 @@ describe('Postgres inbound shared supersedence', () => {
             second.commitBundle(secondDecision.bundle)
         ])).sort()).toEqual(['committed', 'conflict']);
 
-        const page = await first.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(first.namespace),
-            status: EntityStatus.NEW,
-            maxToRead: 10,
-            cursor: null
-        });
-        const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
+        const effects = await claimWork(firstStores);
         expect(effects).toHaveLength(1);
     });
     postgresIt('rejects an earlier observation even when its commit starts after another connection commits', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         const older = createMessage('sender-a', 1);
         const newer = createMessage('sender-b', 2);
         const oldDecision = await readDecision(first, older);
@@ -78,13 +74,7 @@ describe('Postgres inbound shared supersedence', () => {
         expect(refreshed.read.observations.messageOwner).toBeUndefined();
         expect(refreshed.read.dedupExpiresAt).toBeUndefined();
         expect(refreshed.plan.supersedence.status).toBe('superseded');
-        const page = await first.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(first.namespace),
-            status: EntityStatus.NEW,
-            maxToRead: 10,
-            cursor: null
-        });
-        const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
+        const effects = await claimWork(firstStores);
         expect(effects.map((effect) =>
             effect.payload.kind === 'dispatch-local'
                 ? effect.payload.message.msgId
@@ -93,7 +83,9 @@ describe('Postgres inbound shared supersedence', () => {
     });
 
     postgresIt('commits one concurrent decision and converges after the loser reads again', async () => {
-        const [first, second] = await createStores();
+        const [firstStores, secondStores] = await createStores();
+        const first = firstStores.admissionStore;
+        const second = secondStores.admissionStore;
         const older = createMessage('sender-a', 1);
         const newer = createMessage('sender-b', 2);
         const oldDecision = await readDecision(first, older);
@@ -114,7 +106,7 @@ describe('Postgres inbound shared supersedence', () => {
     });
 });
 
-async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInboundAdmissionStore]> {
+async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInboundRuntimeStores]> {
     const namespace = `inbound-supersedence-${crypto.randomUUID()}`;
     const queueContext = toALInboundWorkKey(namespace, '').contextId;
     const first = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
@@ -135,9 +127,17 @@ async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInbo
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     };
+    const firstBackend = new PSqlAdmissionWorkBackend(first, namespace);
+    const secondBackend = new PSqlAdmissionWorkBackend(second, namespace);
     return [
-        createALInboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(first, namespace) }),
-        createALInboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(second, namespace) })
+        {
+            admissionStore: createALInboundAdmissionStore({ ...configuration, backend: firstBackend }),
+            workQueue: firstBackend.workQueue
+        },
+        {
+            admissionStore: createALInboundAdmissionStore({ ...configuration, backend: secondBackend }),
+            workQueue: secondBackend.workQueue
+        }
     ];
 }
 
@@ -152,6 +152,14 @@ function createMessage(senderId: string, version: number, supersedenceKey = 'sha
     );
     const createdTs = Date.now() - 1_000 + version;
     return { ...message, id: { ...message.id, ts: createdTs }, audit: { ...message.audit, createdTs } };
+}
+
+/** The claim step of the worker over one page, so a concurrency test observes the rows the runtime would. */
+async function claimWork(stores: ALInboundRuntimeStores) {
+    const port = createTestALInboundWorkPort({ ...stores, nowMs: Date.now });
+    const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
+    return (await port.claim({ maxCount: 10, observedEntries: page.entries }))
+        .map((claim) => decodeALInboundWorkEntry(claim.entry, stores.admissionStore.namespace));
 }
 
 async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) {

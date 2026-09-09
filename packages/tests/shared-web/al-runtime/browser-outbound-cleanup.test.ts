@@ -160,7 +160,8 @@ async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
 
 async function retainPendingForSession(sessionId: string, ttlMs: number) {
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    const store = resolveBrowserWsClientALInboundRuntimeStores(sessionId).admissionStore;
+    const stores = resolveBrowserWsClientALInboundRuntimeStores(sessionId);
+    const store = stores.admissionStore;
     await store.ready();
     const msg = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs });
     const work = computeALInboundWorkEntry({
@@ -170,6 +171,6 @@ async function retainPendingForSession(sessionId: string, ttlMs: number) {
         observedAtMs: Date.now(),
         expireAtTimestamp: msg.constraints!.expiresAtMs!
     });
-    await store.workQueue.enqueueIfAbsent(work.entry);
-    return { queue: store.workQueue, resource: work.entry.resource };
+    await stores.workQueue.enqueueIfAbsent(work.entry);
+    return { queue: stores.workQueue, resource: work.entry.resource };
 }

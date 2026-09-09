@@ -40,6 +40,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { createTestGroup } from '../../create-test-group.ts';
+import { waitForALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
 
 describe('RallarServerWsRouter', () => {
     it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
@@ -106,12 +107,12 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.socket.receive(message);
 
-        const keys = await stores.admissionStore.workQueue.getAllKeys();
+        const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
         available = true;
         await vi.advanceTimersByTimeAsync(1_000);
-        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
+        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
         expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
     });
 
@@ -956,6 +957,7 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
                 await listener.handleEvent(event);
             }
         }
+        await waitForALInboundWork();
     }
 }
 

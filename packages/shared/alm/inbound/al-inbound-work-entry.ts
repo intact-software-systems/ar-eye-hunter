@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control.ts';
-import { toALInboundPendingAdmissionId } from './al-inbound-pending-admission.ts';
+import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
 import {
     decodeALInboundMessageReference,
     decodeALInboundSource
@@ -112,6 +112,9 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
             )
         ) {
             throw new TypeError('Pending inbound admission identity or deadline differs from its queue observation');
+        }
+        if (payload.kind === 'admit-control' && effectId !== toALInboundPendingControlId(payload.msg)) {
+            throw new TypeError('Pending inbound control identity differs from its queue observation');
         }
         return {
             effectId,
