@@ -12,13 +12,19 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import {
+    createALInboundAdmissionStore,
+    type ALInboundCommitBundle
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -80,6 +86,46 @@ describe('inbound canonical message ownership', () => {
             nowMs: Date.now()
         });
         expect(release?.snapshot.msg).toEqual(gapped);
+    });
+
+    it('clamps a late re-extended buffered slot to the retention of the row it names', async () => {
+        const bufferedAtMs = 1_800_000_000_000;
+        const releasedAtMs = bufferedAtMs + 40 * 60_000;
+        const retention = normalizeALRuntimeStoreRetention();
+        const clock = { nowMs: bufferedAtMs };
+        const state = createInMemoryALAdmissionState(new InMemoryQueueBox());
+        const admissionStore = createALInboundAdmissionStore({
+            namespace: NAMESPACE,
+            backend: new InMemoryAdmissionBackend(state, () => clock.nowMs),
+            orderingTrackTtlMs: retention.repositoryTtlMs,
+            supersedenceTrackTtlMs: retention.repositoryTtlMs,
+            retention,
+            nowMs: () => clock.nowMs
+        });
+        const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
+        const trackKey = toALOrderingTrackKey(gapped)!;
+
+        await admitMessage(admissionStore, gapped, clock.nowMs);
+        const owner = state.data.get(`${NAMESPACE}:message:sender:${gapped.id.msgId}`);
+        clock.nowMs = releasedAtMs;
+        const release = await admitMessage(
+            admissionStore,
+            newInboundMessage('gapped', { orderingKey: 'stream', seq: 1 }, 'predecessor'),
+            clock.nowMs
+        );
+
+        // The deadline-less release work outlives the canonical row, so the fence must stop at that row.
+        const releaseEffect = release.durableEffects.find((effect) => effect.payload.kind === 'release-buffered');
+        expect(releaseEffect?.expireAtTimestamp).toBe(releasedAtMs + retention.durableEffectTtlMs);
+        expect(releaseEffect!.expireAtTimestamp).toBeGreaterThan(owner!.expireAtTimestamp);
+        expect(state.data.get(`${NAMESPACE}:buffered:${trackKey}:2`)?.expireAtTimestamp)
+            .toBe(owner!.expireAtTimestamp);
+        const buffered = await admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: clock.nowMs });
+        expect(buffered?.snapshot.msg).toEqual(gapped);
+        expect(await admissionStore.readOrderedDelivery(trackKey, 3)).toEqual({
+            completedThrough: 0,
+            predecessor: { kind: 'effect' }
+        });
     });
 
     it('marks a delivery whose canonical message row is missing as NON_RETRYABLE', async () => {
@@ -146,6 +192,32 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     });
     onTestFinished(() => runtime.dispose());
     return { state, runtime, admissionStore, delivered, forwarded };
+}
+
+async function admitMessage(
+    admissionStore: ReturnType<typeof createALInboundAdmissionStore>,
+    msg: ALMessage,
+    nowMs: number
+): Promise<ALInboundCommitBundle> {
+    const source = { kind: 'ws-client' as const, peerId: 'sender' };
+    const read = await admissionStore.readIncomingMessage({
+        msg,
+        source,
+        nowMs,
+        prePlan: planIncomingMessage(msg, source, { nowMs })
+    });
+    const bundle = computeALInboundAdmission({
+        read,
+        plan: planIncomingMessage(msg, source, computeALInboundPlanningObservations(read)),
+        canForward: false,
+        facts: readALInboundEffectFacts(nowMs, {
+            selfPeerId: 'receiver',
+            newControlId: crypto.randomUUID.bind(crypto),
+            createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        })
+    });
+    expect(await admissionStore.commitBundle(bundle)).toBe('committed');
+    return bundle;
 }
 
 function newInboundMessage(

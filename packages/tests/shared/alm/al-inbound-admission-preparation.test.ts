@@ -125,7 +125,13 @@ describe('inbound admission preparation boundary', () => {
             nowMs: prepared.read.nowMs,
             source: prepared.read.source,
             observations: prepared.read.observations,
-            snapshot: { trackKey: 'sender:chat', seq: 1, msg: message, plan: prepared.plan },
+            snapshot: {
+                trackKey: 'sender:chat',
+                seq: 1,
+                msg: message,
+                plan: prepared.plan,
+                ownerRetainUntilMs: prepared.read.nowMs + prepared.read.retention.msgOwnerTtlMs
+            },
             supersedence: {},
             supersedenceTrackTtlMs: prepared.read.supersedenceTrackTtlMs,
             pendingAck: prepared.read.pendingAck,

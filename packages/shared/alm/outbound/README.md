@@ -103,9 +103,8 @@ Readiness reads queue status and timestamps only. It never needs a transport dec
 or reparses terminal payloads. Payload validation occurs on the claimed item before
 any message effect is returned for execution.
 
-Queue-entry timestamps accept existing Temporal objects and their persisted
-string representation through the shared
-[`ResourceEntry` codec](../al-admission-resource-entry-validation.ts). Every
+Queue-entry keys are decoded through the shared
+[`ResourceEntry` key codec](../decode-al-admission-resource-entry-key.ts). Every
 work payload is encoded through the canonical envelope/entry codec. QueueBox's own
 codec preserves reservation and retry timestamps as ISO strings: IndexedDB structured
 cloning does not preserve Temporal instances. An old empty-object timestamp remains corrupt.

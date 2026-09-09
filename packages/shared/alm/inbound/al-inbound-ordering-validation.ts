@@ -1,7 +1,9 @@
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import { type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
+import type { ALAdmissionBackend } from '../al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -16,6 +18,8 @@ import type {
 } from './al-inbound-admission-store.ts';
 import {
     decodeALInboundMessageReference,
+    readALInboundStoredMessage,
+    toALInboundMessageKey,
     toALInboundMessageReference,
     type ALInboundMessageReference
 } from './al-inbound-source-validation.ts';
@@ -27,6 +31,11 @@ export interface ALInboundDeliveryOwner {
 
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
     readonly delivery?: ALInboundDeliveryOwner;
+}
+
+/** A stored slot read back through the owner row it names, which also fixes how long the slot may live. */
+export interface ALInboundResolvedDeliverySnapshot extends ALInboundOrderedDeliverySnapshot {
+    readonly ownerRetainUntilMs: number;
 }
 
 /** The persisted ordering slot names its message instead of copying it; the owner row holds the payload. */
@@ -103,6 +112,37 @@ export function decodeALInboundBufferedSnapshot(
     return { trackKey, seq, message, plan, delivery: { effectId: decodeALAdmissionString(delivery.effectId) } };
 }
 
+export interface ReadALInboundBufferedMessageInput {
+    readonly database: Pick<ALAdmissionBackend, 'read'>;
+    readonly namespace: string;
+    readonly stored: ALStoredInboundBufferedSnapshot;
+}
+
+/** The buffered slot only names its message, so every ordering decision resolves the owner row first. */
+export async function readALInboundBufferedMessage(
+    input: ReadALInboundBufferedMessageInput
+): Promise<ALInboundResolvedDeliverySnapshot> {
+    const { database, namespace, stored } = input;
+    const owner = await readALInboundStoredMessage({ database, namespace, reference: stored.message });
+    if (
+        owner === undefined || toALOrderingTrackKey(owner.msg) !== stored.trackKey ||
+        owner.msg.ordering?.seq !== stored.seq
+    ) {
+        throw new ALAdmissionCorruptionError(
+            toALInboundMessageKey(namespace, stored.message),
+            new TypeError('Buffered inbound ordering slot lost its canonical message')
+        );
+    }
+    return {
+        trackKey: stored.trackKey,
+        seq: stored.seq,
+        msg: owner.msg,
+        plan: stored.plan,
+        ownerRetainUntilMs: owner.retainUntilMs,
+        ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })
+    };
+}
+
 export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {
     const mutations = bundle.mutations.filter((mutation) =>
         mutation.kind === 'set-buffered' || mutation.kind === 'delete-buffered'
@@ -144,7 +184,7 @@ export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle)
 /** A durable ordering fence must name the work that actually owns this buffered delivery. */
 export function assertALInboundDeliveryOwner(
     effect: ALInboundDurableEffect,
-    snapshot: ALStoredInboundBufferedSnapshot
+    snapshot: ALInboundOrderedDeliverySnapshot
 ): void {
     if (effect.kind === 'release-buffered') {
         if (effect.trackKey !== snapshot.trackKey || effect.seq !== snapshot.seq) {
@@ -156,7 +196,7 @@ export function assertALInboundDeliveryOwner(
         throw new TypeError('Persisted ordering fence does not name a delivery effect');
     }
     if (
-        effect.message.msgId !== snapshot.message.msgId || effect.message.senderId !== snapshot.message.senderId
+        effect.message.msgId !== snapshot.msg.id.msgId || effect.message.senderId !== snapshot.msg.id.senderId
     ) {
         throw new TypeError('Persisted delivery owner does not match its buffered message');
     }

@@ -113,6 +113,10 @@ function validateMutation(
             return 'Inbound admission candidate has invalid message provenance';
         }
     }
+    // Readers clamp a buffered slot against the retention the row itself states, so the two must agree.
+    if (mutation.kind === 'set-inbound-message' && mutation.value.retainUntilMs !== mutation.expireAtTimestamp) {
+        return 'Inbound admission candidate retains its canonical message for an undeclared lifetime';
+    }
     if (mutation.kind === 'set-control-owners') {
         try {
             if (bundle.observations.controlOwners !== undefined) {

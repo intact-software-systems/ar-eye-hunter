@@ -125,7 +125,7 @@ function toCanonicalMessageMutations(
     }
     return [{
         kind: 'set-inbound-message',
-        value: { msgId: msg.id.msgId, senderId: msg.id.senderId, msg },
+        value: { msgId: msg.id.msgId, senderId: msg.id.senderId, msg, retainUntilMs: expireAtTimestamp },
         expireAtTimestamp
     }];
 }
@@ -204,29 +204,43 @@ function computeDeliveryOwnerMutations(
             mutation.kind === 'set-buffered' && ownsDeliverySlot(payload, mutation.snapshot)
         );
         const pending = mutations[pendingIndex];
-        const snapshot = pending?.kind === 'set-buffered'
-            ? pending.snapshot
-            : snapshots.find((candidate) => ownsDeliverySlot(payload, candidate));
-        if (snapshot === undefined) {
+        if (pending?.kind === 'set-buffered') {
+            // This bundle also writes the owner row of the slot it is creating, so its expiry already covers it.
+            mutations[pendingIndex] = toDeliveryOwnerMutation(pending.snapshot, effect, effect.expireAtTimestamp);
             continue;
         }
-        const owned: ALInboundOrderedDeliverySnapshot = {
-            ...snapshot,
-            delivery: { effectId: effect.effectId }
-        };
-        const mutation: ALInboundAdmissionMutation = {
-            kind: 'set-buffered',
-            snapshot: owned,
-            expireAtTimestamp: effect.expireAtTimestamp
-        };
-        if (pendingIndex < 0) {
-            mutations.push(mutation);
+        const stored = snapshots.find((candidate) => ownsDeliverySlot(payload, candidate));
+        if (stored === undefined) {
+            continue;
         }
-        else {
-            mutations[pendingIndex] = mutation;
-        }
+        // A slot must never outlive the owner row it names; only that row's own bundle re-extends it.
+        mutations.push(
+            toDeliveryOwnerMutation(
+                stored,
+                effect,
+                Math.min(effect.expireAtTimestamp, stored.ownerRetainUntilMs)
+            )
+        );
     }
     return mutations;
+}
+
+function toDeliveryOwnerMutation(
+    snapshot: ALInboundOrderedDeliverySnapshot,
+    effect: ALInboundDurableEffectWrite,
+    expireAtTimestamp: number
+): ALInboundAdmissionMutation {
+    return {
+        kind: 'set-buffered',
+        snapshot: {
+            trackKey: snapshot.trackKey,
+            seq: snapshot.seq,
+            msg: snapshot.msg,
+            plan: snapshot.plan,
+            delivery: { effectId: effect.effectId }
+        },
+        expireAtTimestamp
+    };
 }
 
 function ownsDeliverySlot(

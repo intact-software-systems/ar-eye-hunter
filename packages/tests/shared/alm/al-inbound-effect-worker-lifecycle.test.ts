@@ -730,7 +730,7 @@ function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): 
 function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: number): ALInboundAdmissionMutation {
     return {
         kind: 'set-inbound-message',
-        value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message },
+        value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message, retainUntilMs: expireAtTimestamp },
         expireAtTimestamp
     };
 }

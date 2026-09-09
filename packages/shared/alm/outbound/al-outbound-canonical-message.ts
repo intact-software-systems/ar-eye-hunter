@@ -13,12 +13,12 @@ import {
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import { decodeALAdmissionResourceEntryKey } from '../al-admission-resource-entry-validation.ts';
 import {
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
+import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
 
 export interface ALOutboundMessageReference {
     readonly key: Key;

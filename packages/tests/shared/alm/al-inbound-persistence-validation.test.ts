@@ -79,9 +79,11 @@ function toMessageReference(candidate: ALMessage) {
 }
 
 async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candidate: ALMessage = message): Promise<void> {
+    const retainUntilMs = Date.now() + 60_000;
     await transaction.set(
         `inbound:message:${encodeURIComponent(candidate.id.senderId)}:${encodeURIComponent(candidate.id.msgId)}`,
-        { msgId: candidate.id.msgId, senderId: candidate.id.senderId, msg: candidate }
+        { msgId: candidate.id.msgId, senderId: candidate.id.senderId, msg: candidate, retainUntilMs },
+        retainUntilMs
     );
 }
 
@@ -315,8 +317,20 @@ describe('inbound admission persisted values', () => {
             });
         });
 
+        await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() }))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('rejects a buffered snapshot whose canonical message row is gone on every ordering read', async () => {
+        const { backend, store } = createFixture();
+        const snapshot = createBufferedSnapshot();
+        await backend.write(async (transaction) => {
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
+        });
+
+        await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('rejects a buffered snapshot whose canonical message row is gone', async () => {
@@ -353,6 +367,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery });
         });
@@ -403,6 +418,7 @@ describe('inbound admission persisted values', () => {
             const { backend, store } = createFixture();
             const snapshot = createBufferedSnapshot();
             await backend.write(async (transaction) => {
+                await writeCanonicalMessage(transaction);
                 await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
                 await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
             });
@@ -416,6 +432,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
         });
@@ -721,6 +738,7 @@ describe('inbound admission persisted values', () => {
 
     it('round-trips the local-delivery reference and retains the message once', async () => {
         const { state, store } = createFixture();
+        const retainUntilMs = Date.now() + 120_000;
         const work = createWork('dispatch', { kind: 'dispatch-local', message: toMessageReference(message) });
         await store.commitBundle({
             admissionExpiresAtMs: null,
@@ -728,8 +746,8 @@ describe('inbound admission persisted values', () => {
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-inbound-message',
-                value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message },
-                expireAtTimestamp: Date.now() + 60_000
+                value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message, retainUntilMs },
+                expireAtTimestamp: retainUntilMs
             }],
             durableEffects: [work]
         });

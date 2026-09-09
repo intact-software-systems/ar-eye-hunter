@@ -16,6 +16,7 @@ import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import type {
+    ALInboundDeliveryPredecessor,
     ALInboundDurableEffectWrite,
     ALInboundOrderedDeliveryRead,
     ALPersistedInboundEffect,
@@ -24,7 +25,12 @@ import type {
     RescheduleALInboundEffectInput
 } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
-import { assertALInboundDeliveryOwner, decodeALInboundBufferedSnapshot } from './al-inbound-ordering-validation.ts';
+import {
+    assertALInboundDeliveryOwner,
+    decodeALInboundBufferedSnapshot,
+    readALInboundBufferedMessage,
+    type ALInboundOrderedDeliverySnapshot
+} from './al-inbound-ordering-validation.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
     decodeALInboundWorkEntry,
@@ -154,46 +160,57 @@ export class ALInboundDurableEffectStore {
         }
         const expectedSeq = completedThrough + 1;
         const prefix = `${this.namespace}:buffered:${trackKey}:`;
-        const snapshot = await this.backend.read(
+        const stored = await this.backend.read(
             `${prefix}${expectedSeq}`,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
-        if (snapshot === undefined) {
-            const ordering = await this.backend.read(
-                `${this.namespace}:ordering:${trackKey}`,
-                decodeALInboundOrderingSnapshot
-            );
-            return {
-                completedThrough,
-                predecessor: {
-                    kind: ordering !== undefined && ordering.lastContiguousSeq < expectedSeq
-                        ? 'effect'
-                        : 'resync-required'
-                }
-            };
+        if (stored === undefined) {
+            return { completedThrough, predecessor: await this.readOrderingPredecessor(trackKey, expectedSeq) };
         }
+        const snapshot = await readALInboundBufferedMessage({
+            database: this.backend,
+            namespace: this.namespace,
+            stored
+        });
+        return { completedThrough, predecessor: await this.readDeliveryPredecessor(snapshot) };
+    }
+
+    private async readOrderingPredecessor(
+        trackKey: string,
+        expectedSeq: number
+    ): Promise<ALInboundDeliveryPredecessor> {
+        const ordering = await this.backend.read(
+            `${this.namespace}:ordering:${trackKey}`,
+            decodeALInboundOrderingSnapshot
+        );
+        return {
+            kind: ordering !== undefined && ordering.lastContiguousSeq < expectedSeq ? 'effect' : 'resync-required'
+        };
+    }
+
+    private async readDeliveryPredecessor(
+        snapshot: ALInboundOrderedDeliverySnapshot
+    ): Promise<ALInboundDeliveryPredecessor> {
         if (snapshot.delivery === undefined) {
-            return { completedThrough, predecessor: { kind: 'effect' } };
+            return { kind: 'effect' };
         }
         const entry = await this.backend.workQueue.getItem(
             toALInboundWorkKey(this.namespace, snapshot.delivery.effectId)
         );
-        if (entry !== undefined) {
-            if (!NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status) && entry.status !== EntityStatus.COMPLETED) {
-                return { completedThrough, predecessor: { kind: 'resync-required' } };
-            }
-            const effect = decodeALInboundWorkEntry(entry, this.namespace);
-            try {
-                assertALInboundDeliveryOwner(effect.payload, snapshot);
-            }
-            catch (error) {
-                throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
-            }
-            if (NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status)) {
-                return { completedThrough, predecessor: { kind: 'effect' } };
-            }
+        if (entry === undefined) {
+            return { kind: 'resync-required' };
         }
-        return { completedThrough, predecessor: { kind: 'resync-required' } };
+        if (!NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status) && entry.status !== EntityStatus.COMPLETED) {
+            return { kind: 'resync-required' };
+        }
+        const effect = decodeALInboundWorkEntry(entry, this.namespace);
+        try {
+            assertALInboundDeliveryOwner(effect.payload, snapshot);
+        }
+        catch (error) {
+            throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
+        }
+        return { kind: NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status) ? 'effect' : 'resync-required' };
     }
 
     async persistEffect(tx: ALAdmissionWorkWriteContext, effect: ALInboundDurableEffectWrite): Promise<void> {

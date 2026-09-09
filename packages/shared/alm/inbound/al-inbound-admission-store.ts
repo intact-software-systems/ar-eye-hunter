@@ -46,16 +46,17 @@ import {
     decodeALInboundBufferedSnapshot,
     decodeALInboundDeliveryProgress,
     decodeALInboundOrderingSnapshot,
+    readALInboundBufferedMessage,
     toALStoredInboundBufferedSnapshot,
     type ALInboundOrderedDeliverySnapshot,
-    type ALStoredInboundBufferedSnapshot
+    type ALInboundResolvedDeliverySnapshot
 } from './al-inbound-ordering-validation.ts';
 import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import type { ALInboundPlannerSnapshot } from './al-inbound-planner-snapshot.ts';
 import {
     decodeALInboundControlOwnerIndex,
     decodeALInboundMessageOwner,
-    decodeALStoredInboundMessage,
+    readALInboundStoredMessage,
     toALInboundMessageKey,
     toALInboundMessageOwnerKey,
     type ALInboundMessageReference,
@@ -114,10 +115,10 @@ export interface ALInboundAdmissionObservations {
         | Readonly<{
             trackKey: string;
             snapshot: ALOrderingTrackSnapshot | undefined;
-            buffered: readonly ALInboundOrderedDeliverySnapshot[];
+            buffered: readonly ALInboundResolvedDeliverySnapshot[];
         }>
         | undefined;
-    readonly buffered: ALInboundOrderedDeliverySnapshot | undefined;
+    readonly buffered: ALInboundResolvedDeliverySnapshot | undefined;
     readonly deliveryProgress:
         | Readonly<{ trackKey: string; value: ALInboundDeliveryProgress | undefined; }>
         | undefined;
@@ -138,7 +139,7 @@ export interface ALInboundMessageReadDto {
     readonly observations: ALInboundAdmissionObservations;
     readonly orderingSnapshot?: ALOrderingTrackSnapshot;
     readonly orderingAcceptance: ALOrderingAcceptance;
-    readonly bufferedSnapshots: readonly ALInboundOrderedDeliverySnapshot[];
+    readonly bufferedSnapshots: readonly ALInboundResolvedDeliverySnapshot[];
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly supersedenceAcceptance?: ALSupersedenceAcceptance;
     readonly pendingAck?: ALPendingAckSnapshot;
@@ -157,6 +158,7 @@ export interface ReadALInboundMessageInput {
 
 export interface ALInboundAdmissionRead extends ALInboundPlannerSnapshot {
     readonly namespace: string;
+    readonly bufferedSnapshots: readonly ALInboundResolvedDeliverySnapshot[];
     readonly fromPeerId: string;
     readonly source: ALInboundMessageRuntime.Source;
     readonly observations: ALInboundAdmissionObservations;
@@ -193,7 +195,7 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly nowMs: number;
     readonly source: ALInboundMessageRuntime.Source;
     readonly observations: ALInboundAdmissionObservations;
-    readonly snapshot: ALInboundOrderedDeliverySnapshot;
+    readonly snapshot: ALInboundResolvedDeliverySnapshot;
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly supersedenceTrackTtlMs: number;
     readonly pendingAck?: ALPendingAckSnapshot;
@@ -408,7 +410,7 @@ namespace ProviderBackedALInboundAdmissionStore {
     export interface OrderingRead {
         readonly trackKey: string | undefined;
         readonly snapshot: ALOrderingTrackSnapshot | undefined;
-        readonly buffered: readonly ALInboundOrderedDeliverySnapshot[];
+        readonly buffered: readonly ALInboundResolvedDeliverySnapshot[];
     }
 
     export interface Dependencies {
@@ -520,35 +522,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             prefix,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
-        const buffered: ALInboundOrderedDeliverySnapshot[] = [];
-        for (const entry of stored) {
-            buffered.push(await this.readBufferedMessage(database, entry.value));
-        }
+        const buffered = await Promise.all(
+            stored.map(async (entry) =>
+                await readALInboundBufferedMessage({ database, namespace: this.namespace, stored: entry.value })
+            )
+        );
         return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq) };
-    }
-
-    /** The buffered slot only names its message, so ordering decisions resolve the owner row first. */
-    private async readBufferedMessage(
-        database: Pick<ALAdmissionBackend, 'read'>,
-        stored: ALStoredInboundBufferedSnapshot
-    ): Promise<ALInboundOrderedDeliverySnapshot> {
-        const owner = await this.readStoredMessage(database, stored.message);
-        if (
-            owner === undefined || toALOrderingTrackKey(owner.msg) !== stored.trackKey ||
-            owner.msg.ordering?.seq !== stored.seq
-        ) {
-            throw new ALAdmissionCorruptionError(
-                toALInboundMessageKey(this.namespace, stored.message),
-                new TypeError('Buffered inbound ordering slot lost its canonical message')
-            );
-        }
-        return {
-            trackKey: stored.trackKey,
-            seq: stored.seq,
-            msg: owner.msg,
-            plan: stored.plan,
-            ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })
-        };
     }
 
     async readBufferedRelease(
@@ -563,7 +542,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         if (!stored) {
             return undefined;
         }
-        const snapshot = await this.readBufferedMessage(this.backend, stored);
+        const snapshot = await readALInboundBufferedMessage({
+            database: this.backend,
+            namespace: this.namespace,
+            stored
+        });
 
         const messageOwner = await this.readMessageOwner(snapshot.msg);
         const deliveryProgress = await this.readDeliveryProgress(trackKey);
@@ -738,7 +721,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         );
         const buffered = storedBuffered === undefined
             ? undefined
-            : await this.readBufferedMessage(transaction, storedBuffered);
+            : await readALInboundBufferedMessage({
+                database: transaction,
+                namespace: this.namespace,
+                stored: storedBuffered
+            });
         if (
             !jsonEquals(observed, {
                 ...observed,
@@ -1004,17 +991,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readInboundMessage(reference: ALInboundMessageReference): Promise<ALMessage | undefined> {
-        return (await this.readStoredMessage(this.backend, reference))?.msg;
-    }
-
-    private async readStoredMessage(
-        database: Pick<ALAdmissionBackend, 'read'>,
-        reference: ALInboundMessageReference
-    ): Promise<ALStoredInboundMessage | undefined> {
-        return await database.read(
-            toALInboundMessageKey(this.namespace, reference),
-            (value, key) => decodeALStoredInboundMessage(value, { key, namespace: this.namespace, reference })
-        );
+        const stored = await readALInboundStoredMessage({
+            database: this.backend,
+            namespace: this.namespace,
+            reference
+        });
+        return stored?.msg;
     }
 
     private async readMessageOwner(msg: ALMessage): Promise<ALInboundMessageOwner> {
