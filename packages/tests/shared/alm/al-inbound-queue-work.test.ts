@@ -648,8 +648,7 @@ async function readMessageWork(input: ReadMessageWorkInput) {
         const payload = effect.payload;
         if (
             (payload.kind === 'release-buffered' && payload.trackKey === input.trackKey && payload.seq === input.seq) ||
-            (payload.kind === 'dispatch-local' &&
-                decodePersistedALMessage(payload.entry.resource).id.msgId === input.msgId)
+            (payload.kind === 'dispatch-local' && payload.message.msgId === input.msgId)
         ) {
             work.push(effect);
         }

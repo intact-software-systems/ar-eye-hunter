@@ -179,9 +179,9 @@ describe('WS server bounded and authorized admission', () => {
             if (retained.payload.kind !== 'dispatch-local') {
                 throw new Error('Expected pending local delivery');
             }
-            const original = decodePersistedALMessage(retained.payload.entry.resource);
-            expect(original.id).toEqual(message.id);
-            expect(original.constraints?.expiresAtMs).toBe(expiresAtMs);
+            const original = await fixture.admissionStore.readInboundMessage(retained.payload.message);
+            expect(original?.id).toEqual(message.id);
+            expect(original?.constraints?.expiresAtMs).toBe(expiresAtMs);
         }
         else {
             expect(keys).toEqual([]);

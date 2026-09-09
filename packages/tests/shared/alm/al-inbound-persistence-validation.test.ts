@@ -2,9 +2,12 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionWriteContext
+} from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { encodeALAdmissionResourceEntry } from '@shared/alm/al-admission-resource-entry-validation.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
@@ -20,7 +23,6 @@ import {
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     describe,
     expect,
@@ -64,7 +66,23 @@ function readIncoming(store: ReturnType<typeof createFixture>['store'], candidat
 }
 
 function createBufferedSnapshot() {
-    return { trackKey: toALOrderingTrackKey(message)!, seq: 2, msg: message, plan: planMessage(message) };
+    return {
+        trackKey: toALOrderingTrackKey(message)!,
+        seq: 2,
+        message: toMessageReference(message),
+        plan: planMessage(message)
+    };
+}
+
+function toMessageReference(candidate: ALMessage) {
+    return { senderId: candidate.id.senderId, msgId: candidate.id.msgId };
+}
+
+async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candidate: ALMessage = message): Promise<void> {
+    await transaction.set(
+        `inbound:message:${encodeURIComponent(candidate.id.senderId)}:${encodeURIComponent(candidate.id.msgId)}`,
+        { msgId: candidate.id.msgId, senderId: candidate.id.senderId, msg: candidate }
+    );
 }
 
 function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
@@ -228,6 +246,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
@@ -257,6 +276,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
@@ -278,18 +298,36 @@ describe('inbound admission persisted values', () => {
         await expect(readIncoming(store, message)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('rejects a buffered snapshot whose message belongs to another ordering track', async () => {
+    it('rejects a buffered snapshot whose canonical message belongs to another ordering track', async () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
+        const other: ALMessage = {
+            ...message,
+            id: { ...message.id, msgId: 'other-track-message' },
+            ordering: { orderingKey: 'other-track', seq: 2 }
+        };
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction, other);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
-                msg: { ...message, id: { ...message.id, senderId: 'wrong-sender' } }
+                message: toMessageReference(other)
             });
         });
 
-        await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() }))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('rejects a buffered snapshot whose canonical message row is gone', async () => {
+        const { backend, store } = createFixture();
+        const snapshot = createBufferedSnapshot();
+        await backend.write(async (transaction) => {
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, snapshot);
+        });
+
+        await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() }))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('marks malformed work NON_RETRYABLE while reserving valid siblings', async () => {
@@ -323,7 +361,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        { kind: 'forward-message', msg: message, fromPeerId: 'sender', plan: {} },
+        { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', plan: {} },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
         { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v1', resource: '{}' } } }
@@ -346,10 +384,18 @@ describe('inbound admission persisted values', () => {
                 name: 'message',
                 payload: {
                     kind: 'dispatch-local',
-                    entry: QueueBoxUtilities.toResourceEntryFromMsg({ ...message, id: { ...message.id, msgId: 'another-message' } }, 'inbox')
+                    message: { senderId: message.id.senderId, msgId: 'another-message' }
                 }
             },
-            { name: 'non-delivery', payload: { kind: 'forward-message', msg: message, plan: planMessage(message), fromPeerId: 'sender' } }
+            {
+                name: 'non-delivery',
+                payload: {
+                    kind: 'forward-message',
+                    message: toMessageReference(message),
+                    plan: planMessage(message),
+                    fromPeerId: 'sender'
+                }
+            }
         ] satisfies readonly { name: string; payload: ALInboundDurableEffect; }[]
     )(
         'rejects a structurally valid effect with a mismatched $name delivery owner',
@@ -399,22 +445,18 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        { key: { topicId: 'chat', resourceId: 'other', contextId: 'room' } },
-        { status: 'unknown' },
-        { dequeueAudit: { attempts: 'one' } },
-        { audit: { date: '12:00:00', createdBy: 'sender', createdTs: '2026-08-31T12:00:00', expiryTs: 'not-a-time' } },
-        { resource: '{}' }
-    ])('marks malformed or wrong-route embedded queue entries as NON_RETRYABLE', async (corruption) => {
+        { senderId: 'sender:with:delimiter' },
+        { senderId: 1, msgId: 'message' },
+        { senderId: 'sender:with:delimiter', msgId: 1 },
+        { senderId: 'sender:with:delimiter', msgId: 'message', route: 'chat' }
+    ])('marks malformed embedded message references as NON_RETRYABLE', async (reference) => {
         const { store } = createFixture();
         const entry = {
             ...createWork().entry,
             resource: JSON.stringify({
                 namespace: 'inbound',
                 effectId: 'effect',
-                payload: {
-                    kind: 'dispatch-local',
-                    entry: { ...encodeALAdmissionResourceEntry(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')), ...corruption }
-                }
+                payload: { kind: 'dispatch-local', message: reference }
             })
         };
         await store.workQueue.enqueue(entry);
@@ -677,35 +719,26 @@ describe('inbound admission persisted values', () => {
         expect((await readIncoming(store, message)).acks).toHaveLength(256);
     });
 
-    it('round-trips the local-delivery envelope and rejects malformed embedded messages on replay', async () => {
-        const { store } = createFixture();
-        const work = createWork('dispatch', { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') });
+    it('round-trips the local-delivery reference and retains the message once', async () => {
+        const { state, store } = createFixture();
+        const work = createWork('dispatch', { kind: 'dispatch-local', message: toMessageReference(message) });
         await store.commitBundle({
             admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
-            mutations: [],
+            mutations: [{
+                kind: 'set-inbound-message',
+                value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message },
+                expireAtTimestamp: Date.now() + 60_000
+            }],
             durableEffects: [work]
         });
         const [claimed] = await claimWork(store);
-        expect(claimed?.payload).toMatchObject({ kind: 'dispatch-local', entry: { resource: JSON.stringify(message) } });
-        const malformed = {
-            ...createWork('malformed-dispatch').entry,
-            resource: JSON.stringify({
-                namespace: 'inbound',
-                effectId: 'malformed-dispatch',
-                payload: {
-                    kind: 'dispatch-local',
-                    entry: {
-                        ...encodeALAdmissionResourceEntry(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')),
-                        resource: JSON.stringify({ ...message, id: { ...message.id, v: 3 } })
-                    }
-                }
-            })
-        };
-        await store.workQueue.enqueue(malformed);
-        expect(await claimWork(store)).toEqual([]);
-        expect(await store.workQueue.getItem(malformed.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+        expect(claimed?.payload).toEqual({ kind: 'dispatch-local', message: toMessageReference(message) });
+        expect(await store.readInboundMessage(toMessageReference(message))).toEqual(message);
+        expect([...state.data.keys()].filter((key) => key.startsWith('inbound:message:'))).toEqual([
+            'inbound:message:sender%3Awith%3Adelimiter:message'
+        ]);
     });
 });
 

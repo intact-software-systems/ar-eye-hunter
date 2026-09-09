@@ -1,11 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control.ts';
 import { toALInboundPendingAdmissionId } from './al-inbound-pending-admission.ts';
-import { decodeALInboundSource } from './al-inbound-source-validation.ts';
+import {
+    decodeALInboundMessageReference,
+    decodeALInboundSource
+} from './al-inbound-source-validation.ts';
 
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import {
-    decodePersistedALMessage,
     decodePersistedALMessageValue,
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -26,11 +28,6 @@ import { Either } from '../../resilience/Either.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
-    decodeALAdmissionResourceEntry,
-    encodeALAdmissionResourceEntry,
-    type StoredALAdmissionResourceEntry
-} from '../al-admission-resource-entry-validation.ts';
-import {
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
@@ -41,16 +38,6 @@ import type {
     ALPersistedInboundEffect
 } from './al-inbound-admission-store.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
-
-type StoredALInboundDurableEffect =
-    | Readonly<{
-        kind: 'dispatch-local';
-        entry: StoredALAdmissionResourceEntry;
-    }>
-    | Extract<ALInboundDurableEffect, Readonly<{ kind: 'admit-message'; }>>
-    | Extract<ALInboundDurableEffect, Readonly<{ kind: 'send-control'; }>>
-    | Extract<ALInboundDurableEffect, Readonly<{ kind: 'forward-message'; }>>
-    | Extract<ALInboundDurableEffect, Readonly<{ kind: 'release-buffered'; }>>;
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
 
@@ -69,8 +56,8 @@ export function toALInboundWorkType(namespace: string): string {
 export function toALInboundWorkKey(namespace: string, effectId: string) {
     return toAppQueueKey({
         topicId: 'AL_INBOUND',
-        resourceId: encodeURIComponent(effectId),
-        contextId: encodeURIComponent(namespace)
+        resourceId: encodeURIComponent(namespace),
+        contextId: encodeURIComponent(effectId)
     });
 }
 
@@ -87,7 +74,7 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
             resource: JSON.stringify({
                 namespace: input.namespace,
                 effectId: input.effectId,
-                payload: toStoredInboundDurableEffect(input.payload)
+                payload: input.payload
             }),
             audit: {
                 createdBy: 'ALM',
@@ -158,27 +145,10 @@ export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
     );
 }
 
-function toStoredInboundDurableEffect(
-    effect: ALInboundDurableEffect
-): StoredALInboundDurableEffect {
-    switch (effect.kind) {
-        case 'dispatch-local':
-            return {
-                ...effect,
-                entry: encodeALAdmissionResourceEntry(effect.entry)
-            };
-        case 'admit-message':
-        case 'send-control':
-        case 'forward-message':
-        case 'release-buffered':
-            return effect;
-    }
-}
-
 function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEffect {
     const effect = decodeALAdmissionRecord(value, ['kind'], [
         'msg',
-        'entry',
+        'message',
         'plan',
         'fromPeerId',
         'trackKey',
@@ -195,16 +165,8 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             return { kind: effect.kind, msg, source: decodeALInboundSource(effect.source) };
         }
         case 'dispatch-local': {
-            decodeALAdmissionRecord(effect, ['kind', 'entry']);
-            const entry = decodeALAdmissionResourceEntry(effect.entry);
-            const message = decodePersistedALMessage(entry.resource);
-            if (
-                entry.key.topicId !== message.route.topicId || entry.key.resourceId !== message.route.resourceId ||
-                entry.key.contextId !== message.route.contextId
-            ) {
-                throw new TypeError('Persisted inbound queue entry route does not match its embedded message');
-            }
-            return { kind: effect.kind, entry };
+            decodeALAdmissionRecord(effect, ['kind', 'message']);
+            return { kind: effect.kind, message: decodeALInboundMessageReference(effect.message) };
         }
         case 'send-control': {
             decodeALAdmissionRecord(effect, ['kind', 'msg']);
@@ -216,10 +178,10 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             return { kind: effect.kind, msg };
         }
         case 'forward-message': {
-            decodeALAdmissionRecord(effect, ['kind', 'msg', 'fromPeerId', 'plan']);
+            decodeALAdmissionRecord(effect, ['kind', 'message', 'fromPeerId', 'plan']);
             return {
                 kind: effect.kind,
-                msg: decodePersistedALMessageValue(effect.msg),
+                message: decodeALInboundMessageReference(effect.message),
                 fromPeerId: decodeALAdmissionString(effect.fromPeerId),
                 plan: decodeALInboundPlan(effect.plan)
             };

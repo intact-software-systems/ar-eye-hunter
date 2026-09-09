@@ -7,7 +7,6 @@ import {
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
@@ -88,7 +87,7 @@ describe('Postgres inbound shared supersedence', () => {
         const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
         expect(effects.map((effect) =>
             effect.payload.kind === 'dispatch-local'
-                ? decodePersistedALMessage(effect.payload.entry.resource).id.msgId
+                ? effect.payload.message.msgId
                 : effect.payload.kind
         )).toEqual([newer.id.msgId]);
     });
@@ -165,7 +164,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
         prePlan: planALMessageHandling(message, context)
     });
     const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
-    const facts = readALInboundEffectFacts(message, nowMs, {
+    const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')

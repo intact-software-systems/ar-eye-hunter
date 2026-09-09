@@ -8,7 +8,10 @@ import {
 } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type {
+    ALInboundAdmissionMutation,
+    ALInboundAdmissionStore
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
     computeALInboundWorkEntry,
@@ -47,25 +50,16 @@ describe('inbound durable effect worker lifecycle', () => {
             admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(resources.admissionStore, message)).observations,
-            mutations: [{
-                kind: 'set-msg-owner',
-                value: {
-                    msgId: message.id.msgId,
-                    senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId },
-                    supersedenceKey: null
-                },
-                expireAtTimestamp: Number.MAX_SAFE_INTEGER
-            }],
+            mutations: [
+                toMessageOwnerMutation(message, Number.MAX_SAFE_INTEGER),
+                toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
+            ],
             durableEffects: [computeALInboundWorkEntry({
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
                 effectId: 'persisted-dispatch',
                 expireAtTimestamp: Date.now() + 60_000,
-                payload: {
-                    kind: 'dispatch-local',
-                    entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
-                }
+                payload: { kind: 'dispatch-local', message: toMessageReference(message) }
             })]
         });
         const claimReadyEffects = resources.admissionStore.claimReadyEffects.bind(resources.admissionStore);
@@ -142,25 +136,16 @@ describe('inbound durable effect worker lifecycle', () => {
             admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(resources.admissionStore, message)).observations,
-            mutations: [{
-                kind: 'set-msg-owner',
-                value: {
-                    msgId: message.id.msgId,
-                    senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId },
-                    supersedenceKey: null
-                },
-                expireAtTimestamp: Number.MAX_SAFE_INTEGER
-            }],
+            mutations: [
+                toMessageOwnerMutation(message, Number.MAX_SAFE_INTEGER),
+                toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
+            ],
             durableEffects: [computeALInboundWorkEntry({
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
                 effectId: 'corrupt-delivery',
                 expireAtTimestamp: Date.now() + 60_000,
-                payload: {
-                    kind: 'dispatch-local',
-                    entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
-                }
+                payload: { kind: 'dispatch-local', message: toMessageReference(message) }
             })]
         });
         const runtime = new ALInboundMessageRuntime({
@@ -257,7 +242,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
             effectId: 'missing-source',
-            payload: { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(missingSource, 'inbox') }
+            payload: { kind: 'dispatch-local', message: toMessageReference(missingSource) }
         });
         // A surviving queue entry with lost provenance cannot regain authority by retrying.
         await resources.admissionStore.workQueue.enqueue(work.entry);
@@ -393,15 +378,36 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(delivered).toEqual([message.id.msgId]);
     });
 
-    it('marks invalid buffered-delivery computation NON_RETRYABLE instead of completing the work', async () => {
+    it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => {
-                const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox');
-                return message.ordering?.seq === 2
-                    ? { ...entry, key: { ...entry.key, resourceId: 'wrong-resource' } }
-                    : entry;
-            }
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const store = resources.admissionStore;
+        const buffered = {
+            ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {}),
+            ordering: { orderingKey: 'stream', seq: 2 }
+        };
+        const read = await readAdmission(store, buffered);
+        const trackKey = toALOrderingTrackKey(buffered)!;
+        const work = computeALInboundWorkEntry({
+            namespace: store.namespace,
+            observedAtMs: Date.now(),
+            effectId: 'release-without-canonical-message',
+            expireAtTimestamp: Date.now() + 60_000,
+            payload: { kind: 'release-buffered', trackKey, seq: 2 }
+        });
+        // The ordering slot names a canonical message row that admission never wrote.
+        await store.commitBundle({
+            admissionExpiresAtMs: null,
+            senderId: buffered.id.senderId,
+            observations: read.observations,
+            mutations: [{
+                kind: 'set-buffered',
+                snapshot: { trackKey, seq: 2, msg: buffered, plan: read.prePlan },
+                expireAtTimestamp: Date.now() + 60_000
+            }],
+            durableEffects: [work]
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
@@ -415,26 +421,11 @@ describe('inbound durable effect worker lifecycle', () => {
             sendControlMessage: async () => {}
         });
         onTestFinished(() => runtime.dispose());
-        const first = {
-            ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'first', contextId: 'room' }, 'receiver', 'chat', {}),
-            ordering: { orderingKey: 'stream', seq: 1 }
-        };
-        const second = {
-            ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {}),
-            ordering: { orderingKey: 'stream', seq: 2 }
-        };
-        await runtime.handleIncomingMessage(second, { kind: 'ws-client', peerId: 'sender' });
-        await runtime.handleIncomingMessage(first, { kind: 'ws-client', peerId: 'sender' });
-        await expect.poll(async () => {
-            const page = await resources.admissionStore.workQueue.readWorkPage({
-                typeId: toALInboundWorkType(resources.admissionStore.namespace),
-                status: EntityStatus.NON_RETRYABLE,
-                maxToRead: 16,
-                cursor: null
-            });
-            return page.entries.map((entry) => decodeALInboundWorkEntry(entry, resources.admissionStore.namespace).payload);
-        }).toEqual([expect.objectContaining({ kind: 'release-buffered', seq: 2 })]);
-        expect(delivered).toEqual(['first']);
+        await runtime.ready();
+
+        await expect.poll(async () => (await store.workQueue.getItem(work.entry.key))?.status)
+            .toBe(EntityStatus.NON_RETRYABLE);
+        expect(delivered).toEqual([]);
     });
 
     it('wakes work admitted while a prior reservation is being finalized', async () => {
@@ -553,29 +544,25 @@ describe('inbound durable effect worker lifecycle', () => {
             await engine.executeOnce();
         }
         const external = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'external-work', contextId: 'room' }, 'receiver', 'chat', {});
-        const externalEntry = QueueBoxUtilities.toResourceEntryFromMsg(external, 'inbox');
-        const expireAtTimestamp = Math.max(Date.now() + 60_000, externalEntry.audit.expiryTs.epochMilliseconds);
+        const expireAtTimestamp = Math.max(
+            Date.now() + 60_000,
+            QueueBoxUtilities.toResourceEntryFromMsg(external, 'inbox').audit.expiryTs.epochMilliseconds
+        );
         const store = resources.admissionStore;
         await store.commitBundle({
             admissionExpiresAtMs: null,
             senderId: external.id.senderId,
             observations: (await readAdmission(store, external)).observations,
-            mutations: [{
-                kind: 'set-msg-owner',
-                value: {
-                    msgId: external.id.msgId,
-                    senderId: external.id.senderId,
-                    source: { kind: 'ws-client', peerId: external.id.senderId },
-                    supersedenceKey: null
-                },
-                expireAtTimestamp
-            }],
+            mutations: [
+                toMessageOwnerMutation(external, expireAtTimestamp),
+                toCanonicalMessageMutation(external, expireAtTimestamp)
+            ],
             durableEffects: [computeALInboundWorkEntry({
                 namespace: store.namespace,
                 effectId: 'externally-admitted-work',
                 observedAtMs: Date.now(),
                 expireAtTimestamp,
-                payload: { kind: 'dispatch-local', entry: externalEntry }
+                payload: { kind: 'dispatch-local', message: toMessageReference(external) }
             })]
         });
         await expect.poll(async () => {
@@ -634,22 +621,16 @@ describe('inbound durable effect worker lifecycle', () => {
             effectId: 'paused-delivery',
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
-            payload: { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
+            payload: { kind: 'dispatch-local', message: toMessageReference(message) }
         });
         await store.commitBundle({
             admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readAdmission(store, message)).observations,
-            mutations: [{
-                kind: 'set-msg-owner',
-                value: {
-                    msgId: message.id.msgId,
-                    senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId },
-                    supersedenceKey: null
-                },
-                expireAtTimestamp: Date.now() + 60_000
-            }],
+            mutations: [
+                toMessageOwnerMutation(message, Date.now() + 60_000),
+                toCanonicalMessageMutation(message, Date.now() + 60_000)
+            ],
             durableEffects: [work]
         });
         const operationStarted = Promise.withResolvers<void>();
@@ -727,6 +708,31 @@ function planIncomingMessage(
         groupMemberPeerIds: ['sender', 'receiver'],
         overlayNeighborPeerIds: []
     });
+}
+
+function toMessageReference(message: ALMessage) {
+    return { senderId: message.id.senderId, msgId: message.id.msgId };
+}
+
+function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): ALInboundAdmissionMutation {
+    return {
+        kind: 'set-msg-owner',
+        value: {
+            msgId: message.id.msgId,
+            senderId: message.id.senderId,
+            source: { kind: 'ws-client', peerId: message.id.senderId },
+            supersedenceKey: null
+        },
+        expireAtTimestamp
+    };
+}
+
+function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: number): ALInboundAdmissionMutation {
+    return {
+        kind: 'set-inbound-message',
+        value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message },
+        expireAtTimestamp
+    };
 }
 
 async function readAdmission(store: ALInboundAdmissionStore, message: ALMessage) {

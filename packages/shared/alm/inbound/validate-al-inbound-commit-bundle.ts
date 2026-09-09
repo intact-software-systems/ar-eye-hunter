@@ -1,4 +1,4 @@
-import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { Either } from '../../resilience/Either.ts';
 import type {
@@ -37,15 +37,15 @@ export function validateALInboundCommitBundle(
     if (effects.left) {
         return Either.ofLeft(effects.left);
     }
-    let ownerExpireAtTimestamp: number | undefined;
+    const provenanceExpireAtTimestamps: number[] = [];
     let ownedWorkExpireAtTimestamp = computeDurableEffectsExpiry(bundle);
     for (const mutation of bundle.mutations) {
         const mutationError = validateMutation(mutation, bundle);
         if (mutationError) {
             return invalidBundle(mutationError);
         }
-        if (mutation.kind === 'set-msg-owner') {
-            ownerExpireAtTimestamp = mutation.expireAtTimestamp;
+        if (mutation.kind === 'set-msg-owner' || mutation.kind === 'set-inbound-message') {
+            provenanceExpireAtTimestamps.push(mutation.expireAtTimestamp);
         }
         if (
             mutation.kind === 'set-buffered' || mutation.kind === 'set-control-pending' ||
@@ -54,14 +54,37 @@ export function validateALInboundCommitBundle(
             ownedWorkExpireAtTimestamp = Math.max(ownedWorkExpireAtTimestamp, mutation.expireAtTimestamp);
         }
     }
-    if (ownerExpireAtTimestamp !== undefined && ownerExpireAtTimestamp < ownedWorkExpireAtTimestamp) {
+    if (provenanceExpireAtTimestamps.some((expiry) => expiry < ownedWorkExpireAtTimestamp)) {
         return invalidBundle('Inbound admission candidate provenance expires before its owned work');
     }
-    const bufferedIssues = validateALInboundBufferedMessages(bundle);
-    if (bufferedIssues.length > 0) {
-        return Either.ofLeft(bufferedIssues[0]);
+    const messageIssues = [...validateCanonicalMessages(bundle), ...validateALInboundBufferedMessages(bundle)];
+    if (messageIssues.length > 0) {
+        return Either.ofLeft(messageIssues[0]);
     }
     return Either.ofRight(bundle);
+}
+
+function validateCanonicalMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {
+    const issues: ALMessageRejection[] = [];
+    for (const mutation of bundle.mutations) {
+        if (mutation.kind !== 'set-inbound-message') {
+            continue;
+        }
+        const decoded = decodeALMessageValue(mutation.value.msg);
+        if (decoded.left) {
+            issues.push(decoded.left);
+        }
+        else if (
+            mutation.value.msg.id.msgId !== mutation.value.msgId ||
+            mutation.value.msg.id.senderId !== mutation.value.senderId
+        ) {
+            issues.push({
+                code: 'malformed',
+                message: 'Inbound admission candidate has an invalid canonical message'
+            });
+        }
+    }
+    return issues;
 }
 
 function validateMutation(
@@ -110,6 +133,7 @@ function matchesOriginalObservation(
 ): boolean {
     switch (mutation.kind) {
         case 'set-msg-owner':
+        case 'set-inbound-message':
             return mutation.value.msgId === observed.msgId && mutation.value.senderId === observed.senderId;
         case 'set-control-pending':
         case 'delete-control-pending':
@@ -146,12 +170,6 @@ function computeDurableEffectsExpiry(bundle: ALInboundCommitBundle): number {
     let expireAtTimestamp = 0;
     for (const effect of bundle.durableEffects) {
         expireAtTimestamp = Math.max(expireAtTimestamp, effect.expireAtTimestamp);
-        if (effect.payload.kind === 'dispatch-local') {
-            expireAtTimestamp = Math.max(
-                expireAtTimestamp,
-                effect.payload.entry.audit.expiryTs.epochMilliseconds
-            );
-        }
     }
     return expireAtTimestamp;
 }

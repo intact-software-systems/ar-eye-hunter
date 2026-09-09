@@ -9,7 +9,6 @@ import {
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -160,7 +159,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
         const buffered = computeALInboundBufferedRelease({
             read,
             plan,
-            facts: readEffectFacts(older, read.nowMs)
+            facts: readEffectFacts(read.nowMs)
         });
         const originalCandidate = JSON.stringify(buffered);
         const newDecision = await readDecision(store, newer);
@@ -238,12 +237,12 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
     return {
         read,
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts: readEffectFacts(message, nowMs), canForward: false })
+        bundle: computeALInboundAdmission({ read, plan, facts: readEffectFacts(nowMs), canForward: false })
     };
 }
 
-function readEffectFacts(message: ALMessage, nowMs: number) {
-    return readALInboundEffectFacts(message, nowMs, {
+function readEffectFacts(nowMs: number) {
+    return readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
@@ -256,7 +255,7 @@ async function completeEffects(store: ALInboundAdmissionStore): Promise<string[]
     const deliveries: string[] = [];
     for (const effect of effects) {
         if (effect.payload.kind === 'dispatch-local') {
-            deliveries.push(decodePersistedALMessage(effect.payload.entry.resource).id.msgId);
+            deliveries.push(effect.payload.message.msgId);
         }
         await store.completeEffect(effect.entry);
     }

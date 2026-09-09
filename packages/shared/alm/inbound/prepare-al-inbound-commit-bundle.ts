@@ -4,9 +4,7 @@ import {
     newALNackControlMessage,
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type {
@@ -18,7 +16,6 @@ import type {
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
-import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
 import { computeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 
@@ -32,7 +29,6 @@ export interface ALInboundEffectFacts {
     readonly selfPeerId: string;
     readonly observedAtEpochMs: number;
     readonly controlIdPrefix: string;
-    readonly inboxEntry: ResourceEntry;
 }
 
 export interface PrepareALInboundCommitBundleInput {
@@ -52,27 +48,17 @@ interface PrepareALInboundDurableEffectInput {
     readonly payload: ALInboundEffectIntent['payload'];
     readonly facts: ALInboundEffectFacts;
     readonly index: number;
-    readonly expireAtTimestamp: number;
 }
 
-/** Captures shell-owned identity and QueueBox values before the pure admission computation. */
+/** Captures shell-owned identity before the pure admission computation. */
 export function readALInboundEffectFacts(
-    msg: ALMessage,
     nowMs: number,
     dependencies: ALInboundEffectPreparationDependencies
 ): ALInboundEffectFacts {
-    const entry = dependencies.createInboxEntry(msg);
     return {
         selfPeerId: dependencies.selfPeerId,
         observedAtEpochMs: nowMs,
-        controlIdPrefix: dependencies.newControlId(),
-        inboxEntry: {
-            ...entry,
-            key: { ...entry.key },
-            audit: { ...entry.audit },
-            dequeueAudit: { ...entry.dequeueAudit },
-            db: entry.db ? { ...entry.db } : undefined
-        }
+        controlIdPrefix: dependencies.newControlId()
     };
 }
 
@@ -83,7 +69,7 @@ export function prepareALInboundCommitBundle(
     const msg = read.kind === 'incoming' ? read.msg : read.snapshot.msg;
     const durableEffects = input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
-        const payload = prepareALInboundDurableEffect({ payload: effect.payload, facts, index, expireAtTimestamp });
+        const payload = prepareALInboundDurableEffect({ payload: effect.payload, facts, index });
         // A repeated data admission may emit a new receipt; its work follows that control envelope's own identity.
         const effectId = payload.kind === 'send-control'
             ? `${effect.effectId}:${encodeURIComponent(payload.msg.id.msgId)}`
@@ -98,6 +84,7 @@ export function prepareALInboundCommitBundle(
     });
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
     const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
+    // The canonical message must outlive every effect and buffered slot that only names it.
     const ownerExpireAtTimestamp = Math.max(
         read.nowMs + read.retention.msgOwnerTtlMs,
         ...durableEffects.map((effect) => effect.expireAtTimestamp),
@@ -115,13 +102,32 @@ export function prepareALInboundCommitBundle(
             : null,
         senderId: msg.id.senderId,
         observations: read.observations,
-        mutations: mutations.map((mutation) =>
-            mutation.kind === 'set-msg-owner'
-                ? { ...mutation, expireAtTimestamp: ownerExpireAtTimestamp }
-                : mutation
-        ),
+        mutations: [
+            ...toCanonicalMessageMutations(mutations, msg, ownerExpireAtTimestamp),
+            ...mutations.map((mutation) =>
+                mutation.kind === 'set-msg-owner'
+                    ? { ...mutation, expireAtTimestamp: ownerExpireAtTimestamp }
+                    : mutation
+            )
+        ],
         durableEffects
     };
+}
+
+/** Admission retains the message once; provenance ownership decides when that row is written. */
+function toCanonicalMessageMutations(
+    mutations: readonly ALInboundAdmissionMutation[],
+    msg: ALMessage,
+    expireAtTimestamp: number
+): readonly ALInboundAdmissionMutation[] {
+    if (!mutations.some((mutation) => mutation.kind === 'set-msg-owner')) {
+        return [];
+    }
+    return [{
+        kind: 'set-inbound-message',
+        value: { msgId: msg.id.msgId, senderId: msg.id.senderId, msg },
+        expireAtTimestamp
+    }];
 }
 
 function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput): ALInboundDurableEffect {
@@ -133,11 +139,6 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
         ts: facts.observedAtEpochMs
     };
     switch (payload.kind) {
-        case 'dispatch-local':
-            return {
-                kind: payload.kind,
-                entry: toALInboundDispatchEntry(facts.inboxEntry, payload.msg, input.expireAtTimestamp)
-            };
         case 'send-ack':
             return {
                 kind: 'send-control',
@@ -173,6 +174,7 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     observedAtEpochMs: facts.observedAtEpochMs
                 })
             };
+        case 'dispatch-local':
         case 'forward-message':
         case 'release-buffered':
             return payload;
@@ -195,29 +197,17 @@ function computeDeliveryOwnerMutations(
     const snapshots = input.read.kind === 'incoming' ? input.read.bufferedSnapshots : [input.read.snapshot];
     for (const effect of effects) {
         const payload = effect.payload;
-        if (
-            payload.kind !== 'dispatch-local' && payload.kind !== 'release-buffered'
-        ) {
-            continue;
-        }
-        const msg = payload.kind === 'release-buffered' ? undefined : decodePersistedALMessage(payload.entry.resource);
-        const trackKey = payload.kind === 'release-buffered'
-            ? payload.trackKey
-            : msg === undefined
-            ? undefined
-            : toALOrderingTrackKey(msg);
-        const seq = payload.kind === 'release-buffered' ? payload.seq : msg?.ordering?.seq;
-        if (trackKey === undefined || seq === undefined) {
+        if (payload.kind !== 'dispatch-local' && payload.kind !== 'release-buffered') {
             continue;
         }
         const pendingIndex = mutations.findIndex((mutation) =>
-            mutation.kind === 'set-buffered' && mutation.snapshot.trackKey === trackKey && mutation.snapshot.seq === seq
+            mutation.kind === 'set-buffered' && ownsDeliverySlot(payload, mutation.snapshot)
         );
         const pending = mutations[pendingIndex];
         const snapshot = pending?.kind === 'set-buffered'
             ? pending.snapshot
-            : snapshots.find((snapshot) => snapshot.trackKey === trackKey && snapshot.seq === seq);
-        if (snapshot === undefined || (msg !== undefined && snapshot.msg.id.msgId !== msg.id.msgId)) {
+            : snapshots.find((candidate) => ownsDeliverySlot(payload, candidate));
+        if (snapshot === undefined) {
             continue;
         }
         const owned: ALInboundOrderedDeliverySnapshot = {
@@ -237,6 +227,15 @@ function computeDeliveryOwnerMutations(
         }
     }
     return mutations;
+}
+
+function ownsDeliverySlot(
+    payload: Extract<ALInboundDurableEffect, { readonly kind: 'dispatch-local' | 'release-buffered'; }>,
+    snapshot: ALInboundOrderedDeliverySnapshot
+): boolean {
+    return payload.kind === 'release-buffered'
+        ? snapshot.trackKey === payload.trackKey && snapshot.seq === payload.seq
+        : snapshot.msg.id.msgId === payload.message.msgId && snapshot.msg.id.senderId === payload.message.senderId;
 }
 
 /** Retain completion evidence for the full lifetime of every admitted dependency on its track. */

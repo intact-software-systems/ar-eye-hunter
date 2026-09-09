@@ -254,14 +254,15 @@ describe('IndexedDB AL runtime stores', () => {
             throw new Error('Expected admitted local delivery work');
         }
 
-        expect(JSON.parse(delivery.payload.entry.resource)).toMatchObject({
+        expect(delivery.payload.message).toEqual({ senderId: msg.id.senderId, msgId: msg.id.msgId });
+        expect(await stores.admissionStore.readInboundMessage(delivery.payload.message)).toMatchObject({
             id: {
                 msgId: msg.id.msgId
             }
         });
-        expect(typeof delivery.payload.entry.audit.date).toBe('object');
-        expect(typeof delivery.payload.entry.audit.createdTs).toBe('object');
-        expect(typeof delivery.payload.entry.audit.expiryTs).toBe('object');
+        expect(typeof delivery.entry.audit.date).toBe('object');
+        expect(typeof delivery.entry.audit.createdTs).toBe('object');
+        expect(typeof delivery.entry.audit.expiryTs).toBe('object');
     });
 
     it('expires inbound control history and message provenance before rejecting late controls', async () => {

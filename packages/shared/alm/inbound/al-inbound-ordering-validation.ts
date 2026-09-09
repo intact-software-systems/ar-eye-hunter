@@ -1,11 +1,7 @@
-import {
-    decodeALMessageValue,
-    decodePersistedALMessage,
-    decodePersistedALMessageValue,
-    type ALMessageRejection
-} from '../../al-contracts/al-message-persistence-validation.ts';
+import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
-import { toALOrderingTrackKey, type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
+import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -18,12 +14,28 @@ import type {
     ALInboundDeliveryProgress,
     ALInboundDurableEffect
 } from './al-inbound-admission-store.ts';
+import {
+    decodeALInboundMessageReference,
+    toALInboundMessageReference,
+    type ALInboundMessageReference
+} from './al-inbound-source-validation.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
+export interface ALInboundDeliveryOwner {
+    readonly effectId: string;
+}
+
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
-    readonly delivery?: {
-        readonly effectId: string;
-    };
+    readonly delivery?: ALInboundDeliveryOwner;
+}
+
+/** The persisted ordering slot names its message instead of copying it; the owner row holds the payload. */
+export interface ALStoredInboundBufferedSnapshot {
+    readonly trackKey: string;
+    readonly seq: number;
+    readonly message: ALInboundMessageReference;
+    readonly plan: ALMessageHandlingPlan;
+    readonly delivery?: ALInboundDeliveryOwner;
 }
 
 export interface ALInboundBufferedSlot {
@@ -54,19 +66,28 @@ export function decodeALInboundDeliveryProgress(value: unknown): ALInboundDelive
     };
 }
 
+export function toALStoredInboundBufferedSnapshot(
+    snapshot: ALInboundOrderedDeliverySnapshot
+): ALStoredInboundBufferedSnapshot {
+    return {
+        trackKey: snapshot.trackKey,
+        seq: snapshot.seq,
+        message: toALInboundMessageReference(snapshot.msg),
+        plan: snapshot.plan,
+        ...(snapshot.delivery === undefined ? {} : { delivery: snapshot.delivery })
+    };
+}
+
 export function decodeALInboundBufferedSnapshot(
     value: unknown,
     slot: ALInboundBufferedSlot
-): ALInboundOrderedDeliverySnapshot {
-    const snapshot = decodeALAdmissionRecord(value, ['trackKey', 'seq', 'msg', 'plan'], ['delivery']);
+): ALStoredInboundBufferedSnapshot {
+    const snapshot = decodeALAdmissionRecord(value, ['trackKey', 'seq', 'message', 'plan'], ['delivery']);
     const trackKey = decodeALAdmissionString(snapshot.trackKey);
     const seq = decodeALAdmissionNumber(snapshot.seq);
-    const msg = decodePersistedALMessageValue(snapshot.msg);
+    const message = decodeALInboundMessageReference(snapshot.message);
     const plan = decodeALInboundPlan(snapshot.plan);
-    if (
-        trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}` ||
-        toALOrderingTrackKey(msg) !== trackKey || msg.ordering?.seq !== seq
-    ) {
+    if (trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}`) {
         throw new TypeError('Persisted buffered message does not match its ordering slot');
     }
     if (plan.orderingRuntime.trackKey !== undefined && plan.orderingRuntime.trackKey !== trackKey) {
@@ -75,11 +96,11 @@ export function decodeALInboundBufferedSnapshot(
     if (plan.orderingRuntime.seq !== undefined && plan.orderingRuntime.seq !== seq) {
         throw new TypeError('Persisted buffered plan does not match its sequence');
     }
-    if (snapshot.delivery !== undefined) {
-        const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId']);
-        decodeALAdmissionString(delivery.effectId);
+    if (snapshot.delivery === undefined) {
+        return { trackKey, seq, message, plan };
     }
-    return value as ALInboundOrderedDeliverySnapshot;
+    const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId']);
+    return { trackKey, seq, message, plan, delivery: { effectId: decodeALAdmissionString(delivery.effectId) } };
 }
 
 export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {
@@ -123,7 +144,7 @@ export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle)
 /** A durable ordering fence must name the work that actually owns this buffered delivery. */
 export function assertALInboundDeliveryOwner(
     effect: ALInboundDurableEffect,
-    snapshot: ALInboundOrderedDeliverySnapshot
+    snapshot: ALStoredInboundBufferedSnapshot
 ): void {
     if (effect.kind === 'release-buffered') {
         if (effect.trackKey !== snapshot.trackKey || effect.seq !== snapshot.seq) {
@@ -134,11 +155,8 @@ export function assertALInboundDeliveryOwner(
     if (effect.kind !== 'dispatch-local') {
         throw new TypeError('Persisted ordering fence does not name a delivery effect');
     }
-    const effectMessage = decodePersistedALMessage(effect.entry.resource);
     if (
-        effectMessage.id.msgId !== snapshot.msg.id.msgId || effectMessage.id.senderId !== snapshot.msg.id.senderId ||
-        effectMessage.id.v !== snapshot.msg.id.v || effectMessage.id.ts !== snapshot.msg.id.ts ||
-        toALOrderingTrackKey(effectMessage) !== snapshot.trackKey || effectMessage.ordering?.seq !== snapshot.seq
+        effect.message.msgId !== snapshot.message.msgId || effect.message.senderId !== snapshot.message.senderId
     ) {
         throw new TypeError('Persisted delivery owner does not match its buffered message');
     }

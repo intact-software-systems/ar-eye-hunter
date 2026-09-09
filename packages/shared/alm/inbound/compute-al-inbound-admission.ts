@@ -23,10 +23,7 @@ import {
     type ALInboundControlEffectInput,
     type ALInboundEffectIntent
 } from './al-inbound-effect-intent.ts';
-import {
-    toALInboundDispatchEntry,
-    toALInboundMessageWithDeadline
-} from './al-inbound-message-deadline.ts';
+import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import {
     computeALInboundBufferedReleaseSupersedenceAcceptance,
     computeALInboundOrderingAcceptance
@@ -191,13 +188,8 @@ export function computeALInboundBufferedRelease(
         ? toALInboundLocalDeliveryEffects({ msg: read.snapshot.msg, plan })[0]?.payload
         : undefined;
     const expiresAtMs = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective);
-    const msg = expiresAtMs === undefined
-        ? read.snapshot.msg
-        : toALInboundMessageWithDeadline(read.snapshot.msg, expiresAtMs);
     const expireAtTimestamp = expiresAtMs ?? read.nowMs + read.retention.durableEffectTtlMs;
-    const localDelivery = intent?.kind === 'dispatch-local'
-        ? { kind: intent.kind, entry: toALInboundDispatchEntry(facts.inboxEntry, msg, expireAtTimestamp) }
-        : undefined;
+    const localDelivery = intent?.kind === 'dispatch-local' ? intent : undefined;
     const bundle = prepareALInboundCommitBundle({
         read,
         facts,

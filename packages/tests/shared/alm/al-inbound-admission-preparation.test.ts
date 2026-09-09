@@ -185,10 +185,18 @@ describe('inbound admission preparation boundary', () => {
         const dispatch = bundle.durableEffects.find((effect) => effect.payload.kind === 'dispatch-local');
         const forward = bundle.durableEffects.find((effect) => effect.payload.kind === 'forward-message');
         const buffered = bundle.mutations.find((mutation) => mutation.kind === 'set-buffered');
-        if (dispatch?.payload.kind !== 'dispatch-local' || forward?.payload.kind !== 'forward-message' || !buffered) {
+        const canonical = bundle.mutations.find((mutation) => mutation.kind === 'set-inbound-message');
+        if (
+            dispatch?.payload.kind !== 'dispatch-local' || forward?.payload.kind !== 'forward-message' || !buffered ||
+            canonical?.kind !== 'set-inbound-message'
+        ) {
             throw new Error('This admitted message must own dispatch, forwarding and ordered replay');
         }
-        for (const admitted of [decodePersistedALMessage(dispatch.payload.entry.resource), forward.payload.msg, buffered.snapshot.msg]) {
+        // Every effect names the one retained copy instead of carrying its own envelope.
+        for (const reference of [dispatch.payload.message, forward.payload.message]) {
+            expect(reference).toEqual({ senderId: message.id.senderId, msgId: message.id.msgId });
+        }
+        for (const admitted of [canonical.value.msg, buffered.snapshot.msg]) {
             expect(admitted).toEqual({ ...message, constraints: { ttlHops: 5, expiresAtMs: deadline } });
         }
         expect(dispatch.expireAtTimestamp).toBe(deadline);
@@ -210,10 +218,12 @@ describe('inbound admission preparation boundary', () => {
         const replay = computeALInboundBufferedRelease({
             read,
             plan: replayPlan,
-            facts: readALInboundEffectFacts(read.snapshot.msg, Date.now(), createPreparationDependencies())
+            facts: readALInboundEffectFacts(Date.now(), createPreparationDependencies())
         });
-        expect(replay.localDelivery?.entry.audit.expiryTs.epochMilliseconds).toBe(deadline);
-        expect(decodePersistedALMessage(replay.localDelivery!.entry.resource).constraints?.expiresAtMs).toBe(deadline);
+        expect(replay.localDelivery?.message).toEqual({ senderId: message.id.senderId, msgId: message.id.msgId });
+        const replayed = replay.mutations.find((mutation) => mutation.kind === 'set-inbound-message');
+        expect(replayed?.kind === 'set-inbound-message' ? replayed.value.msg.constraints?.expiresAtMs : undefined)
+            .toBe(deadline);
     });
 
     it('uses the buffered message deadline for release work created by a later predecessor', async () => {
@@ -463,7 +473,7 @@ async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmissi
     return {
         read,
         plan,
-        facts: readALInboundEffectFacts(message, nowMs, createPreparationDependencies())
+        facts: readALInboundEffectFacts(nowMs, createPreparationDependencies())
     };
 }
 
