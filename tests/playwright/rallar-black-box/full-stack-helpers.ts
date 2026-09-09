@@ -8,6 +8,9 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+
 export const FULL_STACK_CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 export const FULL_STACK_CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 export const FULL_STACK_SPA_ORIGIN = normalizeBaseUrl(
@@ -89,13 +92,61 @@ type ControlResult = Readonly<{
     commandId?: string;
     ok?: boolean;
     result?: unknown;
+    error?: Readonly<{
+        code?: string;
+        message?: string;
+    }>;
 }>;
 
-type ControlRunSnapshot = Readonly<{
+export type ControlRunEvent = Readonly<{
+    kind?: string;
+    agentId?: string;
+    commandId?: string;
+    payload?: Readonly<{
+        topic?: string;
+        payload?: Readonly<{ ok?: boolean; }>;
+    }>;
+}>;
+
+export type ControlRunSnapshot = Readonly<{
     results?: readonly ControlResult[];
-    events?: readonly unknown[];
+    events?: readonly ControlRunEvent[];
     stats?: readonly unknown[];
     reports?: readonly unknown[];
+}>;
+
+export type TwoAgentRunParticipant = Readonly<{
+    agentId: string;
+    actor: string;
+    connection: string;
+    context: BrowserContext;
+    page: Page;
+}>;
+
+export type TwoAgentRun = Readonly<{
+    request: APIRequestContext;
+    runId: string;
+    group: RallarBlackBoxDistributedGroupRef;
+    sender: TwoAgentRunParticipant;
+    receiver: TwoAgentRunParticipant;
+    readSnapshot(): Promise<ControlRunSnapshot>;
+    close(): Promise<void>;
+}>;
+
+export type RecipeRunOutcome = Readonly<{
+    commandId: string;
+    ok: boolean;
+    summary: string;
+}>;
+
+export type RecipePairOutcome = Readonly<{
+    sender: RecipeRunOutcome;
+    receiver: RecipeRunOutcome;
+}>;
+
+export type RecipePair = Readonly<{
+    sender: RallarBlackBoxTestRecipe;
+    receiver: RallarBlackBoxTestRecipe;
 }>;
 
 export function readFullStackConfig(): FullStackConfig {
@@ -491,6 +542,89 @@ export async function openBrowserControlAgent(
     };
 }
 
+export async function createTwoAgentRun(
+    input: Readonly<{
+        browser: Browser;
+        request: APIRequestContext;
+        testInfo: TestInfo;
+        runId: string;
+    }>
+): Promise<TwoAgentRun> {
+    const config = readFullStackConfig();
+    const group: RallarBlackBoxDistributedGroupRef = {
+        applicationId: config.applicationId,
+        workspaceId: config.workspaceId,
+        groupId: `${config.roomId}-${uniqueSuffix()}`
+    };
+    const sender = await openTwoAgentParticipant({
+        browser: input.browser,
+        testInfo: input.testInfo,
+        runId: input.runId,
+        config,
+        user: config.userA,
+        role: 'sender',
+        groupId: group.groupId
+    });
+    const receiver = await openTwoAgentParticipant({
+        browser: input.browser,
+        testInfo: input.testInfo,
+        runId: input.runId,
+        config,
+        user: config.userB,
+        role: 'receiver',
+        groupId: group.groupId
+    });
+    await waitForControlRunAgent(input.request, input.runId, sender.agentId);
+    await waitForControlRunAgent(input.request, input.runId, receiver.agentId);
+
+    return {
+        request: input.request,
+        runId: input.runId,
+        group,
+        sender,
+        receiver,
+        readSnapshot: async () => await fetchControlRun(input.request, input.runId),
+        close: async () => await closeTwoAgentParticipants([sender, receiver])
+    };
+}
+
+export async function runRecipeOnAgent(
+    run: TwoAgentRun,
+    agent: TwoAgentRunParticipant,
+    recipe: RallarBlackBoxTestRecipe
+): Promise<RecipeRunOutcome> {
+    const commandId = toRecipeRunCommandId(recipe);
+    await enqueueControlCommand(run.request, run.runId, agent.agentId, commandId, {
+        kind: 'recipe.run',
+        recipe
+    });
+    return await readRecipeRunOutcome(run, commandId);
+}
+
+/**
+ * The receiver subscribes at connect, so its recipe starts first and the sender waits until the
+ * receiver's connect command reports an ok result. A connect that must see a ready peer cannot
+ * report one before the sender exists, so entering the readiness wait — which the runtime records
+ * only after the connection is established and subscribed — releases the barrier too, as does a
+ * receiver recipe that has already settled.
+ */
+export async function runRecipePairOnTwoAgents(
+    run: TwoAgentRun,
+    recipes: RecipePair
+): Promise<RecipePairOutcome> {
+    const connectCommandId = requireConnectCommandId(recipes.receiver);
+    const receiverRun = runRecipeOnAgent(run, run.receiver, recipes.receiver);
+    await waitForReceiverConnectBarrier(run, {
+        connectCommandId,
+        runCommandId: toRecipeRunCommandId(recipes.receiver)
+    });
+    const [sender, receiver] = await Promise.all([
+        runRecipeOnAgent(run, run.sender, recipes.sender),
+        receiverRun
+    ]);
+    return { sender, receiver };
+}
+
 export async function selectControlRunInManager(
     page: Page,
     runId: string
@@ -609,6 +743,140 @@ const LEGACY_RUNNER_TAB_TARGETS: Partial<
     'shared-test': { tab: 'advanced', surfaceLabel: 'Shared Test' },
     'flow-builder': { tab: 'builder' }
 };
+
+const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
+const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
+const RECIPE_RUN_TIMEOUT_MS = 180_000;
+const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
+const CONTROL_POLL_INTERVAL_MS = 250;
+
+async function openTwoAgentParticipant(
+    input: Readonly<{
+        browser: Browser;
+        config: FullStackConfig;
+        user: FullStackUser;
+        testInfo: TestInfo;
+        runId: string;
+        groupId: string;
+        role: 'sender' | 'receiver';
+    }>
+): Promise<TwoAgentRunParticipant> {
+    const agentId = uniqueAgentId(input.testInfo, `alm-${input.role}`);
+    const connection = `alm-${input.role}-connection`;
+    const opened = await openBrowserControlAgent(input.browser, input.config, input.user, {
+        runId: input.runId,
+        agentId,
+        groupId: input.groupId,
+        connection
+    });
+    return {
+        agentId,
+        actor: input.user.actor,
+        connection,
+        context: opened.context,
+        page: opened.page
+    };
+}
+
+async function closeTwoAgentParticipants(
+    participants: readonly TwoAgentRunParticipant[]
+): Promise<void> {
+    await Promise.all(participants.map(async (participant) => {
+        await cleanupRallarPage(participant.page).catch(() => undefined);
+        await participant.context.close().catch(() => undefined);
+    }));
+}
+
+async function readRecipeRunOutcome(
+    run: TwoAgentRun,
+    commandId: string
+): Promise<RecipeRunOutcome> {
+    const deadlineEpochMs = Date.now() + RECIPE_RUN_TIMEOUT_MS;
+    while (Date.now() < deadlineEpochMs) {
+        const result = await readControlResult(run, commandId);
+        if (result) {
+            return {
+                commandId,
+                ok: result.ok === true,
+                summary: toControlResultSummary(result)
+            };
+        }
+        await waitMs(CONTROL_POLL_INTERVAL_MS);
+    }
+    return {
+        commandId,
+        ok: false,
+        summary: `no control result within ${RECIPE_RUN_TIMEOUT_MS} ms`
+    };
+}
+
+async function waitForReceiverConnectBarrier(
+    run: TwoAgentRun,
+    input: Readonly<{ connectCommandId: string; runCommandId: string; }>
+): Promise<void> {
+    const deadlineEpochMs = Date.now() + RECEIVER_CONNECT_TIMEOUT_MS;
+    while (Date.now() < deadlineEpochMs) {
+        const snapshot = await run.readSnapshot();
+        if (
+            hasConnectedEvent(snapshot, input.connectCommandId) ||
+            findControlResult(snapshot, input.runCommandId) !== undefined
+        ) {
+            return;
+        }
+        await waitMs(CONTROL_POLL_INTERVAL_MS);
+    }
+}
+
+async function readControlResult(
+    run: TwoAgentRun,
+    commandId: string
+): Promise<ControlResult | undefined> {
+    return findControlResult(await run.readSnapshot(), commandId);
+}
+
+function findControlResult(
+    snapshot: ControlRunSnapshot,
+    commandId: string
+): ControlResult | undefined {
+    return snapshot.results?.find((result) => result.commandId === commandId);
+}
+
+function hasConnectedEvent(
+    snapshot: ControlRunSnapshot,
+    commandId: string
+): boolean {
+    return snapshot.events?.some((event) => event.commandId === commandId && isConnectedEventPayload(event.payload)) ??
+        false;
+}
+
+function isConnectedEventPayload(payload: ControlRunEvent['payload']): boolean {
+    return payload?.topic === RTC_READINESS_WAIT_TOPIC ||
+        (payload?.topic === COMMAND_RESULT_TOPIC && payload.payload?.ok === true);
+}
+
+function toControlResultSummary(result: ControlResult): string {
+    return result.ok === true
+        ? 'ok'
+        : `${result.error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED'}: ${result.error?.message ?? 'no message'}`;
+}
+
+function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {
+    return `${recipe.recipeId}-run`;
+}
+
+function requireConnectCommandId(recipe: RallarBlackBoxTestRecipe): string {
+    const commandId = recipe.commands
+        .find((command) => command.kind === 'rtc.connect')
+        ?.commandId;
+    if (!commandId) {
+        throw new Error(`Recipe ${recipe.recipeId} has no identified rtc.connect command.`);
+    }
+    return commandId;
+}
+
+async function waitMs(durationMs: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
+}
 
 async function clickVisibleButton(page: Page, name: string): Promise<void> {
     const button = page.getByRole('button', { name }).first();
