@@ -118,6 +118,19 @@ function createCentralRttMeasurements(
     return measurements;
 }
 
+const ENQUEUE_SETTLE_ATTEMPT_LIMIT = 500;
+
+/** Ingress admits and returns; the mutation it enqueues lands on the runtime's own delivery turn. */
+async function readSettledEnqueues(
+    enqueued: readonly RttMeasurementInfo[],
+    expectedCount: number
+): Promise<readonly RttMeasurementInfo[]> {
+    for (let attempt = 0; attempt < ENQUEUE_SETTLE_ATTEMPT_LIMIT && enqueued.length < expectedCount; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    return enqueued;
+}
+
 function createArtifact(
     createdAt: string,
     input: RtcRttTrafficInput,
@@ -181,7 +194,7 @@ await Deno.writeTextFile(
             createArtifact(
                 new Date().toISOString(),
                 { sessionCount: args.sessions, submittedRttCount: measurements.length },
-                enqueuedMeasurements
+                await readSettledEnqueues(enqueuedMeasurements, measurements.length)
             ),
             null,
             2

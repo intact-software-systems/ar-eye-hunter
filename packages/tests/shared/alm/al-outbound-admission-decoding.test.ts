@@ -1,8 +1,5 @@
-import {
-    peekOutboundTestWorkReadyAt,
-    toOutboundTestStores
-} from './outbound-runtime-test-fixture.ts';
 import { Temporal } from '@js-temporal/polyfill';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import {
     describe,
     expect,
@@ -10,6 +7,10 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import {
+    claimOutboundTestWork,
+    peekOutboundWorkReadyAt
+} from './outbound-runtime-test-fixture.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -39,31 +40,33 @@ describe('outbound admission persisted-record validation', () => {
         onTestFinished(() => {
             vi.useRealTimers();
         });
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const effect = createEffect(createMessage());
         const entry = await writeRawOutboundWork(backend, effect.effectId, {
             ...effect,
             payload: { kind: 'unsupported' }
         });
         vi.spyOn(backend.workQueue, 'releaseEntries').mockRejectedValueOnce(new Error('Terminal write unavailable'));
+        vi.spyOn(console, 'error').mockImplementation(() => {});
 
-        await expect(store.claimReadyEffects({ maxCount: 1 }))
-            .rejects.toThrow('Terminal write unavailable');
+        await runOutboundWorkBatch(admission);
         expect(await backend.workQueue.getItem(entry.key))
             .toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
 
         vi.setSystemTime(Date.now() + 10_001);
-        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
+        await runOutboundWorkBatch(admission);
         expect(await backend.workQueue.getItem(entry.key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             resource: entry.resource,
             dequeueAudit: { attempts: 2, nextTs: undefined }
         });
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
     });
 
     it.each([0, 19, 20])('isolates malformed work at attempt %s while valid work remains claimable', async (attempts) => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const malformed = createEffect(createMessage());
         const malformedEntry = await writeRawOutboundWork(backend, malformed.effectId, malformed);
         const corruptedEntry = {
@@ -81,21 +84,22 @@ describe('outbound admission persisted-record validation', () => {
         const valid = createEffect(createMessage());
         await writeRawOutboundWork(backend, valid.effectId, valid);
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 });
+        const sent = await runOutboundWorkBatch(admission);
 
-        expect(claimed.map((effect) => effect.payload)).toEqual([valid.payload]);
+        expect(sent).toEqual([valid.payload.message.msgId]);
         expect(await backend.workQueue.getItem(corruptedEntry.key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             resource: corruptedEntry.resource,
             dequeueAudit: { attempts: attempts + 1, nextTs: undefined }
         });
-        await store.completeEffect(claimed[0]!.entry);
-        expect(await store.claimReadyEffects({ maxCount: 3 })).toEqual([]);
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', valid.effectId)))
+            .toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
     });
 
     it('rejects wrong-slot and malformed sent snapshots in point and ordering lookup reads', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msg = createMessage();
         await backend.write(async (tx) => {
             await tx.set('outbound:sent:wrong-slot', { msgId: msg.id.msgId, msg });
@@ -115,7 +119,8 @@ describe('outbound admission persisted-record validation', () => {
     });
 
     it('rejects malformed ack state and mismatched control history before mutation', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         await backend.write(async (tx) => {
             await tx.set('outbound:pending-ack:msg', {
                 msgId: 'msg',
@@ -150,7 +155,8 @@ describe('outbound admission persisted-record validation', () => {
         { field: 'supersedenceTracking', algo: ['none'] },
         { field: 'supersedenceTracking', algo: ['latest-wins'] }
     ])('rejects a persisted $field array algorithm $algo without changing storage', async ({ field, algo }) => {
-        const { backend, store, state } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store, state } = admission;
         const msg = createMessage();
         const effect = createEffect(msg);
         await writeRawOutboundWork(backend, effect.effectId, effect);
@@ -182,19 +188,19 @@ describe('outbound admission persisted-record validation', () => {
     });
 
     it('decodes a saved prepared message without planning or dropping its persisted content', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msg = createMessage();
         const effect = createEffect(msg);
         await writeRawOutboundWork(backend, effect.effectId, effect);
-        const [claimed] = await store.claimReadyEffects({
-            maxCount: 1
-        });
-        expect(claimed.payload).toEqual(effect.payload);
-        expect(claimed.entry.status).toBe(EntityStatus.RESERVED);
+        const [claimed] = await claimOutboundTestWork(admission.stores, 1);
+        expect(claimed!.payload).toEqual(effect.payload);
+        expect(claimed!.entry.status).toBe(EntityStatus.RESERVED);
     });
 
     it('rejects corrupt prepared values without changing their payload or admitting message state', async () => {
-        const { backend, store, state } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store, state } = admission;
         const msg = createMessage();
         const effect = createEffect(msg);
         const corrupt = {
@@ -202,12 +208,8 @@ describe('outbound admission persisted-record validation', () => {
             payload: { ...effect.payload, prepared: { id: msg.id } }
         };
         await writeRawOutboundWork(backend, effect.effectId, corrupt);
-        expect(
-            await store.claimReadyEffects({
-                maxCount: 1
-            })
-        ).toEqual([]);
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        await runOutboundWorkBatch(admission);
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
@@ -220,7 +222,8 @@ describe('outbound admission persisted-record validation', () => {
     });
 
     it('rejects a corrupt replay while runtime readiness sends valid work from the same batch', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend } = admission;
         const msg = createMessage();
         const effect = createEffect(msg);
         await writeRawOutboundWork(backend, effect.effectId, {
@@ -231,7 +234,7 @@ describe('outbound admission persisted-record validation', () => {
         await writeRawOutboundWork(backend, valid.effectId, valid);
         const sent: string[] = [];
         const runtime = createDefaultALOutboundMessageRuntime({
-            stores: toOutboundTestStores(store),
+            stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
@@ -258,18 +261,20 @@ describe('outbound admission persisted-record validation', () => {
     });
 
     it.each(['payload', 'identity'] as const)('rejects a live reference whose canonical %s row is missing', async (missing) => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const effect = createEffect(createMessage());
         await writeRawOutboundWork(backend, effect.effectId, effect);
         await backend.workQueue.removeItem(missing === 'payload' ? effect.canonicalEntry.key : effect.identityEntry.key);
-        expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
+        await runOutboundWorkBatch(admission);
         expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))
             .toMatchObject({ status: EntityStatus.NON_RETRYABLE });
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
     });
 
     it.each(['ack-timeout', 'repair-hint', 'nack-retry'])('terminates corrupt %s replay as non-retryable', async (kind) => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msg = createMessage();
         const payload = kind === 'ack-timeout'
             ? { kind, msgId: msg.id.msgId }
@@ -285,7 +290,7 @@ describe('outbound admission persisted-record validation', () => {
             await writeRawOutboundWork(backend, effectId, { effectId, payload });
         });
         const runtime = createDefaultALOutboundMessageRuntime({
-            stores: toOutboundTestStores(store),
+            stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
@@ -333,7 +338,8 @@ describe('outbound admission persisted-record validation', () => {
     });
 
     it('rejects a persisted prepared transport target that no longer matches its effect fingerprint', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msg = createMessage();
         const effect = createEffect(msg);
         await writeRawOutboundWork(backend, effect.effectId, {
@@ -347,17 +353,14 @@ describe('outbound admission persisted-record validation', () => {
             }
         });
 
-        expect(
-            await store.claimReadyEffects({
-                maxCount: 1
-            })
-        ).toEqual([]);
+        await runOutboundWorkBatch(admission);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
     });
 
     it('rejects a recomputed prepared fingerprint that no longer matches the durable effect identity', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msg = createMessage();
         const effect = createEffect(msg);
         const redirected = {
@@ -373,11 +376,7 @@ describe('outbound admission persisted-record validation', () => {
             }
         });
 
-        expect(
-            await store.claimReadyEffects({
-                maxCount: 1
-            })
-        ).toEqual([]);
+        await runOutboundWorkBatch(admission);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
     });
@@ -394,7 +393,8 @@ describe('outbound admission persisted-record validation', () => {
             toPendingEffectId: () => toALOutboundEffectId(['nack-retry', 'foreign-msg', 'not-yet-in-sync', 1])
         }
     ])('rejects a $label not-yet-in-sync retry snapshot', async ({ attempts, toPendingEffectId }) => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msgId = createMessage().id.msgId;
         await backend.write(async (tx) => {
             await tx.set(`outbound:not-yet-in-sync-retry:${msgId}`, {
@@ -404,12 +404,13 @@ describe('outbound admission persisted-record validation', () => {
             });
         });
 
-        await expect(scheduleNotYetInSyncRetry(store, msgId))
+        await expect(scheduleNotYetInSyncRetry(admission, msgId))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('rejects a retry snapshot linked to a different effect kind', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msgId = createMessage().id.msgId;
         const effectId = toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 1]);
         await backend.write(async (tx) => {
@@ -424,12 +425,13 @@ describe('outbound admission persisted-record validation', () => {
             });
         });
 
-        await expect(scheduleNotYetInSyncRetry(store, msgId))
+        await expect(scheduleNotYetInSyncRetry(admission, msgId))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('rejects a durable not-yet-in-sync retry owned by another message', async () => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const msgId = createMessage().id.msgId;
         const effectId = toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 1]);
         await writeRawOutboundWork(backend, effectId, {
@@ -441,11 +443,7 @@ describe('outbound admission persisted-record validation', () => {
             }
         });
 
-        expect(
-            await store.claimReadyEffects({
-                maxCount: 1
-            })
-        ).toEqual([]);
+        await runOutboundWorkBatch(admission);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
     });
@@ -455,14 +453,11 @@ describe('outbound admission persisted-record validation', () => {
         { field: 'namespace', value: 'foreign-scope' },
         { field: 'payload', value: { kind: 'unknown' } }
     ])('rejects invalid effect $field at the claimed-work boundary', async ({ field, value }) => {
-        const { backend, store } = createAdmission();
+        const admission = createAdmission();
+        const { backend, store } = admission;
         const effect = createEffect(createMessage());
         await writeRawOutboundWork(backend, effect.effectId, { ...effect, [field]: value });
-        expect(
-            await store.claimReadyEffects({
-                maxCount: 1
-            })
-        ).toEqual([]);
+        await runOutboundWorkBatch(admission);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NON_RETRYABLE);
     });
@@ -480,14 +475,44 @@ function createAdmission() {
         supersedenceTrackTtlMs: 1_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    return { backend, store, state };
+    return { backend, store, state, stores: { admissionStore: store, workQueue: backend.workQueue } };
+}
+
+/**
+ * Runs one owner batch over this scope's work, the way the runtime's worker does: a row it cannot
+ * decode is rejected by the attempt, and a valid sibling in the same batch still runs.
+ */
+async function runOutboundWorkBatch(
+    admission: ReturnType<typeof createAdmission>,
+    sent: string[] = []
+): Promise<readonly string[]> {
+    const runtime = createDefaultALOutboundMessageRuntime({
+        stores: admission.stores,
+        outbox: new InMemoryQueueBox(new Map()),
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+        readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
+        planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+        sendPreparedMessage: async (_message, _phase, lifecycle) => {
+            sent.push(lifecycle.canonicalMessage.id.msgId);
+            return { status: 'sent' as const };
+        }
+    });
+    try {
+        await runtime.ready();
+        return sent;
+    }
+    finally {
+        runtime.dispose();
+    }
 }
 
 async function scheduleNotYetInSyncRetry(
-    store: ReturnType<typeof createAdmission>['store'],
+    admission: ReturnType<typeof createAdmission>,
     msgId: string
 ) {
-    return await store.scheduleNotYetInSyncRetry({
+    const control = createTestALOutboundControlAdmission({ ...admission.stores, nowMs: Date.now });
+    return await control.scheduleNotYetInSyncRetry({
         senderId: 'sender',
         expectedVersion: undefined,
         msgId,

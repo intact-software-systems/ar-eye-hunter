@@ -46,6 +46,7 @@ export class RtcEndpointFixture {
     readonly groups = new LatestRepository<string, GroupSnapshot>();
     readonly overlays = new LatestRepository<string, OverlayInfo>();
     readonly outbound = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeALOutboundTransportMessage
     });
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];

@@ -1,15 +1,17 @@
-import {
-    peekOutboundWorkReadyAt
-} from '../alm/outbound-runtime-test-fixture.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    createDefaultWsQueueBoxClientService,
+    WsQueueBoxClientService
+} from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
@@ -20,6 +22,9 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import {
+    peekOutboundWorkReadyAt
+} from '../alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -66,9 +71,13 @@ describe('RTC outbound transport results', () => {
         const native = nativeRuntime.createdConnections[0].channels[0];
         await native.open();
         const rtcStores = storesFor('self:rtc');
-        const manager = createManager([channel], createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: rtcStores }), {
-            defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 500 } } })
-        });
+        const manager = createManager(
+            [channel],
+            createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: rtcStores }),
+            {
+                defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 500 } } })
+            }
+        );
         const socket = new JsonWebSocketClient('ws://canonical-fallback', createPassThroughTransportFaultPort());
         const nativeWs = new TestWebSocket(socket.url);
         nativeWs.open();
@@ -85,11 +94,12 @@ describe('RTC outbound transport results', () => {
             ws.close();
         });
         const original = createMessage('fallback', 'peer-1', 5_000);
-        const first = await manager.enqueueIfAbsent(original);
+        const first = await enqueueRtcAndDrain(manager, original);
         expect(first.status, first.reason).toBe('accepted');
         expect(first.message.constraints?.expiresAtMs).toBe(Date.now() + 500);
         expect(original.constraints?.expiresAtMs).toBe(Date.now() + 5_000);
         const fallback = await ws.enqueueOutboxIfAbsent(first.message);
+        await ws.dequeueOutbox(WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES, createDefaultALOutboundDequeueResilience());
         expect(fallback.entry?.key).toEqual(first.entry?.key);
         expect(fallback.message).toEqual(first.message);
         expect(JSON.parse(nativeWs.sent[0])).toEqual(JSON.parse(JSON.stringify(first.message)));
@@ -115,7 +125,7 @@ describe('RTC outbound transport results', () => {
         const manager = createManager([channel], resources);
         onTestFinished(() => manager.dispose());
         const message = createMessage('long-readiness');
-        await manager.enqueueIfAbsent(message);
+        await enqueueRtcAndDrain(manager, message);
         await vi.advanceTimersByTimeAsync(1_250);
         expect(native.sent).toEqual([]);
         await native.open();
@@ -137,8 +147,8 @@ describe('RTC outbound transport results', () => {
         onTestFinished(() => manager.dispose());
         const queuedMessage = createMessage('queued-owner');
 
-        await manager.enqueueIfAbsent(queuedMessage);
-        await manager.enqueueIfAbsent(createMessage('available', 'peer-2'));
+        await enqueueRtcAndDrain(manager, queuedMessage);
+        await enqueueRtcAndDrain(manager, createMessage('available', 'peer-2'));
 
         expect(blockedNative.sent).toEqual([]);
         expect(availableNative.sent).toHaveLength(1);
@@ -159,7 +169,7 @@ describe('RTC outbound transport results', () => {
         const manager = createManager([channel], resources);
         onTestFinished(() => manager.dispose());
         const message = createMessage('queued-close');
-        await manager.enqueueIfAbsent(message);
+        await enqueueRtcAndDrain(manager, message);
 
         await native.close();
         await vi.advanceTimersByTimeAsync(0);
@@ -185,7 +195,7 @@ describe('RTC outbound transport results', () => {
         const manager = createManager([channel], resources);
         onTestFinished(() => manager.dispose());
         const message = createMessage('attempt-lease', 'peer-1', 30_000);
-        await manager.enqueueIfAbsent(message);
+        await enqueueRtcAndDrain(manager, message);
 
         const leaseAt = await peekOutboundWorkReadyAt(resources.workQueue, resources.admissionStore.namespace);
         expect(leaseAt).toBeGreaterThanOrEqual(Date.now() + 10_000);
@@ -211,7 +221,7 @@ describe('RTC outbound transport results', () => {
         const manager = createManager([channel], createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }));
         onTestFinished(() => manager.dispose());
 
-        await manager.enqueueIfAbsent(createMessage('dispose-retained'));
+        await enqueueRtcAndDrain(manager, createMessage('dispose-retained'));
         expect(channel.readHealth().queuedItemCount).toBe(1);
         manager.dispose();
         expect(channel.readHealth().queuedItemCount).toBe(0);
@@ -227,7 +237,7 @@ describe('RTC outbound transport results', () => {
         native.bufferedAmount = 128 * 1024;
         const manager = createManager([channel], createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }));
         onTestFinished(() => manager.dispose());
-        await manager.enqueueIfAbsent(createMessage('expire-retained'));
+        await enqueueRtcAndDrain(manager, createMessage('expire-retained'));
 
         await vi.advanceTimersByTimeAsync(5_000);
         expect(channel.readHealth().queuedItemCount).toBe(0);
@@ -246,7 +256,7 @@ describe('RTC outbound transport results', () => {
         onTestFinished(() => manager.dispose());
         const message = createMessage('backpressure');
 
-        await manager.enqueueIfAbsent(message);
+        await enqueueRtcAndDrain(manager, message);
 
         expect(native.sent).toEqual([]);
         expect(await peekOutboundWorkReadyAt(resources.workQueue, resources.admissionStore.namespace))
@@ -266,7 +276,7 @@ describe('RTC outbound transport results', () => {
         const manager = createManager([channel], resources);
         onTestFinished(() => manager.dispose());
 
-        const result = await manager.enqueueIfAbsent(createMessage('connecting'));
+        const result = await enqueueRtcAndDrain(manager, createMessage('connecting'));
 
         expect(result.status).toBe('accepted');
         expect(nativeRuntime.createdConnections[0].channels[0].sent).toEqual([]);
@@ -316,6 +326,19 @@ function createManager(
         rateLimiter: toRateLimiter(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+}
+
+/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+async function enqueueRtcAndDrain(
+    manager: WebRtcOverlayMulticastManager,
+    msg: ALMessage
+): Promise<ALOutboundEnqueueResult> {
+    const result = await manager.enqueueIfAbsent(msg);
+    await manager.dequeue(
+        WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
+        createDefaultALOutboundDequeueResilience()
+    );
+    return result;
 }
 
 function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {

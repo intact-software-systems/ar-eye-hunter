@@ -1,8 +1,6 @@
-import {
-    peekOutboundTestWorkReadyAt
-} from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import {
     describe,
     expect,
@@ -10,13 +8,16 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { peekOutboundWorkReadyAt } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     toALOutboundTransportMessage,
@@ -24,6 +25,8 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createDefaultResourceInboxDequeuer,
     NonRetryableException,
@@ -58,7 +61,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             canonicalScope: namespace,
             backend,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
         });
         await store.commitBundle({
             senderId: 'self',
@@ -76,17 +79,16 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.replaceIfObserved(original, { ...original, resource: '{invalid-json' }))
             .not.toBeNull();
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 });
+        await runOutboundWorkBatch({ admissionStore: store, workQueue: backend.workQueue });
 
-        expect(claimed.map((effect) => effect.payload)).toEqual([{ kind: 'ack-timeout', msgId: 'valid' }]);
         expect(await other.workQueue.getItem(malformedKey)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             resource: '{invalid-json',
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
-        await other.workQueue.releaseEntries([claimed[0]!.entry], { status: EntityStatus.COMPLETED, delayMs: null });
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
-        expect(await store.claimReadyEffects({ maxCount: 3 })).toEqual([]);
+        expect(await other.workQueue.getItem(toALOutboundWorkKey(namespace, 'valid')))
+            .toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, namespace)).toBeUndefined();
     });
 
     postgresIt('commits one canonical payload, full identity and compact action, then reloads through another connection', async () => {
@@ -96,11 +98,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             namespace: entry.key.contextId,
             canonicalScope: `local-session:${'long-scope/'.repeat(60)}:${entry.key.contextId}`,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
         };
         const first = createALOutboundAdmissionStore({
-    nowMs: Date.now,
-    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend });
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend
+        });
         const original = createSupersedingMessage('sender', 1);
         const message = {
             ...original,
@@ -116,11 +120,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const canonicalKey = decision.entries[0].key;
         const identityKey = toALOutboundIdentityKey(canonicalKey);
         ownedKeys.push(canonicalKey, identityKey);
-        expect(await first.commitBundle(decision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
+        expect(await first.commitBundle(decision.bundle!)).toBe('committed');
 
         const restarted = createALOutboundAdmissionStore({
-    nowMs: Date.now,
-    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend: other });
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend: other
+        });
         expect((await restarted.readSentMessage(message.id.msgId))?.msg).toEqual(message);
         const canonical = await other.workQueue.getItem(canonicalKey);
         const identity = await other.workQueue.getItem(identityKey);
@@ -131,17 +137,18 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             senderId: message.id.senderId
         });
         expect(identity?.audit.expiryTs.epochMilliseconds).toBe(message.constraints?.expiresAtMs);
-        const [action] = await restarted.claimReadyEffects({ maxCount: 10 });
-        expect(action.canonicalMessage).toEqual(message);
-        expect(action.entry.resource).not.toContain(message.payload.resource);
-        for (const row of [canonical!, identity!, action.entry]) {
+        const restartedWork = createOutboundWork({ admissionStore: restarted, workQueue: other.workQueue });
+        const [action] = await restartedWork.claim(10);
+        expect(action!.work.canonicalMessage).toEqual(message);
+        expect(action!.claim.entry.resource).not.toContain(message.payload.resource);
+        for (const row of [canonical!, identity!, action!.claim.entry]) {
             expect(row.key.topicId.length).toBeLessThanOrEqual(36);
             expect(row.key.resourceId.length).toBeLessThanOrEqual(128);
             expect(row.key.contextId.length).toBeLessThanOrEqual(128);
         }
-        await restarted.completeEffect(action.entry);
+        await restartedWork.port.release(action!.claim, { status: 'completed' });
         expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).status).toBe('duplicate');
-        expect(await first.claimReadyEffects({ maxCount: 10 })).toEqual([]);
+        expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
         const conflicting = {
             ...identity!,
             resource: JSON.stringify({
@@ -152,7 +159,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.replaceIfObserved(identity!, conflicting)).not.toBeNull();
         await expect(first.readSentMessage(message.id.msgId)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await other.workQueue.getItem(canonicalKey))?.resource).toBe(canonical?.resource);
-        expect(await first.claimReadyEffects({ maxCount: 10 })).toEqual([]);
+        expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
     });
 
     postgresIt('aborts canonical payload, identity, action and metadata together when the final action slot races', async () => {
@@ -182,7 +189,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         );
         onTestFinished(() => race.mockRestore());
 
-        expect(await store.commitBundle(decision.bundle!, decodeALOutboundTransportMessage)).toBe('conflict');
+        expect(await store.commitBundle(decision.bundle!)).toBe('conflict');
         expect(await other.workQueue.getItem(canonicalKey)).toBeUndefined();
         expect(await other.workQueue.getItem(identityKey)).toBeUndefined();
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
@@ -197,14 +204,18 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             namespace: entry.key.contextId,
             canonicalScope: entry.key.contextId,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
         };
         const first = createALOutboundAdmissionStore({
-    nowMs: Date.now,
-    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend });
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend
+        });
         const second = createALOutboundAdmissionStore({
-    nowMs: Date.now,
-    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend: other });
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend: other
+        });
         const original = createSupersedingMessage('sender-a', 1);
         const conflicting = { ...original, id: { ...original.id, senderId: 'sender-b' } };
         const firstDecision = await readSupersedenceDecision({ store: first, message: original, supersedenceKey: 'sender-a', nowMs: Date.now });
@@ -212,8 +223,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         for (const decision of [firstDecision, secondDecision]) {
             ownedKeys.push(decision.entries[0].key, toALOutboundIdentityKey(decision.entries[0].key));
         }
-        expect(await first.commitBundle(firstDecision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
-        await expect(second.commitBundle(secondDecision.bundle!, decodeALOutboundTransportMessage)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await first.commitBundle(firstDecision.bundle!)).toBe('committed');
+        await expect(second.commitBundle(secondDecision.bundle!)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await second.readSentMessage(original.id.msgId))?.msg.id.senderId).toBe('sender-a');
         expect(await other.workQueue.getItem(secondDecision.entries[0].key)).toBeUndefined();
     });
@@ -321,14 +332,18 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             namespace: entry.key.contextId,
             canonicalScope: entry.key.contextId,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
         };
         const first = createALOutboundAdmissionStore({
-    nowMs: Date.now,
-    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend });
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend
+        });
         const second = createALOutboundAdmissionStore({
-    nowMs: Date.now,
-    decodePrepared: decodeALOutboundTransportMessage, ...settings, backend: other });
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend: other
+        });
         const older = createSupersedingMessage('sender-a', 1);
         const newer = createSupersedingMessage('sender-b', 2);
         const oldDecision = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
@@ -340,11 +355,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             toALOutboundIdentityKey(newDecision.entries[0].key)
         );
 
-        expect(await second.commitBundle(newDecision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
-        expect(await first.commitBundle(oldDecision.bundle!, decodeALOutboundTransportMessage)).toBe('conflict');
+        expect(await second.commitBundle(newDecision.bundle!)).toBe('committed');
+        expect(await first.commitBundle(oldDecision.bundle!)).toBe('conflict');
         expect(await first.readSentMessage(older.id.msgId)).toBeUndefined();
-        const pending = await first.claimReadyEffects({ maxCount: 10 });
-        expect(pending.map((work) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')).toEqual([newer.id.msgId]);
+        const pending = await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10);
+        expect(
+            pending.map(({ work }) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')
+        ).toEqual([newer.id.msgId]);
         const retried = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
         expect(retried.status).toBe('superseded');
         expect(retried.bundle).toBeUndefined();
@@ -526,6 +543,42 @@ interface AdmissionStorageFixture {
     readonly ownedKeys: Key[];
 }
 
+/** Claims and decodes work the way the owner's batch does, for a store the test built itself. */
+function createOutboundWork(stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>) {
+    const port = createTestALOutboundWorkPort({ ...stores, nowMs: Date.now });
+    return {
+        port,
+        claim: async (maxCount: number) => {
+            const claims = await port.claim({ maxCount, observedEntries: undefined });
+            return await Promise.all(claims.map(async (claim) => ({
+                claim,
+                work: await stores.admissionStore.readWorkSnapshot(claim.entry)
+            })));
+        }
+    };
+}
+
+/** Runs one owner batch: a row it cannot decode is rejected, and a valid sibling still runs. */
+async function runOutboundWorkBatch(
+    stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>
+): Promise<void> {
+    const runtime = createDefaultALOutboundMessageRuntime({
+        stores,
+        outbox: new InMemoryQueueBox(new Map()),
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const })
+    });
+    try {
+        await runtime.ready();
+    }
+    finally {
+        runtime.dispose();
+    }
+}
+
 async function createStorage(
     nowMs: () => number = Date.now,
     namespace: string = crypto.randomUUID()
@@ -583,7 +636,7 @@ function createSupersedingMessage(senderId: string, sequence: number): ALMessage
 }
 
 interface ReadSupersedenceDecisionInput {
-    readonly store: ALOutboundAdmissionStore;
+    readonly store: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
     readonly message: ALMessage;
     readonly supersedenceKey?: string;
     readonly nowMs: () => number;

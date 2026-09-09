@@ -1,4 +1,3 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -8,6 +7,8 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
@@ -31,8 +32,8 @@ describe('WS server pre-submission readiness', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
         const { backend, store, server, native, context, service, selectedRecipient } = createServerRuntime();
         const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementation(async (...args) => {
-            const result = await commit(...args);
+        vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
+            const result = await commit(bundle);
             if (unavailable === 'missing') {
                 server.connections.delete(context.id);
             }
@@ -43,6 +44,8 @@ describe('WS server pre-submission readiness', () => {
         });
         const message = createMessage();
         await service.enqueueOutboxIfAbsent(message);
+        // Admission returns before its own send batch: the deferred attempt is what this asserts on.
+        await vi.advanceTimersByTimeAsync(0);
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault({
             circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
@@ -76,8 +79,8 @@ describe('WS server pre-submission readiness', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
         const { backend, store, native, service } = createServerRuntime();
         const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementation(async (...args) => {
-            const result = await commit(...args);
+        vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
+            const result = await commit(bundle);
             native.close();
             return result;
         });
@@ -100,6 +103,7 @@ describe('WS server pre-submission readiness', () => {
             throw new Error('native write failed');
         });
         await service.enqueueOutboxIfAbsent(createMessage());
+        await vi.advanceTimersByTimeAsync(0);
         expect(send).toHaveBeenCalledTimes(1);
         const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
         const work = await backend.workQueue.getItem(key);
@@ -110,7 +114,7 @@ describe('WS server pre-submission readiness', () => {
 
 interface ServerRuntime {
     readonly backend: InMemoryAdmissionBackend;
-    readonly store: ALOutboundAdmissionStore;
+    readonly store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
     readonly server: JsonWebSocketServer;
     readonly native: TestWebSocket;
     readonly context: ConnectionContext;
@@ -123,7 +127,7 @@ function createServerRuntime(): ServerRuntime {
     const store = createALOutboundAdmissionStore({
         nowMs: Date.now,
         canonicalScope: 'ws-readiness',
-        decodePrepared: decodeALOutboundTransportMessage,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
         namespace: 'ws-readiness',
         backend,
         supersedenceTrackTtlMs: 300_000,
@@ -139,7 +143,7 @@ function createServerRuntime(): ServerRuntime {
         name: 'server',
         socket: server,
         outbox: new InMemoryQueueBox(),
-        outboundStores: { admissionStore: store },
+        outboundStores: { admissionStore: store, workQueue: backend.workQueue },
         targetResolver: {
             resolvePeerRecipients: () => [{ ...selectedRecipient }],
             resolveGroupRecipients: () => [],

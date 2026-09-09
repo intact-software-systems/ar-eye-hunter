@@ -15,9 +15,8 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
-    createFlakyOutboundAdmissionStore,
     createOutboundMessage,
-    toOutboundTestStores
+    holdOutboundClaims
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -39,24 +38,33 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
-    const options = { namespace: 'outbound-pending', backend, supersedenceTrackTtlMs: 60_000, retention: normalizeALRuntimeStoreRetention() };
+    const options = {
+        nowMs: Date.now,
+        canonicalScope: 'outbound-pending',
+        decodePrepared: decodeOutboundTestPayload,
+        namespace: 'outbound-pending',
+        backend,
+        supersedenceTrackTtlMs: 60_000,
+        retention: normalizeALRuntimeStoreRetention()
+    };
     const store = createALOutboundAdmissionStore(options);
+    const stores = { admissionStore: store, workQueue: backend.workQueue };
     const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-sender-version'));
     const commit = store.commitBundle.bind(store);
     let first = true;
-    const heldStore = createFlakyOutboundAdmissionStore(store, {
-        claimReadyEffects: async () => [],
-        commitBundle: async (bundle, decode) => {
-            if (first) {
-                first = false;
-                expect(await commit(competitor, decodeOutboundTestPayload)).toBe('committed');
-            }
-            return await commit(bundle, decode);
+    // A competing sender wins the version fence inside the first commit, so the admission below is
+    // told its own bundle conflicted and must retain a pending admission instead.
+    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
+        if (first) {
+            first = false;
+            expect(await commit(competitor)).toBe('committed');
         }
+        return await commit(bundle);
     });
+    const claims = holdOutboundClaims(stores);
     const original = createOutboundMessage('pending-unique-payload', { ttlMs: 10_000 });
     const initial = createDefaultOutboundTestRuntime({
-        stores: toOutboundTestStores(heldStore),
+        stores,
         queueEngine: new InboxOutboxEngine(),
         planOutgoingMessage: (msg) => ({
             msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: Date.now() + 1_000 } },
@@ -73,26 +81,25 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     expect((await initial.enqueueIfAbsent(original)).status).toBe('pending-admission');
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
     initial.dispose();
-    const rows = await Promise.all((await store.workQueue.getAllKeys()).map((key) => store.workQueue.getItem(key)));
+    await claims.release();
+    vi.restoreAllMocks();
+    const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
     expect(rows.filter((row) => row?.resource.includes('pending-unique-payload'))).toHaveLength(1);
     expect(rows.filter((row) => row?.resource.includes('"kind":"admit-message"'))).toHaveLength(1);
-    const restartedStore = createALOutboundAdmissionStore({
-        decodePrepared: decodeOutboundTestPayload,
-        ...options,
-        backend: kind === 'memory'
-            ? backend
-            : new IndexedDbAdmissionBackend({
-                dbName: dbName,
-                storeName: 'entries',
-                nowMs: Date.now,
-                newWriteToken: crypto.randomUUID.bind(crypto),
-                observer: createPassThroughIndexedDbOperationObserver()
-            })
-    });
+    const restartedBackend = kind === 'memory'
+        ? backend
+        : new IndexedDbAdmissionBackend({
+            dbName: dbName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+    const restartedStore = createALOutboundAdmissionStore({ ...options, backend: restartedBackend });
     const engine = new InboxOutboxEngine();
     const sent: string[] = [];
     const restarted = createDefaultOutboundTestRuntime({
-        stores: toOutboundTestStores(restartedStore),
+        stores: { admissionStore: restartedStore, workQueue: restartedBackend.workQueue },
         queueEngine: engine,
         planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'changed' }] }),
         sendPreparedMessage: async (prepared, _phase, lifecycle) => {

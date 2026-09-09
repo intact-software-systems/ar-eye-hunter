@@ -1,4 +1,4 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
@@ -8,12 +8,23 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import {
+    createALOutboundAdmissionStore,
+    type ALOutboundAdmissionStore,
+    type ALOutboundDurableEffect
+} from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    decodeALOutboundWorkEntry,
+    toALOutboundWorkType
+} from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     describe,
     expect,
@@ -31,18 +42,18 @@ interface OutboundObligationInput {
 
 describe('outbound control admission identity', () => {
     it.each(['ack', 'nack', 'repair'] as const)('does not create state or repair effects for an unknown %s', async (type) => {
-        const { store, state } = createFixture();
-        const control = controlMessage(type);
+        const { admissionStore, workQueue, control, state } = createFixture();
+        const untracked = controlMessage(type);
 
-        expect(await store.acceptControlMessage(control, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+        expect((await control.admit(untracked)).kind).toBe('rejected');
         expect(state.data.size).toBe(0);
-        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
     });
 
     it.each(['ack', 'nack', 'repair'] as const)(
         'authorizes full long message and ordering identities for %s without trusting its bounded route',
         async (type) => {
-            const { store, state } = createFixture();
+            const { admissionStore, workQueue, control, state } = createFixture();
             const msgId = 'runtime-message/'.repeat(20);
             const message: ALMessage = {
                 id: { v: 2, msgId, senderId: 'sender', ts: Date.now() },
@@ -52,8 +63,8 @@ describe('outbound control admission identity', () => {
                 constraints: { expiresAtMs: Date.now() + 30_000 },
                 ordering: { orderingKey: 'ordered-stream/'.repeat(20), seq: 10, epoch: 7 }
             };
-            const admission = await computeOutboundTestAdmission(store, message);
-            await store.commitBundle({
+            const admission = await computeOutboundTestAdmission(admissionStore, message);
+            await admissionStore.commitBundle({
                 ...admission,
                 mutations: [...admission.mutations, {
                     kind: 'set-pending-ack',
@@ -71,25 +82,25 @@ describe('outbound control admission identity', () => {
             const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
-            const control = type === 'ack'
+            const accepted = type === 'ack'
                 ? newALAckControlMessage(id, { ...common, ackedMsgId: msgId, status: 'delivered' })
                 : type === 'nack'
                 ? newALNackControlMessage(id, { ...common, ...ordering, msgId, reason: 'gap' })
                 : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
             const before = [...state.data];
-            const wrongRoute = { ...control, route: { ...control.route, resourceId: 'another-locator' } };
-            expect(await store.acceptControlMessage(wrongRoute, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            const wrongRoute = { ...accepted, route: { ...accepted.route, resourceId: 'another-locator' } };
+            expect((await control.admit(wrongRoute)).kind).toBe('not-handled');
             const wrongIdentity = {
-                ...control,
+                ...accepted,
                 payload: {
-                    ...control.payload,
+                    ...accepted.payload,
                     resource: JSON.stringify({
-                        ...JSON.parse(control.payload.resource),
+                        ...JSON.parse(accepted.payload.resource),
                         [type === 'ack' ? 'ackedMsgId' : 'msgId']: msgId + '-unowned'
                     })
                 }
             };
-            expect(await store.acceptControlMessage(wrongIdentity, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            expect((await control.admit(wrongIdentity)).kind).toBe('not-handled');
             const unknownIdentity = {
                 ...wrongIdentity,
                 route: toStrictAppInboxQueueKey({
@@ -98,40 +109,40 @@ describe('outbound control admission identity', () => {
                     contextId: 'sender'
                 })
             };
-            expect(await store.acceptControlMessage(unknownIdentity, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            expect((await control.admit(unknownIdentity)).kind).toBe('rejected');
             if (type !== 'ack') {
                 const wrongOrdering = {
-                    ...control,
+                    ...accepted,
                     payload: {
-                        ...control.payload,
+                        ...accepted.payload,
                         resource: JSON.stringify({
-                            ...JSON.parse(control.payload.resource),
+                            ...JSON.parse(accepted.payload.resource),
                             orderingKey: ordering.orderingKey + '-unowned'
                         })
                     }
                 };
-                expect(await store.acceptControlMessage(wrongOrdering, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+                expect((await control.admit(wrongOrdering)).kind).toBe('rejected');
             }
             const oversized = {
-                ...control,
+                ...accepted,
                 payload: {
-                    ...control.payload,
+                    ...accepted.payload,
                     resource: JSON.stringify({
-                        ...JSON.parse(control.payload.resource),
+                        ...JSON.parse(accepted.payload.resource),
                         [type === 'ack' ? 'ackedMsgId' : 'msgId']: 'x'.repeat(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes + 1)
                     })
                 }
             };
-            expect(await store.acceptControlMessage(oversized, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+            expect((await control.admit(oversized)).kind).toBe('not-handled');
             expect([...state.data]).toEqual(before);
 
-            expect(await store.acceptControlMessage(control, decodeALOutboundPreparedMessage)).toEqual({ handled: true });
+            expect(await control.admit(accepted)).toEqual({ kind: 'committed' });
             if (type === 'ack') {
-                expect(await store.readPendingAck(msgId)).toBeUndefined();
+                expect(await admissionStore.readPendingAck(msgId)).toBeUndefined();
             }
             else {
-                const effects = await store.claimReadyEffects({ maxCount: 10 });
-                expect(effects.map((effect) => effect.payload)).toContainEqual(expect.objectContaining({
+                const retained = await readRetainedWork(admissionStore, workQueue);
+                expect(retained).toContainEqual(expect.objectContaining({
                     kind: 'repair-hint',
                     msgId,
                     request: expect.objectContaining({ orderingTrackKey: toALOrderingTrackKey(message), missingSeqs: [2] })
@@ -141,58 +152,55 @@ describe('outbound control admission identity', () => {
     );
 
     it('ignores an ACK from an unexpected peer and accepts the expected receiver without changing the input', async () => {
-        const { store, state } = createFixture();
-        await seedDirectObligation(store);
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
-        expect(await store.acceptControlMessage(controlMessage('ack', 'intruder'), decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+        expect((await control.admit(controlMessage('ack', 'intruder'))).kind).toBe('rejected');
         expect([...state.data]).toEqual(baseline);
         const ack = controlMessage('ack');
         const candidate = JSON.stringify(ack);
 
-        expect(await store.acceptControlMessage(ack, decodeALOutboundPreparedMessage)).toEqual({ handled: true });
-        expect(await store.readPendingAck('message')).toBeUndefined();
+        expect(await control.admit(ack)).toEqual({ kind: 'committed' });
+        expect(await admissionStore.readPendingAck('message')).toBeUndefined();
         expect(JSON.stringify(ack)).toBe(candidate);
         const acceptedState = [...state.data];
-        expect(await store.acceptControlMessage(ack, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+        expect((await control.admit(ack)).kind).toBe('rejected');
         expect([...state.data]).toEqual(acceptedState);
     });
 
     it.each(['nack', 'repair'] as const)('does not let an unrelated peer create %s work for a tracked message', async (type) => {
-        const { store, state } = createFixture();
-        await seedDirectObligation(store);
+        const { admissionStore, workQueue, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
 
-        expect(await store.acceptControlMessage(controlMessage(type, 'intruder'), decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+        expect((await control.admit(controlMessage(type, 'intruder'))).kind).toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
     });
 
     it('rejects a control addressed to another local message owner', async () => {
-        const { store, state } = createFixture();
-        await seedDirectObligation(store);
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
             { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
             { fromPeerId: 'receiver', toPeerId: 'other-sender', ackedMsgId: 'message', status: 'delivered', observedAtEpochMs: 1 }
         );
 
-        expect(await store.acceptControlMessage(ack, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
+        expect((await control.admit(ack)).kind).toBe('rejected');
         expect([...state.data]).toEqual(baseline);
     });
 
     it('admits one stable repair hint and rejects a semantic duplicate', async () => {
-        const { store, state } = createFixture();
-        await seedDirectObligation(store);
+        const { admissionStore, workQueue, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
         const first = repairControl(1);
 
-        expect(await store.acceptControlMessage(first, decodeALOutboundPreparedMessage)).toEqual({ handled: true });
+        expect(await control.admit(first)).toEqual({ kind: 'committed' });
         const acceptedState = [...state.data];
-        expect(await store.acceptControlMessage(repairControl(2), decodeALOutboundPreparedMessage)).toEqual({
-            handled: false
-        });
+        expect((await control.admit(repairControl(2))).kind).toBe('rejected');
         expect([...state.data]).toEqual(acceptedState);
-        const effects = await store.claimReadyEffects({ maxCount: 10 });
-        expect(effects.map((effect) => effect.payload)).toEqual([{
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([{
             kind: 'repair-hint',
             msgId: 'message',
             request: {
@@ -205,8 +213,8 @@ describe('outbound control admission identity', () => {
     });
 
     it('keeps control history within the persisted collection limit', async () => {
-        const { store, state } = createFixture();
-        await seedDirectObligation(store);
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
 
         for (let serverSnapshotVersion = 0; serverSnapshotVersion <= 256; serverSnapshotVersion++) {
             const nack = newALNackControlMessage(
@@ -220,7 +228,7 @@ describe('outbound control admission identity', () => {
                     serverSnapshotVersion
                 }
             );
-            expect(await store.acceptControlMessage(nack, decodeALOutboundPreparedMessage)).toEqual({ handled: true });
+            expect(await control.admit(nack)).toEqual({ kind: 'committed' });
         }
 
         const stored = state.data.get('outbound-control:control:nacks:message');
@@ -231,50 +239,31 @@ describe('outbound control admission identity', () => {
     });
 
     it('uses a frozen multicast pending audience to admit repair controls', async () => {
-        const { store, state } = createFixture();
-        await seedMulticastObligation(store);
+        const { admissionStore, control, state } = createFixture();
+        await seedMulticastObligation(admissionStore);
 
-        expect(await store.acceptControlMessage(controlMessage('repair'), decodeALOutboundPreparedMessage)).toEqual({
-            handled: true
-        });
+        expect(await control.admit(controlMessage('repair'))).toEqual({ kind: 'committed' });
         const acceptedState = [...state.data];
-        expect(await store.acceptControlMessage(controlMessage('repair', 'intruder'), decodeALOutboundPreparedMessage)).toEqual({
-            handled: false
-        });
+        expect((await control.admit(controlMessage('repair', 'intruder'))).kind).toBe('rejected');
         expect([...state.data]).toEqual(acceptedState);
     });
 
     it('rejects repair hints outside the retained message ordering track before writes', async () => {
-        const { store, state } = createFixture();
-        await seedOrderedObligation(store);
+        const { admissionStore, control, state } = createFixture();
+        await seedOrderedObligation(admissionStore);
         const baseline = [...state.data];
 
-        expect(
-            await store.acceptControlMessage(
-                orderedRepairControl('other-track', [2]),
-                decodeALOutboundPreparedMessage
-            )
-        ).toEqual({ handled: false });
+        expect((await control.admit(orderedRepairControl('other-track', [2]))).kind).toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect(
-            await store.acceptControlMessage(
-                orderedRepairControl('stream:sender:7', [11]),
-                decodeALOutboundPreparedMessage
-            )
-        ).toEqual({ handled: false });
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [11]))).kind).toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect(
-            await store.acceptControlMessage(
-                orderedRepairControl('stream:sender:7', [2, 3]),
-                decodeALOutboundPreparedMessage
-            )
-        ).toEqual({ handled: true });
+        expect(await control.admit(orderedRepairControl('stream:sender:7', [2, 3]))).toEqual({ kind: 'committed' });
     });
 
     it('completes a frozen 256-peer audience after diagnostic ACK history is already full', async () => {
-        const { store, state } = createFixture();
+        const { admissionStore, control, state } = createFixture();
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `peer-${index}`);
-        await seedObligation(store, {
+        await seedObligation(admissionStore, {
             targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
             expectedPeerIds,
             ackedPeerIds: expectedPeerIds.slice(0, -1),
@@ -303,15 +292,14 @@ describe('outbound control admission identity', () => {
             expireAtTimestamp: Date.now() + 60_000
         });
 
-        expect(await store.acceptControlMessage(controlMessage('ack', 'peer-255'), decodeALOutboundPreparedMessage))
-            .toEqual({ handled: true });
-        expect(await store.readPendingAck('message')).toBeUndefined();
+        expect(await control.admit(controlMessage('ack', 'peer-255'))).toEqual({ kind: 'committed' });
+        expect(await admissionStore.readPendingAck('message')).toBeUndefined();
         expect(decodeALAdmissionControlValue(state.data.get(key)?.value, 'message', 'acks').values).toHaveLength(256);
     });
 
-    it('reports a typed conflict when message ownership changes after the control read', async () => {
-        const { backend, store, state } = createFixture();
-        await seedDirectObligation(store);
+    it('retains admit-control work when message ownership changes after the control read', async () => {
+        const { backend, admissionStore, workQueue, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation) => {
             await write(async (transaction) => {
@@ -320,17 +308,50 @@ describe('outbound control admission identity', () => {
             return await write(operation);
         });
 
-        await expect(store.acceptControlMessage(controlMessage('ack'), decodeALOutboundPreparedMessage))
-            .rejects.toBeInstanceOf(ALAdmissionBackendConflictError);
+        expect(await control.admit(controlMessage('ack'))).toEqual({ kind: 'pending-control' });
         expect(state.data.has('outbound-control:control:acks:message')).toBe(false);
-        expect(await store.claimReadyEffects({ maxCount: 10 })).toEqual([]);
+        const retained = await readRetainedWork(admissionStore, workQueue);
+        expect(retained.map((payload) => payload.kind)).toEqual(['admit-control']);
+
+        // The replay finds the new owner and terminalizes the work instead of retrying forever.
+        expect(await control.replay(toPendingControl(retained[0]!))).toEqual({ status: 'completed' });
+        expect(state.data.has('outbound-control:control:acks:message')).toBe(false);
+    });
+
+    it('commits an accepted repair and the work it forwards in one transaction', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const commits = recordALOutboundCommits(backend, admissionStore.namespace);
+
+        expect(await control.admit(repairControl(1))).toEqual({ kind: 'committed' });
+
+        // One commit carries the accepted repair history and the hint it forwards; a split write fails here.
+        expect(commits).toHaveLength(1);
+        expect(commits[0]!.workKinds).toEqual(['repair-hint']);
+        expect(commits[0]!.storeKeys).toContainEqual(expect.stringContaining(':control:repairs:'));
+        expect((await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind))
+            .toEqual(['repair-hint']);
+    });
+
+    it('answers pending-control for a backend conflict without an inner retry', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const write = vi.spyOn(backend, 'write').mockImplementationOnce(() => {
+            throw new ALAdmissionBackendConflictError('simulated outbound control conflict');
+        });
+
+        expect(await control.admit(controlMessage('ack'))).toEqual({ kind: 'pending-control' });
+
+        expect(write).toHaveBeenCalledTimes(1);
+        expect((await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind))
+            .toEqual(['admit-control']);
     });
 });
 
 function createFixture() {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
-    const store = createALOutboundAdmissionStore({
+    const admissionStore = createALOutboundAdmissionStore({
         nowMs: Date.now,
         canonicalScope: 'outbound-control',
         decodePrepared: decodeALOutboundTransportMessage,
@@ -339,11 +360,88 @@ function createFixture() {
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    return { backend, store, state };
+    return {
+        backend,
+        admissionStore,
+        state,
+        workQueue: state.workQueue,
+        control: createTestALOutboundControlAdmission({
+            admissionStore,
+            workQueue: state.workQueue,
+            nowMs: Date.now
+        })
+    };
 }
 
-async function seedDirectObligation(store: ALOutboundAdmissionStore): Promise<void> {
-    await seedObligation(store, {
+/** The work rows the owner retained for this scope, decoded the way its worker decodes them. */
+async function readRetainedWork(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    workQueue: QueueBoxResourceEntryRepository
+): Promise<readonly ALOutboundDurableEffect<ALOutboundTransportMessage>[]> {
+    const page = await workQueue.readWorkPage({
+        typeId: toALOutboundWorkType(admissionStore.namespace),
+        status: EntityStatus.NEW,
+        maxToRead: 10,
+        cursor: null
+    });
+    return await Promise.all(
+        page.entries.map(async (entry) => (await admissionStore.readWorkSnapshot(entry)).payload)
+    );
+}
+
+function toPendingControl(payload: ALOutboundDurableEffect<ALOutboundTransportMessage>) {
+    if (payload.kind !== 'admit-control') {
+        throw new Error(`Expected retained admit-control work, received ${payload.kind}`);
+    }
+    return payload;
+}
+
+interface ALOutboundCommitObservation {
+    readonly storeKeys: string[];
+    readonly workKinds: string[];
+}
+
+/** Records what each backend write commits, so a commit boundary can be asserted rather than coexistence. */
+function recordALOutboundCommits(
+    backend: InMemoryAdmissionBackend,
+    namespace: string
+): readonly ALOutboundCommitObservation[] {
+    const write = backend.write.bind(backend);
+    const commits: ALOutboundCommitObservation[] = [];
+    vi.spyOn(backend, 'write').mockImplementation((run, executionExpiresAtMs) => {
+        const commit: ALOutboundCommitObservation = { storeKeys: [], workKinds: [] };
+        commits.push(commit);
+        return write(async (tx) =>
+            await run({
+                read: <V>(key: string, decode: ALAdmissionDecoder<V>) => tx.read(key, decode),
+                list: <V>(prefix: string, decode: ALAdmissionDecoder<V>) => tx.list(prefix, decode),
+                set: async <V>(key: string, value: V, expireAtTimestamp?: number) => {
+                    commit.storeKeys.push(key);
+                    await tx.set(key, value, expireAtTimestamp);
+                },
+                remove: async (key: string) => {
+                    commit.storeKeys.push(key);
+                    await tx.remove(key);
+                },
+                readWork: (key) => tx.readWork(key),
+                writeWork: (entry) => {
+                    commit.workKinds.push(
+                        decodeALOutboundWorkEntry(entry, namespace, {
+                            decodePrepared: decodeALOutboundTransportMessage,
+                            message: undefined
+                        }).payload.kind
+                    );
+                    tx.writeWork(entry);
+                }
+            }), executionExpiresAtMs);
+    });
+    return commits;
+}
+
+async function seedDirectObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): Promise<void> {
+    await seedObligation(admissionStore, {
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         expectedPeerIds: ['receiver'],
         ackedPeerIds: [],
@@ -351,8 +449,10 @@ async function seedDirectObligation(store: ALOutboundAdmissionStore): Promise<vo
     });
 }
 
-async function seedMulticastObligation(store: ALOutboundAdmissionStore): Promise<void> {
-    await seedObligation(store, {
+async function seedMulticastObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): Promise<void> {
+    await seedObligation(admissionStore, {
         targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
         expectedPeerIds: ['receiver', 'other-receiver'],
         ackedPeerIds: [],
@@ -360,8 +460,10 @@ async function seedMulticastObligation(store: ALOutboundAdmissionStore): Promise
     });
 }
 
-async function seedOrderedObligation(store: ALOutboundAdmissionStore): Promise<void> {
-    await seedObligation(store, {
+async function seedOrderedObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): Promise<void> {
+    await seedObligation(admissionStore, {
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         expectedPeerIds: ['receiver'],
         ackedPeerIds: [],
@@ -370,7 +472,7 @@ async function seedOrderedObligation(store: ALOutboundAdmissionStore): Promise<v
 }
 
 async function seedObligation(
-    store: ALOutboundAdmissionStore,
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
     input: OutboundObligationInput
 ): Promise<void> {
     const msg: ALMessage = {
@@ -381,8 +483,8 @@ async function seedObligation(
         constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: input.ordering
     };
-    const admission = await computeOutboundTestAdmission(store, msg);
-    await store.commitBundle({
+    const admission = await computeOutboundTestAdmission(admissionStore, msg);
+    await admissionStore.commitBundle({
         ...admission,
         mutations: [
             ...admission.mutations,

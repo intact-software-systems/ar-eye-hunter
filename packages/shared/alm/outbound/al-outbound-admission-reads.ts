@@ -136,9 +136,12 @@ export class ALOutboundAdmissionReads<TPrepared> {
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
-        const stored = await this.readStoredMessage(msgId);
-        const senderId = stored?.reference.senderId;
+        const owner = await this.readStoredMessage(msgId);
+        const senderId = owner?.reference.senderId;
         const clientRecord = senderId ? await this.readClientRecord(senderId) : undefined;
+        // The fenced row is read after the version that fences it: a delete landing between the two
+        // must be visible here rather than pairing a stale snapshot with a version that counted it.
+        const stored = senderId ? await this.readStoredMessage(msgId) : undefined;
         const sentSnapshot = await this.readCanonicalSentMessage(msgId, stored);
         const msg = sentSnapshot?.msg;
         const plan = msg && stored ? applyALOutboundCapturedPolicy(planner(msg), stored.policy) : undefined;

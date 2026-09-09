@@ -21,7 +21,7 @@ import {
     createOutboundCanonicalEntry,
     createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -108,7 +108,7 @@ it.each([EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE])('does not call a t
     expect(await store.readSentMessage(input.payload.message.msgId)).toBeUndefined();
 });
 
-function pendingInput(store: ALOutboundAdmissionStore) {
+function pendingInput(store: ALOutboundAdmissionStore<OutboundTestPayload>) {
     const message = createOutboundMessage('pending', { ttlMs: 1_000 });
     const canonicalEntry = createOutboundCanonicalEntry(store, message);
     return {

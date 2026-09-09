@@ -405,6 +405,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
             if (error instanceof NotReadyException && isNotReadyException(error)) {
                 return { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
             }
+            // A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected.
+            if (claim.entry.audit.expiryTs.epochMilliseconds <= this.readNowMs()) {
+                return { status: 'completed' };
+            }
             throw error;
         }
     }

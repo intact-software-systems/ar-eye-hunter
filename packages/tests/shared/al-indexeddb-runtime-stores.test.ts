@@ -40,14 +40,17 @@ import {
     type ALInboundRuntimeStores,
     type ALMessage,
     type ALOutboundPlanner,
-    type ALOutboundPreparedMessageDecoder,
-    type ClaimALOutboundEffectsInput,
     type ResourceEntry
 } from '@shared/mod.ts';
 
 import '../setup-browser-indexeddb.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { createFlakyOutboundAdmissionStore, enqueueOutboundOrThrow } from './alm/outbound-runtime-test-fixture.ts';
+import {
+    enqueueOutboundOrThrow,
+    holdOutboundClaims,
+    peekOutboundWorkReadyAt
+} from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -67,7 +70,7 @@ describe('IndexedDB AL runtime stores', () => {
             { expireAtTimestamp: Date.now() + 60_000 }
         );
         const inboundStores = createDefaultIndexedDbALInboundRuntimeStores();
-        const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores();
+        const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload });
 
         const original = newALUnicastMessage('peer-default-schema', { topicId: 'chat', resourceId: 'schema', contextId: 'self' }, 'self', 'chat', {}, {
             ttlMs: 30_000
@@ -426,7 +429,8 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace
+            namespace,
+            decodePrepared: decodeOutboundTestPayload
         });
         const admissionStore = stores.admissionStore;
         const runtime = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, stores });
@@ -450,6 +454,7 @@ describe('IndexedDB AL runtime stores', () => {
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace,
+            decodePrepared: decodeOutboundTestPayload,
             retention: {
                 controlHistoryTtlMs: 20,
                 repairAttemptTtlMs: 20,
@@ -468,7 +473,7 @@ describe('IndexedDB AL runtime stores', () => {
             })
         ).toBe('committed');
 
-        await admissionStore.acceptControlMessage(
+        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now }).admit(
             newALNackControlMessage(
                 { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
                 {
@@ -478,8 +483,7 @@ describe('IndexedDB AL runtime stores', () => {
                     reason: 'gap',
                     observedAtEpochMs: 1
                 }
-            ),
-            decodeOutboundTestPayload
+            )
         );
 
         const beforeExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
@@ -573,22 +577,18 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace
+            namespace,
+            decodePrepared: decodeOutboundTestPayload
         });
         const admissionStore = stores.admissionStore;
         const msg = createOutboundUnicastMessage('msg-indexeddb-crash-before-drain');
-        const runtime1 = createDefaultOutboundRuntime({
-            dbName: dbName,
-            namespace: namespace,
-            sent: sent,
-            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => []
-                }))
-        });
+        const claims = holdOutboundClaims(stores);
+        const runtime1 = createDefaultOutboundRuntime({ dbName, namespace, sent, stores });
 
         await enqueueOutboundOrThrow(runtime1, msg);
         runtime1.dispose();
         expect(sent).toEqual([]);
+        await claims.release();
 
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.ready();
@@ -605,18 +605,13 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace
+            namespace,
+            decodePrepared: decodeOutboundTestPayload
         });
         const admissionStore = stores.admissionStore;
         const msg = createOutboundUnicastMessage('msg-indexeddb-single-claim');
-        const runtime1 = createDefaultOutboundRuntime({
-            dbName: dbName,
-            namespace: namespace,
-            sent: sent,
-            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => []
-                }))
-        });
+        const claims = holdOutboundClaims(stores);
+        const runtime1 = createDefaultOutboundRuntime({ dbName, namespace, sent, stores });
 
         await enqueueOutboundOrThrow(runtime1, msg);
         runtime1.dispose();
@@ -658,41 +653,42 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace
+            namespace,
+            decodePrepared: decodeOutboundTestPayload
         });
         const admissionStore = stores.admissionStore;
         const msg = createOutboundUnicastMessage('msg-indexeddb-ack-during-timeout');
         let acceptedAckDuringTimeout = false;
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now });
+        const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
+        vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
+            const reserved = await reserveEntries(input);
+            const payloads = await Promise.all(
+                [...reserved.values()].map(async (entry) => (await admissionStore.readWorkSnapshot(entry)).payload)
+            );
+            if (!acceptedAckDuringTimeout && payloads.some((payload) => payload.kind === 'ack-timeout')) {
+                acceptedAckDuringTimeout = true;
+                await control.admit(
+                    newALAckControlMessage(
+                        { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
+                        {
+                            ackedMsgId: msg.id.msgId,
+                            fromPeerId: 'peer-1',
+                            toPeerId: 'self',
+                            status: 'accepted',
+                            observedAtEpochMs: 1
+                        }
+                    )
+                );
+            }
+
+            return reserved;
+        });
         const runtime = createDefaultOutboundRuntime({
             dbName: dbName,
             namespace: namespace,
             sent: sent,
-            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) => {
-                        const effects = await admissionStore.claimReadyEffects(input, decode);
-                        if (
-                            !acceptedAckDuringTimeout &&
-                            effects.some((effect) => effect.payload.kind === 'ack-timeout')
-                        ) {
-                            acceptedAckDuringTimeout = true;
-                            await admissionStore.acceptControlMessage(
-                                newALAckControlMessage(
-                                    { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
-                                    {
-                                        ackedMsgId: msg.id.msgId,
-                                        fromPeerId: 'peer-1',
-                                        toPeerId: 'self',
-                                        status: 'accepted',
-                                        observedAtEpochMs: 1
-                                    }
-                                ),
-                                decode
-                            );
-                        }
-
-                        return effects;
-                    }
-                })),
+            stores,
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 persist: false,
@@ -723,13 +719,13 @@ describe('IndexedDB AL runtime stores', () => {
         });
 
         await enqueueOutboundOrThrow(runtime, msg);
-        expect(sent).toEqual([
+        await expect.poll(() => sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
         vi.setSystemTime(new Date('2026-01-01T00:00:00.011Z'));
         await expect.poll(() => acceptedAckDuringTimeout).toBe(true);
-        await expect.poll(() => admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        await expect.poll(() => peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
@@ -783,7 +779,7 @@ interface IndexedDbOutboundFixtureInput {
     readonly dbName: string;
     readonly namespace: string;
     readonly sent: Array<OutboundTestPayload>;
-    readonly stores?: ALOutboundRuntimeStores;
+    readonly stores?: ALOutboundRuntimeStores<OutboundTestPayload>;
     readonly planOutgoingMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planRepairMessage'];
     readonly sendPreparedMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'];
@@ -795,7 +791,8 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
         outbox: new InMemoryQueueBox(new Map()),
         stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace
+            namespace,
+            decodePrepared: decodeOutboundTestPayload
         }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         decodePreparedMessage: decodeOutboundTestPayload,

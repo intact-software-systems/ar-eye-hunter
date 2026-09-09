@@ -9,7 +9,10 @@ import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
-import type { ALOutboundAdmissionEffectStore } from '../al-outbound-admission-effect-store.ts';
+import type {
+    ALOutboundAdmissionEffectStore,
+    ALOutboundEffectCandidate
+} from '../al-outbound-admission-effect-store.ts';
 import {
     toALOutboundControlHistoryKey,
     toALOutboundMessageOwnerKey,
@@ -103,22 +106,37 @@ export class ALOutboundControlAdmission<TPrepared> {
         if (workIssues.length > 0) {
             return { kind: 'rejected', reason: workIssues.map((issue) => issue.message).join('; ') };
         }
-        const committed = await this.backend.write(async (tx) => {
-            if (!await this.hasCurrentControlFence(tx, computed.read)) {
-                return false;
-            }
-            if ((await this.effectStore.validateObservedWork(tx, effects)).length > 0) {
-                return false;
-            }
-            this.effectStore.writeEffects(tx, effects);
-            await this.applyControlAdmission(tx, computed);
-            return true;
-        });
-        if (committed) {
+        if (await this.writeControlAdmission(computed, effects)) {
             return { kind: 'committed' };
         }
         await this.retainPendingControl(msg, nowMs);
         return { kind: 'pending-control' };
+    }
+
+    /** The accepted control and the repair it forwards commit together; a conflict writes nothing. */
+    private async writeControlAdmission(
+        computed: ALControlAdmissionCandidate,
+        effects: readonly ALOutboundEffectCandidate<TPrepared>[]
+    ): Promise<boolean> {
+        try {
+            return await this.backend.write(async (tx) => {
+                if (!await this.hasCurrentControlFence(tx, computed.read)) {
+                    return false;
+                }
+                if ((await this.effectStore.validateObservedWork(tx, effects)).length > 0) {
+                    return false;
+                }
+                this.effectStore.writeEffects(tx, effects);
+                await this.applyControlAdmission(tx, computed);
+                return true;
+            });
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return false;
+            }
+            throw error;
+        }
     }
 
     /** A retained control admission is replayed until it commits or its deadline passes. */

@@ -11,6 +11,7 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
     EntityStatus,
@@ -23,11 +24,11 @@ import {
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import {
-    createDefaultOutboundTestAdmissionStore,
     createDefaultOutboundTestRuntime,
+    createDefaultOutboundTestStores,
     createOutboundMessage,
     enqueueOutboundOrThrow,
-    peekOutboundTestWorkReadyAt,
+    peekOutboundWorkReadyAt,
     reserveOutbox,
     waitUntil
 } from './alm/outbound-runtime-test-fixture.ts';
@@ -42,7 +43,8 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('replays a deferred send using its supplied store, clock, and queue engine', async () => {
         vi.useFakeTimers();
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const admissionStore = stores.admissionStore;
         const sent: string[] = [];
         let nowMs = Date.now() + 1_000;
         vi.setSystemTime(nowMs);
@@ -50,6 +52,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             decodePreparedMessage: decodeOutboundTestPayload,
             admissionStore,
+            workQueue: stores.workQueue,
+            dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
             queueEngine,
@@ -71,7 +75,8 @@ describe('ALOutboundMessageRuntime', () => {
         onTestFinished(() => runtime.dispose());
 
         await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
-        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBe(nowMs + 25);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBe(nowMs + 25);
         nowMs += 24;
         vi.setSystemTime(nowMs);
         await queueEngine.executeOnce();
@@ -82,34 +87,35 @@ describe('ALOutboundMessageRuntime', () => {
         await queueEngine.executeOnce();
         await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry', 'injected-retry']);
-        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
     });
 
     it.each([30_000, 30_001])('expires an asynchronous readiness settlement at %s ms without sending or acknowledging', async (elapsedMs) => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const reschedule = vi.spyOn(admissionStore, 'rescheduleEffect');
-        const complete = vi.spyOn(admissionStore, 'completeEffect');
+        const stores = createDefaultOutboundTestStores();
+        const admissionStore = stores.admissionStore;
+        const release = vi.spyOn(stores.workQueue, 'releaseEntries');
         const settlement = Promise.withResolvers<{ status: 'not-ready'; retryAfterMs: number; }>();
         const send = vi.fn(async () => ({ status: 'queued' as const, settled: settlement.promise }));
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
+            stores,
             sendPreparedMessage: send,
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
         });
         onTestFinished(() => runtime.dispose());
         const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
         await runtime.enqueueIfAbsent(message);
+        await vi.advanceTimersByTimeAsync(0);
         vi.setSystemTime(1_000 + elapsedMs);
         settlement.resolve({ status: 'not-ready', retryAfterMs: 60_000 });
         await vi.advanceTimersByTimeAsync(0);
-        expect(reschedule).not.toHaveBeenCalled();
-        expect(complete).toHaveBeenCalledTimes(1);
-        expect(complete.mock.calls[0][0].audit.expiryTs.epochMilliseconds).toBe(31_000);
+        // A settlement past the deadline is dropped, never rescheduled.
+        expect(release.mock.calls.map((call) => call[1].status)).toEqual([EntityStatus.COMPLETED]);
+        expect(release.mock.calls[0]![0][0]!.audit.expiryTs.epochMilliseconds).toBe(31_000);
         expect(send).toHaveBeenCalledTimes(1);
         expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
-        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
     });
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
@@ -179,7 +185,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: EntityStatus.COMPLETED }]);
-        expect(sent).toEqual([
+        await expect.poll(() => sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         expect(await reserveOutbox(outbox)).toHaveLength(0);
@@ -190,9 +196,10 @@ describe('ALOutboundMessageRuntime', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const admissionStore = stores.admissionStore;
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
+            stores,
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
@@ -257,10 +264,11 @@ describe('ALOutboundMessageRuntime', () => {
     it('retries a not-ready transport after the requested delay across restart', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const admissionStore = stores.admissionStore;
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
+            stores,
             sendPreparedMessage: async () => ({
                 status: 'not-ready',
                 reason: 'RTC lane warming',
@@ -274,11 +282,12 @@ describe('ALOutboundMessageRuntime', () => {
         });
         const msg = createOutboundMessage('msg-not-ready');
         const result = await runtime.enqueueIfAbsent(msg);
+        await vi.advanceTimersByTimeAsync(0);
 
         expect(result.status).toBe('accepted');
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
+            stores,
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
 
@@ -293,16 +302,17 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([msg.id.msgId]);
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
-        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
         restarted.dispose();
     });
 
     it('does not replay a no-targets send after restart', async () => {
         vi.useFakeTimers();
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const admissionStore = stores.admissionStore;
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
+            stores,
             sendPreparedMessage: async () => ({
                 status: 'no-targets',
                 reason: 'solo room'
@@ -315,12 +325,13 @@ describe('ALOutboundMessageRuntime', () => {
         });
 
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
+        await vi.advanceTimersByTimeAsync(0);
 
         expect(result.status).toBe('accepted');
-        expect(await peekOutboundTestWorkReadyAt(admissionStore)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
+            stores,
             sendPreparedMessage: async () => {
                 sent.push('replayed');
 
@@ -405,18 +416,13 @@ describe('ALOutboundMessageRuntime', () => {
         await waitUntil(() => events.includes('send-start'));
 
         expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start']);
-        let settled = false;
-        void enqueue.then(() => {
-            settled = true;
-        });
-        await Promise.resolve();
-        expect(settled).toBe(false);
+        // Admission returns before the send it committed, so the lock is never held across transport.
+        expect((await enqueue).status).toBe('accepted');
 
         sendGate.resolve();
-        await enqueue;
+        await waitUntil(() => events.includes('send-end'));
 
         expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start', 'send-end']);
-        expect(settled).toBe(true);
         runtime.dispose();
     });
 
@@ -451,24 +457,19 @@ describe('ALOutboundMessageRuntime', () => {
         const first = runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-first'));
         await waitUntil(() => started.includes('msg-drain-first'));
 
-        const second = runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-second'));
-        let secondSettled = false;
-        void second.then(() => {
-            secondSettled = true;
-        });
+        const second = await runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-second'));
 
+        expect(second.status).toBe('accepted');
         await waitUntil(() => planned.includes('msg-drain-second'));
-        await Promise.resolve();
-        expect(secondSettled).toBe(false);
+        // The second send waits for the batch that is holding the first, and is not lost by it.
+        expect(started).toEqual(['msg-drain-first']);
 
         firstGate.resolve();
         await waitUntil(() => started.includes('msg-drain-second'));
-        await Promise.resolve();
-        expect(secondSettled).toBe(false);
 
         secondGate.resolve();
-        await Promise.all([first, second]);
-        expect(secondSettled).toBe(true);
+        await first;
+        expect(started).toEqual(['msg-drain-first', 'msg-drain-second']);
         runtime.dispose();
     });
 
@@ -493,8 +494,8 @@ describe('ALOutboundMessageRuntime', () => {
 
         await runtime.enqueueIfAbsent(createOutboundMessage('msg-diagnostics'));
 
-        const eventKinds = diagnostics.map((event) => event.kind);
-        expect(eventKinds).toEqual(expect.arrayContaining([
+        await expect.poll(() => diagnostics.filter((event) => event.kind === 'effect-drain' && event.claimedCount === 1)).toHaveLength(1);
+        expect(diagnostics.map((event) => event.kind)).toEqual(expect.arrayContaining([
             'sender-queue-wait',
             'browser-lock-wait',
             'browser-lock-hold',

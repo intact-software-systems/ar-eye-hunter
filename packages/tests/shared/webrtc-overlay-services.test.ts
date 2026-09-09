@@ -1,5 +1,6 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { Temporal } from '@js-temporal/polyfill';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -79,7 +80,7 @@ describe('WebRtc overlay services', () => {
             { text: 'wait for the channel' },
             { ttlMs: 120_000, qos: { durability: { algo: 'local-outbox' } } }
         );
-        await manager.enqueueIfAbsent(message);
+        await enqueueRtcAndDrain(manager, message);
         const key = (await manager.outbox.getAllKeys()).find((candidate) => candidate.topicId === 'AL_OUTBOUND');
         expect(key).toBeDefined();
         const waiting = await manager.outbox.getItem(key!);
@@ -252,7 +253,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'no-route',
             entries: []
         });
@@ -300,7 +301,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'no-route',
             entries: []
         });
@@ -343,7 +344,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'no-route',
             entries: []
         });
@@ -389,7 +390,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'no-route',
             entries: []
         });
@@ -456,7 +457,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'accepted',
             entries: [{ status: EntityStatus.COMPLETED }]
         });
@@ -528,7 +529,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'no-route',
             entries: []
         });
@@ -576,7 +577,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'accepted',
             entries: [{ status: EntityStatus.COMPLETED }]
         });
@@ -609,13 +610,16 @@ describe('WebRtc overlay services', () => {
         });
         onTestFinished(() => manager.dispose());
 
-        const first = await manager.enqueueIfAbsent(
+        const first = await enqueueRtcAndDrain(
+            manager,
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-1')
         );
-        const second = await manager.enqueueIfAbsent(
+        const second = await enqueueRtcAndDrain(
+            manager,
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-2')
         );
-        const third = await manager.enqueueIfAbsent(
+        const third = await enqueueRtcAndDrain(
+            manager,
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
@@ -840,7 +844,7 @@ describe('WebRtc overlay services', () => {
             }
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
             status: 'expired',
             entries: []
         });
@@ -926,6 +930,16 @@ describe('WebRtc overlay services', () => {
         expect(peer.channel.sendCalls).toHaveLength(1);
     });
 });
+
+/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+async function enqueueRtcAndDrain(
+    manager: WebRtcOverlayMulticastManager,
+    msg: ALMessage
+): Promise<ALOutboundEnqueueResult> {
+    const result = await manager.enqueueIfAbsent(msg);
+    await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
+    return result;
+}
 
 async function reserveRtcOutbox(queue: WebRtcOverlayMulticastManager['outbox']): Promise<readonly ResourceEntry[]> {
     return [

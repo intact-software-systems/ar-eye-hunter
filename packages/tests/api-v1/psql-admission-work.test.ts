@@ -1,3 +1,7 @@
+import {
+    createTestALOutboundControlAdmission,
+    createTestALOutboundWorkPort
+} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import {
     describe,
@@ -7,7 +11,7 @@ import {
 } from 'vitest';
 import {
     computeOutboundTestAdmission,
-    peekOutboundTestWorkReadyAt
+    peekOutboundWorkReadyAt
 } from '../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
@@ -209,7 +213,7 @@ describe('PostgreSQL outbound admission', () => {
             canonicalScope: namespace,
             backend,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-1');
         const bundle = await computeOutboundTestAdmission(store, msg);
@@ -263,26 +267,34 @@ describe('PostgreSQL outbound admission', () => {
             }
         });
 
-        const claimed = await store.claimReadyEffects({ maxCount: 1 });
+        const stores = { admissionStore: store, workQueue: backend.workQueue };
+        const port = createTestALOutboundWorkPort({ ...stores, nowMs: Date.now });
+        const claimed = await port.claim({ maxCount: 1, observedEntries: undefined });
 
         expect(claimed).toHaveLength(1);
-        expect(claimed[0].effectId).toBe(effectId);
-        await store.completeEffect(claimed[0].entry);
+        expect((await store.readWorkSnapshot(claimed[0]!.entry)).effectId).toBe(effectId);
+        await port.release(claimed[0]!, { status: 'completed' });
         expect(await backend.workQueue.getItem(workKey)).toMatchObject({ status: EntityStatus.COMPLETED });
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, namespace)).toBeUndefined();
     });
 
     it('bumps the owning sender version when accepting outbound control messages', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodePreparedOutboundSend,
             nowMs: Date.now,
             namespace,
             canonicalScope: namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace),
+            backend,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        const control = createTestALOutboundControlAdmission({
+            admissionStore: store,
+            workQueue: backend.workQueue,
+            nowMs: Date.now
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -306,7 +318,7 @@ describe('PostgreSQL outbound admission', () => {
             ],
             durableEffects: []
         });
-        const acceptance = await store.acceptControlMessage(
+        const acceptance = await control.admit(
             newALAckControlMessage(
                 { v: 2, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1' },
                 {
@@ -316,11 +328,10 @@ describe('PostgreSQL outbound admission', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1
                 }
-            ),
-            decodePreparedOutboundSend
+            )
         );
 
-        expect(acceptance.handled).toBe(true);
+        expect(acceptance).toEqual({ kind: 'committed' });
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
@@ -342,7 +353,8 @@ describe('PostgreSQL outbound admission', () => {
         const namespace = 'psql-test:factory';
         const stores = createDefaultPSqlALOutboundRuntimeStores({
             namespace,
-            repository
+            repository,
+            decodePrepared: decodePreparedOutboundSend
         });
         const msg = createOutboundMessage('msg-factory');
 

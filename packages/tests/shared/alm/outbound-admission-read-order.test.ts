@@ -1,3 +1,4 @@
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
@@ -13,8 +14,7 @@ import {
 import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    peekOutboundTestWorkReadyAt,
-    toOutboundTestStores
+    peekOutboundWorkReadyAt
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -35,6 +35,11 @@ describe('outbound admission observation order', () => {
         const admission = () =>
             new ALOutboundDispatchAdmission<OutboundTestPayload>({
                 admissionStore: store,
+                workPort: createTestALOutboundWorkPort({
+                    admissionStore: store,
+                    workQueue: backend.workQueue,
+                    nowMs: Date.now
+                }),
                 toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
@@ -82,7 +87,7 @@ describe('outbound admission observation order', () => {
         expect(winningSnapshot?.outboxKey).toBeDefined();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: toOutboundTestStores(store),
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'changed' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -91,8 +96,8 @@ describe('outbound admission observation order', () => {
         });
         await runtime.ready();
         expect(sent).toEqual([]);
-        expect(await peekOutboundTestWorkReadyAt(store)).toBeUndefined();
-        expect(await store.workQueue.getItem(winningSnapshot!.outboxKey!)).toMatchObject({ status: 'NEW' });
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
+        expect(await backend.workQueue.getItem(winningSnapshot!.outboxKey!)).toMatchObject({ status: 'NEW' });
         stale.dispose();
         winner.dispose();
     });
@@ -110,6 +115,11 @@ describe('outbound admission observation order', () => {
         const message = createOutboundMessage('repair-read-race');
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             admissionStore: store,
+            workPort: createTestALOutboundWorkPort({
+                admissionStore: store,
+                workQueue: backend.workQueue,
+                nowMs: Date.now
+            }),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },

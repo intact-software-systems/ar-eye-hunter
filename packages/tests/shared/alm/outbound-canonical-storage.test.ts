@@ -28,12 +28,12 @@ import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { waitForSettledOutboundWork } from '../wait-for-al-outbound-work.ts';
 import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
-    createFlakyOutboundAdmissionStore,
     createOutboundMessage,
-    toOutboundTestStores
+    holdOutboundClaims
 } from './outbound-runtime-test-fixture.ts';
 
 describe('canonical outbound payload storage', () => {
@@ -61,7 +61,7 @@ describe('canonical outbound payload storage', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const runtime = createDefaultOutboundTestRuntime({
-            stores: toOutboundTestStores(store),
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
@@ -88,7 +88,7 @@ describe('canonical outbound payload storage', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const otherRuntime = createDefaultOutboundTestRuntime({
-            stores: toOutboundTestStores(otherStore),
+            stores: { admissionStore: otherStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
@@ -149,7 +149,7 @@ describe('canonical outbound payload storage', () => {
         const message = { ...original, payload: { ...original.payload, resource: JSON.stringify({ marker }) } };
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
-            stores: { admissionStore },
+            stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({
                 msg,
                 persist: true,
@@ -173,19 +173,20 @@ describe('canonical outbound payload storage', () => {
             vi.useRealTimers();
         });
         vi.setSystemTime(1_000);
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
             nowMs: Date.now,
             canonicalScope: 'expired-admission',
             decodePrepared: decodeOutboundTestPayload,
             namespace: 'expired-admission',
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         let selectedDeadline = 1_010;
         const sends: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: toOutboundTestStores(store),
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
                 persist: false,
@@ -198,6 +199,7 @@ describe('canonical outbound payload storage', () => {
         });
         const original = createOutboundMessage('shorter-admission', { ttlMs: 1_000 });
         const first = await runtime.enqueueIfAbsent(original);
+        await waitForSettledOutboundWork(backend.workQueue, store.namespace);
         expect(first.status).toBe('accepted');
         expect(first.message.constraints?.expiresAtMs).toBe(1_010);
         vi.setSystemTime(1_010);
@@ -205,7 +207,7 @@ describe('canonical outbound payload storage', () => {
         const duplicate = await runtime.enqueueIfAbsent(original);
         expect(duplicate.status).toBe('expired');
         expect(sends).toEqual(['sent']);
-        expect(await store.workQueue.getItem(first.entry!.key)).toBeUndefined();
+        expect(await backend.workQueue.getItem(first.entry!.key)).toBeUndefined();
     });
 
     it.each([
@@ -231,17 +233,24 @@ describe('canonical outbound payload storage', () => {
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: toOutboundTestStores(createFlakyOutboundAdmissionStore(store, {})),
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
-            sendPreparedMessage: async () => {
-                throw new Error('Expired work must never send');
-            }
-        });
+        const stores = { admissionStore: store, workQueue: backend.workQueue };
+        const createRuntime = () =>
+            createDefaultOutboundTestRuntime({
+                stores,
+                planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+                sendPreparedMessage: async () => {
+                    throw new Error('Expired work must never send');
+                }
+            });
+        // The admitting runtime commits its work but never drains it, so the crossing read below is
+        // the first one the deadline can catch.
+        const claims = holdOutboundClaims(stores);
+        const runtime = createRuntime();
         const message = createOutboundMessage('crossing-deadline', { ttlMs: 10 });
         const candidate = operation === 'commit' ? await computeOutboundTestAdmission(store, message) : undefined;
         const admission = await runtime.enqueueIfAbsent(message);
         runtime.dispose();
+        await claims.release();
         const crossedKey = crossedAt === 'payload' ? admission.entry!.key : toALOutboundIdentityKey(admission.entry!.key);
         const getItem = backend.workQueue.getItem.bind(backend.workQueue);
         vi.spyOn(backend.workQueue, 'getItem').mockImplementation(async (key) => {
@@ -254,11 +263,12 @@ describe('canonical outbound payload storage', () => {
             expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         }
         else if (operation === 'commit') {
-            expect(await store.commitBundle(candidate!, decodeOutboundTestPayload)).toBe('expired');
+            expect(await store.commitBundle(candidate!)).toBe('expired');
         }
         else {
             const release = vi.spyOn(backend.workQueue, 'releaseEntries');
-            expect(await store.claimReadyEffects({ maxCount: 1 })).toEqual([]);
+            const draining = createRuntime();
+            await draining.ready();
             expect(release).toHaveBeenCalledWith(expect.any(Array), { status: EntityStatus.COMPLETED, delayMs: null });
         }
     });
@@ -304,7 +314,7 @@ describe('canonical outbound payload storage', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
-            stores: { admissionStore },
+            stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -312,6 +322,7 @@ describe('canonical outbound payload storage', () => {
             }
         });
         const admitted = await runtime.enqueueIfAbsent(message);
+        await waitForSettledOutboundWork(backend.workQueue, admissionStore.namespace);
         const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
         const identity = rows.find((row) => row?.typeId === 'AL_OUTBOUND_IDENTITY');
         expect(identity).toBeDefined();
@@ -367,7 +378,7 @@ describe('canonical outbound payload storage', () => {
             });
             const runtime = createDefaultOutboundTestRuntime({
                 queueEngine: new InboxOutboxEngine(),
-                stores: { admissionStore },
+                stores: { admissionStore, workQueue: backend.workQueue },
                 planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: namespace }] }),
                 sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
             });

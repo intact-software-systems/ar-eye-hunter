@@ -1,7 +1,11 @@
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import {
+    createDefaultWsQueueBoxClientService,
+    WsQueueBoxClientService
+} from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
@@ -64,6 +68,11 @@ describe('WS outbound callback deadline', () => {
         }
         release.resolve();
         const result = await pending;
+        // Admission returns before its own send batch; the transport attempt runs on that batch.
+        await service.dequeueOutbox(
+            WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
+            createDefaultALOutboundDequeueResilience()
+        );
         expect(native.sent).toHaveLength(boundary === 'before' ? 1 : 0);
         expect(callbacks).toEqual(boundary === 'before' ? ['observer', 'after-native'] : ['observer']);
         expect(result.message.constraints?.expiresAtMs).toBe(2_000);

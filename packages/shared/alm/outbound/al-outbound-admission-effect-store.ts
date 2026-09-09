@@ -4,6 +4,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
+import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
@@ -180,27 +181,8 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
     }
 
     private async readWorkCanonicalMessage(entry: ResourceEntry): Promise<ALMessage | undefined> {
-        const stored = decodeALAdmissionRecord(JSON.parse(entry.resource), ['namespace', 'effectId', 'payload']);
-        const payload = decodeALAdmissionRecord(stored.payload, ['kind'], [
-            'message',
-            'prepared',
-            'preparedFingerprint',
-            'attemptIdentity',
-            'phase',
-            'msgId',
-            'msg',
-            'expiresAtMs',
-            'queueTypeId',
-            'request',
-            'reason',
-            'policy',
-            'preparedMessages'
-        ]);
-        if (payload.kind !== 'send-prepared' && payload.kind !== 'admit-message') {
-            return undefined;
-        }
-        const reference = decodeALOutboundMessageReference(payload.message);
-        return await this.readReferencedMessage(reference);
+        const reference = readALOutboundWorkMessageReference(entry);
+        return reference === undefined ? undefined : await this.readReferencedMessage(reference);
     }
 
     private async readReferencedMessage(
@@ -222,5 +204,33 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
             )
             : await this.backend.workQueue.getItem(toALOutboundIdentityKey(reference.key));
         return decodeALOutboundCanonicalMessage(reference, canonical, identity);
+    }
+}
+
+/** An unreadable row cannot name the message it owes: that is corruption, never a retryable failure. */
+function readALOutboundWorkMessageReference(entry: ResourceEntry): ALOutboundMessageReference | undefined {
+    try {
+        const stored = decodeALAdmissionRecord(JSON.parse(entry.resource), ['namespace', 'effectId', 'payload']);
+        const payload = decodeALAdmissionRecord(stored.payload, ['kind'], [
+            'message',
+            'prepared',
+            'preparedFingerprint',
+            'attemptIdentity',
+            'phase',
+            'msgId',
+            'msg',
+            'expiresAtMs',
+            'queueTypeId',
+            'request',
+            'reason',
+            'policy',
+            'preparedMessages'
+        ]);
+        return payload.kind === 'send-prepared' || payload.kind === 'admit-message'
+            ? decodeALOutboundMessageReference(payload.message)
+            : undefined;
+    }
+    catch (error) {
+        throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
     }
 }

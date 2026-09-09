@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     describe,
     expect,
@@ -97,7 +98,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -150,7 +151,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -241,7 +242,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             { groupRef: groupRef('room-1') }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('no-route');
         expect(result.entries).toEqual([]);
@@ -282,7 +283,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await enqueueOutboxAndDrain(service, msg);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-2']);
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
@@ -322,7 +323,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await enqueueOutboxAndDrain(service, msg);
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;
@@ -347,7 +348,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await expect(service.enqueueOutboxIfAbsent(invalidRoomMessage))
+        await expect(enqueueOutboxAndDrain(service, invalidRoomMessage))
             .rejects.toThrow(/room broadcast group ref/i);
         expect(await outbox.getAllKeys()).toEqual(keysBeforeInvalidMessage);
         expect(await outbox.getItem(invalidRoomMessage.route)).toBeUndefined();
@@ -378,7 +379,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('no-route');
         expect(result.reason).toContain('without explicit targets');
@@ -468,7 +469,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await enqueueOutboxAndDrain(service, msg);
         await service.dequeueOutbox(
             shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
             createResourceInboxResilience()
@@ -887,4 +888,17 @@ function createResourceInboxResilience() {
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1
     });
+}
+
+/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+async function enqueueOutboxAndDrain(
+    service: shared.WsQueueBoxServerService,
+    msg: shared.ALMessage
+): Promise<shared.ALOutboundEnqueueResult> {
+    const result = await service.enqueueOutboxIfAbsent(msg);
+    await service.dequeueOutbox(
+        shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
+        createDefaultALOutboundDequeueResilience()
+    );
+    return result;
 }

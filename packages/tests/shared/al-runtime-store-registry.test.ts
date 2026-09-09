@@ -1,10 +1,10 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
     configureALRuntimeStoreFactories,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     describe,
@@ -29,6 +29,7 @@ describe('AL runtime store registry', () => {
                 createInboundStores: () => createDefaultInMemoryALInboundRuntimeStores(),
                 createOutboundStores: () =>
                     createDefaultInMemoryALOutboundRuntimeStores({
+                        decodePrepared: decodeALOutboundTransportMessage
                     })
             },
             manager

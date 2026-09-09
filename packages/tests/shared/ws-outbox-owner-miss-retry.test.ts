@@ -1,5 +1,6 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { Temporal } from '@js-temporal/polyfill';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import {
     afterEach,
     describe,
@@ -34,7 +35,6 @@ import {
     type EncodedJsonWebSocketMessage
 } from '@shared/websocket/json-web-socket-server.ts';
 
-import { createFlakyOutboundAdmissionStore } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 interface WsOutboxTestSocket {
@@ -111,24 +111,24 @@ describe('durable WS outbox owner misses', () => {
             EnqueuedType.WS_OUTBOX
         ));
         const ownerSocket = createSocket();
-        const base = createALOutboundAdmissionStore({
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now);
+        const admissionStore = createALOutboundAdmissionStore({
             nowMs: Date.now,
             canonicalScope: 'ws-owner-claim-conflict',
-            decodePrepared: decodeALOutboundTransportMessage,
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             namespace: 'ws-owner-claim-conflict',
             supersedenceTrackTtlMs: 60_000,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
+            backend,
             retention: normalizeALRuntimeStoreRetention()
         });
         let claimCalls = 0;
-        const admissionStore = createFlakyOutboundAdmissionStore(base, {
-            claimReadyEffects: async (input, decodePrepared) => {
-                claimCalls += 1;
-                if (claimCalls === 2) {
-                    throw new ALAdmissionBackendConflictError('simulated shared claim race');
-                }
-                return await base.claimReadyEffects(input, decodePrepared);
+        const reserveEntries = backend.workQueue.reserveEntries.bind(backend.workQueue);
+        vi.spyOn(backend.workQueue, 'reserveEntries').mockImplementation(async (input) => {
+            claimCalls += 1;
+            if (claimCalls === 2) {
+                throw new ALAdmissionBackendConflictError('simulated shared claim race');
             }
+            return await reserveEntries(input);
         });
         const owner = createDefaultWsQueueBoxServerService({
             outbox: outbox,
@@ -137,7 +137,7 @@ describe('durable WS outbox owner misses', () => {
             targetResolver: {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             },
-            outboundStores: { admissionStore }
+            outboundStores: { admissionStore, workQueue: backend.workQueue }
         });
         onTestFinished(() => owner.dispose());
 

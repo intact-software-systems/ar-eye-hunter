@@ -1,6 +1,3 @@
-import {
-    peekOutboundWorkReadyAt
-} from '../alm/outbound-runtime-test-fixture.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -14,6 +11,9 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import {
+    peekOutboundWorkReadyAt
+} from '../alm/outbound-runtime-test-fixture.ts';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -234,6 +234,7 @@ describe('WS client typed ingress and transport effects', () => {
         };
 
         const result = await fixture.service.enqueueOutboxIfAbsent(message);
+        await vi.advanceTimersByTimeAsync(0);
         expect(result.status).toBe('accepted');
         expect(fixture.socket.sent).toEqual([]);
         const retryAtMs = await peekOutboundWorkReadyAt(

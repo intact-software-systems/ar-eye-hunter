@@ -1,5 +1,5 @@
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { expect, onTestFinished } from 'vitest';
+import { expect, onTestFinished, vi } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -21,8 +21,10 @@ import {
 } from '@shared/mod.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
-import type { ALOutboundPreparedMessageDecoder } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import type {
+    ALOutboundEffectSnapshot,
+    ALOutboundPreparedMessageDecoder
+} from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     readALOutboundWorkReadyAt,
@@ -30,10 +32,10 @@ import {
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
     createALWorkQueuePort,
-    type ALWorkClaim,
     type ALWorkOutcome,
     type ALWorkQueuePort
 } from '@shared/alm/work/al-work-queue-port.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -54,14 +56,16 @@ interface OutboundTestRuntimeInputFor<TPrepared> extends OutboundTestRuntimeInpu
     readonly stores: ALOutboundRuntimeStores<TPrepared>;
 }
 
+/** Admits a message and runs the one batch its owner owes for the work the admission committed. */
 export async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
+    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent' | 'drainWork'>,
     msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
     if (enqueued.status === 'failed') {
         throw new Error(enqueued.reason);
     }
+    await runtime.drainWork();
 
     return enqueued.entries;
 }
@@ -131,7 +135,26 @@ export async function peekOutboundWorkReadyAt(
     return await readALOutboundWorkReadyAt(createOutboundWorkPort(workQueue, namespace), Date.now());
 }
 
-/** Claims work the way the owner does, decoding each row through the store. */
+/** Claims and decodes work the way the owner's batch does. */
+export async function claimOutboundTestWork<TPrepared>(
+    stores: ALOutboundRuntimeStores<TPrepared>,
+    maxCount: number
+): Promise<readonly ALOutboundEffectSnapshot<TPrepared>[]> {
+    const port = createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace);
+    const claims = await port.claim({ maxCount, observedEntries: undefined });
+    return await Promise.all(claims.map((claim) => stores.admissionStore.readWorkSnapshot(claim.entry)));
+}
+
+/** Releases one claimed row the way the owner's attempt does. */
+export async function releaseOutboundTestWork<TPrepared>(
+    stores: ALOutboundRuntimeStores<TPrepared>,
+    entry: ResourceEntry,
+    outcome: ALWorkOutcome
+): Promise<void> {
+    const port = createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace);
+    await port.release({ entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs: Date.now() }, outcome);
+}
+
 export async function waitUntil(predicate: () => boolean): Promise<void> {
     for (let i = 0; i < 20; i += 1) {
         if (predicate()) {
@@ -142,63 +165,14 @@ export async function waitUntil(predicate: () => boolean): Promise<void> {
     expect(predicate()).toBe(true);
 }
 
-/** Test-only index from a store to the queue its owner would build a work port over. */
-const workQueuesByStore = new WeakMap<object, QueueBoxResourceEntryRepository>();
-
-export function rememberOutboundTestWorkQueue<TPrepared>(
-    stores: ALOutboundRuntimeStores<TPrepared>
-): ALOutboundRuntimeStores<TPrepared> {
-    workQueuesByStore.set(stores.admissionStore, stores.workQueue);
-    return stores;
+/** The store bundle plus the backend it was built over, so a test can fail one commit at its source. */
+export interface OutboundTestStores extends ALOutboundRuntimeStores<OutboundTestPayload> {
+    readonly backend: InMemoryAdmissionBackend;
 }
 
-function readOutboundTestWorkQueue<TPrepared>(
-    store: ALOutboundAdmissionStore<TPrepared>
-): QueueBoxResourceEntryRepository {
-    const queue = workQueuesByStore.get(store);
-    if (queue === undefined) {
-        throw new Error('Outbound test store was not created through the fixture');
-    }
-    return queue;
-}
-
-/** The stores bundle an owner needs, recovered from a store the fixture created. */
-export function toOutboundTestStores<TPrepared>(
-    admissionStore: ALOutboundAdmissionStore<TPrepared>
-): ALOutboundRuntimeStores<TPrepared> {
-    return { admissionStore, workQueue: readOutboundTestWorkQueue(admissionStore) };
-}
-
-/** The readiness the owner would advertise for this store: undefined once its work is drained. */
-export async function peekOutboundTestWorkReadyAt<TPrepared>(
-    store: ALOutboundAdmissionStore<TPrepared>
-): Promise<number | undefined> {
-    return await peekOutboundWorkReadyAt(readOutboundTestWorkQueue(store), store.namespace);
-}
-
-/** Claims and decodes work the way the owner does. */
-export async function claimOutboundTestWork<TPrepared>(
-    store: ALOutboundAdmissionStore<TPrepared>,
-    maxCount: number
-): Promise<readonly ALWorkClaim[]> {
-    const port = createOutboundWorkPort(readOutboundTestWorkQueue(store), store.namespace);
-    return await port.claim({ maxCount, observedEntries: undefined });
-}
-
-export async function releaseOutboundTestWork<TPrepared>(
-    store: ALOutboundAdmissionStore<TPrepared>,
-    claim: ALWorkClaim,
-    outcome: ALWorkOutcome
-): Promise<void> {
-    const port = createOutboundWorkPort(readOutboundTestWorkQueue(store), store.namespace);
-    await port.release(claim, outcome);
-}
-
-export function createDefaultOutboundTestStores(
-    outbox?: InMemoryQueueBox
-): ALOutboundRuntimeStores<OutboundTestPayload> {
+export function createDefaultOutboundTestStores(outbox?: InMemoryQueueBox): OutboundTestStores {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now);
-    return rememberOutboundTestWorkQueue({
+    return {
         admissionStore: createALOutboundAdmissionStore({
             decodePrepared: decodeOutboundTestPayload,
             nowMs: Date.now,
@@ -206,43 +180,43 @@ export function createDefaultOutboundTestStores(
             canonicalScope: 'outbound-test',
             supersedenceTrackTtlMs: 5 * 60_000,
             backend,
-            retention: normalizeALRuntimeStoreRetention(),
+            retention: normalizeALRuntimeStoreRetention()
         }),
-        workQueue: backend.workQueue
-    });
+        workQueue: backend.workQueue,
+        backend
+    };
 }
 
-export function createDefaultOutboundTestAdmissionStore(
-    outbox?: InMemoryQueueBox
-): ALOutboundAdmissionStore<OutboundTestPayload> {
-    return createDefaultOutboundTestStores(outbox).admissionStore;
-}
+const HELD_CLAIM_QUIET_ATTEMPT_LIMIT = 50;
 
-export function createFlakyOutboundAdmissionStore(
-    inner: ALOutboundAdmissionStore<OutboundTestPayload>,
-    hooks: Partial<
-        Pick<
-            ALOutboundAdmissionStore<OutboundTestPayload>,
-            'commitBundle' | 'readWorkSnapshot'
-        >
-    >
-): ALOutboundAdmissionStore<OutboundTestPayload> {
+/**
+ * Holds every claim the queue can offer, so a runtime commits work it never drains. The spy is the
+ * queue's own reservation, which is the only place a claim can be denied.
+ */
+export function holdOutboundClaims<TPrepared>(
+    stores: ALOutboundRuntimeStores<TPrepared>
+): { release(): Promise<void>; } {
+    const reserved = vi.spyOn(stores.workQueue, 'reserveEntries').mockResolvedValue(new Map());
+    const recovered = vi.spyOn(stores.workQueue, 'reserveTimeoutEntries').mockResolvedValue(new Map());
     return {
-        retainPendingAdmission: (input) => inner.retainPendingAdmission(input),
-        namespace: inner.namespace,
-        canonicalScope: inner.canonicalScope,
-        isMessageSuperseded: (message) => inner.isMessageSuperseded(message),
-        ready: () => inner.ready(),
-        readOutgoingMessage: (input) => inner.readOutgoingMessage(input),
-        readRepairMessage: (msgId, planner) => inner.readRepairMessage(msgId, planner),
-        readSentMessage: (msgId: string) => inner.readSentMessage(msgId),
-        readSentMessageByOrdering: (trackKey, seq) => inner.readSentMessageByOrdering(trackKey, seq),
-        readReceiptState: (msgId: string) => inner.readReceiptState(msgId),
-        readPendingAck: (msgId: string) => inner.readPendingAck(msgId),
-        readWorkSnapshot: (entry) =>
-            hooks.readWorkSnapshot ? hooks.readWorkSnapshot(entry) : inner.readWorkSnapshot(entry),
-        commitBundle: (bundle) => hooks.commitBundle ? hooks.commitBundle(bundle) : inner.commitBundle(bundle),
-        createControlAdmission: (port, clock) => inner.createControlAdmission(port, clock)
+        /**
+         * Restores real claims only once no held batch is still asking for work: a batch that
+         * claimed after the restore would strand its rows in a reservation nobody releases.
+         */
+        release: async () => {
+            let observed = -1;
+            for (
+                let attempt = 0;
+                attempt < HELD_CLAIM_QUIET_ATTEMPT_LIMIT && observed !== reserved.mock.calls.length;
+                attempt += 1
+            ) {
+                observed = reserved.mock.calls.length;
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+            expect(reserved.mock.calls.length).toBe(observed);
+            reserved.mockRestore();
+            recovered.mockRestore();
+        }
     };
 }
 

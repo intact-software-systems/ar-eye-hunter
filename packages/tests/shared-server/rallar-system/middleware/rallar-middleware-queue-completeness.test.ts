@@ -15,6 +15,8 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
@@ -24,8 +26,11 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { computeOutboundTestAdmission, createOutboundMessage } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
+import {
+    computeOutboundTestAdmission,
+    createOutboundMessage,
+    holdOutboundClaims
+} from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
 describe('Rallar middleware queue registration completeness', () => {
     it('activates the actual WS worker only after pending admission commits and never on duplicate replay', async () => {
@@ -34,15 +39,18 @@ describe('Rallar middleware queue registration completeness', () => {
         onTestFinished(() => {
             vi.restoreAllMocks();
         });
-        const stores = createDefaultInMemoryALOutboundRuntimeStores({ namespace: 'pending-server' });
+        const stores = createDefaultInMemoryALOutboundRuntimeStores({
+            namespace: 'pending-server',
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage
+        });
         const store = stores.admissionStore;
         const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-server-admission'));
         const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, decode) => {
-            expect(await commit(competitor, decodeOutboundTestPayload)).toBe('committed');
-            return await commit(bundle, decode);
+        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            expect(await commit(competitor)).toBe('committed');
+            return await commit(bundle);
         });
-        const hold = vi.spyOn(store, 'claimReadyEffects').mockResolvedValue([]);
+        const claims = holdOutboundClaims(stores);
         const input = createQueueTaskInput(stores, engine);
         const published: string[] = [];
         input.wsQBoxServerService.onOutboxClusterPublishDo(async (msg) => {
@@ -60,27 +68,27 @@ describe('Rallar middleware queue registration completeness', () => {
         });
         const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message);
         expect(result.status).toBe('pending-admission');
-        expect((await store.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         expect(await physical.isWork()).toBe(false);
         await physical.runnable();
         expect(published).toEqual([]);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
-        const rows = await Promise.all((await store.workQueue.getAllKeys()).map((key) => store.workQueue.getItem(key)));
+        const rows = await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
         const pending = rows.find((row) => row?.resource.includes('"kind":"admit-message"'));
         if (!pending) {
             throw new Error('Expected pending owner');
         }
-        hold.mockRestore();
+        await claims.release();
         await admission.runnable();
-        expect((await store.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.NEW);
+        expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.NEW);
         expect(await physical.isWork()).toBe(true);
         await physical.runnable();
         expect(published).toEqual([message.id.msgId]);
         // Restore the original pending observation to model lost completion after the admission commit.
-        await store.workQueue.enqueue(pending);
+        await stores.workQueue.enqueue(pending);
         await admission.runnable();
         expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).status).toBe('duplicate');
-        expect((await store.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         expect(await physical.isWork()).toBe(false);
         await physical.runnable();
         expect(published).toEqual([message.id.msgId]);
@@ -186,7 +194,10 @@ describe('Rallar middleware queue registration completeness', () => {
     });
 });
 
-function createQueueTaskInput(outboundStores?: ALOutboundRuntimeStores, queueEngine?: InboxOutboxEngine): RegisterRallarMiddlewareQueueTasksInput {
+function createQueueTaskInput(
+    outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>,
+    queueEngine?: InboxOutboxEngine
+): RegisterRallarMiddlewareQueueTasksInput {
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({

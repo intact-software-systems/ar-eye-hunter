@@ -1,3 +1,5 @@
+import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import {
     afterEach,
     beforeEach,
@@ -194,6 +196,11 @@ describe('browser RTC runtime composition', () => {
         expect(result).toMatchObject({ status: 'accepted' });
         expect(result.entries).toHaveLength(1);
         expect(result.entry?.status).toBe('COMPLETED');
+        // Admission returns before its own send batch; the transport attempt runs on that batch.
+        await manager.dequeue(
+            WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
+            createDefaultALOutboundDequeueResilience()
+        );
         const acceptedMessages = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
         const plannedMessages = fixture.nativePeer('planned-peer').channels.flatMap((channel) => channel.sent);
         expect(acceptedMessages).toHaveLength(1);

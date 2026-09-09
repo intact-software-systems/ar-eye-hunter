@@ -33,6 +33,7 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 
+import { enqueueOutboundOrThrow } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -244,18 +245,6 @@ describe('AL state retained across runtime recreation', () => {
     });
 });
 
-async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
-    msg: ALMessage
-): Promise<readonly ResourceEntry[]> {
-    const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.status === 'failed') {
-        throw new Error(enqueued.reason);
-    }
-
-    return enqueued.entries;
-}
-
 function createRetainedInboundStoreSet(
     existing?: RetainedAdmissionState
 ): RetainedRuntimeStoreSet<ALInboundRuntimeStores> {
@@ -326,7 +315,7 @@ function createRetainedOutboundStoreSet(
                 canonicalScope: 'durable-test:outbound:admission',
                 backend: outboundBackend,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention(),
+                retention: normalizeALRuntimeStoreRetention()
             }),
             workQueue: outboundBackend.workQueue
         }
