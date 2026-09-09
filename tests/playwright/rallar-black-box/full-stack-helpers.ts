@@ -556,26 +556,7 @@ export async function createTwoAgentRun(
         workspaceId: config.workspaceId,
         groupId: `${config.roomId}-${uniqueSuffix()}`
     };
-    const sender = await openTwoAgentParticipant({
-        browser: input.browser,
-        testInfo: input.testInfo,
-        runId: input.runId,
-        config,
-        user: config.userA,
-        role: 'sender',
-        groupId: group.groupId
-    });
-    const receiver = await openTwoAgentParticipant({
-        browser: input.browser,
-        testInfo: input.testInfo,
-        runId: input.runId,
-        config,
-        user: config.userB,
-        role: 'receiver',
-        groupId: group.groupId
-    });
-    await waitForControlRunAgent(input.request, input.runId, sender.agentId);
-    await waitForControlRunAgent(input.request, input.runId, receiver.agentId);
+    const { sender, receiver } = await openTwoAgentParticipants(input, config, group.groupId);
 
     return {
         request: input.request,
@@ -585,6 +566,50 @@ export async function createTwoAgentRun(
         receiver,
         readSnapshot: async () => await fetchControlRun(input.request, input.runId),
         close: async () => await closeTwoAgentParticipants([sender, receiver])
+    };
+}
+
+/** Closes whatever participant already opened when a later step in the pair fails, then rethrows. */
+async function openTwoAgentParticipants(
+    input: Readonly<{ browser: Browser; request: APIRequestContext; testInfo: TestInfo; runId: string; }>,
+    config: FullStackConfig,
+    groupId: string
+): Promise<Readonly<{ sender: TwoAgentRunParticipant; receiver: TwoAgentRunParticipant; }>> {
+    const base = { browser: input.browser, testInfo: input.testInfo, runId: input.runId, config, groupId };
+    const opened: TwoAgentRunParticipant[] = [];
+    try {
+        const sender = await openTwoAgentParticipant(toParticipantInput(base, 'sender'));
+        opened.push(sender);
+        const receiver = await openTwoAgentParticipant(toParticipantInput(base, 'receiver'));
+        opened.push(receiver);
+        await waitForControlRunAgent(input.request, input.runId, sender.agentId);
+        await waitForControlRunAgent(input.request, input.runId, receiver.agentId);
+        return { sender, receiver };
+    }
+    catch (error) {
+        await closeTwoAgentParticipants(opened);
+        throw error;
+    }
+}
+
+function toParticipantInput(
+    base: Readonly<{
+        browser: Browser;
+        testInfo: TestInfo;
+        runId: string;
+        config: FullStackConfig;
+        groupId: string;
+    }>,
+    role: 'sender' | 'receiver'
+): Parameters<typeof openTwoAgentParticipant>[0] {
+    return {
+        browser: base.browser,
+        testInfo: base.testInfo,
+        runId: base.runId,
+        config: base.config,
+        user: role === 'sender' ? base.config.userA : base.config.userB,
+        role,
+        groupId: base.groupId
     };
 }
 

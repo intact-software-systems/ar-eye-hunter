@@ -28,6 +28,8 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 15_000;
+// 4 scenarios x 15s deadline x 2 (sender+receiver) + 60s RTC readiness = 180s expected; kept at
+// 300s for the configured retry and slow-CI slack rather than rounded down to the expected figure.
 const CARRIER_TEST_TIMEOUT_MS = 300_000;
 
 /**
@@ -59,7 +61,16 @@ test.describe('ALM conformance lane', () => {
                 await runAlmConformanceScenarios(run, carrier);
             }
             finally {
-                await attachRunSnapshot(run, testInfo, `alm-${carrier}-${scope}.json`);
+                try {
+                    await attachRunSnapshot(run, testInfo, `alm-${carrier}-${scope}.json`);
+                }
+                catch (attachError) {
+                    console.warn('Failed to attach ALM conformance run snapshot', {
+                        carrier,
+                        runId: run.runId,
+                        attachError
+                    });
+                }
                 await run.close();
             }
         });

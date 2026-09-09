@@ -89,8 +89,7 @@ const SMOKE_TAGS: readonly ('smoke' | 'full')[] = ['smoke', 'full'];
 const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 
 /** `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. */
-const ALL_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS;
-const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc', 'rtc-with-ws-fallback'];
+const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -119,21 +118,21 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     {
         scenarioId: 'bounded-rejection',
         tags: SMOKE_TAGS,
-        carriers: ALL_CARRIERS,
+        carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toBoundedRejectionSenderCommands,
         toReceiverCommands: toBoundedRejectionReceiverCommands
     },
     {
         scenarioId: 'deadline-expiry',
         tags: FULL_TAGS,
-        carriers: ALL_CARRIERS,
+        carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeadlineExpirySenderCommands,
         toReceiverCommands: toDeadlineExpiryReceiverCommands
     },
     {
         scenarioId: 'delivery-baseline',
         tags: SMOKE_TAGS,
-        carriers: ALL_CARRIERS,
+        carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeliveryBaselineSenderCommands,
         toReceiverCommands: toDeliveryBaselineReceiverCommands
     },

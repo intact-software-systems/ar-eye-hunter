@@ -1,7 +1,8 @@
 import {
     AL_CONTROL_ACK_TYPE_ID,
     AL_CONTROL_NACK_TYPE_ID,
-    AL_CONTROL_REPAIR_TYPE_ID
+    AL_CONTROL_REPAIR_TYPE_ID,
+    isALControlTypeId
 } from '../al-contracts/al-control.ts';
 import type { ApiJsonObject } from '../api/api-json-value.ts';
 
@@ -50,7 +51,7 @@ export interface ScriptedTransportFaultPort extends TransportFaultPort {
 interface SerializedFrameFacts {
     readonly typeId: string | undefined;
     readonly msgId: string | undefined;
-    readonly ackedMsgId: string | undefined;
+    readonly referencedMsgId: string | undefined;
 }
 
 const CONTROL_TYPE_IDS = {
@@ -109,7 +110,8 @@ function matchesFault(match: TransportFaultMatch, facts: SerializedFrameFacts): 
         return false;
     }
     if (
-        match.msgId !== undefined && facts.msgId !== match.msgId && facts.ackedMsgId !== match.msgId
+        match.msgId !== undefined && facts.msgId !== match.msgId &&
+        facts.referencedMsgId !== match.msgId
     ) {
         return false;
     }
@@ -135,19 +137,26 @@ function decodeSerializedFrameFacts(value: unknown): SerializedFrameFacts | unde
     return {
         typeId,
         msgId: typeof id.msgId === 'string' ? id.msgId : undefined,
-        ackedMsgId: typeId === CONTROL_TYPE_IDS.ack ? decodeAckedMsgId(payload.resource) : undefined
+        referencedMsgId: typeId !== undefined && isALControlTypeId(typeId)
+            ? decodeReferencedMsgId(payload.resource)
+            : undefined
     };
 }
 
-function decodeAckedMsgId(resource: unknown): string | undefined {
+/** An ack references the original message as `ackedMsgId`; a nack or repair references it as `msgId`. */
+function decodeReferencedMsgId(resource: unknown): string | undefined {
     if (typeof resource !== 'string') {
         return undefined;
     }
     try {
-        const acknowledgement = JSON.parse(resource);
-        return isRecord(acknowledgement) && typeof acknowledgement.ackedMsgId === 'string'
-            ? acknowledgement.ackedMsgId
-            : undefined;
+        const control = JSON.parse(resource);
+        if (!isRecord(control)) {
+            return undefined;
+        }
+        if (typeof control.ackedMsgId === 'string') {
+            return control.ackedMsgId;
+        }
+        return typeof control.msgId === 'string' ? control.msgId : undefined;
     }
     catch {
         return undefined;

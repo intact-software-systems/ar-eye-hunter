@@ -1,5 +1,9 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    newALRepairControlMessage
+} from '@shared/al-contracts/al-control.ts';
 import {
     createPassThroughTransportFaultPort,
     createScriptedTransportFaultPort
@@ -14,6 +18,26 @@ const ackFrame = JSON.stringify(newALAckControlMessage(
         fromPeerId: 'b',
         toPeerId: 'a',
         status: 'delivered',
+        observedAtEpochMs: 1
+    }
+));
+const nackFrame = JSON.stringify(newALNackControlMessage(
+    { v: 2, msgId: 'ctl-2', senderId: 'b', ts: 1 },
+    {
+        msgId: 'msg-2',
+        fromPeerId: 'b',
+        toPeerId: 'a',
+        reason: 'gap',
+        observedAtEpochMs: 1
+    }
+));
+const repairFrame = JSON.stringify(newALRepairControlMessage(
+    { v: 2, msgId: 'ctl-3', senderId: 'b', ts: 1 },
+    {
+        msgId: 'msg-3',
+        fromPeerId: 'b',
+        toPeerId: 'a',
+        reason: 'retransmit',
         observedAtEpochMs: 1
     }
 ));
@@ -48,6 +72,34 @@ describe('transport fault port', () => {
             carrier: 'ws',
             decision: 'drop'
         }]);
+    });
+
+    it('drops a matching NACK by the msgId it references', () => {
+        const port = createScriptedTransportFaultPort();
+        port.inject({
+            faultId: 'drop-nack',
+            carrier: 'ws',
+            match: { controlType: 'nack', typeId: undefined, msgId: 'msg-2' },
+            action: 'drop',
+            remaining: 1
+        });
+
+        expect(port.decideSend('ws', nackFrame)).toEqual({ kind: 'drop', faultId: 'drop-nack' });
+        expect(port.decideSend('ws', nackFrame)).toEqual({ kind: 'pass' });
+    });
+
+    it('drops a matching REPAIR by the msgId it references', () => {
+        const port = createScriptedTransportFaultPort();
+        port.inject({
+            faultId: 'drop-repair',
+            carrier: 'ws',
+            match: { controlType: 'repair', typeId: undefined, msgId: 'msg-3' },
+            action: 'drop',
+            remaining: 1
+        });
+
+        expect(port.decideSend('ws', repairFrame)).toEqual({ kind: 'drop', faultId: 'drop-repair' });
+        expect(port.decideSend('ws', repairFrame)).toEqual({ kind: 'pass' });
     });
 
     it('delays a matching data message and ignores non-JSON frames', () => {
