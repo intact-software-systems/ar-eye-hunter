@@ -41,7 +41,7 @@ const CARRIER_TEST_TIMEOUT_MS = 300_000;
  */
 const RUN_ID_BUDGET = 43;
 
-/** Comma-separated carriers; empty runs every carrier. The CI scripts pass `ws` while a cold RTC handshake on a hosted runner reports no ready peer. */
+/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
 function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
     const requested = (value ?? '')
         .split(',')
@@ -63,7 +63,7 @@ function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier 
 
 test.describe('ALM conformance lane', () => {
     // A cold RTC handshake intermittently reports no ready peer even within the widened readiness
-    // budget; the retry costs one extra run of a carrier, and hosted runners select `ws` only.
+    // budget; the retry costs one extra run of a carrier.
     test.describe.configure({ retries: 1 });
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
 
