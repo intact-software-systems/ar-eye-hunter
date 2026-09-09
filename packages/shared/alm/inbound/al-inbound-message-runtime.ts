@@ -14,6 +14,7 @@ import type {
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
+import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { AL_INBOUND_WORK_LEASE_MS, decodeALInboundWorkEntry, toALInboundWorkType } from './al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
@@ -183,16 +184,33 @@ export class ALInboundMessageRuntime {
             return Either.ofLeft(attempt.left);
         }
         const result = attempt.right!;
-        const acceptance = result.kind === 'completed' ? result.acceptance : result.pending === undefined
-            ? { kind: 'not-admitted' as const, reason: 'conflict' }
-            : await this.admission.retainPending(result.pending);
+        if (result.kind === 'conflict') {
+            return Either.ofRight(await this.retainConflictedAdmission(result.pending));
+        }
+        if (result.wroteWork) {
+            this.commitWork();
+        }
+        return Either.ofRight(result.acceptance);
+    }
+
+    /** A conflict the plan does not retain wrote nothing, so it announces no commit. */
+    private async retainConflictedAdmission(
+        pending: ALInboundPendingAdmission | undefined
+    ): Promise<ALInboundMessageRuntime.Acceptance> {
+        if (pending === undefined) {
+            return { kind: 'not-admitted', reason: 'conflict' };
+        }
+        const acceptance = await this.admission.retainPending(pending);
         this.commitWork();
-        return Either.ofRight(acceptance);
+        return acceptance;
     }
 
     private async admitControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
         const admitted = await this.controlAdmission.admit(msg);
-        this.commitWork();
+        // A control message the runtime does not handle, or rejects, wrote nothing to announce.
+        if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
+            this.commitWork();
+        }
         if (admitted.kind === 'pending-control') {
             return { kind: 'pending-admission' };
         }
@@ -211,7 +229,7 @@ export class ALInboundMessageRuntime {
         this.work.committed();
     }
 
-    /** The old handler rescanned after every replay; the readyNow rotation and the batch-end wake cover that. */
+    /** A replay writes its own follow-on work; the rotation and the engine's schedule pick it up. */
     private async runInboundClaim(claim: ALWorkClaim): Promise<ALWorkOutcome> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
         const payload = effect.payload;

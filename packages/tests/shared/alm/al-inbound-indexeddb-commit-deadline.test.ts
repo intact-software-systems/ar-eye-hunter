@@ -96,7 +96,8 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                         kind: 'completed',
                         acceptance: offset < 0
                             ? { kind: 'admitted' }
-                            : { kind: 'not-admitted', reason: 'expired' }
+                            : { kind: 'not-admitted', reason: 'expired' },
+                        wroteWork: offset < 0
                     });
                 }
                 expect(crossed).toBe(true);

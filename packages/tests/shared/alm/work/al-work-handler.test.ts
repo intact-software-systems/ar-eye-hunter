@@ -1,7 +1,11 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALWorkBatchDiagnostics, ALWorkReadySelection } from '@shared/alm/work/al-work-handler.ts';
 import { ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
+import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -347,6 +351,152 @@ describe('ALWorkHandler', () => {
         // Two distinct claim() calls after ready() prove the second entry arrived through the follow-up
         // batch that the finally block of runBatch() starts, not through the claim() call of the first batch.
         expect(claimCallCount).toBe(2);
+        handler.dispose();
+    });
+
+    it('selects no work once dispose() lands while the exhausted-work finalization is in flight', async () => {
+        let selectCallCount = 0;
+        const finalizeEntered = Promise.withResolvers<void>();
+        const releaseFinalize = Promise.withResolvers<void>();
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], onRelease: () => {} }),
+            finalizeExhausted: async () => {
+                finalizeEntered.resolve();
+                await releaseFinalize.promise;
+                return [];
+            }
+        };
+        const handler = new ALWorkHandler({
+            workerId: 'disposed-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readNextReadyAtMs: (probed) => probed.peekNextReadyAt(),
+            selectReady: async () => {
+                selectCallCount += 1;
+                return { claims: [], nextReadyAtMs: undefined };
+            },
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        const bootstrap = handler.ready();
+        await finalizeEntered.promise;
+        handler.dispose();
+        releaseFinalize.resolve();
+        await bootstrap;
+
+        expect(selectCallCount).toBe(0);
+    });
+
+    it('re-attempts a claim that keeps losing its compare-and-set only once the port reschedules it', async () => {
+        let nowMs = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs));
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => nowMs,
+            random: () => 0.5
+        });
+        await port.retainIfAbsent(newWorkEntry('AL_TEST', 'cas-loser'));
+        let attemptCount = 0;
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'cas-worker',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readNextReadyAtMs: (claimed) => claimed.peekNextReadyAt(),
+            selectReady: async (claimed, size) => ({
+                claims: await claimed.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async () => {
+                attemptCount += 1;
+                return { status: 'retry' };
+            },
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        expect(attemptCount).toBe(1);
+        const rescheduled = await port.readEntry(newWorkEntry('AL_TEST', 'cas-loser').key);
+        expect(rescheduled?.status).toBe(EntityStatus.RETRY);
+        expect(rescheduled?.dequeueAudit.nextTs?.epochMilliseconds).toBe(10_001);
+
+        // Engine passes are unbounded; the lost attempt is bounded by the port's retry schedule alone.
+        for (let pass = 0; pass < 25; pass += 1) {
+            await engine.executeOnce();
+        }
+        expect(attemptCount).toBe(1);
+
+        nowMs = 10_001;
+        await engine.executeOnce();
+        expect(attemptCount).toBe(2);
+
+        // The second loss earns the policy's second delay, so the same passes still buy no attempt.
+        for (let pass = 0; pass < 25; pass += 1) {
+            await engine.executeOnce();
+        }
+        expect(attemptCount).toBe(2);
+        expect((await port.readEntry(newWorkEntry('AL_TEST', 'cas-loser').key))?.dequeueAudit.nextTs?.epochMilliseconds)
+            .toBe(10_003);
+
+        handler.dispose();
+    });
+
+    it('leaves an empty batch to the probe\'s next ready time instead of re-entering on the same tick', async () => {
+        const nowMs = 10_000;
+        const readyAtMs = nowMs + 30_000;
+        let selectCallCount = 0;
+        const engine = createEngine();
+        const wakeAtCalls: (number | undefined)[] = [];
+        const wakeAt = engine.wakeAt.bind(engine);
+        vi.spyOn(engine, 'wakeAt').mockImplementation((taskId, value) => {
+            wakeAtCalls.push(value);
+            wakeAt(taskId, value);
+        });
+        const wakeCalls: number[] = [];
+        const wake = engine.wake.bind(engine);
+        vi.spyOn(engine, 'wake').mockImplementation(() => {
+            wakeCalls.push(selectCallCount);
+            wake();
+        });
+        const handler = new ALWorkHandler({
+            workerId: 'idle-worker',
+            port: fakePort({ claims: [], onRelease: () => {} }),
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readNextReadyAtMs: async () => readyAtMs,
+            selectReady: async () => {
+                selectCallCount += 1;
+                return { claims: [], nextReadyAtMs: readyAtMs };
+            },
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+
+        // The batch claimed nothing: it advertises the probe's next time and wakes no one.
+        expect(selectCallCount).toBe(1);
+        expect(wakeAtCalls).toEqual([readyAtMs]);
+        expect(wakeCalls).toEqual([]);
+
+        for (let pass = 0; pass < 25; pass += 1) {
+            await engine.executeOnce();
+        }
+        expect(selectCallCount).toBe(1);
+        expect(new Set(wakeAtCalls)).toEqual(new Set([readyAtMs]));
+        expect(wakeCalls).toEqual([]);
+
         handler.dispose();
     });
 

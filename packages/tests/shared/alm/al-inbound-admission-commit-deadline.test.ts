@@ -100,7 +100,8 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 const outcome = await admission.attempt(message, source, planner);
                 expect(outcome.right).toEqual({
                     kind: 'completed',
-                    acceptance: offset < 0 ? { kind: 'admitted' } : { kind: 'not-admitted', reason: 'expired' }
+                    acceptance: offset < 0 ? { kind: 'admitted' } : { kind: 'not-admitted', reason: 'expired' },
+                    wroteWork: offset < 0
                 });
             }
             expect(state.data.size > 0).toBe(offset < 0);

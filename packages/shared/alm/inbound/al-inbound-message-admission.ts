@@ -36,7 +36,12 @@ export namespace ALInboundMessageAdmission {
     export type ReplayResult = 'completed' | 'retry' | { readonly kind: 'not-ready'; readonly retryAfterMs: number; };
 
     export type Attempt =
-        | { readonly kind: 'completed'; readonly acceptance: ALInboundMessageRuntime.Acceptance; }
+        | {
+            readonly kind: 'completed';
+            readonly acceptance: ALInboundMessageRuntime.Acceptance;
+            /** The commit persisted work the inbound worker must claim; an idle worker stays idle without it. */
+            readonly wroteWork: boolean;
+        }
         | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission | undefined; };
 }
 
@@ -70,13 +75,17 @@ export class ALInboundMessageAdmission {
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
         const read = await admissionStore.readIncomingMessage({ msg: admitted, source, nowMs, prePlan });
         if (this.shutdown.signal.aborted) {
-            return Either.ofRight({ kind: 'completed', acceptance: { kind: 'disposed' } });
+            return Either.ofRight({ kind: 'completed', acceptance: { kind: 'disposed' }, wroteWork: false });
         }
         const plan = planner(admitted, source, computeALInboundPlanningObservations(read));
         const deadline = resolveALMessageExpireAtMs(admitted, plan.effective) ??
             nowMs + read.retention.durableEffectTtlMs;
         if (deadline <= clock.nowMs()) {
-            return Either.ofRight({ kind: 'completed', acceptance: { kind: 'not-admitted', reason: 'expired' } });
+            return Either.ofRight({
+                kind: 'completed',
+                acceptance: { kind: 'not-admitted', reason: 'expired' },
+                wroteWork: false
+            });
         }
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(admitted) ?? true);
@@ -87,7 +96,11 @@ export class ALInboundMessageAdmission {
         }
         const status = await admissionStore.commitBundle(validated.right!);
         if (status === 'expired') {
-            return Either.ofRight({ kind: 'completed', acceptance: { kind: 'not-admitted', reason: 'expired' } });
+            return Either.ofRight({
+                kind: 'completed',
+                acceptance: { kind: 'not-admitted', reason: 'expired' },
+                wroteWork: false
+            });
         }
         if (status === 'conflict') {
             return Either.ofRight({
@@ -99,7 +112,11 @@ export class ALInboundMessageAdmission {
                 }
             });
         }
-        return Either.ofRight({ kind: 'completed', acceptance: toAdmissionAcceptance(plan) });
+        return Either.ofRight({
+            kind: 'completed',
+            acceptance: toAdmissionAcceptance(plan),
+            wroteWork: validated.right!.durableEffects.length > 0
+        });
     }
 
     async retainPending(pending: ALInboundPendingAdmission): Promise<ALInboundMessageRuntime.Acceptance> {

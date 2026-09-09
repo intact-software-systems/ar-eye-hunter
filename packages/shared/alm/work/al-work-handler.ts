@@ -128,23 +128,39 @@ export class ALWorkHandler {
         if (this.batch !== undefined) {
             return this.batch;
         }
-        this.batch = this.runSelectedWork().catch((error) => {
+        this.batch = this.runSelectedWork().then((counts) => this.wakeAfterProgress(counts)).catch((error) => {
             if (error instanceof ALAdmissionCorruptionError) {
                 throw error;
             }
             this.reportBatchFailure(toError(error));
         }).finally(() => {
             this.batch = undefined;
-            this.dependencies.queueEngine.wake();
-            if (this.commitPending && !this.shutdown.signal.aborted) {
-                this.commitPending = false;
-                void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
-            }
+            this.runPendingCommit();
         });
         return this.batch;
     }
 
-    private async runSelectedWork(): Promise<void> {
+    /**
+     * A batch that touched work may have written more the page read before it could not see. A batch
+     * that touched none advertised its own next time through `wakeAt` and must not re-enter this tick.
+     */
+    private wakeAfterProgress(counts: ALWorkCounts): void {
+        if (counts.claimedCount > 0 || counts.rejectedCount > 0) {
+            this.dependencies.queueEngine.wake();
+        }
+    }
+
+    /** A commit that landed behind the batch earns the immediate re-run the page read missed. */
+    private runPendingCommit(): void {
+        if (!this.commitPending || this.shutdown.signal.aborted) {
+            return;
+        }
+        this.commitPending = false;
+        this.dependencies.queueEngine.wake();
+        void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
+    }
+
+    private async runSelectedWork(): Promise<ALWorkCounts> {
         const { port, pageSize, selectReady, clock, workerId, queueEngine, diagnostics } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const counts: ALWorkCounts = {
@@ -153,15 +169,15 @@ export class ALWorkHandler {
             rescheduledCount: 0,
             rejectedCount: 0
         };
-        for (const claim of await port.finalizeExhausted(pageSize)) {
-            await port.release(claim, { status: 'non-retryable' });
-            counts.rejectedCount += 1;
+        await this.finalizeExhaustedWork(counts);
+        if (this.shutdown.signal.aborted) {
+            return counts;
         }
         const selection = await selectReady(port, pageSize);
         counts.claimedCount = selection.claims.length;
         for (const claim of selection.claims) {
             if (this.shutdown.signal.aborted) {
-                return;
+                return counts;
             }
             await this.runOne(claim, counts);
         }
@@ -172,6 +188,18 @@ export class ALWorkHandler {
             durationMs: Math.max(0, clock.nowMs() - startedAtMs),
             ...counts
         });
+        return counts;
+    }
+
+    private async finalizeExhaustedWork(counts: ALWorkCounts): Promise<void> {
+        const { port, pageSize } = this.dependencies;
+        for (const claim of await port.finalizeExhausted(pageSize)) {
+            if (this.shutdown.signal.aborted) {
+                return;
+            }
+            await port.release(claim, { status: 'non-retryable' });
+            counts.rejectedCount += 1;
+        }
     }
 
     private async runOne(claim: ALWorkClaim, counts: ALWorkCounts): Promise<void> {

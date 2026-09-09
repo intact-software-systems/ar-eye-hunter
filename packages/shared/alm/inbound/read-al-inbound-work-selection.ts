@@ -34,7 +34,11 @@ interface ALInboundWorkSelection {
     readonly scan: ALInboundWorkScan;
     /** Claimable work, or a rotation that still owes a page: one status never hides work on the next. */
     readonly readyNow: boolean;
-    /** `nowMs` when work is ready now, the earliest scanned readiness otherwise. */
+    /**
+     * What a batch that read this page advertises: `nowMs` only when the page held work it could
+     * claim. An unfinished rotation is a scan, so it advertises the earliest scanned readiness and
+     * lets the engine's own pass rate carry it to the next status.
+     */
     readonly nextReadyAtMs: number | undefined;
 }
 
@@ -102,23 +106,25 @@ async function readALInboundWorkSelection(
     const scannedReadyAtMs = readyAtMs === undefined
         ? input.scan.nextReadyAtMs
         : Math.min(input.scan.nextReadyAtMs ?? readyAtMs, readyAtMs);
-    const readyNow = claimable.length > 0 || unleasedReservations.length > 0 || continueScan;
+    const claimableNow = claimable.length > 0 || unleasedReservations.length > 0;
     return {
         claimable,
         unleasedReservations,
-        readyNow,
+        readyNow: claimableNow || continueScan,
         scan: {
             cursor: page.nextCursor,
             statusIndex,
             nextReadyAtMs: continueScan ? scannedReadyAtMs : undefined
         },
-        nextReadyAtMs: readyNow ? input.nowMs : scannedReadyAtMs
+        nextReadyAtMs: claimableNow ? input.nowMs : scannedReadyAtMs
     };
 }
 
 /**
  * Rotates one bounded page across NEW, RETRY and RESERVED. The readiness probe and the batch that
- * follows it share one page read, so advertised work is the work the batch claims.
+ * follows it share one page read, so advertised work is the work the batch claims. An unfinished
+ * rotation is due to the probe alone: the batch that reads a page with nothing claimable advertises
+ * the next real ready time, so the engine's own pass rate carries the scan to the next status.
  */
 export function createALInboundWorkSelector(
     dependencies: ALInboundWorkSelectorDependencies
@@ -162,8 +168,10 @@ export function createALInboundWorkSelector(
             if (!selection.readyNow) {
                 // An exhausted rotation must observe a fresh page on the next probe.
                 forgetSelection(pending);
+                return selection.nextReadyAtMs;
             }
-            return selection.nextReadyAtMs;
+            // A rotation that still owes a page is due to the probe, never to the batch that follows.
+            return dependencies.nowMs();
         },
         selectReady: async (port, pageSize) => {
             const pending = readSelection(port, pageSize);
