@@ -71,7 +71,6 @@ interface AlmConformanceAssertInput extends AlmConformanceMessageStepInput {
 interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
     readonly count: number;
     readonly absent: boolean;
-    readonly windowMs: number;
 }
 
 interface AlmConformanceFaultInput extends AlmConformanceStepInput {
@@ -98,9 +97,11 @@ const ASSERT_TIMEOUT_MS = 2_000;
 const STATS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
-const RECEIVE_WINDOW_MS = 2_000;
-const EXPIRY_RECEIVE_WINDOW_MS = 2_500;
-const MINIMUM_DEADLINE_MS = EXPIRY_RECEIVE_WINDOW_MS + RESPONSE_MARGIN_MS;
+const MINIMUM_RECEIVE_WINDOW_MS = 2_500;
+const MINIMUM_DEADLINE_MS = MINIMUM_RECEIVE_WINDOW_MS + RESPONSE_MARGIN_MS;
+
+/** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
+const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 
 const OVERSIZED_PAYLOAD_BYTES = 70_000;
 const OVERSIZED_PAYLOAD_FILLER = 'x'.repeat(OVERSIZED_PAYLOAD_BYTES);
@@ -176,8 +177,7 @@ function toBoundedRejectionReceiverCommands(
         ...receiver,
         index: 1,
         count: 1,
-        absent: true,
-        windowMs: RECEIVE_WINDOW_MS
+        absent: true
     })];
 }
 
@@ -216,8 +216,7 @@ function toDeadlineExpiryReceiverCommands(
         ...receiver,
         index: 1,
         count: 1,
-        absent: true,
-        windowMs: EXPIRY_RECEIVE_WINDOW_MS
+        absent: true
     })];
 }
 
@@ -257,8 +256,7 @@ function toDeliveryBaselineReceiverCommands(
         ...receiver,
         index: 1,
         count: 1,
-        absent: false,
-        windowMs: RECEIVE_WINDOW_MS
+        absent: false
     })];
 }
 
@@ -292,15 +290,13 @@ function toOrderingResyncReceiverCommands(
             ...receiver,
             index: 1,
             count: 1,
-            absent: false,
-            windowMs: RECEIVE_WINDOW_MS
+            absent: false
         }),
         toReceivedCommand({
             ...receiver,
             index: 2,
             count: 2,
-            absent: true,
-            windowMs: RECEIVE_WINDOW_MS
+            absent: true
         })
     ];
 }
@@ -395,7 +391,7 @@ function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestComm
         workspaceId: input.group.workspaceId,
         roomRef: toRoomRef(input.group),
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
-        rallar: { typeId, topicId: typeId },
+        rallar: { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
         timeoutMs: toBudgetMs(CONNECT_TIMEOUT_MS, input.deadlineMs),
         ...(input.carrier === 'ws' ? {} : {
             readiness: {
@@ -416,7 +412,7 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand
         connection: input.senderConnection,
         carrier: input.carrier,
         typeId,
-        topicId: typeId,
+        topicId: ALM_CONFORMANCE_TOPIC_ID,
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(SEND_TIMEOUT_MS, input.deadlineMs),
@@ -451,7 +447,9 @@ function toSendAssertCommand(assertion: AlmConformanceAssertInput): RallarBlackB
     };
 }
 
+/** The window spans the sender's whole prologue, so a presence claim cannot race the sender's startup. */
 function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBoxTestCommand {
+    const deadlineMs = received.input.deadlineMs;
     return {
         kind: 'messages.received',
         commandId: toCommandId(received, `received-${received.index}`),
@@ -459,11 +457,8 @@ function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBo
         typeId: toScenarioTypeId(received),
         count: received.count,
         absent: received.absent,
-        windowMs: received.windowMs,
-        timeoutMs: toBudgetMs(
-            received.windowMs + RESPONSE_MARGIN_MS,
-            received.input.deadlineMs
-        )
+        windowMs: deadlineMs - RESPONSE_MARGIN_MS,
+        timeoutMs: deadlineMs
     };
 }
 

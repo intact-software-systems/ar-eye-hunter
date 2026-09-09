@@ -141,17 +141,21 @@ function toConnectionName(request: any): string {
     ));
 }
 
-function toRtcTransport(value: any): 'realtime' | 'messages.rtc' | undefined {
-    return value === 'realtime' || value === 'messages.rtc'
-        ? value
+type RtcSendTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+type RtcConnectTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'messages.ws'>;
+
+const RTC_SEND_TRANSPORTS: readonly RtcSendTransport[] = ['realtime', 'messages.rtc'];
+const RTC_CONNECT_TRANSPORTS: readonly RtcConnectTransport[] = ['realtime', 'messages.rtc', 'messages.ws'];
+
+function decodeRtcSendTransport(value: unknown): RtcSendTransport | undefined {
+    return typeof value === 'string'
+        ? RTC_SEND_TRANSPORTS.find((transport) => transport === value)
         : undefined;
 }
 
-function toRtcConnectTransport(
-    value: unknown
-): Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'messages.ws'> | undefined {
-    return value === 'realtime' || value === 'messages.rtc' || value === 'messages.ws'
-        ? value
+function decodeRtcConnectTransport(value: unknown): RtcConnectTransport | undefined {
+    return typeof value === 'string'
+        ? RTC_CONNECT_TRANSPORTS.find((transport) => transport === value)
         : undefined;
 }
 
@@ -250,7 +254,7 @@ function toConnectCommand(
         request.apiBaseUrl,
         request.rallarApiBaseUrl
     );
-    const transport = toRtcConnectTransport(firstDefined(rallar.transport, request.transport));
+    const transport = decodeRtcConnectTransport(firstDefined(rallar.transport, request.transport));
 
     return {
         kind: 'rtc.connect',
@@ -302,7 +306,7 @@ function toSendCommand(
         send,
         expect: interaction?.response,
         ...scopeFields,
-        transport: toRtcTransport(firstDefined(rallar.transport, request.transport)),
+        transport: decodeRtcSendTransport(firstDefined(rallar.transport, request.transport)),
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),
             blackBoxRunner: request

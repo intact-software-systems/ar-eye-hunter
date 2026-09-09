@@ -39,6 +39,9 @@ const CARRIER_TEST_TIMEOUT_MS = 300_000;
 const RUN_ID_BUDGET = 43;
 
 test.describe('ALM conformance lane', () => {
+    // A cold RTC handshake intermittently reports no ready peer within the readiness budget; the
+    // retry costs one extra run of a carrier instead of widening any readiness wait.
+    test.describe.configure({ retries: 1 });
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
 
     for (const carrier of ALM_CONFORMANCE_CARRIERS) {

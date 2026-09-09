@@ -20,8 +20,12 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/types.ts';
+import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 type ConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
+type ReceivedCommand = Extract<RallarBlackBoxTestCommand, { kind: 'messages.received'; }>;
+
+const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 
 const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
@@ -52,15 +56,12 @@ function connectCommandsOf(scenarios: readonly AlmConformanceScenario[]): readon
     return recipesOf(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ConnectCommand => command.kind === 'rtc.connect'));
 }
 
-/** Every field a scenario's commands route by, so one assertion can prove they share one typeId. */
+/** Every field a scenario's commands match on, so one assertion can prove they share one typeId. */
 function routedTypeIdsOf(command: RallarBlackBoxTestCommand): readonly string[] {
     switch (command.kind) {
         case 'rtc.connect':
-            return [String(command.rallar?.typeId), String(command.rallar?.topicId)];
+            return [String(command.rallar?.typeId)];
         case 'messages.send':
-            return command.topicId === undefined
-                ? [command.typeId]
-                : [command.typeId, command.topicId];
         case 'messages.received':
             return [command.typeId];
         case 'fault.inject':
@@ -68,6 +69,22 @@ function routedTypeIdsOf(command: RallarBlackBoxTestCommand): readonly string[] 
         default:
             return [];
     }
+}
+
+/** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
+function routedTopicIdsOf(command: RallarBlackBoxTestCommand): readonly string[] {
+    switch (command.kind) {
+        case 'rtc.connect':
+            return command.rallar?.topicId === undefined ? [] : [String(command.rallar.topicId)];
+        case 'messages.send':
+            return command.topicId === undefined ? [] : [command.topicId];
+        default:
+            return [];
+    }
+}
+
+function receivedCommandsOf(scenarios: readonly AlmConformanceScenario[]): readonly ReceivedCommand[] {
+    return recipesOf(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ReceivedCommand => command.kind === 'messages.received'));
 }
 
 describe('alm-conformance recipe family', () => {
@@ -117,7 +134,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('scopes every routed field of a scenario to that scenario typeId', () => {
+    it('scopes every matched field of a scenario to that scenario typeId', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(conformanceInput(carrier))) {
                 const routed = recipesOf([scenario])
@@ -125,6 +142,31 @@ describe('alm-conformance recipe family', () => {
 
                 expect(routed.length).toBeGreaterThan(0);
                 expect(new Set(routed)).toEqual(new Set([`alm.conformance.${scenario.scenarioId}`]));
+            }
+        }
+    });
+
+    it('routes every carrier over one WS topic the product admits', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const topicIds = recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))
+                .flatMap((recipe) => recipe.commands.flatMap(routedTopicIdsOf));
+
+            expect(topicIds.length).toBeGreaterThan(0);
+            expect(new Set(topicIds)).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
+            expect(validateRallarWsUserTopicId(CONFORMANCE_TOPIC_ID).errors).toEqual([]);
+        }
+    });
+
+    it('opens every receive window across the sender prologue up to the deadline', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const received = receivedCommandsOf(
+                createAlmConformanceRecipes({ ...conformanceInput(carrier), deadlineMs: 15_000 })
+            );
+
+            expect(received.length).toBeGreaterThan(0);
+            for (const command of received) {
+                expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
+                    .toEqual({ windowMs: 14_000, timeoutMs: 15_000 });
             }
         }
     });
