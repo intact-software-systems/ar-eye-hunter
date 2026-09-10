@@ -1,3 +1,5 @@
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -11,6 +13,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
@@ -148,6 +151,77 @@ describe('outbound admission observation order', () => {
                 await resume.promise;
             }
             return value;
+        });
+        const pending = store.readRepairMessage(message.id.msgId, (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }));
+        await captured.promise;
+        expect(
+            await store.commitBundle({
+                senderId: message.id.senderId,
+                expectedVersion: 1,
+                mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
+                durableEffects: []
+            })
+        ).toBe('committed');
+        resume.resolve();
+        const repair = await pending;
+        expect(repair.clientRecord?.version).toBe(2);
+        expect(repair.sentSnapshot).toBeUndefined();
+        expect(repair.plan).toBeUndefined();
+        admission.dispose();
+    });
+    it('rereads repair state from Postgres after capturing that sender version', async () => {
+        const namespace = 'repair-race-psql';
+        const storage = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend(storage.sql, namespace, Date.now);
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: namespace,
+            decodePrepared: decodeOutboundTestPayload,
+            namespace,
+            backend,
+            supersedenceTrackTtlMs: 300_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        const message = createOutboundMessage('repair-read-race-psql');
+        const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            admissionStore: store,
+            workPort: createTestALOutboundWorkPort({
+                admissionStore: store,
+                workQueue: backend.workQueue,
+                nowMs: Date.now
+            }),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            decodePreparedMessage: decodeOutboundTestPayload,
+            clock: { nowMs: Date.now },
+            browserLocks: undefined,
+            diagnostics: undefined
+        });
+        await admission.commit({
+            msg: message,
+            intent: 'enqueue',
+            phase: 'immediate',
+            origin: 'send',
+            options: {},
+            planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
+        });
+        const captured = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<void>();
+        // The SQL read itself is the pause point: a session that answered the second hop from a
+        // cached observation never reaches it twice.
+        const findEntry = PSqlRuntimeStateRepository.prototype.findEntry;
+        let paused = false;
+        vi.spyOn(PSqlRuntimeStateRepository.prototype, 'findEntry').mockImplementation(async function (
+            this: PSqlRuntimeStateRepository,
+            entryNamespace: string,
+            key: string
+        ) {
+            const entry = await findEntry.call(this, entryNamespace, key);
+            if (key === `${namespace}:sent:${message.id.msgId}` && !paused) {
+                paused = true;
+                captured.resolve();
+                await resume.promise;
+            }
+            return entry;
         });
         const pending = store.readRepairMessage(message.id.msgId, (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }));
         await captured.promise;

@@ -59,16 +59,18 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     async ready(): Promise<void> {}
 
     /**
-     * One collector per session, so the chain reads each row once. Postgres serves every statement
-     * from a consistent snapshot on its own, so a read session opens no SQL transaction.
+     * Autocommit gives each statement its own snapshot, never one across the chain, so the backend
+     * is its own read session and every read is a fresh query. A chain that deliberately re-reads a
+     * row -- the repair read, after it has captured the sender version that fences it -- must see
+     * the row as it is now, not as some earlier statement found it. It returns the chain's own
+     * promise rather than awaiting it: a session must not cost a caller an extra turn.
      */
-    async readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
-        return await read(
-            new PSqlAdmissionReadSession(
-                new PSqlAdmissionMutationCollector(this.repository, this.namespace, this.nowMs),
-                this.workQueue
-            )
-        );
+    readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
+        return read(this);
+    }
+
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        return await this.workQueue.getItem(key);
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
@@ -131,29 +133,6 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
             throw error;
         }
         return result;
-    }
-}
-
-/** The read half of one admission decision surface: state rows from a collector, work from the queue. */
-class PSqlAdmissionReadSession implements ALAdmissionReadSession {
-    private readonly collector: PSqlAdmissionMutationCollector;
-    private readonly workQueue: PSqlQueueBox;
-
-    constructor(collector: PSqlAdmissionMutationCollector, workQueue: PSqlQueueBox) {
-        this.collector = collector;
-        this.workQueue = workQueue;
-    }
-
-    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        return await this.collector.read(key, decode);
-    }
-
-    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        return await this.collector.list(prefix, decode);
-    }
-
-    async readWork(key: Key): Promise<ResourceEntry | undefined> {
-        return await this.workQueue.getItem(key);
     }
 }
 
