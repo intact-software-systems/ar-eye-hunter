@@ -351,8 +351,7 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     readRtcMessageNacks: async () => [],
-    hasMessageAdmission: async (messageId, transport) =>
-        await facadeBehavior.messageAdmission(messageId, transport),
+    hasMessageAdmission: async (messageId, transport) => await facadeBehavior.messageAdmission(messageId, transport),
     configure: (config) => {
         records.configurationWrites.push(config);
         facadeBehavior.configure(config);

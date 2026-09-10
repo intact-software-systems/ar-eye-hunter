@@ -127,9 +127,11 @@ describe('alm-conformance recipe family', () => {
             expect(received.length).toBeGreaterThan(0);
             for (const command of received) {
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
-                    .toEqual(command.absent
-                        ? { windowMs: 17_000, timeoutMs: 18_000 }
-                        : { windowMs: 27_000, timeoutMs: 28_000 });
+                    .toEqual(
+                        command.absent
+                            ? { windowMs: 17_000, timeoutMs: 18_000 }
+                            : { windowMs: 27_000, timeoutMs: 28_000 }
+                    );
             }
         }
     });

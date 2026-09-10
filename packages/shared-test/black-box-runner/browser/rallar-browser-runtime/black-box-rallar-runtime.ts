@@ -276,8 +276,7 @@ class BlackBoxRallarConnectionRuntime {
             readHealth: this.#healthReader.readHealth,
             wsStatus: this.#healthReader.wsStatusFor,
             rtcStatus: this.#healthReader.rtcStatusFor,
-            hasMessageAdmission: (messageId, transport) =>
-                this.#rallar.hasMessageAdmission(messageId, transport),
+            hasMessageAdmission: (messageId, transport) => this.#rallar.hasMessageAdmission(messageId, transport),
             emit: this.#runtimeDiagnostics.emit,
             emitDiagnostic: this.#runtimeDiagnostics.emitDiagnostic,
             emitError: this.#runtimeDiagnostics.emitError

@@ -115,10 +115,10 @@ const EXPIRY_TTL_MS = 7_500;
 const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
 /** The absence window must contain pre-send faults, the message lifetime, and post-expiry proof. */
-const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS
-    + Math.max(MINIMUM_RECEIVE_WINDOW_MS, EXPIRY_TTL_MS)
-    + MINIMUM_POST_EXPIRY_OBSERVATION_MS
-    + RESPONSE_MARGIN_MS;
+const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
+    Math.max(MINIMUM_RECEIVE_WINDOW_MS, EXPIRY_TTL_MS) +
+    MINIMUM_POST_EXPIRY_OBSERVATION_MS +
+    RESPONSE_MARGIN_MS;
 
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';

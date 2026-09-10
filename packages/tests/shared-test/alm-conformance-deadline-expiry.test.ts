@@ -30,9 +30,11 @@ function conformanceInput(
 describe('ALM conformance deadline expiry', () => {
     it('rejects a deadline that cannot contain the worst-case fault and expiry windows', () => {
         expect(() => createAlmConformanceRecipes(conformanceInput('rtc', MINIMUM_DEADLINE_MS - 1)))
-            .toThrow(new RangeError(
-                `createAlmConformanceRecipes requires deadlineMs of at least ${MINIMUM_DEADLINE_MS}.`
-            ));
+            .toThrow(
+                new RangeError(
+                    `createAlmConformanceRecipes requires deadlineMs of at least ${MINIMUM_DEADLINE_MS}.`
+                )
+            );
         expect(() => createAlmConformanceRecipes(conformanceInput('rtc'))).not.toThrow();
     });
 
@@ -44,9 +46,10 @@ describe('ALM conformance deadline expiry', () => {
             const senderCommands = deadline?.sender.commands ?? [];
             const send = senderCommands.find((command) => command.kind === 'messages.send');
             const faultBudgetMs = senderCommands.reduce(
-                (total, command) => command.kind === 'fault.inject'
-                    ? total + (command.timeoutMs ?? 0)
-                    : total,
+                (total, command) =>
+                    command.kind === 'fault.inject'
+                        ? total + (command.timeoutMs ?? 0)
+                        : total,
                 0
             );
             const received = deadline?.receiver.commands.find(
