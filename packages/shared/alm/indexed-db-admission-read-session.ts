@@ -155,12 +155,24 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
     /**
      * Ends the snapshot now rather than when IndexedDB next idles. A readonly transaction holds a
      * shared lock on both stores, so the write that follows a finished read chain would otherwise
-     * queue behind it; there is nothing to roll back, so aborting is how a reader releases it.
+     * queue behind it; there is nothing to roll back, so aborting is how a reader releases it. A
+     * transaction that already finished refuses the abort, and that refusal is the state this
+     * method wanted -- it must not surface as an error over one thrown from a caller's `finally`.
      */
     close(): void {
         const open = this.#snapshot;
         this.#snapshot = undefined;
-        open?.transaction.abort();
+        if (open === undefined) {
+            return;
+        }
+        try {
+            open.transaction.abort();
+        }
+        catch (error) {
+            if (!FINISHED_TRANSACTION_ERROR_NAMES.has(toError(error).name)) {
+                throw error;
+            }
+        }
     }
 
     /** The revision comes from the snapshot the first expired row was read at: that is its fence. */
