@@ -94,6 +94,8 @@ describe('IndexedDbQueueBox indexed reads', () => {
         });
 
         expect(reserved.size).toBe(4);
+        // Two: the reserve calls are awaited separately, so neither can join the other's
+        // transaction, and the readwrite one each opens to commit is not counted here.
         expect(readonlyTransactions.count()).toBeLessThanOrEqual(2);
     });
 
