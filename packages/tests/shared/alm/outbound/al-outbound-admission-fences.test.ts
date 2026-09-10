@@ -9,7 +9,11 @@ import {
 
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALRepairControlMessage,
+    type ALRepairReason
+} from '@shared/al-contracts/al-control.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -27,14 +31,18 @@ import { toALOutboundMessageOwnerKey } from '@shared/alm/outbound/admission/al-o
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
-    type ALOutboundCommitBundle
+    type ALOutboundCommitBundle,
+    type ALOutboundNotYetInSyncRetrySchedule
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -107,7 +115,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
                 }
             })
         ).toBe('pending');
-        const pending = await readPendingAdmissionRow(fixture.backend);
+        const pending = await readOutboundWorkRow(fixture.backend, 'admit-message');
         const bundle = await readPendingAdmissionBundle({
             store: fixture.store,
             message,
@@ -125,11 +133,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
 
     it('aborts a moved control owner without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
-        const control = createTestALOutboundControlAdmission({
-            admissionStore: fixture.store,
-            workQueue: fixture.backend.workQueue,
-            nowMs: Date.now
-        });
+        const control = createFenceControlAdmission(fixture);
         const message = await seedControlObligation(fixture.store);
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
@@ -143,6 +147,61 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         });
 
         expect(await control.admit(toDeliveredAck(message))).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('aborts a moved control effect without a write or a revision bump', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        // Both repairs name the same repair-hint effect, so the second observes what the first wrote.
+        expect(await control.admit(toRepairControl(message, 'retransmit'))).toEqual({ kind: 'committed' });
+        const repairWork = await readOutboundWorkRow(fixture.backend, 'repair-hint');
+        const write = fixture.backend.write.bind(fixture.backend);
+        let before = '';
+        vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+            // Another owner settles the repair the control forwards between its read and its write.
+            await fixture.backend.workQueue.enqueue({ ...repairWork, status: EntityStatus.COMPLETED });
+            before = await fixture.readAdmissionState();
+            return await write(operation);
+        });
+
+        expect(await control.admit(toRepairControl(message, 'missing-seq'))).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('aborts a retry schedule whose sender version moved without a write or a revision bump', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        // The obligation's commit gives the sender its first version, so the schedule below carries
+        // the expectation a repair admission computed before that commit landed.
+        const message = await seedControlObligation(fixture.store);
+
+        const before = await fixture.readAdmissionState();
+        expect(await control.scheduleNotYetInSyncRetry(toRetrySchedule(message.id.senderId, message.id.msgId)))
+            .toEqual({ status: 'conflict' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('aborts a retry schedule whose effect moved without a write or a revision bump', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        // A sender the store never committed for: its absent version is the one the schedule
+        // expects, so the fence under test is the effect row, not the version.
+        const schedule = toRetrySchedule('never-committed', 'retry-effect-fence');
+        const write = fixture.backend.write.bind(fixture.backend);
+        let before = '';
+        vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+            // Another owner writes the retry's own effect row between the schedule's read and its write.
+            await fixture.backend.workQueue.enqueue(toRetryEffectEntry(schedule.msgId));
+            before = await fixture.readAdmissionState();
+            return await write(operation);
+        });
+
+        expect(await control.scheduleNotYetInSyncRetry(schedule)).toEqual({ status: 'conflict' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -267,6 +326,54 @@ function toDeliveredAck(message: ALMessage): ALMessage {
     });
 }
 
+function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAdmission<OutboundTestPayload> {
+    return createTestALOutboundControlAdmission({
+        admissionStore: fixture.store,
+        workQueue: fixture.backend.workQueue,
+        nowMs: Date.now
+    });
+}
+
+function toRepairControl(message: ALMessage, reason: ALRepairReason): ALMessage {
+    const observedAtEpochMs = Date.now();
+    return newALRepairControlMessage(
+        { v: 2, msgId: `${message.id.msgId}-${reason}`, senderId: 'peer-1', ts: observedAtEpochMs },
+        {
+            fromPeerId: 'peer-1',
+            toPeerId: message.id.senderId,
+            msgId: message.id.msgId,
+            reason,
+            observedAtEpochMs
+        }
+    );
+}
+
+/** The schedule a repair admission computes for a sender it observed without a version. */
+function toRetrySchedule(senderId: string, msgId: string): ALOutboundNotYetInSyncRetrySchedule {
+    const nowMs = Date.now();
+    return {
+        senderId,
+        expectedVersion: undefined,
+        msgId,
+        maxAttempts: 3,
+        expireAtTimestamp: nowMs + 60_000,
+        retryAtMs: nowMs
+    };
+}
+
+/** The queue row the first attempt of that schedule would write, as a foreign owner already wrote it. */
+function toRetryEffectEntry(msgId: string): ResourceEntry {
+    const nowMs = Date.now();
+    return computeALOutboundWorkEntry({
+        namespace: FENCE_NAMESPACE,
+        effectId: toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 1]),
+        payload: { kind: 'nack-retry', msgId, reason: 'not-yet-in-sync' },
+        observedAtMs: nowMs,
+        retryAtMs: nowMs,
+        expireAtTimestamp: nowMs + 60_000
+    });
+}
+
 function createSupersedingMessage(senderId: string, sequence: number): ALMessage {
     const message = createOutboundMessage(`superseding-${sequence}`);
     return { ...message, id: { ...message.id, senderId }, ordering: { orderingKey: 'shared-topic', seq: sequence } };
@@ -284,15 +391,15 @@ async function readSupersedingBundle(
     }));
 }
 
-async function readPendingAdmissionRow(backend: ALAdmissionWorkBackend): Promise<ResourceEntry> {
+async function readOutboundWorkRow(backend: ALAdmissionWorkBackend, kind: string): Promise<ResourceEntry> {
     const rows = await Promise.all(
         (await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key))
     );
-    const pending = rows.find((row) => row?.resource.includes('"kind":"admit-message"'));
-    if (!pending) {
-        throw new Error('Expected a retained pending admission row');
+    const found = rows.find((row) => row?.resource.includes(`"kind":"${kind}"`));
+    if (!found) {
+        throw new Error(`Expected a retained ${kind} work row`);
     }
-    return pending;
+    return found;
 }
 
 interface PendingAdmissionBundleInput {
