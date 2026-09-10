@@ -29,7 +29,11 @@ import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { createOutboundTestRuntimeFor, enqueueOutboundOrThrow } from './outbound-runtime-test-fixture.ts';
+import {
+    createOutboundTestRuntimeFor,
+    enqueueOutboundOrThrow,
+    runOutboundWorkTask
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 /** The standard workload the ALM storage snapshot reports: eight superseding updates per recipient. */
@@ -127,7 +131,7 @@ describe('ALM browser storage snapshot', () => {
                 }
             }
         }
-        await runtime.drainWork();
+        await runOutboundWorkTask(runtime);
         await admitInboundWorkload();
 
         const snapshot = await readALStorageSnapshot();

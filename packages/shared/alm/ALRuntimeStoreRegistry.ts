@@ -4,18 +4,33 @@ import { RepositoryToken } from '../cache/RepositoryToken.ts';
 import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
 
+declare const alRuntimeStorePrepared: unique symbol;
+
+/**
+ * A store-scope id that also states the prepared contract its outbound stores produce. The phantom
+ * member is type-only: `toALRuntimeStoreId` is its single producer and returns the id itself, so a
+ * resolve infers `TPrepared` from the id instead of the caller asserting it.
+ */
+export type ALRuntimeStoreId<TPrepared> = string & {
+    readonly [alRuntimeStorePrepared]: TPrepared;
+};
+
+export function toALRuntimeStoreId<TPrepared>(id: string): ALRuntimeStoreId<TPrepared> {
+    return id as ALRuntimeStoreId<TPrepared>;
+}
+
 export type ALRuntimeStoreFactories<TPrepared> = Readonly<{
     createInboundStores?: () => ALInboundRuntimeStores;
     createOutboundStores?: () => ALOutboundRuntimeStores<TPrepared>;
 }>;
 
 export type ALRuntimeStoreScope<TPrepared> = Readonly<{
-    id: string;
+    id: ALRuntimeStoreId<TPrepared>;
     factories: ALRuntimeStoreFactories<TPrepared>;
 }>;
 
 export function configureALRuntimeStoreFactories<TPrepared>(
-    id: string,
+    id: ALRuntimeStoreId<TPrepared>,
     factories: ALRuntimeStoreFactories<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALRuntimeStoreFactories<TPrepared> {
@@ -33,17 +48,17 @@ export function configureALRuntimeStoreScopes<TPrepared>(
 }
 
 export function resolveALRuntimeStoreFactories<TPrepared>(
-    id: string,
+    id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALRuntimeStoreFactories<TPrepared> {
-    return manager.require(toALRuntimeStoreFactoryToken(id));
+    return manager.require(toALRuntimeStoreFactoryToken<TPrepared>(id));
 }
 
-export function resolveALInboundRuntimeStores(
-    id: string,
+export function resolveALInboundRuntimeStores<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALInboundRuntimeStores {
-    const factories = resolveALRuntimeStoreFactories<never>(id, manager);
+    const factories = resolveALRuntimeStoreFactories(id, manager);
 
     if (!factories.createInboundStores) {
         throw new Error(`AL inbound runtime stores are not configured: ${id}`);
@@ -53,7 +68,7 @@ export function resolveALInboundRuntimeStores(
 }
 
 export function resolveALOutboundRuntimeStores<TPrepared>(
-    id: string,
+    id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALOutboundRuntimeStores<TPrepared> {
     const factories = resolveALRuntimeStoreFactories<TPrepared>(id, manager);
@@ -66,7 +81,7 @@ export function resolveALOutboundRuntimeStores<TPrepared>(
 }
 
 function toALRuntimeStoreFactoryToken<TPrepared>(
-    id: string
+    id: ALRuntimeStoreId<TPrepared>
 ): RepositoryToken<ALRuntimeStoreFactories<TPrepared>> {
     return new RepositoryToken(
         `shared.services.al-runtime-stores:${id}`,

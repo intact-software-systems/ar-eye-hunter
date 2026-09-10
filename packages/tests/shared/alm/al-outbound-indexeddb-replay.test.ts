@@ -35,7 +35,8 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    peekOutboundWorkReadyAt
+    peekOutboundWorkReadyAt,
+    runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -113,14 +114,14 @@ describe('outbound IndexedDB durable queue replay', () => {
         for (const msg of messages) {
             expect((await runtime1.enqueueIfAbsent(msg)).status).toBe('accepted');
             // The send holds its claim (it never settles), so the acknowledgements below race nothing.
-            await runtime1.drainWork();
+            await runOutboundWorkTask(runtime1);
             const respondents = msg.route.resourceId === 'complete' ? ['peer-1', 'peer-2'] : ['peer-1'];
             for (const fromPeerId of respondents) {
                 await runtime1.acceptControlMessage(newALAckControlMessage(
                     { v: 2, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
                     { ackedMsgId: msg.id.msgId, fromPeerId, toPeerId: 'self', status: 'accepted', observedAtEpochMs: Date.now() }
                 ));
-                await runtime1.drainWork();
+                await runOutboundWorkTask(runtime1);
             }
         }
         runtime1.dispose();

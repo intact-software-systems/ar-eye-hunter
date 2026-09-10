@@ -2,7 +2,9 @@ import {
     configureALRuntimeStoreScopes,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores,
-    type ALRuntimeStoreFactories
+    toALRuntimeStoreId,
+    type ALRuntimeStoreFactories,
+    type ALRuntimeStoreId
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -45,12 +47,14 @@ export interface CreateDefaultPSqlALOutboundRuntimeStoresInput<TPrepared>
 
 const DEFAULT_NAMESPACE = 'al-runtime';
 
-export function toServerWsQBoxALRuntimeStoreId(name: string): string {
-    return `server-ws-qbox:${name}`;
+export function toServerWsQBoxALRuntimeStoreId(
+    name: string
+): ALRuntimeStoreId<WsQueueBoxServerPreparedMessage> {
+    return toALRuntimeStoreId(`server-ws-qbox:${name}`);
 }
 
 function createPSqlRuntimeStoreFactories(
-    runtimeStoreId: string,
+    runtimeStoreId: ALRuntimeStoreId<WsQueueBoxServerPreparedMessage>,
     options: CreateDefaultPSqlALOutboundRuntimeStoresInput<WsQueueBoxServerPreparedMessage>
 ): ALRuntimeStoreFactories<WsQueueBoxServerPreparedMessage> {
     const scopedOptions = {

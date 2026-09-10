@@ -2,9 +2,13 @@ import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOut
 import {
     configureALRuntimeStoreFactories,
     resolveALInboundRuntimeStores,
-    resolveALOutboundRuntimeStores
+    resolveALOutboundRuntimeStores,
+    toALRuntimeStoreId
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     describe,
@@ -16,7 +20,7 @@ describe('AL runtime store registry', () => {
     it('requires explicit configuration before stores can be resolved', () => {
         const manager = new RepositoryManager();
 
-        expect(() => resolveALInboundRuntimeStores('missing', manager)).toThrow(
+        expect(() => resolveALInboundRuntimeStores(scopeId('missing'), manager)).toThrow(
             'Repository not found: shared.services.al-runtime-stores:missing'
         );
     });
@@ -24,7 +28,7 @@ describe('AL runtime store registry', () => {
     it('creates fresh store instances on each resolve instead of sharing mutable runtime state', async () => {
         const manager = new RepositoryManager();
         configureALRuntimeStoreFactories(
-            'runtime-a',
+            scopeId('runtime-a'),
             {
                 createInboundStores: () => createDefaultInMemoryALInboundRuntimeStores(),
                 createOutboundStores: () =>
@@ -35,8 +39,8 @@ describe('AL runtime store registry', () => {
             manager
         );
 
-        const inbound1 = resolveALInboundRuntimeStores('runtime-a', manager);
-        const inbound2 = resolveALInboundRuntimeStores('runtime-a', manager);
+        const inbound1 = resolveALInboundRuntimeStores(scopeId('runtime-a'), manager);
+        const inbound2 = resolveALInboundRuntimeStores(scopeId('runtime-a'), manager);
 
         expect(inbound1).not.toBe(inbound2);
         expect(inbound1.admissionStore).not.toBe(inbound2.admissionStore);
@@ -46,19 +50,24 @@ describe('AL runtime store registry', () => {
         const isolatedManager = new RepositoryManager();
 
         configureALRuntimeStoreFactories(
-            'runtime-b',
+            scopeId('runtime-b'),
             {
                 createInboundStores: () => createDefaultInMemoryALInboundRuntimeStores()
             },
             isolatedManager
         );
 
-        expect(resolveALInboundRuntimeStores('runtime-b', isolatedManager).admissionStore)
+        expect(resolveALInboundRuntimeStores(scopeId('runtime-b'), isolatedManager).admissionStore)
             .toBeDefined();
-        expect(() => resolveALOutboundRuntimeStores('runtime-b', isolatedManager))
+        expect(() => resolveALOutboundRuntimeStores(scopeId('runtime-b'), isolatedManager))
             .toThrow('AL outbound runtime stores are not configured: runtime-b');
-        expect(() => resolveALInboundRuntimeStores('runtime-b')).toThrow(
+        expect(() => resolveALInboundRuntimeStores(scopeId('runtime-b'))).toThrow(
             'Repository not found: shared.services.al-runtime-stores:runtime-b'
         );
     });
 });
+
+/** The typed scope id every registry entry is keyed by; the prepared contract rides on the id. */
+function scopeId(id: string) {
+    return toALRuntimeStoreId<ALOutboundTransportMessage>(id);
+}

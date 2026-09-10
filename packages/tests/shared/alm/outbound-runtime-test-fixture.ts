@@ -19,7 +19,7 @@ import {
     type ALOutboundAdmissionStore,
     type ResourceEntry
 } from '@shared/mod.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import type {
     ALOutboundEffectSnapshot,
@@ -81,16 +81,31 @@ export function captureOutboundWorkRunnable(engine: InboxOutboxEngine): () => Pr
     };
 }
 
+/**
+ * The outbound work task each fixture-built runtime registered, so a test can run one batch of that
+ * runtime's own work directly. The runtime owns no drain method: the engine task is the only entry.
+ */
+const outboundWorkBatches = new WeakMap<object, () => Promise<void>>();
+
+/** Runs one batch of this runtime's registered work task, the way an engine tick would. */
+export async function runOutboundWorkTask(runtime: object): Promise<void> {
+    const runBatch = outboundWorkBatches.get(runtime);
+    if (runBatch === undefined) {
+        throw new Error('Expected a fixture-built outbound runtime with a registered work task');
+    }
+    await runBatch();
+}
+
 /** Admits a message and runs the one batch its owner owes for the work the admission committed. */
 export async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent' | 'drainWork'>,
+    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
     msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
     if (enqueued.status === 'failed') {
         throw new Error(enqueued.reason);
     }
-    await runtime.drainWork();
+    await runOutboundWorkTask(runtime);
 
     return enqueued.entries;
 }
@@ -119,21 +134,58 @@ export function createDefaultOutboundTestRuntime(
 export function createOutboundTestRuntimeFor<TPrepared>(
     options: OutboundTestRuntimeInputFor<TPrepared>
 ): ALOutboundMessageRuntime<TPrepared> {
-    const runtime = createDefaultALOutboundMessageRuntime<TPrepared>({
-        decodePreparedMessage: options.decodePreparedMessage,
-        queueEngine: options.queueEngine,
-        outbox: options.outbox ?? new InMemoryQueueBox(new Map()),
-        stores: options.stores,
-        dequeue: options.dequeue,
-        diagnostics: options.diagnostics,
-        nowMs: options.nowMs ?? Date.now,
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: options.planOutgoingMessage,
-        planRepairMessage: options.planRepairMessage,
-        sendPreparedMessage: options.sendPreparedMessage
-    });
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<TPrepared>({
+            decodePreparedMessage: options.decodePreparedMessage,
+            queueEngine: options.queueEngine,
+            outbox: options.outbox ?? new InMemoryQueueBox(new Map()),
+            stores: options.stores,
+            dequeue: options.dequeue,
+            diagnostics: options.diagnostics,
+            nowMs: options.nowMs ?? Date.now,
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: options.planOutgoingMessage,
+            planRepairMessage: options.planRepairMessage,
+            sendPreparedMessage: options.sendPreparedMessage
+        })
+    );
     onTestFinished(() => runtime.dispose());
+    return runtime;
+}
+
+/**
+ * Builds a runtime whose registered work task `runOutboundWorkTask` can run. Spying on the prototype
+ * keeps the runtime's own engine ownership intact, which supplying an engine would not; a test that
+ * constructs its runtime directly wraps that construction in this.
+ */
+export function createOutboundRuntimeWithWorkTask<TPrepared>(
+    create: () => ALOutboundMessageRuntime<TPrepared>
+): ALOutboundMessageRuntime<TPrepared> {
+    let runnable: (() => void | Promise<void>) | undefined;
+    const includeTask = InboxOutboxEngine.prototype.includeTask;
+    const spy = vi.spyOn(InboxOutboxEngine.prototype, 'includeTask').mockImplementation(function (
+        this: InboxOutboxEngine,
+        id,
+        task
+    ) {
+        if (id.startsWith('al-outbound:')) {
+            runnable = task.runnable;
+        }
+        return includeTask.call(this, id, task);
+    });
+    let runtime: ALOutboundMessageRuntime<TPrepared>;
+    try {
+        runtime = create();
+    }
+    finally {
+        spy.mockRestore();
+    }
+    if (runnable === undefined) {
+        throw new Error('Expected the outbound runtime to register its own work task');
+    }
+    const runBatch = runnable;
+    outboundWorkBatches.set(runtime, async () => await runBatch());
     return runtime;
 }
 

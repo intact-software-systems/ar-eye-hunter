@@ -1,6 +1,5 @@
 import {
-    createBlackBoxOutboundDiagnosticsRelay,
-    createBlackBoxStorageResetDiagnosticsRelay,
+    createBlackBoxDiagnosticsRelay,
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDiagnosticsDependency,
@@ -11,8 +10,7 @@ import {
     type BlackBoxBrowserRoomsDependency,
     type BlackBoxBrowserRtcDependency,
     type BlackBoxBrowserWsDependency,
-    type BlackBoxOutboundDiagnosticsRelay,
-    type BlackBoxStorageResetDiagnosticsRelay
+    type BlackBoxDiagnosticsRelay
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type {
     RallarMessageHandler,
@@ -28,6 +26,8 @@ import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/brow
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -331,8 +331,8 @@ const director: BlackBoxBrowserDirectorDependency = {
 
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
-let outboundDiagnosticsRelay = createBlackBoxOutboundDiagnosticsRelay();
-let storageResetRelay = createBlackBoxStorageResetDiagnosticsRelay();
+let outboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
+let storageResetRelay = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
 
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get faults(): ScriptedTransportFaultPort {
@@ -341,10 +341,10 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get storage(): CountingIndexedDbOperationObserver {
         return countingStorage;
     },
-    get outboundDiagnostics(): BlackBoxOutboundDiagnosticsRelay {
+    get outboundDiagnostics(): BlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent> {
         return outboundDiagnosticsRelay;
     },
-    get storageReset(): BlackBoxStorageResetDiagnosticsRelay {
+    get storageReset(): BlackBoxDiagnosticsRelay<ALStorageResetEvent> {
         return storageResetRelay;
     }
 };
@@ -391,8 +391,8 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
-    outboundDiagnosticsRelay = createBlackBoxOutboundDiagnosticsRelay();
-    storageResetRelay = createBlackBoxStorageResetDiagnosticsRelay();
+    outboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
+    storageResetRelay = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);

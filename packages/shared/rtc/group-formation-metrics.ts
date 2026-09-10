@@ -37,6 +37,8 @@ export type RallarGroupFormationMetrics = Readonly<{
     wsOutboxRecipientCountByTopicId: Readonly<Record<string, number>>;
     wsEgressBytesByTopicId: Readonly<Record<string, number>>;
     wsOutboxNoLocalRecipientCount: number;
+    /** Outbound work the server's own owner rejected as non-retryable, across every batch. */
+    wsOutboundRejectedWorkCount: number;
     rttAcceptedWriteCount: number;
     rttTopologyEffectCount: number;
 }>;

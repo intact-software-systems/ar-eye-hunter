@@ -33,7 +33,11 @@ import {
     it,
     vi
 } from 'vitest';
-import { computeOutboundTestAdmission, createOutboundTestRuntimeFor } from './outbound-runtime-test-fixture.ts';
+import {
+    computeOutboundTestAdmission,
+    createOutboundTestRuntimeFor,
+    runOutboundWorkTask
+} from './outbound-runtime-test-fixture.ts';
 
 interface OutboundObligationInput {
     readonly targets: NonNullable<ALMessage['targets']>;
@@ -341,7 +345,7 @@ describe('outbound control admission identity', () => {
         });
 
         expect(await runtime.acceptControlMessage(notYetInSyncNack())).toEqual({ kind: 'pending-control' });
-        await runtime.drainWork();
+        await runOutboundWorkTask(runtime);
 
         // The replayed admission owes the same retry the direct path writes; without it the nack is lost.
         await expect.poll(async () => (await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind)).toContain('nack-retry');

@@ -47,6 +47,7 @@ import '../setup-browser-indexeddb.ts';
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
+    createOutboundRuntimeWithWorkTask,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
     peekOutboundWorkReadyAt
@@ -787,43 +788,45 @@ interface IndexedDbOutboundFixtureInput {
 
 function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
     const { dbName, namespace, sent } = input;
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        outbox: new InMemoryQueueBox(new Map()),
-        stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
-            dbName,
-            namespace,
-            decodePrepared: decodeOutboundTestPayload
-        }),
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        decodePreparedMessage: decodeOutboundTestPayload,
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
-            msg: msg,
-            persist: false,
-            preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-            repairTracking: {
-                enabled: true,
-                algo: 'retransmit',
-                maxAttempts: 1
-            }
-        })),
-        planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
-            msg: msg,
-            persist: false,
-            preparedMessages: [
-                {
-                    kind: 'repair',
-                    msgId: msg.id.msgId,
-                    trigger: request.trigger
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            outbox: new InMemoryQueueBox(new Map()),
+            stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
+                dbName,
+                namespace,
+                decodePrepared: decodeOutboundTestPayload
+            }),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            decodePreparedMessage: decodeOutboundTestPayload,
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
+                msg: msg,
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                repairTracking: {
+                    enabled: true,
+                    algo: 'retransmit',
+                    maxAttempts: 1
                 }
-            ]
-        })),
-        sendPreparedMessage: input.sendPreparedMessage ?? (async (prepared, phase) => {
-            sent.push({ ...prepared, phase });
+            })),
+            planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
+                msg: msg,
+                persist: false,
+                preparedMessages: [
+                    {
+                        kind: 'repair',
+                        msgId: msg.id.msgId,
+                        trigger: request.trigger
+                    }
+                ]
+            })),
+            sendPreparedMessage: input.sendPreparedMessage ?? (async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
 
-            return { status: 'sent' as const };
+                return { status: 'sent' as const };
+            })
         })
-    });
+    );
     onTestFinished(() => runtime.dispose());
     return runtime;
 }

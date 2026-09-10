@@ -105,7 +105,6 @@ const STATS_TIMEOUT_MS = 3_000;
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
-const MINIMUM_RECEIVE_WINDOW_MS = 2_500;
 // Must clear the slowest observed outbound-admission latency (up to 5s on a loaded CI runner) with
 // margin, and still leave most of the receiver's `deadlineMs - RESPONSE_MARGIN_MS` absence window
 // after expiry, so the absence proves the ttl expired rather than racing the deadline itself. The
@@ -116,7 +115,7 @@ const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
 /** The absence window must contain pre-send faults, the message lifetime, and post-expiry proof. */
 const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
-    Math.max(MINIMUM_RECEIVE_WINDOW_MS, EXPIRY_TTL_MS) +
+    EXPIRY_TTL_MS +
     MINIMUM_POST_EXPIRY_OBSERVATION_MS +
     RESPONSE_MARGIN_MS;
 

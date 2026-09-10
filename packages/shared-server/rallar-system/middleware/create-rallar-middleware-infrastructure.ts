@@ -40,6 +40,7 @@ export function createRallarMiddlewareInfrastructure(
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
+        outboundDiagnostics: options.wsOutboundDiagnostics,
         validateInboundMessage: validateMiddlewareALIngress,
         forwardsRoomScopedMessages: false
     });

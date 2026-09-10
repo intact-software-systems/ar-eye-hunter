@@ -84,10 +84,11 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
-    it('reports an active batch while a claim is in flight and clears it once ready() resolves', async () => {
+    it('resolves ready() only once the batch its bootstrap started has settled', async () => {
+        const released: string[] = [];
         const port = fakePort({
             claims: ['slow-1'],
-            onRelease: () => {}
+            onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`)
         });
         const engine = createEngine();
         let releaseClaim: (() => void) | undefined;
@@ -113,13 +114,12 @@ describe('ALWorkHandler', () => {
             diagnostics: undefined
         });
 
-        expect(handler.hasActiveBatch()).toBe(false);
         const readyPromise = handler.ready();
-        expect(handler.hasActiveBatch()).toBe(true);
+        expect(released).toEqual([]);
 
         releaseClaim?.();
         await readyPromise;
-        expect(handler.hasActiveBatch()).toBe(false);
+        expect(released).toEqual(['slow-1:completed']);
         handler.dispose();
     });
 
@@ -323,14 +323,12 @@ describe('ALWorkHandler', () => {
 
         // The engine is never started (ownsQueueEngine: false), so only the bootstrap batch runs here.
         await handler.ready();
-        expect(handler.hasActiveBatch()).toBe(false);
         claimCallCount = 0;
 
         // Seed the claim that a mid-batch commit must reach only through the follow-up batch: wait
         // for the claim() call of this batch to run and capture it before the second entry exists.
         pending.push(toFakeALWorkClaim('first'));
         handler.committed();
-        expect(handler.hasActiveBatch()).toBe(true);
         await firstClaimEntered;
 
         // A second commit lands, and its work becomes claimable, while the first entry is still in flight.

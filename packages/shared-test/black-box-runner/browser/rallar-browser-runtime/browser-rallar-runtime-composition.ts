@@ -156,39 +156,19 @@ export interface BlackBoxBrowserRoomsDependency {
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
 
 /**
- * The AL outbound runtime calls `sink` on every admission event, before the connection runtime
+ * Both the AL outbound runtime and the ALM database open call emit before the connection runtime
  * that owns the agent event log exists. `setRecorder` lets that runtime attach its recorder once
  * constructed, so `sink` forwards to whatever recorder is currently attached (a no-op until then).
  */
-export interface BlackBoxOutboundDiagnosticsRelay {
-    readonly sink: ALOutboundRuntimeDiagnosticsSink;
-    setRecorder(recorder: ALOutboundRuntimeDiagnosticsSink): void;
+export interface BlackBoxDiagnosticsRelay<TEvent> {
+    readonly sink: (event: TEvent) => void;
+    setRecorder(recorder: (event: TEvent) => void): void;
 }
 
-export function createBlackBoxOutboundDiagnosticsRelay(): BlackBoxOutboundDiagnosticsRelay {
-    let recorder: ALOutboundRuntimeDiagnosticsSink = () => {};
+export function createBlackBoxDiagnosticsRelay<TEvent>(): BlackBoxDiagnosticsRelay<TEvent> {
+    let recorder: (event: TEvent) => void = () => {};
     return {
-        sink: (event: ALOutboundRuntimeDiagnosticsEvent) => recorder(event),
-        setRecorder: (next) => {
-            recorder = next;
-        }
-    };
-}
-
-/**
- * The ALM database open call can fire a reset before the connection runtime that owns the agent
- * event log exists, for the same reason `BlackBoxOutboundDiagnosticsRelay` exists — `setRecorder`
- * lets that runtime attach its recorder once constructed.
- */
-export interface BlackBoxStorageResetDiagnosticsRelay {
-    readonly sink: (event: ALStorageResetEvent) => void;
-    setRecorder(recorder: (event: ALStorageResetEvent) => void): void;
-}
-
-export function createBlackBoxStorageResetDiagnosticsRelay(): BlackBoxStorageResetDiagnosticsRelay {
-    let recorder: (event: ALStorageResetEvent) => void = () => {};
-    return {
-        sink: (event: ALStorageResetEvent) => recorder(event),
+        sink: (event: TEvent) => recorder(event),
         setRecorder: (next) => {
             recorder = next;
         }
@@ -199,8 +179,8 @@ export function createBlackBoxStorageResetDiagnosticsRelay(): BlackBoxStorageRes
 export interface BlackBoxBrowserDiagnosticsDependency {
     readonly faults: ScriptedTransportFaultPort;
     readonly storage: CountingIndexedDbOperationObserver;
-    readonly outboundDiagnostics: BlackBoxOutboundDiagnosticsRelay;
-    readonly storageReset: BlackBoxStorageResetDiagnosticsRelay;
+    readonly outboundDiagnostics: BlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>;
+    readonly storageReset: BlackBoxDiagnosticsRelay<ALStorageResetEvent>;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -230,8 +210,8 @@ export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFa
 export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserRallarRuntimeDependency {
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
-    const outboundDiagnostics = createBlackBoxOutboundDiagnosticsRelay();
-    const storageReset = createBlackBoxStorageResetDiagnosticsRelay();
+    const outboundDiagnostics = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
+    const storageReset = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,

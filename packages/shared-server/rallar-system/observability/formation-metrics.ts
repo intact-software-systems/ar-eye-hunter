@@ -1,3 +1,7 @@
+import type {
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
     GROUP_FORMATION_MUTATION_OUTCOMES,
@@ -37,6 +41,8 @@ export type RallarGroupFormationMetricsRecorder = Readonly<{
     presenceSummary: GroupFormationPresenceSummarySink;
     rttMutation: GroupFormationRttMutationSink;
     wsDelivery: WsDeliveryDiagnosticsSink;
+    /** The server's outbound work owner reports every batch here; a silent owner hides a stuck outbox. */
+    outboundWork: ALOutboundRuntimeDiagnosticsSink;
     topologyOutboxWritten: () => void;
     readMetrics: () => RallarGroupFormationMetrics;
     resetMetrics: () => void;
@@ -61,6 +67,7 @@ interface MutableGroupFormationMetrics {
     wsOutboxSendCountByTopicId: Record<string, number>;
     wsOutboxRecipientCountByTopicId: Record<string, number>;
     wsEgressBytesByTopicId: Record<string, number>;
+    wsOutboundRejectedWorkCount: number;
     wsOutboxNoLocalRecipientCount: number;
     rttAcceptedWriteCount: number;
     rttTopologyEffectCount: number;
@@ -179,6 +186,17 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
         }
     };
 
+    const outboundWork: ALOutboundRuntimeDiagnosticsSink = (event: ALOutboundRuntimeDiagnosticsEvent) => {
+        try {
+            if (event.kind === 'effect-drain') {
+                metrics.wsOutboundRejectedWorkCount += event.rejectedCount;
+            }
+        }
+        catch {
+            // Recording must never affect outbound work behavior.
+        }
+    };
+
     const topologyOutboxWritten = (): void => {
         metrics.topologyRecomputeTriggeredCount += 1;
     };
@@ -188,6 +206,7 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
         presenceSummary,
         rttMutation,
         wsDelivery,
+        outboundWork,
         topologyOutboxWritten,
         readMetrics: () => structuredClone(metrics),
         resetMetrics: () => {
@@ -215,6 +234,7 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
         wsOutboxSendCountByTopicId: {},
         wsOutboxRecipientCountByTopicId: {},
         wsEgressBytesByTopicId: {},
+        wsOutboundRejectedWorkCount: 0,
         wsOutboxNoLocalRecipientCount: 0,
         rttAcceptedWriteCount: 0,
         rttTopologyEffectCount: 0

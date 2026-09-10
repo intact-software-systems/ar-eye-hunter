@@ -48,7 +48,7 @@ export function validateALOutboundDispatch<TPrepared>(
 
 export function validateALOutboundPlannedMessage(
     original: ALMessage,
-    planned: unknown
+    planned: ALMessage
 ): readonly ALMessageRejection[] {
     const decoded = decodeALMessageValue(planned);
     if (decoded.left) {

@@ -73,8 +73,10 @@ export function decodeALOutboundWorkEntry<TPrepared>(
     preparedRead: ALOutboundPreparedRead<TPrepared>
 ): ALOutboundEffectSnapshot<TPrepared> {
     try {
-        const raw: unknown = JSON.parse(entry.resource);
-        const stored = decodeALAdmissionRecord(raw, ['namespace', 'effectId', 'payload']);
+        const stored = decodeALAdmissionRecord(
+            JSON.parse(entry.resource),
+            ['namespace', 'effectId', 'payload']
+        );
         if (stored.namespace !== namespace || typeof stored.effectId !== 'string' || stored.effectId.length === 0) {
             throw new TypeError('Outbound work identity differs from its admission scope');
         }
@@ -163,7 +165,9 @@ function computeALOutboundEntryReadyAt(
 
 /**
  * A reservation without a lease start can never time out, so the port can never re-reserve it; the
- * owner claims it as observed and the attempt rejects it.
+ * owner claims it as observed and the attempt rejects it. No writer on this branch produces such a
+ * row — only a crashed or older one does — and the read is unreserved, so two owners may sweep the
+ * same row: the release compares the observed entry, so only one of them settles it.
  */
 export async function readUnleasedALOutboundWorkClaims(
     port: ALWorkQueuePort,

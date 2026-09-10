@@ -317,14 +317,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
         await this.work.ready();
     }
 
-    /** Runs one work batch to settlement for a caller that owns no engine tick of its own. */
-    async drainWork(): Promise<void> {
-        await this.ready();
-        if (!this.disposed) {
-            await this.work.drain();
-        }
-    }
-
     dispose(): void {
         this.disposed = true;
         this.work.dispose();

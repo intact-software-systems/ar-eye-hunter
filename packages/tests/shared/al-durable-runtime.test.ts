@@ -33,7 +33,10 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 
-import { enqueueOutboundOrThrow } from './alm/outbound-runtime-test-fixture.ts';
+import {
+    createOutboundRuntimeWithWorkTask,
+    enqueueOutboundOrThrow
+} from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -327,30 +330,32 @@ function createDefaultOutboundRuntime(
     stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores<OutboundTestPayload>>,
     sent: OutboundTestPayload[]
 ): ALOutboundMessageRuntime<OutboundTestPayload> {
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        outbox: stores.runtimeStores.workQueue,
-        stores: stores.runtimeStores,
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        decodePreparedMessage: decodeOutboundTestPayload,
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: planOutboundTestMessage,
-        planRepairMessage: async (msg, request) => ({
-            msg: msg,
-            persist: false,
-            preparedMessages: [
-                {
-                    kind: 'repair',
-                    msgId: msg.id.msgId,
-                    trigger: request.trigger
-                }
-            ]
-        }),
-        sendPreparedMessage: async (prepared, phase) => {
-            sent.push({ ...prepared, phase });
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            outbox: stores.runtimeStores.workQueue,
+            stores: stores.runtimeStores,
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            decodePreparedMessage: decodeOutboundTestPayload,
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: planOutboundTestMessage,
+            planRepairMessage: async (msg, request) => ({
+                msg: msg,
+                persist: false,
+                preparedMessages: [
+                    {
+                        kind: 'repair',
+                        msgId: msg.id.msgId,
+                        trigger: request.trigger
+                    }
+                ]
+            }),
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
 
-            return { status: 'sent' as const };
-        }
-    });
+                return { status: 'sent' as const };
+            }
+        })
+    );
     onTestFinished(() => runtime.dispose());
     return runtime;
 }
