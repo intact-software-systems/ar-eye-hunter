@@ -231,6 +231,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         input: ALOutboundOutgoingReadInput<TPrepared>
     ) => Promise<ALOutboundMessageReadDto<TPrepared>>;
 
+    /** Admission-store read round trips issued so far, so a commit can report its own read cost. */
+    readonly getReadOperationCount: () => number;
+
     readonly readRepairMessage: (
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
@@ -336,6 +339,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             retention: this.retention,
             port
         });
+    }
+
+    getReadOperationCount(): number {
+        return this.reads.getReadOperationCount();
     }
 
     async readOutgoingMessage(

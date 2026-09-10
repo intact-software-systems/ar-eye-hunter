@@ -39,6 +39,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({ msg: message, persist: true, preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {}
         });
 
@@ -126,6 +127,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({ msg: message, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
+            origin: intent === 'enqueue' ? 'send' : 'drain',
             options: { observedOutboxEntry }
         });
         expect(result.committed).toBe(true);

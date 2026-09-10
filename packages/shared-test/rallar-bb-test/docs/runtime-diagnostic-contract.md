@@ -114,13 +114,30 @@ diagnostics event per emission, recorded the moment the outbound runtime calls
 the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
-- `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`, or
-  `effect-drain`
-- `durationMs`: how long that phase took
-- the phase's own identity fields: `senderId` and `queued` for
-  `sender-queue-wait`; `senderId`, `lockName` and `available` for the two
-  `browser-lock-*` phases; `workerId`, `claimedCount`, `completedCount`,
-  `rescheduledCount` and `rejectedCount` for `effect-drain`
+- `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
+  `commit-phases`, or `effect-drain`
+- `durationMs`: how long that phase took, on every kind but `commit-phases`
+- `origin`: which call path asked for the commit — `send` for a caller's own
+  `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
+  dequeue commits, `repair` for retransmission. It is on all four
+  commit-scoped kinds, so a hold is charged to the work behind it rather than
+  guessed at from a duration
+- the phase's own identity fields: `senderId`, `queued` and
+  `queuedBehindOrigin` for `sender-queue-wait`; `senderId`, `lockName` and
+  `available` for the two `browser-lock-*` phases; `workerId`,
+  `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
+  for `effect-drain`
+- `queuedBehindOrigin` is the origin of the commit already at the end of that
+  sender's queue, or `none` when the queue was empty. A drain's own commits
+  re-enter the same per-sender queue, so this says when a send's wait is the
+  batch it caused rather than another send
+- `commit-phases` splits what `browser-lock-hold` measures as one number:
+  `readDurationMs` and `readOperationCount` for the admission read chain
+  (`readOutgoingMessage` plus the pending-admission probe, and the
+  admission-store round trips observed while they ran), then
+  `commitDurationMs` and `commitOutcome` for the write transaction —
+  `committed`, `conflict`, `expired`, or `not-attempted` when the admission
+  settled before opening one
 
 This is the evidence a `deadline-expiry` conformance run uses to attribute a
 slow admission (the serialized IndexedDB chain a typed send commits through)

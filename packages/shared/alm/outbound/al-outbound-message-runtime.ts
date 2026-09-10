@@ -106,16 +106,26 @@ export interface ALOutboundRuntimeStores<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly workQueue: QueueBoxResourceEntryRepository;
 }
+/** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
+export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
+
+/** What the write transaction returned, or that the admission settled before opening one. */
+export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired' | 'not-attempted';
+
 export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
         kind: 'sender-queue-wait';
         senderId: string;
+        origin: ALOutboundCommitOrigin;
         queued: boolean;
+        /** `none` when this commit found the sender's queue empty. */
+        queuedBehindOrigin: ALOutboundCommitOrigin | 'none';
         durationMs: number;
     }>
     | Readonly<{
         kind: 'browser-lock-wait';
         senderId: string;
+        origin: ALOutboundCommitOrigin;
         lockName: string;
         available: boolean;
         durationMs: number;
@@ -123,9 +133,20 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
         kind: 'browser-lock-hold';
         senderId: string;
+        origin: ALOutboundCommitOrigin;
         lockName: string;
         available: boolean;
         durationMs: number;
+    }>
+    | Readonly<{
+        kind: 'commit-phases';
+        senderId: string;
+        origin: ALOutboundCommitOrigin;
+        readDurationMs: number;
+        /** Admission-store round trips observed while this commit's read chain ran. */
+        readOperationCount: number;
+        commitDurationMs: number;
+        commitOutcome: ALOutboundCommitBundleOutcome;
     }>
     | Readonly<{
         kind: 'effect-drain';
@@ -347,6 +368,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 : () => dispatchPlan,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: { explicitPlan: dispatchPlan !== undefined }
         });
         return {

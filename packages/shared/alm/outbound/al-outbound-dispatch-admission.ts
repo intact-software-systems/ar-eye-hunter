@@ -11,7 +11,9 @@ import type {
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import type {
+    ALOutboundCommitOrigin,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
@@ -44,7 +46,21 @@ export namespace ALOutboundDispatchAdmission {
         readonly planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
+        readonly origin: ALOutboundCommitOrigin;
         readonly options: ALOutboundCommitDispatchOptions;
+    }
+
+    /** One sender's serialized commit chain, and the origin of the commit currently at its end. */
+    export interface SenderCommitQueue {
+        readonly tail: Promise<void>;
+        readonly origin: ALOutboundCommitOrigin;
+    }
+
+    export interface HeldCommitLock {
+        readonly senderId: string;
+        readonly origin: ALOutboundCommitOrigin;
+        readonly lockName: string;
+        readonly available: boolean;
     }
 
     export interface CommitResultInput<TPrepared> {
@@ -67,7 +83,7 @@ export namespace ALOutboundDispatchAdmission {
 /** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
 export class ALOutboundDispatchAdmission<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
-    private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
+    private readonly commitQueuesBySenderId = new Map<string, ALOutboundDispatchAdmission.SenderCommitQueue>();
     private disposed = false;
     private readonly dependencies: ALOutboundDispatchAdmission.Dependencies<TPrepared>;
 
@@ -83,10 +99,16 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     async commit(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        const phases = new ALOutboundCommitPhases({
+            senderId: dispatch.msg.id.senderId,
+            origin: dispatch.origin,
+            nowMs: () => this.readNowMs(),
+            getReadOperationCount: () => this.admissionStore.getReadOperationCount()
+        });
         try {
             return await this.withSenderCommitQueue(
-                dispatch.msg.id.senderId,
-                () => this.commitDispatchOnce(dispatch)
+                dispatch,
+                () => this.commitDispatchOnce(dispatch, phases)
             );
         }
         catch (error) {
@@ -98,21 +120,25 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 committed: false
             };
         }
+        finally {
+            this.emitDiagnostics(phases.toEvent());
+        }
     }
 
     private async commitDispatchOnce(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         if (this.disposed) {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const input = await this.readDispatch(dispatch);
+        const input = await phases.withReadPhase(async () => await this.readDispatch(dispatch));
         if (this.disposed) {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const pending = await this.readPendingDispatch(input);
+        const pending = await phases.withReadPhase(async () => await this.readPendingDispatch(input));
         if (pending) {
             return pending;
         }
@@ -120,28 +146,18 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const computed = computeALOutboundDispatch(input);
         const issues = validateALOutboundDispatch(input.read, computed).left;
         if (issues) {
-            if (dispatch.intent !== 'enqueue') {
-                throw new NonRetryableException(issues.map((issue) => issue.message).join('; '));
-            }
-            return {
-                computed: {
-                    msg: input.read.msg,
-                    status: 'failed',
-                    reason: issues.map((issue) => issue.message).join('; '),
-                    entries: []
-                },
-                committed: false
-            };
+            return this.toValidationResult(dispatch.intent, input.read.msg, issues);
         }
         this.logDispatchDecision(computed, input.read.plan);
-        if (!computed.bundle) {
+        const bundle = computed.bundle;
+        if (!bundle) {
             return { computed, committed: false };
         }
         if (this.disposed) {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const status = await this.admissionStore.commitBundle(computed.bundle);
+        const status = await phases.withCommitPhase(async () => await this.admissionStore.commitBundle(bundle));
         if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
             return await this.retainPendingDispatch(input, computed);
         }
@@ -149,6 +165,21 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
         }
         return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+    }
+
+    private toValidationResult(
+        intent: ALOutboundComputeIntent,
+        msg: ALMessage,
+        issues: readonly Readonly<{ message: string; }>[]
+    ): ALOutboundDispatchAdmission.Result<TPrepared> {
+        const reason = issues.map((issue) => issue.message).join('; ');
+        if (intent !== 'enqueue') {
+            throw new NonRetryableException(reason);
+        }
+        return {
+            computed: { msg, status: 'failed', reason, entries: [] },
+            committed: false
+        };
     }
 
     private async retainPendingDispatch(
@@ -304,33 +335,37 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     private async withSenderCommitQueue<T>(
-        senderId: string,
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         task: () => Promise<T>
     ): Promise<T> {
+        const senderId = dispatch.msg.id.senderId;
+        const origin = dispatch.origin;
         const existing = this.commitQueuesBySenderId.get(senderId);
-        const previous = existing ?? Promise.resolve();
+        const previous = existing?.tail ?? Promise.resolve();
         const waitStartedAtMs = this.readNowMs();
         let release: (() => void) | undefined;
         const gate = new Promise<void>((resolve) => {
             release = resolve;
         });
         const tail = previous.catch(() => undefined).then(() => gate);
-        this.commitQueuesBySenderId.set(senderId, tail);
+        this.commitQueuesBySenderId.set(senderId, { tail, origin });
 
         await previous.catch(() => undefined);
         this.emitDiagnostics({
             kind: 'sender-queue-wait',
             senderId,
+            origin,
             queued: existing !== undefined,
+            queuedBehindOrigin: existing?.origin ?? 'none',
             durationMs: this.elapsedSince(waitStartedAtMs)
         });
 
         try {
-            return await this.withCrossContextCommitLock(senderId, task);
+            return await this.withCrossContextCommitLock(senderId, origin, task);
         }
         finally {
             release?.();
-            if (this.commitQueuesBySenderId.get(senderId) === tail) {
+            if (this.commitQueuesBySenderId.get(senderId)?.tail === tail) {
                 this.commitQueuesBySenderId.delete(senderId);
             }
         }
@@ -338,6 +373,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     private async withCrossContextCommitLock<T>(
         senderId: string,
+        origin: ALOutboundCommitOrigin,
         task: () => Promise<T>
     ): Promise<T> {
         const lockName = `rallar:al-outbound-commit:${senderId}`;
@@ -346,23 +382,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             this.emitDiagnostics({
                 kind: 'browser-lock-wait',
                 senderId,
+                origin,
                 lockName,
                 available: false,
                 durationMs: 0
             });
-            const holdStartedAtMs = this.readNowMs();
-            try {
-                return await task();
-            }
-            finally {
-                this.emitDiagnostics({
-                    kind: 'browser-lock-hold',
-                    senderId,
-                    lockName,
-                    available: false,
-                    durationMs: this.elapsedSince(holdStartedAtMs)
-                });
-            }
+            return await this.withHeldCommitLock({ senderId, origin, lockName, available: false }, task);
         }
 
         const waitStartedAtMs = this.readNowMs();
@@ -373,25 +398,31 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 this.emitDiagnostics({
                     kind: 'browser-lock-wait',
                     senderId,
+                    origin,
                     lockName,
                     available: true,
                     durationMs: this.elapsedSince(waitStartedAtMs)
                 });
-                const holdStartedAtMs = this.readNowMs();
-                try {
-                    return await task();
-                }
-                finally {
-                    this.emitDiagnostics({
-                        kind: 'browser-lock-hold',
-                        senderId,
-                        lockName,
-                        available: true,
-                        durationMs: this.elapsedSince(holdStartedAtMs)
-                    });
-                }
+                return await this.withHeldCommitLock({ senderId, origin, lockName, available: true }, task);
             }
         );
+    }
+
+    private async withHeldCommitLock<T>(
+        held: ALOutboundDispatchAdmission.HeldCommitLock,
+        task: () => Promise<T>
+    ): Promise<T> {
+        const holdStartedAtMs = this.readNowMs();
+        try {
+            return await task();
+        }
+        finally {
+            this.emitDiagnostics({
+                kind: 'browser-lock-hold',
+                ...held,
+                durationMs: this.elapsedSince(holdStartedAtMs)
+            });
+        }
     }
 
     private readNowMs(): number {

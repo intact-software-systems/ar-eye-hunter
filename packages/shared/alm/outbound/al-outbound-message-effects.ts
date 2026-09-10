@@ -63,6 +63,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             }),
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'drain',
             options: { pendingAdmission: effect.entry }
         });
         return { status: 'completed' };
@@ -106,6 +107,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             planner: runtime.planDequeuedMessage,
             intent: 'dequeue',
             phase: 'dequeue',
+            origin: 'drain',
             options: {
                 observedOutboxEntry: effect.entry,
                 attemptIdentity: JSON.stringify([

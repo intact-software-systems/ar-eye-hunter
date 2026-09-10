@@ -3,7 +3,8 @@ import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../../al-c
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
+import type { Key, ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { ALAdmissionCorruptionError, type ALAdmissionDecoder } from '../../al-admission-decoder.ts';
 import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
@@ -65,6 +66,7 @@ export interface CreateALOutboundAdmissionReadsInput {
 
 /** Assembles the decision surface every outbound admission computes on; it never writes. */
 export class ALOutboundAdmissionReads<TPrepared> {
+    private readOperationCount = 0;
     private readonly nowMs: () => number;
     private readonly namespace: string;
     private readonly canonicalScope: string;
@@ -79,6 +81,14 @@ export class ALOutboundAdmissionReads<TPrepared> {
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
     }
 
+    /**
+     * Admission-store round trips this reader has issued. A commit samples it around its own read
+     * chain, so a concurrent read of the same store lands in that window too.
+     */
+    getReadOperationCount(): number {
+        return this.readOperationCount;
+    }
+
     async readOutgoingMessage(
         input: ALOutboundOutgoingReadInput<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
@@ -88,7 +98,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const stored = await this.readStoredMessage(msg.id.msgId);
         const { entry: canonicalEntry, message: canonical, creationExpiry } = await readALOutboundCanonicalMessage({
             nowMs: this.nowMs,
-            queue: this.backend.workQueue,
+            queue: { getItem: (key) => this.readQueueItem(key) },
             scope: this.canonicalScope,
             message: msg,
             stored,
@@ -193,7 +203,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
         const key = toALOutboundOrderingMessageKey(this.namespace, trackKey, seq);
-        const msgId = await this.backend.read(key, decodeALAdmissionString);
+        const msgId = await this.readValue(key, decodeALAdmissionString);
         const sent = msgId ? await this.readSentMessage(msgId) : undefined;
         if (sent && (toALOrderingTrackKey(sent.msg) !== trackKey || sent.msg.ordering?.seq !== seq)) {
             throw new ALAdmissionCorruptionError(key, new TypeError('Ordering index differs from canonical message'));
@@ -207,7 +217,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     async readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        return await this.backend.read(
+        return await this.readValue(
             toALOutboundPendingAckKey(this.namespace, msgId),
             (value) => decodeALOutboundPendingAck(value, msgId)
         );
@@ -226,21 +236,21 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     async readControlHistory<TKind extends ALOutboundControlHistoryKind>(kind: TKind, msgId: string) {
-        return await this.backend.read(
+        return await this.readValue(
             toALOutboundControlHistoryKey(this.namespace, kind, msgId),
             (value) => decodeALAdmissionControlValue(value, msgId, kind)
         );
     }
 
     async readStoredMessage(msgId: string): Promise<ALStoredOutboundMessage | undefined> {
-        return await this.backend.read(
+        return await this.readValue(
             toALOutboundSentMessageKey(this.namespace, msgId),
             (value) => decodeALOutboundSentMessage(value, msgId)
         );
     }
 
     async readClientRecord(senderId: string) {
-        return await this.backend.read(
+        return await this.readValue(
             toALOutboundVersionKey(this.namespace, senderId),
             (value) => decodeALAdmissionClientRecord(value, senderId)
         );
@@ -263,11 +273,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
         }
         return {
             key,
-            latest: await this.backend.read(
+            latest: await this.readValue(
                 toALOutboundSupersedenceLatestKey(this.namespace, key),
                 (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
             ),
-            replacement: await this.backend.read(
+            replacement: await this.readValue(
                 toALOutboundSupersedenceReplacementKey(this.namespace, msgId),
                 (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
             )
@@ -293,13 +303,23 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'repairAttempt' | 'acks' | 'nacks'>> {
         return {
             pendingAck: await this.readPendingAck(msgId),
-            repairAttempt: await this.backend.read(
+            repairAttempt: await this.readValue(
                 toALOutboundRepairAttemptKey(this.namespace, msgId),
                 (value) => decodeALOutboundRepairAttempt(value, msgId)
             ),
             acks: await this.readAcks(msgId),
             nacks: await this.readNacks(msgId)
         };
+    }
+
+    private async readValue<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+        this.readOperationCount += 1;
+        return await this.backend.read(key, decode);
+    }
+
+    private async readQueueItem(key: Key): Promise<ResourceEntry | undefined> {
+        this.readOperationCount += 1;
+        return await this.backend.workQueue.getItem(key);
     }
 
     private assertSentMessageScope(msgId: string, stored: ALStoredOutboundMessage | undefined): void {
@@ -319,8 +339,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         this.assertSentMessageScope(msgId, stored);
-        const canonical = await this.backend.workQueue.getItem(stored.reference.key);
-        const identity = await this.backend.workQueue.getItem(toALOutboundIdentityKey(stored.reference.key));
+        const canonical = await this.readQueueItem(stored.reference.key);
+        const identity = await this.readQueueItem(toALOutboundIdentityKey(stored.reference.key));
         if (stored.reference.expiresAtMs <= this.nowMs()) {
             return undefined;
         }

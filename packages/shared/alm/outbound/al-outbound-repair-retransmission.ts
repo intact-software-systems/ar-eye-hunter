@@ -89,6 +89,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             planner: this.dependencies.planOutgoingMessage,
             intent: 'repair',
             phase: 'immediate',
+            origin: 'repair',
             options: {
                 attemptIdentity: options.attemptIdentity
             }
@@ -181,6 +182,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             planner: () => retryPlan,
             intent: 'repair',
             phase: 'immediate',
+            origin: 'repair',
             options: { attemptIdentity }
         });
     }
@@ -191,6 +193,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             planner: () => repair.plan,
             intent: 'repair',
             phase: 'immediate',
+            origin: 'repair',
             options: {
                 repairBudget: { priorAttempts: repair.priorAttempts, maxAttempts: repair.maxAttempts },
                 attemptIdentity: repair.attemptIdentity

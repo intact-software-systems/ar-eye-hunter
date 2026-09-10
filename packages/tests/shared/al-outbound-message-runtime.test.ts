@@ -499,8 +499,23 @@ describe('ALOutboundMessageRuntime', () => {
             'sender-queue-wait',
             'browser-lock-wait',
             'browser-lock-hold',
+            'commit-phases',
             'effect-drain'
         ]));
+        expect(diagnostics).toContainEqual(
+            expect.objectContaining({
+                kind: 'commit-phases',
+                origin: 'send',
+                commitOutcome: 'committed'
+            })
+        );
+        expect(diagnostics).toContainEqual(
+            expect.objectContaining({
+                kind: 'sender-queue-wait',
+                origin: 'send',
+                queuedBehindOrigin: 'none'
+            })
+        );
         expect(diagnostics).toContainEqual(
             expect.objectContaining({
                 kind: 'effect-drain',

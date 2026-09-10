@@ -291,7 +291,9 @@ it('records an AL outbound admission diagnostics event into the agent event log'
     facade.rallar.diagnostics.outboundDiagnostics.sink({
         kind: 'sender-queue-wait',
         senderId: 'sender-1',
+        origin: 'send',
         queued: true,
+        queuedBehindOrigin: 'drain',
         durationMs: 42
     });
 
@@ -302,7 +304,9 @@ it('records an AL outbound admission diagnostics event into the agent event log'
             data: {
                 kind: 'sender-queue-wait',
                 senderId: 'sender-1',
+                origin: 'send',
                 queued: true,
+                queuedBehindOrigin: 'drain',
                 durationMs: 42
             }
         })

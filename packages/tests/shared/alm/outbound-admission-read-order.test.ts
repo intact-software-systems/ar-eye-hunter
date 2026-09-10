@@ -66,6 +66,7 @@ describe('outbound admission observation order', () => {
             msg: message,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {},
             planner: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
         });
@@ -74,6 +75,7 @@ describe('outbound admission observation order', () => {
             msg: message,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {},
             planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
         });
@@ -130,6 +132,7 @@ describe('outbound admission observation order', () => {
             msg: message,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {},
             planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
         });
