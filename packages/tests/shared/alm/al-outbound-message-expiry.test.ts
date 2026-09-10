@@ -11,7 +11,6 @@ import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repa
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
@@ -24,11 +23,9 @@ import {
 import {
     claimOutboundTestWork,
     computeOutboundTestAdmission,
-    createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createOutboundCanonicalEntry,
-    createOutboundMessage,
-    peekOutboundWorkReadyAt
+    createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -287,49 +284,6 @@ describe('outbound message expiry', () => {
 
         await expect(store.hasSentMessageAdmission(message.id.msgId))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-    });
-
-    it('rejects a RESERVED observation without a start timestamp while valid siblings remain claimable', async () => {
-        vi.useFakeTimers({ toFake: ['Date'] });
-        vi.setSystemTime(1_000);
-        const stores = createDefaultOutboundTestStores();
-        const store = stores.admissionStore;
-        const backend = stores.backend;
-        for (const name of ['malformed', 'valid']) {
-            const msg = createOutboundMessage(name);
-            const read = await store.readOutgoingMessage({
-                msg: msg,
-                planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
-                observedCanonicalEntry: undefined,
-                intent: 'enqueue'
-            });
-            const candidate = computeALOutboundDispatch({
-                read,
-                outboxEntry: createOutboundCanonicalEntry(store, read.msg),
-                dispatchAtMs: 1_000,
-                intent: 'enqueue',
-                phase: 'immediate',
-                options: {}
-            });
-            await store.commitBundle(candidate.bundle!);
-        }
-        const [reserved] = await claimOutboundTestWork(stores, 1);
-        const malformed = { ...reserved!.entry, dequeueAudit: { ...reserved!.entry.dequeueAudit, startTs: undefined } };
-        await backend.workQueue.setItem(malformed.key, malformed, { expireAtTimestamp: reserved!.expireAtTimestamp });
-        // A reservation no timeout can recover is advertised as due now and claimed by the owner itself.
-        expect(await peekOutboundWorkReadyAt(stores.workQueue, store.namespace)).toBe(1_000);
-        const sent: string[] = [];
-        const runtime = createDefaultOutboundTestRuntime({
-            stores,
-            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
-            sendPreparedMessage: async (prepared) => {
-                sent.push(String(prepared.message));
-                return { status: 'sent' };
-            }
-        });
-        await runtime.ready();
-        expect(await backend.workQueue.getItem(malformed.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
-        expect(sent).toHaveLength(1);
     });
 
     it.each(['expires-at', 'fresh-until'] as const)('bounds persisted transport work by the original %s deadline', async (algo) => {

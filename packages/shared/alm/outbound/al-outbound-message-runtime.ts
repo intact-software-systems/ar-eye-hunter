@@ -25,7 +25,6 @@ import {
     AL_OUTBOUND_WORK_LEASE_MS,
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
-    readUnleasedALOutboundWorkClaims,
     toALOutboundDequeueWork,
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral
@@ -394,17 +393,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    /**
-     * Claims what the port offers plus the reservations no timeout can recover. The unleased sweep is an
-     * unreserved page read, so two workers may both sweep the same row; every such row is terminal-bound.
-     */
     private async selectOutboundWork(
         port: ALWorkQueuePort,
         pageSize: number
     ): Promise<ALWorkReadySelection> {
-        const unleased = await readUnleasedALOutboundWorkClaims(port, pageSize, this.readNowMs());
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
-        return { claims: [...unleased, ...claims], nextReadyAtMs: undefined };
+        return { claims, nextReadyAtMs: undefined };
     }
 
     /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */

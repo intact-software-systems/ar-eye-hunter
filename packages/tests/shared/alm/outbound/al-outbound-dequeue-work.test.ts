@@ -88,9 +88,13 @@ describe('AL outbound dequeue work', () => {
     });
 
     it('keeps a no-route dequeue on the retry budget and a failed admission non-retryable', async () => {
+        // The batch reschedules the no-route row 1 ms out, and the admission the failed row commits
+        // owes a follow-up batch: a queue clock that never reaches that retry is what keeps the
+        // follow-up from re-claiming the row before the budget assertion reads it.
+        const observedAtMs = Date.now();
         const outbox = new InMemoryQueueBox(
             undefined,
-            () => Temporal.Instant.fromEpochMilliseconds(Date.now())
+            () => Temporal.Instant.fromEpochMilliseconds(observedAtMs)
         );
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
@@ -110,7 +114,6 @@ describe('AL outbound dequeue work', () => {
         await outbox.enqueueIfAbsent(noRoute);
         await outbox.enqueueIfAbsent(failed);
 
-        // One batch only: the retry budget assertion counts this attempt, not later engine passes.
         await runtime.ready();
 
         const retried = await outbox.getItem(noRoute.key);
@@ -187,23 +190,5 @@ describe('AL outbound dequeue work', () => {
 
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace))
             .toBeUndefined();
-    });
-
-    it('rejects a reserved foreign row that carries no lease start', async () => {
-        const outbox = createOutboxQueue();
-        const runtime = createDefaultOutboundTestRuntime({
-            outbox,
-            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
-            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
-        });
-        const queued = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('unleased'), DEQUEUE_TYPE);
-        // A reservation with no lease start can never time out, so the sweep claims it as observed.
-        await outbox.enqueue({ ...queued, status: EntityStatus.RESERVED });
-
-        await runtime.ready();
-
-        await expect.poll(async () => (await outbox.getItem(queued.key))?.status)
-            .toBe(EntityStatus.NON_RETRYABLE);
     });
 });

@@ -12,7 +12,7 @@ import {
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
-import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -122,11 +122,11 @@ export interface ALOutboundDequeueDeferral {
 }
 
 /**
- * Retained and recovered work is due now, retried work at its own `nextTs`, gated dequeue work no
- * earlier than the breaker allows, and an expired row is never advertised. A page that still owes a
- * cursor and holds a due row answers `nowMs`: one status never hides the next. A cursor-owing page
- * whose visible rows are all expired or gated answers from those rows alone, so a full page of
- * expired rows advertises nothing and leaves the remainder to the queue's own expiry cleanup.
+ * Retained work is due now, retried work at its own `nextTs`, gated dequeue work no earlier than the
+ * breaker allows, and an expired row is never advertised. A page that still owes a cursor and holds
+ * a due row answers `nowMs`: one status never hides the next. A cursor-owing page whose visible rows
+ * are all expired or gated answers from those rows alone, so a full page of expired rows advertises
+ * nothing and leaves the remainder to the queue's own expiry cleanup.
  */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,
@@ -141,7 +141,7 @@ export async function readALOutboundWorkReadyAt(
             if (entry.audit.expiryTs.epochMilliseconds <= nowMs) {
                 continue;
             }
-            const candidateAtMs = computeALOutboundEntryReadyAt(entry, nowMs, deferral);
+            const candidateAtMs = computeALOutboundEntryReadyAt(entry, deferral);
             hasDueEntry ||= candidateAtMs <= nowMs;
             readyAtMs = Math.min(readyAtMs ?? candidateAtMs, candidateAtMs);
         }
@@ -154,34 +154,12 @@ export async function readALOutboundWorkReadyAt(
 
 function computeALOutboundEntryReadyAt(
     entry: ResourceEntry,
-    nowMs: number,
     deferral: ALOutboundDequeueDeferral
 ): number {
-    const readyAtMs = isUnleasedALOutboundReservation(entry) ? nowMs : resolveALOutboundWorkReadyAt(entry);
+    const readyAtMs = resolveALOutboundWorkReadyAt(entry);
     return deferral.readyAtMs !== undefined && deferral.types.has(entry.typeId)
         ? Math.max(readyAtMs, deferral.readyAtMs)
         : readyAtMs;
-}
-
-/**
- * A reservation without a lease start can never time out, so the port can never re-reserve it; the
- * owner claims it as observed and the attempt rejects it. No writer on this branch produces such a
- * row — only a crashed or older one does — and the read is unreserved, so two owners may sweep the
- * same row: the release compares the observed entry, so only one of them settles it.
- */
-export async function readUnleasedALOutboundWorkClaims(
-    port: ALWorkQueuePort,
-    maxToRead: number,
-    nowMs: number
-): Promise<readonly ALWorkClaim[]> {
-    const page = await port.readPage({ status: EntityStatus.RESERVED, maxToRead, cursor: null });
-    return page.entries
-        .filter(isUnleasedALOutboundReservation)
-        .map((entry) => ({ entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs: nowMs }));
-}
-
-function isUnleasedALOutboundReservation(entry: ResourceEntry): boolean {
-    return entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined;
 }
 
 /**
@@ -203,18 +181,8 @@ export function toALOutboundDequeueWork<TPrepared>(
                 entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
         ),
         expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-        leaseUntilMs: entry.status === EntityStatus.RESERVED ? readALOutboundDequeueLease(entry) : undefined
+        leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALOutboundWorkReadyAt(entry) : undefined
     };
-}
-
-/** The unleased sweep claims such a row so the attempt rejects it; a bare TypeError would retry it. */
-function readALOutboundDequeueLease(entry: ResourceEntry): number {
-    try {
-        return resolveALOutboundWorkReadyAt(entry);
-    }
-    catch (error) {
-        throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
-    }
 }
 
 function readALOutboundQueuedMessage(
