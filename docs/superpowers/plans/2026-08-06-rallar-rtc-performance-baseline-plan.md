@@ -519,9 +519,18 @@ projection. With control isolated on port `5280`, API on `18157`, and SPA on
 `5277`, the uncommitted candidate passed three consecutive default matrices,
 the complete all-scenarios matrix, and all five lifecycle acceptance cases
 without retry. These runs validate the harness diagnosis but remain diagnostic
-until the harness correction is committed and pushed. Rerun the same isolated
-sets from the exact commit, then run the full ALM lane, branch review, touched-
-file closure, and final branch gates before declaring PR #557 ready.
+until the harness correction is committed and pushed.
+
+Exact implementation head `220f598e3bd5ee4f6187cd4e9b57f65020c293c0`
+then passed three consecutive default matrices in 3.6 minutes, the complete
+all-scenarios matrix in 1.8 minutes, all five lifecycle acceptance cases in 3.9
+minutes, and the ALM conformance families over WS, RTC, and RTC-with-WS-fallback
+in 2.9 minutes. Every set ran once without Playwright retry on the isolated
+ports, and none reproduced the control-server replacement, connection refusal,
+or RTC readiness/delivery failures. This plan-only evidence recording does not
+change the tested runtime or harness tree. Touched-file closure, final branch
+review, deterministic repository gates, and final CI remain mandatory before
+declaring PR #557 ready.
 
 ### Current execution horizon
 
