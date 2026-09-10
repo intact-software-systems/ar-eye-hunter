@@ -70,7 +70,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // that drops an RTC offer (F2 Task 13 Step 4); the limit was raised to 258.
         // Main's canonical room readiness (#557) measures 253.10546875 KiB brotli on its own;
         // merging it with the ALM line measures 257.9580078125 KiB, so the 258 limit still holds.
-        expect(result.brotliKiB).toBeLessThan(258);
+        // Measured 258.2626953125 KiB brotli after the Task 13 fix round -- the engine's wake
+        // listeners, the typed RTC signaling failure and its lifecycle forwarding; the limit was
+        // raised to 259.
+        expect(result.brotliKiB).toBeLessThan(259);
     });
 });
 
