@@ -185,7 +185,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         await acceptGroupStateSnapshotsOrRecompute(
             groupSnapshots,
             scope,
-            options.rereadGroupSnapshots
+            { rereadGroupSnapshots: options.rereadGroupSnapshots }
         );
         await Promise.all([
             clientStateSnapshotsRepository.waitForClientStateSnapshotChangesIdle(),

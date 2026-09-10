@@ -171,6 +171,21 @@ describe('WebRtcConnectionService signaling and creation', () => {
         }
     );
 
+    it('requests durable retry while inbound peer admission is transient', async () => {
+        const fixture = createFixture(budgetInput());
+        fixture.service.setInboundPeerCreationPolicy(() => ({
+            decision: 'retry',
+            reason: 'stage-layout-mismatch'
+        }));
+        await fixture.service.connectSignaler();
+
+        const result = await fixture.receive(offer());
+
+        expect(result).toBe('retry');
+        expect(runtime.createdConnections).toHaveLength(0);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+    });
+
     it('applies outbound denial to every public creation entry and inbound offers', async () => {
         const fixture = createFixture(budgetInput());
         fixture.service.setOutboundDialPolicy(() => ({ decision: 'deny', reason: 'not-desired' }));

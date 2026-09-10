@@ -37,7 +37,7 @@ export async function dispatchStateSnapshotMessage(
             await acceptGroupStateSnapshotsOrRecompute(
                 [readGroupSnapshot(input)],
                 input.scope,
-                input.rereadGroupSnapshots
+                { rereadGroupSnapshots: input.rereadGroupSnapshots }
             );
             await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
             await input.waitForLifecycleObservers();

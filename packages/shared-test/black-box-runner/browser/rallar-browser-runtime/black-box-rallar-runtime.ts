@@ -274,6 +274,8 @@ class BlackBoxRallarConnectionRuntime {
             readHealth: this.#healthReader.readHealth,
             wsStatus: this.#healthReader.wsStatusFor,
             rtcStatus: this.#healthReader.rtcStatusFor,
+            hasMessageAdmission: (messageId, transport) =>
+                this.#rallar.hasMessageAdmission(messageId, transport),
             emit: this.#runtimeDiagnostics.emit,
             emitDiagnostic: this.#runtimeDiagnostics.emitDiagnostic,
             emitError: this.#runtimeDiagnostics.emitError
@@ -946,7 +948,7 @@ class BlackBoxRallarConnectionRuntime {
     #observeDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> => {
         const observe = decodeBlackBoxRallarDeliveryObserveInput(input);
         const deadlineEpochMs = this.#now() + observe.timeoutMs;
-        let observation = this.#messagingController.readDelivery(observe.handleId);
+        let observation = await this.#messagingController.refreshDelivery(observe.handleId);
         while (!observe.state.includes(observation.state)) {
             if (this.#now() >= deadlineEpochMs) {
                 throw new TypeError(
@@ -956,7 +958,7 @@ class BlackBoxRallarConnectionRuntime {
                 );
             }
             await this.#wait(DELIVERY_POLL_INTERVAL_MS);
-            observation = this.#messagingController.readDelivery(observe.handleId);
+            observation = await this.#messagingController.refreshDelivery(observe.handleId);
         }
         return observation;
     };
@@ -965,7 +967,9 @@ class BlackBoxRallarConnectionRuntime {
     // F1 derives receipts from the admission ledger, so the peer-id lists stay empty until S1
     // carries real acknowledgements.
     #readReceipts = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
-        this.#messagingController.readDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+        await this.#messagingController.refreshDelivery(
+            decodeBlackBoxRallarDeliveryHandleInput(input).handleId
+        );
     #requireScriptedPorts = (command: string): void => {
         const config = this.#connectionState.get()?.config;
         if (config === undefined || toBlackBoxRallarDefaults(config) === undefined) {

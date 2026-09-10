@@ -30,7 +30,16 @@ import {
     stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
-import type { LiveRtcDiagnosticsCheckpoint } from './live-rtc-performance-evidence.ts';
+import type {
+    LiveRtcDiagnosticsCheckpoint,
+    LiveRtcNackAgentHealth,
+    LiveRtcNackEventClassification,
+    LiveRtcNackFailureDiagnostic,
+    LiveRtcNackProbeStage,
+    LiveRtcNackResultClassification,
+    LiveRtcNackSendResultSummary
+} from './live-rtc-performance-evidence.ts';
+import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 
 export namespace LiveRtcControlClient {
     export interface FormationAgent {
@@ -64,6 +73,23 @@ export namespace LiveRtcControlClient {
         readonly senderSessionId: string;
         readonly targetSessionId: string;
         readonly frames: readonly string[];
+    }
+
+    export interface CaptureNackFailureInput {
+        readonly runId: string;
+        readonly senderAgentId: string;
+        readonly targetAgentId: string;
+        readonly commandId: string;
+        readonly stage: LiveRtcNackProbeStage;
+        readonly messageId: string | null;
+        readonly senderSessionId: string;
+        readonly targetSessionId: string;
+        readonly frames: readonly string[];
+    }
+
+    export interface NackRunCapture {
+        readonly succeeded: boolean;
+        readonly run: RunSnapshot | undefined;
     }
 
     export interface Dependencies {
@@ -589,6 +615,106 @@ export class LiveRtcControlClient {
         await testInfo.attach(fileName, { body, contentType: 'application/json' });
         await this.#writeDiagnosticsArtifact(fileName, body);
     }
+
+    async captureNackFailure(
+        input: LiveRtcControlClient.CaptureNackFailureInput
+    ): Promise<LiveRtcNackFailureDiagnostic> {
+        const healthByAgentId = await this.#captureNackHealth(input);
+        const runCapture = await this.#captureNackRun(input.runId);
+        const run = runCapture.run;
+        return {
+            kind: 'nack-probe-failure',
+            runId: input.runId,
+            senderAgentId: input.senderAgentId,
+            targetAgentId: input.targetAgentId,
+            commandId: input.commandId,
+            stage: input.stage,
+            messageId: input.messageId,
+            senderSessionId: input.senderSessionId,
+            targetSessionId: input.targetSessionId,
+            capturedAtEpochMs: this.#epochNow(),
+            failureMessage: nackFailureMessage(input.stage),
+            healthByAgentId,
+            runCaptureSucceeded: runCapture.succeeded,
+            sendResult: summarizeNackSendResult(
+                (run?.results ?? []).find((result) =>
+                    result.agentId === input.senderAgentId &&
+                    result.commandId === input.commandId
+                ),
+                input.messageId
+            ) ?? null,
+            wireObservation: summarizeLiveRtcNackWireObservation({
+                frames: input.frames,
+                messageId: input.messageId,
+                senderSessionId: input.senderSessionId,
+                targetSessionId: input.targetSessionId
+            }),
+            recentResults: (run?.results ?? []).slice(-100).map((result) =>
+                classifyNackResult(result, input)
+            ),
+            recentEvents: (run?.events ?? []).slice(-100).map((event) =>
+                classifyNackEvent(event, input)
+            )
+        };
+    }
+
+    async #captureNackHealth(
+        input: LiveRtcControlClient.CaptureNackFailureInput
+    ): Promise<Readonly<Record<string, LiveRtcNackAgentHealth>>> {
+        const agentIds = [...new Set([input.senderAgentId, input.targetAgentId])];
+        const entries = await Promise.all(
+            agentIds.map((agentId) => this.#captureNackAgentHealth(input, agentId))
+        );
+        return Object.fromEntries(entries);
+    }
+
+    async #captureNackAgentHealth(
+        input: LiveRtcControlClient.CaptureNackFailureInput,
+        agentId: string
+    ): Promise<readonly [string, LiveRtcNackAgentHealth]> {
+        try {
+            const health = await this.executeResult({
+                runId: input.runId,
+                agentId,
+                commandId: `health-nack-failure-${safeFileName(input.commandId)}-${safeFileName(agentId)}`,
+                command: { kind: 'health', includeRtcDiagnostics: true },
+                timeoutMs: 15_000
+            });
+            return [
+                agentId,
+                health.ok
+                    ? summarizeNackAgentHealth(buildLiveRtcAgentDiagnostics(agentId, this.resultValue(health)))
+                    : unavailableNackAgentHealth(true, false)
+            ];
+        }
+        catch {
+            return [agentId, unavailableNackAgentHealth(false, null)];
+        }
+    }
+
+    async #captureNackRun(runId: string): Promise<LiveRtcControlClient.NackRunCapture> {
+        try {
+            return { succeeded: true, run: await this.fetchRun(runId) };
+        }
+        catch {
+            return { succeeded: false, run: undefined };
+        }
+    }
+}
+
+function nackFailureMessage(stage: LiveRtcNackProbeStage): string {
+    switch (stage) {
+        case 'start-observation':
+            return 'RTC NACK probe could not start wire observation.';
+        case 'send':
+            return 'RTC NACK probe send did not complete.';
+        case 'message-identity':
+            return 'RTC NACK probe send result did not provide its message identity.';
+        case 'receive':
+            return 'RTC NACK probe did not observe the expected response.';
+        case 'record-receipt':
+            return 'RTC NACK probe could not retain its successful receipt evidence.';
+    }
 }
 
 function decodeControlRunSnapshot(
@@ -666,6 +792,98 @@ function messageData(
     return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
 }
 
+function summarizeNackAgentHealth(diagnostics: LiveRtcAgentDiagnostics): LiveRtcNackAgentHealth {
+    return {
+        captureSucceeded: true,
+        commandSucceeded: true,
+        settledPeerCount: diagnostics.settledPeerIds.length,
+        readyPeerCount: diagnostics.readyPeerIds.length,
+        laneCount: diagnostics.laneStates.length,
+        openLaneCount: diagnostics.laneStates.filter((lane) => lane.isOpen).length,
+        reconnectableLaneCount: diagnostics.laneStates.filter((lane) => lane.isReconnectable).length,
+        connectionTimerActive: diagnostics.connectionTimerActive,
+        peerCount: diagnostics.peerCount,
+        connectedPeerCount: diagnostics.connectedPeerCount,
+        relayPeerCount: diagnostics.relayPeerCount
+    };
+}
+
+function unavailableNackAgentHealth(
+    captureSucceeded: boolean,
+    commandSucceeded: boolean | null
+): LiveRtcNackAgentHealth {
+    return {
+        captureSucceeded,
+        commandSucceeded,
+        settledPeerCount: null,
+        readyPeerCount: null,
+        laneCount: null,
+        openLaneCount: null,
+        reconnectableLaneCount: null,
+        connectionTimerActive: null,
+        peerCount: null,
+        connectedPeerCount: null,
+        relayPeerCount: null
+    };
+}
+
+function classifyNackEvent(
+    event: LiveRtcControlClient.Event,
+    input: LiveRtcControlClient.CaptureNackFailureInput
+): LiveRtcNackEventClassification {
+    const runtimeEvent = runtimeEventPayload(event);
+    const data = messageData(event);
+    return {
+        agentRole: classifyNackAgentRole(event.agentId, input),
+        kind: classifyNackEventKind(stringValue(runtimeEvent.kind) ?? event.kind),
+        transport: classifyNackTransport(stringValue(runtimeEvent.transport)),
+        topicPresent: stringValue(runtimeEvent.topic) !== undefined,
+        matrixIdPresent: stringValue(data.matrixId) !== undefined,
+        deliveryMode: classifyNackDeliveryMode(stringValue(data.deliveryMode))
+    };
+}
+
+function classifyNackResult(
+    result: LiveRtcControlClient.Result,
+    input: LiveRtcControlClient.CaptureNackFailureInput
+): LiveRtcNackResultClassification {
+    return {
+        agentRole: classifyNackAgentRole(result.agentId, input),
+        commandRole: result.commandId === input.commandId
+            ? 'probe'
+            : result.commandId.startsWith('health-nack-failure-') ? 'health' : 'other',
+        ok: result.ok
+    };
+}
+
+function classifyNackAgentRole(
+    agentId: string | undefined,
+    input: LiveRtcControlClient.CaptureNackFailureInput
+): LiveRtcNackEventClassification['agentRole'] {
+    if (agentId === undefined) {
+        return 'missing';
+    }
+    if (agentId === input.senderAgentId) {
+        return 'sender';
+    }
+    return agentId === input.targetAgentId ? 'target' : 'other';
+}
+
+function classifyNackEventKind(value: string | undefined): LiveRtcNackEventClassification['kind'] {
+    return value === undefined ? 'missing' : value === 'message' ? 'message' : 'other';
+}
+
+function classifyNackTransport(value: string | undefined): LiveRtcNackEventClassification['transport'] {
+    if (value === 'realtime' || value === 'messages.rtc') {
+        return value;
+    }
+    return value === undefined ? 'missing' : 'other';
+}
+
+function classifyNackDeliveryMode(value: string | undefined): LiveRtcNackEventClassification['deliveryMode'] {
+    return value === undefined ? 'missing' : value === 'nack' ? 'nack' : 'other';
+}
+
 function summarizeEvent(event: LiveRtcControlClient.Event): Readonly<Record<string, string>> {
     const runtimeEvent = runtimeEventPayload(event);
     const data = messageData(event);
@@ -681,6 +899,83 @@ function summarizeEvent(event: LiveRtcControlClient.Event): Readonly<Record<stri
     );
 }
 
+const MAX_RETAINED_SEND_ENTRY_STATUSES = 20;
+
+function summarizeNackSendResult(
+    result: LiveRtcControlClient.Result | undefined,
+    probeMessageId: string | null
+): LiveRtcNackSendResultSummary | undefined {
+    if (!result) {
+        return undefined;
+    }
+    const diagnostics = jsonRecord(result.result?.value) ?? {};
+    const admission = jsonRecord(diagnostics.message) ?? {};
+    const messageId = stringValue(jsonRecord(jsonRecord(admission.message)?.id)?.msgId);
+    const entries = Array.isArray(admission.entries) ? admission.entries : [];
+    return {
+        ok: result.ok,
+        runtimeStatus: classifyNackRuntimeStatus(stringValue(diagnostics.status)),
+        admissionStatus: classifyNackAdmissionStatus(stringValue(admission.status)),
+        reason: classifyNackReason(stringValue(admission.reason)),
+        messageIdPresent: messageId !== undefined,
+        messageIdMatchesProbe: probeMessageId === null ? null : messageId === probeMessageId,
+        entryCount: entries.length,
+        entryStatuses: entries
+            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
+            .map((entry) => classifyNackEntryStatus(stringValue(jsonRecord(entry)?.status)))
+    };
+}
+
+function classifyNackRuntimeStatus(
+    value: string | undefined
+): LiveRtcNackSendResultSummary['runtimeStatus'] {
+    return value === undefined ? 'missing' : value === 'sent' ? 'sent' : 'other';
+}
+
+function classifyNackReason(value: string | undefined): LiveRtcNackSendResultSummary['reason'] {
+    return value === undefined ? 'missing' : value === 'not-yet-in-sync' ? value : 'other';
+}
+
+function classifyNackAdmissionStatus(
+    value: string | undefined
+): LiveRtcNackSendResultSummary['admissionStatus'] {
+    switch (value) {
+        case 'accepted':
+        case 'enqueued':
+        case 'skipped':
+        case 'duplicate':
+        case 'pending-admission':
+        case 'superseded':
+        case 'expired':
+        case 'no-route':
+        case 'rate-limited':
+        case 'circuit-open':
+        case 'failed':
+            return value;
+        default:
+            return value === undefined ? 'missing' : 'other';
+    }
+}
+
+function classifyNackEntryStatus(
+    value: string | undefined
+): LiveRtcNackSendResultSummary['entryStatuses'][number] {
+    switch (value) {
+        case 'NEW':
+        case 'RETRY':
+        case 'RESERVED':
+        case 'COMPLETED':
+        case 'FAILED':
+        case 'ABORTED':
+        case 'NON_RETRYABLE':
+        case 'PARTITIONED':
+        case 'MERGED':
+            return value;
+        default:
+            return 'other';
+    }
+}
+
 function summarizeSendResult(
     result: LiveRtcControlClient.Result | undefined
 ): Readonly<Record<string, boolean | number | string | readonly string[]>> | undefined {
@@ -693,7 +988,8 @@ function summarizeSendResult(
     const entries = Array.isArray(admission.entries) ? admission.entries : [];
     const entryStatuses = entries
         .map((entry) => stringValue(jsonRecord(entry)?.status))
-        .filter((status): status is string => Boolean(status));
+        .filter((status): status is string => Boolean(status))
+        .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES);
     const runtimeStatus = stringValue(diagnostics.status);
     const admissionStatus = stringValue(admission.status);
     const reason = stringValue(admission.reason);

@@ -12,8 +12,15 @@ import {
 } from './create-group-formation-lifecycle-driver.ts';
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import type { LiveRtcPerformanceTiming } from './live-rtc-performance-evidence.ts';
-import { hasLiveRtcNotYetInSyncNack } from './live-rtc-wire-observation.ts';
+import type {
+    LiveRtcNackFailureDiagnostic,
+    LiveRtcNackProbeStage,
+    LiveRtcPerformanceTiming
+} from './live-rtc-performance-evidence.ts';
+import {
+    hasLiveRtcNotYetInSyncNack,
+    type LiveRtcReceivedNackProbe
+} from './live-rtc-wire-observation.ts';
 
 export type TransportUnderTest = 'realtime' | 'messages.rtc';
 export type AgentPrefix = 'A' | 'B' | 'C';
@@ -71,10 +78,31 @@ interface RtcFailureProbeInput {
     readonly targetSessionId: string;
 }
 
-interface ReceivedNackProbeInput extends RtcFailureProbeInput {
-    readonly control: LiveRtcControlPort & Pick<LiveRtcControlClient, 'requireSentMessageId' | 'recordReceivedNack'>;
-    readonly testInfo: TestInfo;
+interface ReceivedNackProbeInput extends Omit<RtcFailureProbeInput, 'agent'> {
+    readonly agent: LiveRtcControlClient.FormationAgent & {
+        readonly page: Pick<LiveRtcControlClient.Agent['page'], 'evaluate'>;
+    };
+    readonly control: LiveRtcControlPort & Pick<
+        LiveRtcControlClient,
+        'captureNackFailure' | 'requireSentMessageId' | 'recordReceivedNack'
+    >;
+    readonly testInfo: Pick<TestInfo, 'attach'>;
     readonly senderSessionId: string;
+    readonly targetAgentId: string;
+}
+
+interface NackWireObservationState {
+    frames: readonly string[];
+    matchingFrames: readonly string[];
+}
+
+interface CaptureNackProbeFailureInput {
+    readonly probe: ReceivedNackProbeInput;
+    readonly commandId: string;
+    readonly stage: LiveRtcNackProbeStage;
+    readonly failure: Error;
+    readonly messageId: string | null;
+    readonly frames: readonly string[];
 }
 
 interface CloseAndResetAgentsInput {
@@ -105,6 +133,16 @@ export interface LiveRtcDeliveryOperations {
     expectClosedTransportFailure(input: RtcFailureProbeInput): Promise<readonly string[]>;
     closeAndResetAgents(input: CloseAndResetAgentsInput): Promise<readonly string[]>;
     closeAndResetSettledAgentTrio(input: CloseAndResetSettledAgentTrioInput): Promise<readonly string[]>;
+}
+
+export class LiveRtcNackProbeFailure extends Error {
+    readonly diagnostic: LiveRtcNackFailureDiagnostic;
+
+    constructor(failure: Error, diagnostic: LiveRtcNackFailureDiagnostic) {
+        super(failure.message, { cause: failure });
+        this.name = 'LiveRtcNackProbeFailure';
+        this.diagnostic = diagnostic;
+    }
 }
 
 interface LiveRtcMatrixPayload {
@@ -430,14 +468,13 @@ async function runNackProbe(
     runtime: LiveRtcDeliveryRuntime,
     input: ReceivedNackProbeInput
 ): Promise<string> {
-    await input.agent.page.evaluate(() => {
-        if (!window.__liveRtcWireObservation) {
-            throw new Error('RTC wire observer is missing.');
-        }
-        window.__liveRtcWireObservation.start();
-    });
     const commandId = `nack-not-yet-in-sync-${input.suffix}`;
+    let messageId: string | null = null;
+    const observation: NackWireObservationState = { frames: [], matchingFrames: [] };
+    let stage: LiveRtcNackProbeStage = 'start-observation';
     try {
+        await startNackWireObservation(input.agent);
+        stage = 'send';
         const result = await input.control.executeOk({
             runId: input.runId,
             agentId: input.agent.agentId,
@@ -445,35 +482,94 @@ async function runNackProbe(
             command: toNackProbeCommand(runtime, input),
             timeoutMs: 60_000
         });
-        const messageId = input.control.requireSentMessageId(result);
+        stage = 'message-identity';
+        messageId = input.control.requireSentMessageId(result);
         const identity = { messageId, senderSessionId: input.senderSessionId, targetSessionId: input.targetSessionId };
-        let frames: readonly string[] = [];
-        await expect.poll(async () => {
-            const received = await input.agent.page.evaluate(() => {
-                if (!window.__liveRtcWireObservation) {
-                    throw new Error('RTC wire observer is missing.');
-                }
-                return window.__liveRtcWireObservation.read();
-            });
-            frames = received.filter((frame) => hasLiveRtcNotYetInSyncNack({ ...identity, frames: [frame] }));
-            return frames.length > 0;
-        }, { timeout: 15_000, message: 'Expected a received not-yet-in-sync NACK for the probe message.' }).toBe(true);
+        stage = 'receive';
+        await waitForReceivedNack(input.agent, identity, observation);
+        stage = 'record-receipt';
         await input.control.recordReceivedNack({
             ...identity,
-            frames,
+            frames: observation.matchingFrames,
             testInfo: input.testInfo,
             runId: input.runId,
             agentId: input.agent.agentId
         });
         return commandId;
     }
+    catch (cause) {
+        const failure = toError(cause);
+        const diagnostic = await captureNackProbeFailure({
+            probe: input,
+            commandId,
+            stage,
+            failure,
+            messageId,
+            frames: observation.frames
+        });
+        throw new LiveRtcNackProbeFailure(failure, diagnostic);
+    }
     finally {
-        try {
-            await input.agent.page.evaluate(() => window.__liveRtcWireObservation?.stop());
+        await stopNackWireObservation(input.agent);
+    }
+}
+
+async function startNackWireObservation(agent: ReceivedNackProbeInput['agent']): Promise<void> {
+    await agent.page.evaluate(() => {
+        if (!window.__liveRtcWireObservation) {
+            throw new Error('RTC wire observer is missing.');
         }
-        catch (cause) {
-            console.error('Failed to stop live RTC NACK wire observation', toError(cause));
-        }
+        window.__liveRtcWireObservation.start();
+    });
+}
+
+async function waitForReceivedNack(
+    agent: ReceivedNackProbeInput['agent'],
+    identity: Omit<LiveRtcReceivedNackProbe, 'frames'>,
+    observation: NackWireObservationState
+): Promise<void> {
+    await expect.poll(async () => {
+        observation.frames = await agent.page.evaluate(() => {
+            if (!window.__liveRtcWireObservation) {
+                throw new Error('RTC wire observer is missing.');
+            }
+            return window.__liveRtcWireObservation.read();
+        });
+        observation.matchingFrames = observation.frames.filter(
+            (frame) => hasLiveRtcNotYetInSyncNack({ ...identity, frames: [frame] })
+        );
+        return observation.matchingFrames.length > 0;
+    }, { timeout: 15_000, message: 'Expected a received not-yet-in-sync NACK for the probe message.' }).toBe(true);
+}
+
+async function captureNackProbeFailure(
+    input: CaptureNackProbeFailureInput
+): Promise<LiveRtcNackFailureDiagnostic> {
+    try {
+        return await input.probe.control.captureNackFailure({
+            runId: input.probe.runId,
+            senderAgentId: input.probe.agent.agentId,
+            targetAgentId: input.probe.targetAgentId,
+            commandId: input.commandId,
+            stage: input.stage,
+            messageId: input.messageId,
+            senderSessionId: input.probe.senderSessionId,
+            targetSessionId: input.probe.targetSessionId,
+            frames: input.frames
+        });
+    }
+    catch {
+        console.error('Failed to capture live RTC NACK diagnostics.');
+        throw input.failure;
+    }
+}
+
+async function stopNackWireObservation(agent: ReceivedNackProbeInput['agent']): Promise<void> {
+    try {
+        await agent.page.evaluate(() => window.__liveRtcWireObservation?.stop());
+    }
+    catch (cause) {
+        console.error('Failed to stop live RTC NACK wire observation', toError(cause));
     }
 }
 
@@ -744,7 +840,7 @@ function toWebSocketMatrixSendCommand(
 }
 function toNackProbeCommand(
     runtime: LiveRtcDeliveryRuntime,
-    input: RtcFailureProbeInput
+    input: ReceivedNackProbeInput
 ): RallarBlackBoxTestRtcSendCommand {
     return {
         kind: 'rtc.send',

@@ -66,6 +66,7 @@ export interface InitialiseRtcRxStreamerInput {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
+    readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
 }
 
 export function initialiseRtcRxStreamer(
@@ -78,7 +79,8 @@ export function initialiseRtcRxStreamer(
         sessionId: clientData.sessionId,
         inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
         nowEpochMs: Date.now,
-        heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs }
+        heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
+        roomAuthorityRefresh: input.roomAuthorityRefresh
     });
 }
 
@@ -123,12 +125,14 @@ export async function initialiseRtcConnectionService(
         }
     );
 
-    const denyUntilGroupManagerReady = (): WebRtcConnectionService.PeerCreationDecision => ({
+    rtcQBox.setInboundPeerCreationPolicy(() => ({
+        decision: 'retry',
+        reason: 'browser-runtime-initializing'
+    }));
+    rtcQBox.setOutboundDialPolicy(() => ({
         decision: 'deny',
         reason: 'browser-runtime-initializing'
-    });
-    rtcQBox.setInboundPeerCreationPolicy(denyUntilGroupManagerReady);
-    rtcQBox.setOutboundDialPolicy(denyUntilGroupManagerReady);
+    }));
     await rtcQBox.connectSignaler();
 
     return rtcQBox;

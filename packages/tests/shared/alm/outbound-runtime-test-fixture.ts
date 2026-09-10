@@ -119,6 +119,7 @@ export function createFlakyOutboundAdmissionStore(
             msgId: string,
             planner: ALOutboundPlanner<TPrepared>
         ) => inner.readRepairMessage<TPrepared>(msgId, planner),
+        hasSentMessageAdmission: (msgId: string) => inner.hasSentMessageAdmission(msgId),
         readSentMessage: (msgId: string) => inner.readSentMessage(msgId),
         readSentMessageByOrdering: (trackKey, seq) => inner.readSentMessageByOrdering(trackKey, seq),
         readReceiptState: (msgId: string) => inner.readReceiptState(msgId),

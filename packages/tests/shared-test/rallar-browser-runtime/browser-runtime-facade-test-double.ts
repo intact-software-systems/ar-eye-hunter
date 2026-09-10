@@ -134,6 +134,7 @@ export const facadeBehavior = {
     restore: vi.fn<BlackBoxBrowserAuthDependency['restore']>(),
     connect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['connect']>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
+    messageAdmission: vi.fn<BlackBoxBrowserRallarRuntimeDependency['hasMessageAdmission']>(),
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
@@ -338,6 +339,8 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     readRtcMessageNacks: async () => [],
+    hasMessageAdmission: async (messageId, transport) =>
+        await facadeBehavior.messageAdmission(messageId, transport),
     configure: (config) => {
         records.configurationWrites.push(config);
         facadeBehavior.configure(config);
@@ -383,6 +386,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.restore.mockReturnValue(undefined);
     facadeBehavior.connect.mockResolvedValue(undefined);
     facadeBehavior.disconnect.mockResolvedValue(undefined);
+    facadeBehavior.messageAdmission.mockResolvedValue(false);
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);

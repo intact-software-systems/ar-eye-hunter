@@ -28,6 +28,10 @@ export interface OnMessageCallback {
     onMessage: (message: ALMessage, entry: ResourceEntry) => Promise<void>;
 }
 
+export interface OnInboxMessageCallback {
+    onMessage: (message: ALMessage, entry: ResourceEntry) => Promise<void | 'retry'>;
+}
+
 export interface OnQueuedMessageCallback {
     onMessage: (
         message: ALMessage,

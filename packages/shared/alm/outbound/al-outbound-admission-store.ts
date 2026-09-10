@@ -343,6 +343,8 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
 
     isMessageSuperseded(msg: ALMessage): Promise<boolean>;
 
+    hasSentMessageAdmission(msgId: string): Promise<boolean>;
+
     readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined>;
 
     readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined>;
@@ -594,6 +596,15 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         }).status === 'superseded';
     }
 
+    async hasSentMessageAdmission(msgId: string): Promise<boolean> {
+        const stored = await this.backend.read(
+            this.toSentMessageKey(msgId),
+            (value) => decodeALOutboundSentMessage(value, msgId)
+        );
+        this.assertSentMessageScope(msgId, stored);
+        return stored !== undefined;
+    }
+
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
         const stored = await this.backend.read(
             this.toSentMessageKey(msgId),
@@ -609,12 +620,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         if (!stored || stored.reference.expiresAtMs <= this.nowMs()) {
             return undefined;
         }
-        if (stored.reference.scope !== this.canonicalScope) {
-            throw new ALAdmissionCorruptionError(
-                this.toSentMessageKey(msgId),
-                new TypeError('Sent message belongs to another local scope')
-            );
-        }
+        this.assertSentMessageScope(msgId, stored);
         const canonical = await this.backend.workQueue.getItem(stored.reference.key);
         const identity = await this.backend.workQueue.getItem(toALOutboundIdentityKey(stored.reference.key));
         if (stored.reference.expiresAtMs <= this.nowMs()) {
@@ -622,6 +628,18 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         }
         const msg = decodeALOutboundCanonicalMessage(stored.reference, canonical, identity);
         return { msgId, msg, outboxKey: stored.reference.key, supersedenceKey: stored.supersedenceKey };
+    }
+
+    private assertSentMessageScope(
+        msgId: string,
+        stored: ALStoredOutboundMessage | undefined
+    ): void {
+        if (stored !== undefined && stored.reference.scope !== this.canonicalScope) {
+            throw new ALAdmissionCorruptionError(
+                this.toSentMessageKey(msgId),
+                new TypeError('Sent message belongs to another local scope')
+            );
+        }
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {

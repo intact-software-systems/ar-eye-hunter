@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -34,7 +34,7 @@ const roomEventMocks = await vi.hoisted(async () => {
     const ctx = createDefaultApiMiddlewareTestDouble();
 
     return {
-        wsInboxCallbacks: new Map<string, OnMessageCallback>(),
+        wsInboxCallbacks: new Map<string, OnInboxMessageCallback>(),
         session: ctx.session,
         ctx,
         hydrateStateCache: vi.fn(async (): Promise<void> => undefined),

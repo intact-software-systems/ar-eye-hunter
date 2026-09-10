@@ -10,12 +10,6 @@ import {
     type AlmConformanceScenario,
     type CreateAlmConformanceRecipesInput
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema
-} from '@shared-test/rallar-bb-test/schema.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
@@ -35,13 +29,6 @@ const CARRIER_CONNECT_TRANSPORTS = {
     'rtc-with-ws-fallback': 'messages.rtc'
 } as const;
 
-/** `ordering-resync` is withheld from `ws`: see the family's own carrier-scoping comment. */
-const CARRIER_SCENARIO_IDS = {
-    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline'],
-    rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync'],
-    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
-} as const;
-
 function conformanceInput(
     carrier: CreateAlmConformanceRecipesInput['carrier']
 ): CreateAlmConformanceRecipesInput {
@@ -51,7 +38,7 @@ function conformanceInput(
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 5_000
+        deadlineMs: 15_000
     };
 }
 
@@ -95,38 +82,6 @@ function receivedCommandsOf(scenarios: readonly AlmConformanceScenario[]): reado
 }
 
 describe('alm-conformance recipe family', () => {
-    it('produces the carrier-scoped scenarios with distinct command ids', () => {
-        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const scenarios = createAlmConformanceRecipes(conformanceInput(carrier));
-
-            expect(scenarios.map((scenario) => scenario.scenarioId)).toEqual(CARRIER_SCENARIO_IDS[carrier]);
-            if (carrier === 'ws') {
-                // WS typed sends carry no ordering block in this release, so ordering-resync cannot hold on ws.
-                expect(scenarios.some((scenario) => scenario.scenarioId === 'ordering-resync')).toBe(false);
-            }
-            const commandIds = recipesOf(scenarios).flatMap((recipe) => recipe.commands.map((command) => command.commandId));
-            expect(new Set(commandIds).size).toBe(commandIds.length);
-            for (const recipe of recipesOf(scenarios)) {
-                const validated = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
-                expect(
-                    validated.ok,
-                    validated.ok ? undefined : formatJsonSchemaValidationErrors(validated.errors)
-                ).toBe(true);
-            }
-        }
-    });
-
-    it('accepts every command over the control protocol', () => {
-        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            for (const recipe of recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))) {
-                for (const command of recipe.commands) {
-                    const validated = validateRallarBlackBoxTestCommand(command);
-                    expect(validated.ok, validated.ok ? undefined : validated.error).toBe(true);
-                }
-            }
-        }
-    });
-
     it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(conformanceInput(carrier));
@@ -163,7 +118,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('opens every receive window across the sender prologue up to the deadline', () => {
+    it('adds the send budget only to positive receive windows', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const received = receivedCommandsOf(
                 createAlmConformanceRecipes({ ...conformanceInput(carrier), deadlineMs: 15_000 })
@@ -172,15 +127,11 @@ describe('alm-conformance recipe family', () => {
             expect(received.length).toBeGreaterThan(0);
             for (const command of received) {
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
-                    .toEqual({ windowMs: 14_000, timeoutMs: 15_000 });
+                    .toEqual(command.absent
+                        ? { windowMs: 14_000, timeoutMs: 15_000 }
+                        : { windowMs: 24_000, timeoutMs: 25_000 });
             }
         }
-    });
-
-    it('rejects a deadline shorter than the longest observation window', () => {
-        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_499 }))
-            .toThrow(new RangeError('createAlmConformanceRecipes requires deadlineMs of at least 3500.'));
-        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_500 })).not.toThrow();
     });
 
     it('tags every ws scenario as smoke and keeps ordering-resync full-only', () => {

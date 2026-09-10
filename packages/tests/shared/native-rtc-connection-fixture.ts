@@ -37,8 +37,8 @@ export interface NativeRtcConnectionFixture {
     readonly service: WebRtcConnectionService;
     readonly signaler: QRtcSignalingTransport;
     readonly sentSignals: readonly QRtcSignalingMessage[];
-    receive(message: QRtcSignalingMessage): Promise<void>;
-    receiveResource(resource: string, senderId?: string): Promise<void>;
+    receive(message: QRtcSignalingMessage): Promise<void | 'retry'>;
+    receiveResource(resource: string, senderId?: string): Promise<void | 'retry'>;
     nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
     createdPeerIds(): readonly string[];
     dispose(): void;
@@ -66,12 +66,12 @@ export function createNativeRtcConnectionFixture(
         },
         onDeleted: () => {}
     });
-    const receiveResource = async (resource: string, senderId = 'z-peer'): Promise<void> => {
+    const receiveResource = async (resource: string, senderId = 'z-peer'): Promise<void | 'retry'> => {
         if (!connected) {
             throw new Error('Connect the signaling transport before receiving');
         }
         const envelope = newALUnicastMessage(senderId, newALEventRoute(input.rtcSignalingTopicId, input.sessionId), input.sessionId, 'rtc', null);
-        await connected.callbacks.onMessage(input.sessionId, input.token, { ...envelope, payload: { ...envelope.payload, resource } });
+        return await connected.callbacks.onMessage(input.sessionId, input.token, { ...envelope, payload: { ...envelope.payload, resource } });
     };
     return {
         service,

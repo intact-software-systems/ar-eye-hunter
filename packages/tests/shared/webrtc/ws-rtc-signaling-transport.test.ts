@@ -73,6 +73,27 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         ]);
     });
 
+    it('retains admitted signaling until the consumer accepts it', async () => {
+        const service = createSignalingQueueBox();
+        const observations = createSignalingObservations();
+        let deliveryAttempts = 0;
+        observations.callbacks.onMessage = async (_sessionId, _token, message) => {
+            deliveryAttempts += 1;
+            if (deliveryAttempts === 1) {
+                return 'retry';
+            }
+            observations.messages.push(message);
+        };
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc');
+        const socket = await openSignalingConnection(transport, observations.callbacks);
+        const message = createEnvelope('rtc', { hello: true });
+
+        socket.receive(JSON.stringify(message));
+
+        await vi.waitFor(() => expect(deliveryAttempts).toBe(2));
+        expect(observations.messages).toEqual([message]);
+    });
+
     it('sends through an open socket without waking the outbox', async () => {
         const service = createSignalingQueueBox();
         let wakes = 0;

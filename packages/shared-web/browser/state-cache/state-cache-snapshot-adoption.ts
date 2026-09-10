@@ -6,6 +6,13 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
+export interface GroupStateSnapshotAdoptionOptions {
+    readonly rereadGroupSnapshots?: (
+        scope: StateScope
+    ) => Promise<readonly GroupStateSnapshot[]>;
+    readonly assertCanMutate?: () => void;
+}
+
 export function acceptClientStateSnapshots(
     snapshots: readonly ClientStateSnapshot[],
     scope: StateScope
@@ -18,23 +25,21 @@ export function acceptClientStateSnapshots(
 export async function acceptGroupStateSnapshotsOrRecompute(
     snapshots: readonly GroupStateSnapshot[],
     scope: StateScope,
-    rereadGroupSnapshots?: (
-        scope: StateScope
-    ) => Promise<readonly GroupStateSnapshot[]>
+    options: GroupStateSnapshotAdoptionOptions = {}
 ): Promise<boolean> {
     try {
-        return acceptGroupStateSnapshots(snapshots, scope);
+        return acceptGroupStateSnapshots(snapshots, scope, options.assertCanMutate);
     }
     catch (error) {
         if (
             error instanceof
                 groupStateSnapshotsRepository.GroupStateSnapshotIncomparableError
         ) {
-            if (!rereadGroupSnapshots) {
+            if (!options.rereadGroupSnapshots) {
                 throw error;
             }
-            const reread = await rereadGroupSnapshots(scope);
-            acceptGroupStateSnapshots(reread, scope);
+            const reread = await options.rereadGroupSnapshots(scope);
+            acceptGroupStateSnapshots(reread, scope, options.assertCanMutate);
             const accepted = snapshots.filter((snapshot) => isGroupSnapshotInScope(snapshot, scope));
             for (const incoming of accepted) {
                 const recovered = groupStateSnapshotsRepository
@@ -58,9 +63,7 @@ export async function acceptGroupStateSnapshotsOrRecompute(
 export async function acceptAuthoritativeGroupStateSnapshot(
     snapshot: GroupStateSnapshot,
     scope: StateScope,
-    rereadGroupSnapshots?: (
-        scope: StateScope
-    ) => Promise<readonly GroupStateSnapshot[]>
+    options: GroupStateSnapshotAdoptionOptions = {}
 ): Promise<boolean> {
     if (!isGroupSnapshotInScope(snapshot, scope)) {
         return false;
@@ -69,7 +72,7 @@ export async function acceptAuthoritativeGroupStateSnapshot(
         return await acceptGroupStateSnapshotsOrRecompute(
             [snapshot],
             scope,
-            rereadGroupSnapshots
+            options
         );
     }
     catch (error) {
@@ -85,6 +88,7 @@ export async function acceptAuthoritativeGroupStateSnapshot(
         ) {
             throw error;
         }
+        options.assertCanMutate?.();
         if (
             groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(
                 current,
@@ -96,7 +100,7 @@ export async function acceptAuthoritativeGroupStateSnapshot(
         return await acceptGroupStateSnapshotsOrRecompute(
             [snapshot],
             scope,
-            rereadGroupSnapshots
+            options
         );
     }
 }
@@ -111,8 +115,10 @@ export function isSameStateScope(
 
 function acceptGroupStateSnapshots(
     snapshots: readonly GroupStateSnapshot[],
-    scope: StateScope
+    scope: StateScope,
+    assertCanMutate?: () => void
 ): boolean {
+    assertCanMutate?.();
     return groupStateSnapshotsRepository.setGroupStateSnapshots(
         snapshots.filter((snapshot) => isGroupSnapshotInScope(snapshot, scope))
     );

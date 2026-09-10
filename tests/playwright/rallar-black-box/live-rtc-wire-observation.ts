@@ -70,34 +70,127 @@ export function installLiveRtcWireObservation(): void {
 
 export interface LiveRtcReceivedNackProbe {
     readonly frames: readonly string[];
-    readonly messageId: string;
+    readonly messageId: string | null;
     readonly senderSessionId: string;
     readonly targetSessionId: string;
 }
 
+export interface LiveRtcNackWireFrameSummary {
+    readonly hasMessageId: boolean;
+    readonly messageIdMatchesProbe: boolean;
+    readonly reason: 'not-yet-in-sync' | 'other' | null;
+    readonly hasFromPeerId: boolean;
+    readonly fromPeerIdMatchesTarget: boolean;
+    readonly hasToPeerId: boolean;
+    readonly toPeerIdMatchesSender: boolean;
+    readonly matchesProbe: boolean;
+}
+
+export interface LiveRtcNackWireObservationSummary {
+    readonly frameCount: number;
+    readonly malformedFrameCount: number;
+    readonly typedFrameCount: number;
+    readonly nackFrameCount: number;
+    readonly malformedNackFrameCount: number;
+    readonly nackFrames: readonly LiveRtcNackWireFrameSummary[];
+}
+
+interface DecodedLiveRtcWireFrame {
+    readonly malformed: boolean;
+    readonly typeId: string | null;
+    readonly nack: LiveRtcNackWireFrameSummary | null;
+}
+
+const MAX_RETAINED_NACK_FRAME_SUMMARIES = 20;
+
 export function hasLiveRtcNotYetInSyncNack(
     input: LiveRtcReceivedNackProbe
 ): boolean {
-    return input.frames.some((frame) => {
-        let message;
-        try {
-            message = jsonRecord(normalizeJson(JSON.parse(frame)));
+    return input.frames.some((frame) => decodeLiveRtcWireFrame(frame, input).nack?.matchesProbe === true);
+}
+
+export function summarizeLiveRtcNackWireObservation(
+    input: LiveRtcReceivedNackProbe
+): LiveRtcNackWireObservationSummary {
+    const nackFrames: LiveRtcNackWireFrameSummary[] = [];
+    let malformedFrameCount = 0;
+    let typedFrameCount = 0;
+    let nackFrameCount = 0;
+    let malformedNackFrameCount = 0;
+    for (const frame of input.frames) {
+        const decoded = decodeLiveRtcWireFrame(frame, input);
+        if (decoded.malformed) {
+            malformedFrameCount += 1;
         }
-        catch {
-            return false;
+        if (decoded.typeId) {
+            typedFrameCount += 1;
         }
-        const payload = jsonRecord(message?.payload);
-        const resource = stringValue(payload?.resource);
-        if (payload?.typeId !== 'al.control.nack.v1' || !resource) {
-            return false;
+        if (decoded.typeId === 'al.control.nack.v1') {
+            nackFrameCount += 1;
+            if (!decoded.nack) {
+                malformedNackFrameCount += 1;
+            }
+            else if (nackFrames.length < MAX_RETAINED_NACK_FRAME_SUMMARIES) {
+                nackFrames.push(decoded.nack);
+            }
         }
-        try {
-            const nack = jsonRecord(normalizeJson(JSON.parse(resource)));
-            return nack?.msgId === input.messageId && nack.reason === 'not-yet-in-sync' &&
-                nack.fromPeerId === input.targetSessionId && nack.toPeerId === input.senderSessionId;
+    }
+    return {
+        frameCount: input.frames.length,
+        malformedFrameCount,
+        typedFrameCount,
+        nackFrameCount,
+        malformedNackFrameCount,
+        nackFrames
+    };
+}
+
+function decodeLiveRtcWireFrame(
+    frame: string,
+    probe: Omit<LiveRtcReceivedNackProbe, 'frames'>
+): DecodedLiveRtcWireFrame {
+    let message;
+    try {
+        message = jsonRecord(normalizeJson(JSON.parse(frame)));
+    }
+    catch {
+        return { malformed: true, typeId: null, nack: null };
+    }
+    const payload = jsonRecord(message?.payload);
+    const typeId = stringValue(payload?.typeId) ?? null;
+    const resource = stringValue(payload?.resource);
+    if (typeId !== 'al.control.nack.v1' || !resource) {
+        return { malformed: false, typeId, nack: null };
+    }
+    try {
+        const nack = jsonRecord(normalizeJson(JSON.parse(resource)));
+        if (!nack) {
+            return { malformed: false, typeId, nack: null };
         }
-        catch {
-            return false;
-        }
-    });
+        const messageId = stringValue(nack.msgId) ?? null;
+        const reason = stringValue(nack.reason) ?? null;
+        const fromPeerId = stringValue(nack.fromPeerId) ?? null;
+        const toPeerId = stringValue(nack.toPeerId) ?? null;
+        const messageIdMatchesProbe = probe.messageId !== null && messageId === probe.messageId;
+        const fromPeerIdMatchesTarget = fromPeerId === probe.targetSessionId;
+        const toPeerIdMatchesSender = toPeerId === probe.senderSessionId;
+        return {
+            malformed: false,
+            typeId,
+            nack: {
+                hasMessageId: messageId !== null,
+                messageIdMatchesProbe,
+                reason: reason === null ? null : reason === 'not-yet-in-sync' ? reason : 'other',
+                hasFromPeerId: fromPeerId !== null,
+                fromPeerIdMatchesTarget,
+                hasToPeerId: toPeerId !== null,
+                toPeerIdMatchesSender,
+                matchesProbe: messageIdMatchesProbe && reason === 'not-yet-in-sync' &&
+                    fromPeerIdMatchesTarget && toPeerIdMatchesSender
+            }
+        };
+    }
+    catch {
+        return { malformed: false, typeId, nack: null };
+    }
 }
