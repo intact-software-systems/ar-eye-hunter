@@ -809,6 +809,7 @@ async function runDeliveryCase(
                 transport: input.run.transport,
                 matrixId,
                 deliveryMode,
+                possibleReceiverAgentIds: receivers.map((possibleReceiver) => possibleReceiver.agentId),
                 startedAtMs
             })
         )

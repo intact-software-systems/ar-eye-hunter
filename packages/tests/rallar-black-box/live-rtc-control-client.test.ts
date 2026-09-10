@@ -179,6 +179,7 @@ describe('live RTC control client', () => {
         ).toEqual({
             kind: 'control-result-failures',
             runCaptureSucceeded: true,
+            messageFailures: [],
             failedResults: [
                 {
                     agentId: 'agent-a',
@@ -314,8 +315,8 @@ describe('live RTC control client', () => {
             receiverAgentId: 'agent-b',
             matrixId: 'direct-timeout',
             healthByAgentId: {
-                'agent-a': { ok: true },
-                'agent-b': { ok: true }
+                'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                'agent-b': { captureSucceeded: true, commandSucceeded: true }
             }
         });
         expect(artifact.recentResults).toEqual(
@@ -328,13 +329,11 @@ describe('live RTC control client', () => {
             ])
         );
         expect(artifact.sendResult).toEqual({
-            agentId: 'agent-a',
-            commandId: 'send-direct-timeout',
             ok: true,
             runtimeStatus: 'sent',
             admissionStatus: 'pending-admission',
-            reason: 'awaiting a durable admission retry',
-            messageId: 'message-direct-timeout',
+            reason: 'other',
+            messageIdPresent: true,
             entryCount: 1,
             entryStatuses: ['NEW']
         });
@@ -348,6 +347,90 @@ describe('live RTC control client', () => {
                 deliveryMode: 'direct'
             }
         ]);
+    });
+
+    it('retains a sanitized message delivery failure without a diagnostics directory', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true,
+            result: {
+                value: {
+                    status: 'sent',
+                    message: {
+                        status: 'pending-admission',
+                        reason: 'awaiting a durable admission retry',
+                        message: {
+                            id: { msgId: 'message-direct-timeout' },
+                            payload: { resource: 'must-not-be-retained' }
+                        },
+                        entries: [{ status: 'NEW', resource: 'must-not-be-retained' }]
+                    },
+                    credential: 'must-not-be-retained'
+                }
+            }
+        });
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'direct-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('direct-timeout');
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-b',
+                agentId: 'agent-c',
+                transport: 'messages.rtc',
+                matrixId: 'cleanup-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('cleanup-timeout');
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-message-timeout' });
+        expect(JSON.stringify(attemptFailure)).not.toContain('must-not-be-retained');
+        expect(attemptFailure).toMatchObject({
+            kind: 'control-result-failures',
+            runCaptureSucceeded: true,
+            messageFailures: [
+                {
+                    kind: 'message-delivery-failure',
+                    senderAgentId: 'agent-a',
+                    receiverAgentId: 'agent-b',
+                    transport: 'messages.rtc',
+                    matrixId: 'direct-timeout',
+                    deliveryMode: 'direct',
+                    healthByAgentId: {
+                        'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                        'agent-b': { captureSucceeded: true, commandSucceeded: true }
+                    },
+                    sendResult: {
+                        runtimeStatus: 'sent',
+                        admissionStatus: 'pending-admission',
+                        reason: 'other',
+                        messageIdPresent: true,
+                        entryCount: 1,
+                        entryStatuses: ['NEW']
+                    }
+                }
+            ]
+        });
     });
 
     it('reads the sent message identity from the RTC send-result envelope, not the command ID', () => {
