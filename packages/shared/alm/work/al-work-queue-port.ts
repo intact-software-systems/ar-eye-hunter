@@ -50,6 +50,13 @@ export interface ClaimALWorkInput {
     readonly observedEntries: readonly ResourceEntry[] | undefined;
 }
 
+/**
+ * The queue half of a work owner. `retainIfAbsent`, `claim`, `finalizeExhausted` and `release` all
+ * change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end drops
+ * the answer it remembers, so **any of them performed outside `runBatch` must invalidate that
+ * memory** -- `ALWorkHandler.committed()` for this owner's own writes, the engine wake for anyone
+ * else's.
+ */
 export interface ALWorkQueuePort {
     retainIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;
     readPage(input: ReadALWorkPageInput): Promise<ALWorkPage>;

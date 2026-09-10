@@ -122,7 +122,11 @@ export class ALWorkHandler {
         }
     }
 
-    /** After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of unrelated work. */
+    /**
+     * After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of
+     * unrelated work. It is also the invalidation an owner owes for any write of its own rows it
+     * made outside `runBatch`.
+     */
     committed(): void {
         this.forgetReadiness();
         this.dependencies.queueEngine.wake();
@@ -165,7 +169,13 @@ export class ALWorkHandler {
         return readyAtMs;
     }
 
-    /** A commit and a batch both change the rows a probe read, so the answer they invalidate is dropped. */
+    /**
+     * A commit and a batch both change the rows a probe read, so the answer they invalidate is
+     * dropped. That is the rule the memory rests on: **any change to this owner's rows performed
+     * outside `runBatch` must reach this method**, or the owner keeps answering from a picture
+     * storage no longer supports. The three ways it does are `committed()`, a retained claim's
+     * settlement, and the engine wake every writer that is not this owner announces its row with.
+     */
     private forgetReadiness(): void {
         this.readiness = undefined;
         this.readinessGeneration += 1;
