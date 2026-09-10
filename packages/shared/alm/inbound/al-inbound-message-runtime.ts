@@ -133,6 +133,8 @@ export class ALInboundMessageRuntime {
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
             readNextReadyAtMs: (port) => this.workSelector.readNextReadyAtMs(port),
+            // The rotation advances one status per probe, so an answer of its own never stands.
+            readinessMemoryMs: 0,
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
             runClaim: (claim) => this.runInboundClaim(claim),
             diagnostics: undefined

@@ -6,7 +6,12 @@ import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exc
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import { ALWorkHandler, type ALWorkAttemptResult, type ALWorkReadySelection } from '../work/al-work-handler.ts';
+import {
+    AL_WORK_READINESS_MEMORY_MS,
+    ALWorkHandler,
+    type ALWorkAttemptResult,
+    type ALWorkReadySelection
+} from '../work/al-work-handler.ts';
 import {
     createALWorkQueuePort,
     type ALWorkClaim,
@@ -306,6 +311,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             clock: dependencies.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readDequeueDeferral()),
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
             diagnostics: (event) =>

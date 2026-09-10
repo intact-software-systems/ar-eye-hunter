@@ -24,9 +24,17 @@ export interface ALWorkHandlerDependencies {
     /**
      * Decides when the engine should run a batch. A non-negative safe integer (epoch ms) at or before
      * `clock.nowMs()` starts one; a later value only reschedules; undefined means no work. Owners whose
-     * eligibility rules defer rows pass their own probe so deferred rows never advertise as due.
+     * eligibility rules defer rows pass their own probe so deferred rows never advertise as due. The
+     * handler remembers each answer, so this reads storage far less often than the engine asks.
      */
     readonly readNextReadyAtMs: (port: ALWorkQueuePort) => Promise<number | undefined>;
+    /**
+     * How long one probe's answer stands before storage is read again. An owner whose probe is a pure
+     * readiness read passes `AL_WORK_READINESS_MEMORY_MS`; an owner whose probe carries scan state of
+     * its own -- the inbound rotation, where "nothing here" means nothing at this scan position --
+     * passes 0, so every engine round reaches the probe.
+     */
+    readonly readinessMemoryMs: number;
     /** Reads eligible work; the port owns reservation. */
     readonly selectReady: (
         port: ALWorkQueuePort,
@@ -46,6 +54,20 @@ export interface ALWorkBatchDiagnostics {
     readonly rejectedCount: number;
 }
 
+/**
+ * How long an owner that has neither committed nor run a batch keeps answering from its last probe.
+ * It is the engine's own idle ceiling (`MAX_IDLE_SCHEDULED_ENGINE`, 3 s), so work another tab wrote,
+ * or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of costing
+ * a storage read on every engine round.
+ */
+export const AL_WORK_READINESS_MEMORY_MS = 3_000;
+
+/** The last probe's answer; `readyAtMs` undefined is the probe reporting no work at all. */
+interface ALWorkReadinessMemory {
+    readonly readyAtMs: number | undefined;
+    readonly observedAtMs: number;
+}
+
 interface ALWorkCounts {
     claimedCount: number;
     completedCount: number;
@@ -53,11 +75,14 @@ interface ALWorkCounts {
     rejectedCount: number;
 }
 
-/** Generic ALM work loop: the port owns reservation and retry policy, this owns the engine task and batch lifecycle. */
+/** Generic ALM work loop: the port owns reservation and retry policy, this owns the engine task, the batch lifecycle, and how long a probe's answer stands. */
 export class ALWorkHandler {
     private readonly dependencies: ALWorkHandlerDependencies;
     private batch: Promise<void> | undefined;
     private bootstrapped = false;
+    private readiness: ALWorkReadinessMemory | undefined;
+    /** Bumped by every invalidation, so a probe that started before one cannot store its stale answer. */
+    private readinessGeneration = 0;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
     private readonly shutdown = new AbortController();
@@ -94,6 +119,7 @@ export class ALWorkHandler {
 
     /** After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of unrelated work. */
     committed(): void {
+        this.forgetReadiness();
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {
             void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
@@ -107,9 +133,37 @@ export class ALWorkHandler {
         if (this.shutdown.signal.aborted || this.batch !== undefined) {
             return false;
         }
-        const next = await this.dependencies.readNextReadyAtMs(this.dependencies.port);
+        const nowMs = this.dependencies.clock.nowMs();
+        const next = await this.readReadyAtMs(nowMs);
         this.dependencies.queueEngine.wakeAt(this.dependencies.workerId, next);
-        return next !== undefined && next <= this.dependencies.clock.nowMs();
+        return next !== undefined && next <= nowMs;
+    }
+
+    /**
+     * Storage answers only when memory cannot. A remembered "ready at T" answers every round until T
+     * arrives without reading anything; a remembered "no work" stands until this owner commits, runs a
+     * batch, or the memory ages out.
+     */
+    private async readReadyAtMs(nowMs: number): Promise<number | undefined> {
+        const remembered = this.readiness;
+        if (
+            remembered !== undefined && nowMs >= remembered.observedAtMs &&
+            nowMs - remembered.observedAtMs < this.dependencies.readinessMemoryMs
+        ) {
+            return remembered.readyAtMs;
+        }
+        const generation = this.readinessGeneration;
+        const readyAtMs = await this.dependencies.readNextReadyAtMs(this.dependencies.port);
+        if (generation === this.readinessGeneration) {
+            this.readiness = { readyAtMs, observedAtMs: nowMs };
+        }
+        return readyAtMs;
+    }
+
+    /** A commit and a batch both change the rows a probe read, so the answer they invalidate is dropped. */
+    private forgetReadiness(): void {
+        this.readiness = undefined;
+        this.readinessGeneration += 1;
     }
 
     private runBatch(): Promise<void> {
@@ -126,6 +180,7 @@ export class ALWorkHandler {
             this.reportBatchFailure(toError(error));
         }).finally(() => {
             this.batch = undefined;
+            this.forgetReadiness();
             this.runPendingCommit();
         });
         return this.batch;

@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALWorkBatchDiagnostics, ALWorkReadySelection } from '@shared/alm/work/al-work-handler.ts';
-import { ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
+import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -28,6 +28,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
@@ -59,6 +60,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
@@ -102,6 +104,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
@@ -139,6 +142,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
@@ -184,6 +188,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => Date.now() },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => {
                 const next = dueAtMs;
                 dueAtMs = undefined;
@@ -240,6 +245,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => nowMs },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => {
                 const next = probedReadyAtMs;
                 probedReadyAtMs = undefined;
@@ -263,7 +269,9 @@ describe('ALWorkHandler', () => {
         expect(wakeAtCalls).toContain(nowMs + 60_000);
         expect(released).toEqual([]);
 
-        // The same probe reporting a due time starts the batch, through the engine alone.
+        // The same probe reporting a due time starts the batch, through the engine alone. The probe is
+        // reached again only once the remembered future answer ages out: nothing else changed a row.
+        nowMs += AL_WORK_READINESS_MEMORY_MS;
         probedReadyAtMs = nowMs;
         await expect.poll(async () => {
             await engine.executeOnce();
@@ -306,6 +314,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
@@ -363,6 +372,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async () => {
                 selectCallCount += 1;
@@ -401,6 +411,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => nowMs },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
             selectReady: async (claimed, size) => ({
                 claims: await claimed.claim({ maxCount: size, observedEntries: undefined }),
@@ -464,6 +475,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => nowMs },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => readyAtMs,
             selectReady: async () => {
                 selectCallCount += 1;
@@ -490,6 +502,186 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
+    it('answers a thousand idle engine rounds from the one storage probe that opened them', async () => {
+        let probeCount = 0;
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'memory-worker',
+            port: fakePort({ claims: [], onRelease: () => {} }),
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 10_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => {
+                probeCount += 1;
+                return undefined;
+            },
+            selectReady: async () => ({ claims: [], nextReadyAtMs: undefined }),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        probeCount = 0;
+
+        for (let round = 0; round < 1_000; round += 1) {
+            await engine.executeOnce();
+        }
+
+        expect(probeCount).toBe(1);
+        handler.dispose();
+    });
+
+    it('re-probes storage after its own commit, and after a batch that claimed, exactly once each', async () => {
+        const released: string[] = [];
+        const pending: ALWorkClaim[] = [];
+        let probeCount = 0;
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`) }),
+            claim: async ({ maxCount }) => pending.splice(0, maxCount)
+        };
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'commit-memory-worker',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 10_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => {
+                probeCount += 1;
+                return pending.length > 0 ? 10_000 : undefined;
+            },
+            selectReady: async (p, size) => ({
+                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        probeCount = 0;
+        for (let round = 0; round < 25; round += 1) {
+            await engine.executeOnce();
+        }
+        expect(probeCount).toBe(1);
+
+        // A commit of this owner's own invalidates the answer; the batch it runs claims the row it wrote.
+        pending.push(toFakeALWorkClaim('committed-row'));
+        handler.committed();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(released).toEqual(['committed-row:completed']);
+        expect(probeCount).toBe(1);
+
+        // One probe re-establishes the answer the batch invalidated; the rounds after it read nothing.
+        for (let round = 0; round < 25; round += 1) {
+            await engine.executeOnce();
+        }
+        expect(probeCount).toBe(2);
+
+        // A batch the engine itself starts is worth exactly one probe to open it and one to close it.
+        pending.push(toFakeALWorkClaim('engine-row'));
+        handler.committed();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(released).toEqual(['committed-row:completed', 'engine-row:completed']);
+        for (let round = 0; round < 25; round += 1) {
+            await engine.executeOnce();
+        }
+        expect(probeCount).toBe(3);
+
+        handler.dispose();
+    });
+
+    it('turns a remembered ready time into a batch without reading storage again', async () => {
+        const released: string[] = [];
+        const pending: ALWorkClaim[] = [];
+        let nowMs = 10_000;
+        let probeCount = 0;
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`) }),
+            claim: async ({ maxCount }) => pending.splice(0, maxCount)
+        };
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'ready-at-worker',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => {
+                probeCount += 1;
+                return pending.length > 0 ? 10_500 : undefined;
+            },
+            selectReady: async (p, size) => ({
+                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        probeCount = 0;
+        pending.push(toFakeALWorkClaim('later'));
+
+        await engine.executeOnce();
+        expect(probeCount).toBe(1);
+        expect(released).toEqual([]);
+
+        nowMs = 10_500;
+        await engine.executeOnce();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(released).toEqual(['later:completed']);
+        expect(probeCount).toBe(1);
+
+        handler.dispose();
+    });
+
+    it('re-probes storage once the remembered answer reaches the idle bound', async () => {
+        let nowMs = 10_000;
+        let probeCount = 0;
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'aging-worker',
+            port: fakePort({ claims: [], onRelease: () => {} }),
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => {
+                probeCount += 1;
+                return undefined;
+            },
+            selectReady: async () => ({ claims: [], nextReadyAtMs: undefined }),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        probeCount = 0;
+
+        await engine.executeOnce();
+        expect(probeCount).toBe(1);
+
+        nowMs = 10_000 + AL_WORK_READINESS_MEMORY_MS - 1;
+        await engine.executeOnce();
+        expect(probeCount).toBe(1);
+
+        // Work another tab wrote, or a lease a crashed owner left, is found on the engine's idle cadence.
+        nowMs = 10_000 + AL_WORK_READINESS_MEMORY_MS;
+        await engine.executeOnce();
+        expect(probeCount).toBe(2);
+
+        handler.dispose();
+    });
+
     it('owns a committed()-triggered corruption without an unhandled rejection, while ready() on a fresh handler still rejects', async () => {
         const port = fakePort({ claims: [], onRelease: () => {} });
 
@@ -500,6 +692,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async () => {
                 throw new ALAdmissionCorruptionError('bootstrap-path', new TypeError('bad admission state'));
@@ -527,6 +720,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady,
             runClaim: async () => ({ status: 'completed' }),
