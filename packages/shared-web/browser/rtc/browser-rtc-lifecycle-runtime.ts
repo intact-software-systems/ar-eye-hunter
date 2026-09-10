@@ -3,6 +3,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type {
     RallarRtcLifecycleKind,
     RallarRtcLifecycleListener,
+    RallarRtcSignalingFailure,
     RallarRtcStatus,
     RallarRtcStatusListener,
     RallarRtcStatusOptions,
@@ -11,6 +12,8 @@ import type {
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
+import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
 
 const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
 
@@ -27,6 +30,7 @@ interface RallarRtcLifecycleSubscription {
 interface RallarRtcLifecycleEventInput {
     readonly peerId?: string;
     readonly laneId?: string;
+    readonly signaling?: RallarRtcSignalingFailure;
 }
 
 export namespace BrowserRtcLifecycleRuntime {
@@ -116,6 +120,12 @@ export class BrowserRtcLifecycleRuntime {
             },
             onConnectTimeout: (peer) => {
                 this.emitLifecycle('peer-timeout', { peerId: peer.peerId });
+            },
+            onSignalingFailed: (peer, failure) => {
+                this.emitLifecycle('signaling-failed', {
+                    peerId: peer.peerId,
+                    signaling: toRallarRtcSignalingFailure(peer.peerId, failure)
+                });
             }
         });
 
@@ -214,7 +224,33 @@ export class BrowserRtcLifecycleRuntime {
             peerId: input.peerId,
             laneId: input.laneId,
             peer,
-            lane
+            lane,
+            signaling: input.signaling
         });
+    }
+}
+
+function toRallarRtcSignalingFailure(
+    peerId: string,
+    failure: QRtcPeerConnection.SignalingFailure
+): RallarRtcSignalingFailure {
+    return {
+        peerId,
+        signalKind: toRallarRtcSignalKind(failure.signalType),
+        admission: failure.admission,
+        reason: failure.error.message
+    };
+}
+
+function toRallarRtcSignalKind(
+    signalType: QRtcSignalingType
+): RallarRtcSignalingFailure['signalKind'] {
+    switch (signalType) {
+        case QRtcSignalingType.Offer:
+            return 'offer';
+        case QRtcSignalingType.Answer:
+            return 'answer';
+        case QRtcSignalingType.IceCandidate:
+            return 'candidate';
     }
 }

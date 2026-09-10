@@ -47,10 +47,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
         // Main's canonical room-readiness owner (#557) measures 200.32421875 KiB on its own;
         // merging it with the ALM runtime measures 204.873046875 KiB, so the 205 ceiling holds.
+        // Subscribing the RTC lifecycle runtime to the typed signaling failure measures
+        // 205.185546875 KiB, so the ceiling moves to 206.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 205
+        brotliBudgetKiB: 206
     },
     {
         label: 'browser/rallar-core.ts',

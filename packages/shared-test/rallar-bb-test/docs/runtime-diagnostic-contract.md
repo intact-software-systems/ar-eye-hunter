@@ -88,6 +88,26 @@ diagnostics while the runtime is active:
 This bridge is intentionally scoped to known WS/RTC warning patterns so the
 runtime does not turn arbitrary console output into test evidence.
 
+## RTC Lifecycle Diagnostics
+
+`rallar.browser.rtc.lifecycle` carries one RTC lifecycle event per emission. Its
+`kind` is `snapshot`, `connected`, `disconnected`, `peer-created`,
+`peer-established`, `peer-deleted`, `peer-timeout`, `lane-open`, `lane-close`,
+`lane-error`, or `signaling-failed`.
+
+`signaling-failed` is the only kind that carries `signaling`, the handshake
+signal this browser could not hand to the transport:
+
+- `peerId` and `signalKind` (`offer`, `answer` or `candidate`) name the hop
+- `admission` is the transport's verdict: `{ "outcome": "rejected", "status",
+  "messageId" }` for a signal admission refused, or
+  `{ "outcome": "never-admitted" }` when the hop failed before admission saw it
+- `reason` is the failure text the hop carried
+
+A lost offer strands its peer in `have-local-offer`, where
+`onnegotiationneeded` cannot fire again, so this event is the evidence that a
+handshake stopped rather than timed out.
+
 ## Formation Diagnostics
 
 A connection that resolves a room ref installs the room formation stream beside

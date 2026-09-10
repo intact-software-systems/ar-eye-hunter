@@ -37,10 +37,12 @@ const entries = [
         // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
         // Main's canonical room-readiness owner (#557) measures 200.324 KiB on its own; merging
         // it with the ALM runtime measures 204.873 KiB, so the 205 ceiling still holds.
+        // Subscribing the RTC lifecycle runtime to the typed signaling failure measures
+        // 205.186 KiB, so the ceiling moves to 206.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 205
+        brotliBudgetKiB: 206
     },
     {
         label: 'browser/rallar-core.ts',

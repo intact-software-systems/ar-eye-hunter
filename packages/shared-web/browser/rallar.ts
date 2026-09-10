@@ -214,6 +214,8 @@ export type {
     RallarRtcRoomMode,
     RallarRtcRoomTransportOptions,
     RallarRtcSendInput,
+    RallarRtcSignalAdmission,
+    RallarRtcSignalingFailure,
     RallarRtcStatus,
     RallarRtcStatusListener,
     RallarRtcStatusOptions,

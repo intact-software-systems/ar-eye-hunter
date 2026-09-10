@@ -22,6 +22,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import type { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
@@ -653,6 +654,68 @@ describe('Rallar RTC recovery', () => {
                 }
             }
         });
+    });
+
+    it('emits one signaling-failed lifecycle event naming the hop a terminal admission lost', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const peer = createBrowserRtcPeerTestDouble({
+            channels: [],
+            peerId: 'peer-1',
+            status: {
+                state: 'Connecting',
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
+                    connectionState: 'connecting'
+                }),
+                reconnectAttempts: 0,
+                reconnectTimer: undefined,
+                disconnectTimer: undefined
+            }
+        });
+        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+        const facade = createRallarFacade();
+        const lifecycles: RallarRtcLifecycleEvent[] = [];
+
+        facade.rtc.onLifecycle(
+            (event) => {
+                lifecycles.push(event);
+            },
+            {
+                emitCurrent: false
+            }
+        );
+        await facade.connect();
+
+        const lifecycleCallback = mocks.webRtcConnectionService
+            .onRtcPeerLifecycleDo.mock.calls
+            .find(([id]) => id === 'rallar:rtc:status')?.[1];
+        expect(lifecycleCallback?.onSignalingFailed).toBeDefined();
+
+        lifecycleCallback?.onSignalingFailed?.(
+            peer,
+            {
+                peerSessionId: 'peer-1',
+                signalType: QRtcSignalingType.Offer,
+                admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-7' },
+                error: new Error('Signaling admission returned expired')
+            }
+        );
+
+        expect(lifecycles.filter((event) => event.kind === 'signaling-failed')).toEqual([
+            expect.objectContaining({
+                kind: 'signaling-failed',
+                peerId: 'peer-1',
+                signaling: {
+                    peerId: 'peer-1',
+                    signalKind: 'offer',
+                    admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-7' },
+                    reason: 'Signaling admission returned expired'
+                }
+            })
+        ]);
     });
 
     it('emits RTC peer established lifecycle events from the connection service', async () => {

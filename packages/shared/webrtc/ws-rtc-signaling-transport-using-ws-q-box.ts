@@ -2,6 +2,7 @@ import { newALEventRoute, newALUnicastMessage, type ALMessage } from '../al-cont
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '../alm/outbound/al-outbound-message-runtime.ts';
 import { toError } from '../resilience/to-error.ts';
 import { WsQueueBoxClientService } from '../services/ws-queue-box-client-service.ts';
+import { QRtcSignalingAdmissionError } from './qrtc-signaling-admission.ts';
 import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
@@ -146,7 +147,11 @@ function toSignalAdmissionOutcome(status: ALOutboundEnqueueStatus): SignalAdmiss
 }
 
 function toSignalAdmissionError(result: ALOutboundEnqueueResult): Error {
-    return new Error(result.reason ?? `Signaling admission returned ${result.status}`);
+    return new QRtcSignalingAdmissionError(
+        result.status,
+        result.message.id.msgId,
+        result.reason ?? `Signaling admission returned ${result.status}`
+    );
 }
 
 function pauseFor(delayMs: number): Promise<void> {

@@ -672,7 +672,7 @@ product as degraded or failed delivery.
 
 `rtc.onStatus(listener, options?)` subscribes to RTC status snapshots.
 
-`rtc.onLifecycle(listener, options?)` subscribes to RTC lifecycle events such as `peer-created`, `peer-established`, `lane-open`, `lane-close`, and `peer-timeout`. `peer-established` fires once per peer setup, when the connection or its first lane reports open; later lane opens on the same peer emit only `lane-open`.
+`rtc.onLifecycle(listener, options?)` subscribes to RTC lifecycle events such as `peer-created`, `peer-established`, `lane-open`, `lane-close`, `peer-timeout`, and `signaling-failed`. `peer-established` fires once per peer setup, when the connection or its first lane reports open; later lane opens on the same peer emit only `lane-open`. `signaling-failed` carries `signaling` with the peer id, the signal kind (`offer`, `answer` or `candidate`), the transport's admission verdict, and the reason — a handshake signal that never left this browser.
 
 `rtc.waitForLane(peerId, laneId, options?)` waits for a specific peer/lane.
 

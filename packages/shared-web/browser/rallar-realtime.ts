@@ -49,6 +49,8 @@ export type {
     RallarRtcRoomLaneWaitStatus,
     RallarRtcRoomMode,
     RallarRtcRoomTransportOptions,
+    RallarRtcSignalAdmission,
+    RallarRtcSignalingFailure,
     RallarRtcStatus,
     RallarRtcStatusListener,
     RallarRtcStatusOptions,

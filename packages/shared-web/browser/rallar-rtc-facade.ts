@@ -123,7 +123,25 @@ export type RallarRtcLifecycleKind =
     | 'peer-timeout'
     | 'lane-open'
     | 'lane-close'
-    | 'lane-error';
+    | 'lane-error'
+    | 'signaling-failed';
+
+/** Where an outbound signal was lost: the transport's verdict, or a hop that never reached one. */
+export type RallarRtcSignalAdmission =
+    | Readonly<{
+        outcome: 'rejected';
+        status: string;
+        messageId: string;
+    }>
+    | Readonly<{ outcome: 'never-admitted'; }>;
+
+/** One handshake signal this browser could not hand to the transport. */
+export interface RallarRtcSignalingFailure {
+    readonly peerId: string;
+    readonly signalKind: 'offer' | 'answer' | 'candidate';
+    readonly admission: RallarRtcSignalAdmission;
+    readonly reason: string;
+}
 
 export interface RallarRtcLifecycleEvent {
     readonly kind: RallarRtcLifecycleKind;
@@ -133,6 +151,8 @@ export interface RallarRtcLifecycleEvent {
     readonly laneId?: string;
     readonly peer?: RallarRtcPeerStatus;
     readonly lane?: RallarRtcLaneStatus;
+    /** Present on `signaling-failed`, where the lost hop is the event. */
+    readonly signaling?: RallarRtcSignalingFailure;
 }
 
 export type RallarRtcLifecycleListener = (

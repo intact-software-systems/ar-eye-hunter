@@ -1,6 +1,7 @@
 import { IceConfig } from '../api/api-config.ts';
 import { toError } from '../resilience/to-error.ts';
 import { flushRtcIceCandidateQueue } from './flush-rtc-ice-candidate-queue.ts';
+import { toQRtcSignalingAdmission, type QRtcSignalingAdmission } from './qrtc-signaling-admission.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
@@ -79,6 +80,7 @@ export namespace QRtcPeerConnection {
     export interface SignalingFailure {
         readonly peerSessionId: string;
         readonly signalType: QRtcSignalingType;
+        readonly admission: QRtcSignalingAdmission;
         readonly error: Error;
     }
 
@@ -352,20 +354,16 @@ export class QRtcPeerConnection {
     }
 
     /**
-     * The peer's own report that a hop is lost. A composition with no listener has nowhere to put
-     * it, so that one still logs: a swallowed offer is the failure this exists to make visible.
+     * The peer's own report that a hop is lost, carrying the transport's verdict on the message it
+     * lost. A composition that registers no listener keeps only the diagnostic counters.
      */
     private notifySignalingFailure(signalType: QRtcSignalingType, error: Error): void {
-        const failure: QRtcPeerConnection.SignalingFailure = {
+        this.stateCallbacks.onSignalingFailed?.({
             peerSessionId: this.input.peerSessionId,
             signalType,
+            admission: toQRtcSignalingAdmission(error),
             error
-        };
-        if (this.stateCallbacks.onSignalingFailed === undefined) {
-            console.error('RTC signaling failed', signalType, error);
-            return;
-        }
-        this.stateCallbacks.onSignalingFailed(failure);
+        });
     }
 
     private async notifyDataChannel(event: RTCDataChannelEvent): Promise<void> {
@@ -689,9 +687,10 @@ export class QRtcPeerConnection {
                 await this.signaler.send(signal);
             });
 
-        this.outboundSignalingChain = run.catch((caught) => {
+        // The chain must stay settled for the next signal; the caller awaiting `run` still receives
+        // the rejection and reports it, so this end of it only records the count.
+        this.outboundSignalingChain = run.catch(() => {
             this.diagnostics.outboundSignalingErrorCount++;
-            console.error('Outbound signaling chain error', toError(caught));
         });
         await run;
     }
