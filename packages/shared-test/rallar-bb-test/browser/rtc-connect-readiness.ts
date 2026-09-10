@@ -5,9 +5,9 @@ import type { RallarBlackBoxBrowserRallarRuntime } from '../browser-adapter.ts';
 import {
     createRtcConnectReadinessAbortScope,
     raceWithRtcConnectReadinessAbort,
-    type RtcConnectReadinessAbortScope,
     toRtcConnectReadinessAbortError,
-    waitForRtcConnectReadinessPoll
+    waitForRtcConnectReadinessPoll,
+    type RtcConnectReadinessAbortScope
 } from './rtc-connect-readiness-abort.ts';
 
 type ReadinessBoundaryValue = Awaited<ReturnType<RallarBlackBoxBrowserRallarRuntime['health']>>;

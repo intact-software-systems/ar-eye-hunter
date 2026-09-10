@@ -82,10 +82,9 @@ interface ReceivedNackProbeInput extends Omit<RtcFailureProbeInput, 'agent'> {
     readonly agent: LiveRtcControlClient.FormationAgent & {
         readonly page: Pick<LiveRtcControlClient.Agent['page'], 'evaluate'>;
     };
-    readonly control: LiveRtcControlPort & Pick<
-        LiveRtcControlClient,
-        'captureNackFailure' | 'requireSentMessageId' | 'recordReceivedNack'
-    >;
+    readonly control:
+        & LiveRtcControlPort
+        & Pick<LiveRtcControlClient, 'captureNackFailure' | 'requireSentMessageId' | 'recordReceivedNack'>;
     readonly testInfo: Pick<TestInfo, 'attach'>;
     readonly senderSessionId: string;
     readonly targetAgentId: string;

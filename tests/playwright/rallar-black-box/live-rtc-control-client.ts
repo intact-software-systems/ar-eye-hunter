@@ -649,12 +649,8 @@ export class LiveRtcControlClient {
                 senderSessionId: input.senderSessionId,
                 targetSessionId: input.targetSessionId
             }),
-            recentResults: (run?.results ?? []).slice(-100).map((result) =>
-                classifyNackResult(result, input)
-            ),
-            recentEvents: (run?.events ?? []).slice(-100).map((event) =>
-                classifyNackEvent(event, input)
-            )
+            recentResults: (run?.results ?? []).slice(-100).map((result) => classifyNackResult(result, input)),
+            recentEvents: (run?.events ?? []).slice(-100).map((event) => classifyNackEvent(event, input))
         };
     }
 
@@ -851,7 +847,9 @@ function classifyNackResult(
         agentRole: classifyNackAgentRole(result.agentId, input),
         commandRole: result.commandId === input.commandId
             ? 'probe'
-            : result.commandId.startsWith('health-nack-failure-') ? 'health' : 'other',
+            : result.commandId.startsWith('health-nack-failure-')
+            ? 'health'
+            : 'other',
         ok: result.ok
     };
 }
