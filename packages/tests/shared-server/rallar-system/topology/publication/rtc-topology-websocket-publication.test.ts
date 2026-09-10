@@ -28,8 +28,8 @@ import {
     newALBroadcastMessage,
     newALEventRoute,
     ResourceInboxResilience,
-    WsQueueBoxServerService,
-    type ALMessage
+    type ALMessage,
+    type WsQueueBoxServerService
 } from '@shared/mod.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -43,6 +43,7 @@ import {
 } from 'vitest';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { settleCommittedOutboundBatch } from '../../../../shared/wait-for-al-outbound-work.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createRtcTopologyReplayFixture } from '../replay/consumer/rtc-topology-replay-fixture.ts';
 
@@ -326,7 +327,7 @@ describe('RTC topology websocket publication', () => {
         );
 
         await service.enqueueOutboxIfAbsent(message);
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+        await settleCommittedOutboundBatch();
 
         const resilience = createResilience();
         expect(

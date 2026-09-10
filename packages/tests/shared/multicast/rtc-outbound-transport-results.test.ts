@@ -8,10 +8,7 @@ import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import {
-    createDefaultWsQueueBoxClientService,
-    WsQueueBoxClientService
-} from '@shared/services/ws-queue-box-client-service.ts';
+import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
@@ -99,7 +96,8 @@ describe('RTC outbound transport results', () => {
         expect(first.message.constraints?.expiresAtMs).toBe(Date.now() + 500);
         expect(original.constraints?.expiresAtMs).toBe(Date.now() + 5_000);
         const fallback = await ws.enqueueOutboxIfAbsent(first.message);
-        await ws.dequeueOutbox(WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES, createDefaultALOutboundDequeueResilience());
+        // Admission returns before its own send batch; this settles that pass.
+        await vi.advanceTimersByTimeAsync(0);
         expect(fallback.entry?.key).toEqual(first.entry?.key);
         expect(fallback.message).toEqual(first.message);
         expect(JSON.parse(nativeWs.sent[0])).toEqual(JSON.parse(JSON.stringify(first.message)));
@@ -334,10 +332,8 @@ async function enqueueRtcAndDrain(
     msg: ALMessage
 ): Promise<ALOutboundEnqueueResult> {
     const result = await manager.enqueueIfAbsent(msg);
-    await manager.dequeue(
-        WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-        createDefaultALOutboundDequeueResilience()
-    );
+    // enqueueIfAbsent's own commit fires the owner's batch without awaiting it; this settles that pass.
+    await vi.advanceTimersByTimeAsync(0);
     return result;
 }
 

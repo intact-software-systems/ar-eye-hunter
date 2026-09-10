@@ -26,7 +26,6 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     CircuitBreaker,
@@ -34,6 +33,7 @@ import {
     toCircuitBreaker
 } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter, toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -42,6 +42,8 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
     readonly sendCalls: readonly object[][];
@@ -153,12 +155,11 @@ describe('WebRtc overlay services', () => {
             expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBeUndefined();
             expect(await manager.forwardIfRequired(message, 'peer-1')).toHaveLength(1);
             groups.accept('group-1', { ...current, group: { ...current.group, snapshotVersion: 4 } });
-            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
+            await vi.advanceTimersByTimeAsync(0);
             expect(channel.sendCalls).toEqual([]);
 
             groups.accept('group-1', current);
             await vi.advanceTimersByTimeAsync(1_000);
-            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
             expect(channel.sendCalls).toHaveLength(1);
         }
         finally {
@@ -677,6 +678,7 @@ describe('WebRtc overlay services', () => {
     it('does not transmit a malformed persisted AL envelope', async () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], { 'peer-1': { channel } });
+        const engine = new InboxOutboxEngine();
         const manager = new WebRtcOverlayMulticastManager({
             connectionService,
             groupCache: new LatestRepository(),
@@ -684,7 +686,7 @@ describe('WebRtc overlay services', () => {
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
@@ -692,12 +694,19 @@ describe('WebRtc overlay services', () => {
         onTestFinished(() => manager.dispose());
         const message = createUnicastRtcMessage('sender-corrupt', 'persisted-corrupt');
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX);
+        // toResourceEntryFromMsg's createdTs falls back through Temporal.Now (local wall clock)
+        // reinterpreted as UTC; a due nextTs sidesteps that gap instead of relying on it for readiness.
         await manager.outbox.enqueueIfAbsent({
             ...entry,
-            resource: JSON.stringify({ ...message, id: { ...message.id, v: 1 }, forwarding: { nextHopPeerIds: ['peer-1'] } })
+            resource: JSON.stringify({ ...message, id: { ...message.id, v: 1 }, forwarding: { nextHopPeerIds: ['peer-1'] } }),
+            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
         });
 
-        await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
+        await drainEngine(engine);
+        await expect.poll(async () => {
+            const status = (await manager.outbox.getItem(message.route))?.status;
+            return status === EntityStatus.NEW || status === EntityStatus.RESERVED;
+        }).toBe(false);
 
         expect(channel.sendCalls).toEqual([]);
         expect((await manager.outbox.getItem(message.route))?.status).not.toBe(EntityStatus.COMPLETED);
@@ -914,10 +923,8 @@ describe('WebRtc overlay services', () => {
         );
 
         await manager.enqueueIfAbsent(msg);
-        await manager.dequeue(
-            WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        // enqueueIfAbsent's own commit fires the owner's batch without awaiting it; this settles it.
+        await vi.advanceTimersByTimeAsync(0);
 
         const keys = await manager.outbox.getAllKeys();
         const storedEntry = await manager.outbox.getItem(keys.find((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')!);
@@ -931,13 +938,13 @@ describe('WebRtc overlay services', () => {
     });
 });
 
-/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
 async function enqueueRtcAndDrain(
     manager: WebRtcOverlayMulticastManager,
     msg: ALMessage
 ): Promise<ALOutboundEnqueueResult> {
     const result = await manager.enqueueIfAbsent(msg);
-    await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
+    await settleCommittedOutboundBatch();
     return result;
 }
 
@@ -1095,14 +1102,4 @@ function createCircuitBreakerPolicy(maxConsecutiveFailures: number = 10) {
         duration,
         duration
     );
-}
-
-function createResourceInboxResilience() {
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: createCircuitBreakerPolicy(),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
 }

@@ -1,5 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     describe,
     expect,
@@ -17,7 +15,9 @@ import {
     ConnectionContext,
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
+import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it.each([
@@ -390,11 +390,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('drops unresolved queued outbound messages', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
+        const engine = new shared.InboxOutboxEngine();
         const service = shared.createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: socket,
             name: 'server-1',
-            targetResolver: createTargetResolver()
+            targetResolver: createTargetResolver(),
+            queueEngine: engine
         });
         onTestFinished(() => service.dispose());
 
@@ -427,10 +429,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             )
         );
 
-        await service.dequeueOutbox(
-            shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await drainEngine(engine);
 
         expect(socket.sent).toHaveLength(0);
     });
@@ -470,10 +469,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         );
 
         await enqueueOutboxAndDrain(service, msg);
-        await service.dequeueOutbox(
-            shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await settleCommittedOutboundBatch();
         await socket.receive(
             shared.newALRepairControlMessage(
                 { v: 2, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
@@ -875,30 +871,12 @@ function groupRef(groupId: string) {
     };
 }
 
-function createResourceInboxResilience() {
-    return shared.ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
-            10,
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 })
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
-}
-
-/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
 async function enqueueOutboxAndDrain(
     service: shared.WsQueueBoxServerService,
     msg: shared.ALMessage
 ): Promise<shared.ALOutboundEnqueueResult> {
     const result = await service.enqueueOutboxIfAbsent(msg);
-    await service.dequeueOutbox(
-        shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-        createDefaultALOutboundDequeueResilience()
-    );
+    await settleCommittedOutboundBatch();
     return result;
 }

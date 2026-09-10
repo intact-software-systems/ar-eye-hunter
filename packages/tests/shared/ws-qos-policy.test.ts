@@ -1,7 +1,5 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import * as shared from '@shared/mod.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
@@ -14,6 +12,7 @@ import {
     vi
 } from 'vitest';
 import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -173,10 +172,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             );
 
             await enqueueOutboxAndDrain(service, msg);
-            await service.dequeueOutbox(
-                shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                createResourceInboxResilience()
-            );
+            await settleCommittedOutboundBatch();
 
             expect(socket.sentJsonStrings).toHaveLength(1);
 
@@ -360,11 +356,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(socket.sentJsonStrings).toEqual([]);
         socket.native.readyState = 1;
 
-        await service.dequeueOutbox(
-            shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
-
+        // The owner's engine retries on its own schedule once the socket is open again; poll for it.
         await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(second.id.msgId);
     });
@@ -727,30 +719,12 @@ function groupRef(groupId: string) {
     };
 }
 
-function createResourceInboxResilience() {
-    return shared.ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
-            10,
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 })
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
-}
-
-/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
 async function enqueueOutboxAndDrain(
     service: shared.WsQueueBoxClientService,
     msg: shared.ALMessage
 ): Promise<shared.ALOutboundEnqueueResult> {
     const result = await service.enqueueOutboxIfAbsent(msg);
-    await service.dequeueOutbox(
-        shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-        createDefaultALOutboundDequeueResilience()
-    );
+    await settleCommittedOutboundBatch();
     return result;
 }

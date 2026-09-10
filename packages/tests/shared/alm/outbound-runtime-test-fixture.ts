@@ -57,6 +57,30 @@ interface OutboundTestRuntimeInputFor<TPrepared> extends OutboundTestRuntimeInpu
     readonly stores: ALOutboundRuntimeStores<TPrepared>;
 }
 
+/** Wakes a caller-supplied engine and runs one pass, forcing a registered task's due work now. */
+export async function drainEngine(engine: InboxOutboxEngine): Promise<void> {
+    engine.wake();
+    await engine.executeOnce();
+}
+
+/**
+ * Spies on a caller-supplied, not-yet-constructed engine and returns a function that invokes the
+ * outbound runtime's own registered task exactly once, direct, the way the deleted `dequeueOutbox`/
+ * `dequeue` methods did. `InboxOutboxEngine.executeOnce` instead loops a task's `runnable` while its
+ * own `isWork()` stays true, which can drive extra attempts a single-attempt assertion does not
+ * expect; call this before constructing the runtime so the `includeTask` registration is observed.
+ */
+export function captureOutboundWorkRunnable(engine: InboxOutboxEngine): () => Promise<void> {
+    const includeTask = vi.spyOn(engine, 'includeTask');
+    return async () => {
+        const registration = includeTask.mock.calls.find(([name]) => name.startsWith('al-outbound:'))?.[1];
+        if (!registration) {
+            throw new Error('Expected the outbound runtime to have registered its own work task');
+        }
+        await registration.runnable();
+    };
+}
+
 /** Admits a message and runs the one batch its owner owes for the work the admission committed. */
 export async function enqueueOutboundOrThrow(
     runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent' | 'drainWork'>,

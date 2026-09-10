@@ -1,15 +1,13 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     afterEach,
@@ -19,6 +17,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 describe('WS server pre-submission readiness', () => {
@@ -30,7 +29,7 @@ describe('WS server pre-submission readiness', () => {
     it.each(['missing', 'closed'] as const)('waits when the connection becomes %s after admission, then sends the original message', async (unavailable) => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        const { backend, store, server, native, context, service, selectedRecipient } = createServerRuntime();
+        const { backend, store, server, native, context, service, selectedRecipient, engine } = createServerRuntime();
         const commit = store.commitBundle.bind(store);
         vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
             const result = await commit(bundle);
@@ -46,14 +45,6 @@ describe('WS server pre-submission readiness', () => {
         await service.enqueueOutboxIfAbsent(message);
         // Admission returns before its own send batch: the deferred attempt is what this asserts on.
         await vi.advanceTimersByTimeAsync(0);
-        const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 1,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
         for (let cycle = 0; cycle < 25; cycle += 1) {
             const keys = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
             expect(keys).toHaveLength(1);
@@ -62,14 +53,14 @@ describe('WS server pre-submission readiness', () => {
             expect(work?.dequeueAudit.attempts).toBe(0);
             expect(work?.audit.expiryTs.epochMilliseconds).toBe(message.constraints?.expiresAtMs);
             await vi.advanceTimersByTimeAsync(work!.dequeueAudit.nextTs!.epochMilliseconds - Date.now() + 1);
-            await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience);
+            await drainEngine(engine);
         }
         expect(native.sent).toEqual([]);
         selectedRecipient.connectionId = 'later-resolution-must-not-replace-captured-connection';
         native.open();
         server.connections.set(context.id, context);
         await vi.advanceTimersByTimeAsync(51);
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience);
+        await drainEngine(engine);
         expect(native.sent).toHaveLength(1);
         expect(JSON.parse(native.sent[0])).toMatchObject({ id: message.id, constraints: message.constraints });
     });
@@ -120,6 +111,7 @@ interface ServerRuntime {
     readonly context: ConnectionContext;
     readonly service: WsQueueBoxServerService;
     readonly selectedRecipient: { peerId: string; connectionId: string; };
+    readonly engine: InboxOutboxEngine;
 }
 
 function createServerRuntime(): ServerRuntime {
@@ -139,11 +131,17 @@ function createServerRuntime(): ServerRuntime {
     const context = new ConnectionContext({ id: 'connection', socket: native });
     server.addConnection(context);
     const selectedRecipient = { peerId: 'peer', connectionId: context.id };
+    // Owned externally so the test can force a pass with drainEngine(); started immediately so the
+    // scheduled retries the readiness assertions depend on still fire the way an owned engine would.
+    const engine = new InboxOutboxEngine();
+    engine.start();
+    onTestFinished(() => engine.stop());
     const service = createDefaultWsQueueBoxServerService({
         name: 'server',
         socket: server,
         outbox: new InMemoryQueueBox(),
         outboundStores: { admissionStore: store, workQueue: backend.workQueue },
+        queueEngine: engine,
         targetResolver: {
             resolvePeerRecipients: () => [{ ...selectedRecipient }],
             resolveGroupRecipients: () => [],
@@ -152,7 +150,7 @@ function createServerRuntime(): ServerRuntime {
         }
     });
     onTestFinished(() => service.dispose());
-    return { backend, store, server, native, context, service, selectedRecipient };
+    return { backend, store, server, native, context, service, selectedRecipient, engine };
 }
 
 function createMessage(): ALMessage {

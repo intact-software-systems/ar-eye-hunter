@@ -3,6 +3,7 @@ import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbou
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import {
     afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -26,15 +27,17 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     ConnectionContext,
     JsonWebSocketServer,
     type EncodedJsonWebSocketMessage
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 interface WsOutboxTestSocket {
@@ -50,7 +53,22 @@ interface CreateWsOutboxServiceInput {
     readonly resolveRecipients: () => readonly WsServerResolvedRecipient[];
 }
 
+interface WsOutboxServiceFixture {
+    readonly service: WsQueueBoxServerService;
+    readonly engine: InboxOutboxEngine;
+}
+
 describe('durable WS outbox owner misses', () => {
+    beforeEach(() => {
+        // A foreign row's readiness falls back to its createdTs reinterpreted as UTC (a pre-existing
+        // al-outbound-work-entry.ts gap this suite does not own); pin plainDateTimeISO's wall clock to
+        // Date.now's UTC reading so the engine's isWork() gate sees a due row on hosts outside UTC
+        // instead of one hours in the future (Temporal.Now.plainDateTimeISO reads the system clock
+        // independently of Temporal.Now.instant, so only mocking instant leaves this gap open).
+        vi.spyOn(Temporal.Now, 'plainDateTimeISO').mockImplementation(() =>
+            Temporal.Instant.fromEpochMilliseconds(Date.now()).toZonedDateTimeISO('UTC').toPlainDateTime()
+        );
+    });
     afterEach(() => {
         vi.useRealTimers();
         vi.restoreAllMocks();
@@ -68,26 +86,33 @@ describe('durable WS outbox owner misses', () => {
         await outbox.enqueue(entry);
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
+        const nonOwnerEngine = new InboxOutboxEngine();
         const nonOwner = createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: createSocket().socket,
             name: 'server-without-target',
             targetResolver: { resolvePeerRecipients: () => [] },
-            outboundDeliveryOutcome: (outcome) => misses.push(outcome)
+            outboundDeliveryOutcome: (outcome) => misses.push(outcome),
+            queueEngine: nonOwnerEngine
         });
         onTestFinished(() => nonOwner.dispose());
+        const ownerEngine = new InboxOutboxEngine();
         const owner = createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
             targetResolver: {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
-            }
+            },
+            queueEngine: ownerEngine
         });
         onTestFinished(() => owner.dispose());
 
-        await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-
+        // One trigger, then a passive wait for that one attempt to settle: a poll that redrives
+        // finds isWork() false while the prior attempt is still in flight (its own batch guard), so
+        // it can spin past the real-time poll timeout without ever giving that attempt a turn.
+        await drainEngine(nonOwnerEngine);
+        await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
         expect((await readEntry(outbox)).status).toBe(EntityStatus.RETRY);
         expect(misses.length).toBeGreaterThanOrEqual(1);
         expect(misses.every((outcome) =>
@@ -98,8 +123,8 @@ describe('durable WS outbox owner misses', () => {
         )).toBe(true);
 
         vi.advanceTimersByTime(1);
-        await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-
+        await drainEngine(ownerEngine);
+        await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
         expect((await readEntry(outbox)).status).toBe(EntityStatus.COMPLETED);
         expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
     });
@@ -130,6 +155,11 @@ describe('durable WS outbox owner misses', () => {
             }
             return await reserveEntries(input);
         });
+        // Started explicitly so the runtime's own retry keeps ticking after the initial drain below,
+        // the way an owned engine would while the claim conflict resolves.
+        const engine = new InboxOutboxEngine();
+        engine.start();
+        onTestFinished(() => engine.stop());
         const owner = createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: ownerSocket.socket,
@@ -137,11 +167,12 @@ describe('durable WS outbox owner misses', () => {
             targetResolver: {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             },
-            outboundStores: { admissionStore, workQueue: backend.workQueue }
+            outboundStores: { admissionStore, workQueue: backend.workQueue },
+            queueEngine: engine
         });
         onTestFinished(() => owner.dispose());
 
-        await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+        await drainEngine(engine);
         await vi.waitFor(() => {
             expect(claimCalls).toBeGreaterThanOrEqual(3);
             expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
@@ -156,13 +187,13 @@ describe('durable WS outbox owner misses', () => {
         ));
         const bus = createBridgeBus();
         const ownerSocket = createSocket();
-        const nonOwner = createService({
+        const { service: nonOwner, engine: nonOwnerEngine } = createService({
             outbox,
             socket: createSocket(),
             name: 'non-owner',
             resolveRecipients: () => []
         });
-        const owner = createService({
+        const { service: owner } = createService({
             outbox,
             socket: ownerSocket,
             name: 'owner',
@@ -183,8 +214,8 @@ describe('durable WS outbox owner misses', () => {
             publisherId: 'owner'
         });
 
-        await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-
+        await drainEngine(nonOwnerEngine);
+        await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
         expect((await readEntry(outbox)).status).toBe(EntityStatus.COMPLETED);
         expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
     });
@@ -197,7 +228,7 @@ describe('durable WS outbox owner misses', () => {
         const timing: RallarTimingEvent[] = [];
         const claimantSocket = createSocket();
         const remoteSocket = createSocket();
-        const claimant = createService({
+        const { service: claimant, engine: claimantEngine } = createService({
             outbox,
             socket: claimantSocket,
             name: 'claimant',
@@ -205,7 +236,7 @@ describe('durable WS outbox owner misses', () => {
                 { peerId: 'local-session', connectionId: 'local-session' }
             ]
         });
-        const remote = createService({
+        const { service: remote } = createService({
             outbox,
             socket: remoteSocket,
             name: 'remote',
@@ -230,7 +261,8 @@ describe('durable WS outbox owner misses', () => {
             timing: (event) => timing.push(event)
         });
 
-        await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+        await drainEngine(claimantEngine);
+        await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
 
         expect(claimantSocket.sendEncoded).toHaveBeenCalledWith('local-session', expect.anything());
         expect(remoteSocket.sendEncoded).toHaveBeenCalledWith('remote-session', expect.anything());
@@ -247,14 +279,14 @@ describe('durable WS outbox owner misses', () => {
     it('gates the first remote publication on the actual listener readiness', async () => {
         const outbox = new InMemoryQueueBox();
         const bus = createDelayedSecondSubscriberBridgeBus();
-        const claimant = createService({
+        const { service: claimant, engine: claimantEngine } = createService({
             outbox,
             socket: createSocket(),
             name: 'claimant',
             resolveRecipients: () => []
         });
         const remoteSocket = createSocket();
-        const remote = createService({
+        const { service: remote } = createService({
             outbox,
             socket: remoteSocket,
             name: 'remote',
@@ -275,29 +307,32 @@ describe('durable WS outbox owner misses', () => {
             channel: 'ws',
             publisherId: 'remote'
         });
+        const beforeReadinessKey = createUnicastMessage('published-before-readiness', 'reply-before-readiness').route;
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
             createUnicastMessage('published-before-readiness', 'reply-before-readiness'),
             EnqueuedType.WS_OUTBOX
         ));
 
-        await claimant.dequeueOutbox(
-            WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResilience()
-        );
+        // One trigger, then a passive wait for the claimant's own attempt to settle, before the
+        // remote subscriber ever joins: a redriving poll risks racing this row past readiness into
+        // the second (post-readiness) drain below, defeating the gate this test observes.
+        await drainEngine(claimantEngine);
+        await expect.poll(async () => (await outbox.getItem(beforeReadinessKey))?.status)
+            .not.toBe(EntityStatus.RESERVED);
 
         expect(remoteSocket.encodedSends).toEqual([]);
 
         bus.releaseSecondSubscription();
         await remoteReadiness;
+        const afterReadinessKey = createUnicastMessage('published-after-readiness', 'reply-after-readiness').route;
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
             createUnicastMessage('published-after-readiness', 'reply-after-readiness'),
             EnqueuedType.WS_OUTBOX
         ));
 
-        await claimant.dequeueOutbox(
-            WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResilience()
-        );
+        await drainEngine(claimantEngine);
+        await expect.poll(async () => (await outbox.getItem(afterReadinessKey))?.status)
+            .not.toBe(EntityStatus.RESERVED);
 
         expect(remoteSocket.encodedSends).toHaveLength(1);
         expect(remoteSocket.sendEncoded).toHaveBeenCalledWith(
@@ -312,7 +347,7 @@ describe('durable WS outbox owner misses', () => {
         const outbox = new InMemoryQueueBox();
         const invalid = { ...createUnicastMessage(), targets: undefined };
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(invalid, EnqueuedType.WS_OUTBOX));
-        const service = createService({
+        const { service, engine } = createService({
             outbox,
             socket: createSocket(),
             name: 'claimant',
@@ -325,7 +360,11 @@ describe('durable WS outbox owner misses', () => {
             publisherId: 'claimant'
         });
 
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+        // One pass only: a poll that redrives on every attempt would keep re-claiming this row (its
+        // no-route retry becomes due again as fast as fake Date time lets it), inflating the attempt
+        // count the assertion below pins. Trigger once, then passively wait for that pass to settle.
+        await drainEngine(engine);
+        await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
 
         expect(await readEntry(outbox)).toMatchObject({
             status: EntityStatus.RETRY,
@@ -341,7 +380,7 @@ describe('durable WS outbox owner misses', () => {
             createUnicastMessage(),
             EnqueuedType.WS_OUTBOX
         ));
-        const service = createService({
+        const { service, engine } = createService({
             outbox,
             socket: createSocket(),
             name: 'claimant',
@@ -360,8 +399,8 @@ describe('durable WS outbox owner misses', () => {
             publisherId: 'claimant'
         });
 
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-
+        await drainEngine(engine);
+        await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
         expect((await readEntry(outbox)).status).toBe(EntityStatus.RETRY);
     });
 
@@ -378,7 +417,7 @@ describe('durable WS outbox owner misses', () => {
             const bus: DrainableBridgeBus = race === 'before'
                 ? createBridgeBus()
                 : createFireAndForgetBridgeBus();
-            const claimant = createService({
+            const { service: claimant, engine: claimantEngine } = createService({
                 outbox,
                 socket: createSocket(),
                 name: 'claimant',
@@ -388,7 +427,7 @@ describe('durable WS outbox owner misses', () => {
             remoteSocket.sendEncoded.mockImplementationOnce(() => {
                 throw new Error('simulated remote socket failure');
             });
-            const remote = createService({
+            const { service: remote } = createService({
                 outbox,
                 socket: remoteSocket,
                 name: 'remote',
@@ -417,7 +456,12 @@ describe('durable WS outbox owner misses', () => {
                 jitterUnit: () => 0
             });
 
-            await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+            // One trigger, then a passive wait for that one attempt to reach the bus before draining
+            // it: a poll that redrives would race the row past the RETRY state this assertion
+            // observes and on toward completion, and draining the bus before the publish reaches it
+            // (the fire-and-forget race) would find nothing queued yet.
+            await drainEngine(claimantEngine);
+            await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
             await bus.drain?.();
 
             const retry = await readEntry(outbox);
@@ -435,7 +479,8 @@ describe('durable WS outbox owner misses', () => {
             )).resolves.toBeUndefined();
 
             vi.advanceTimersByTime(55);
-            await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+            await drainEngine(claimantEngine);
+            await expect.poll(async () => (await readEntry(outbox)).status).not.toBe(EntityStatus.RESERVED);
             await bus.drain?.();
 
             expect(await readEntry(outbox)).toMatchObject({
@@ -480,7 +525,8 @@ function createSocket(): WsOutboxTestSocket {
     return { socket, sendEncoded, encodedSends };
 }
 
-function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerService {
+function createService(input: CreateWsOutboxServiceInput): WsOutboxServiceFixture {
+    const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
         outbox: input.outbox,
         socket: input.socket.socket,
@@ -488,10 +534,11 @@ function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerServi
         targetResolver: {
             resolvePeerRecipients: input.resolveRecipients,
             resolveBroadcastRecipients: input.resolveRecipients
-        }
+        },
+        queueEngine: engine
     });
     onTestFinished(() => service.dispose());
-    return service;
+    return { service, engine };
 }
 
 function createBridgeBus(): QueueBoxPubSubBridge {

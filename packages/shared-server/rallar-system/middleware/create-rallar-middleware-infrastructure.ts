@@ -38,6 +38,7 @@ export function createRallarMiddlewareInfrastructure(
         targetResolver,
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
+        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
         validateInboundMessage: validateMiddlewareALIngress,
         forwardsRoomScopedMessages: false

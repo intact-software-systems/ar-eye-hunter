@@ -339,13 +339,6 @@ export class WsQueueBoxServerService {
         return result;
     }
 
-    async dequeueOutbox(
-        _typesToDequeue: Set<string>,
-        _resilience: ResourceInboxResilience
-    ): Promise<void> {
-        await this.outboundRuntime.drainWork();
-    }
-
     private sendControlMessage(message: ALMessage): Promise<void> {
         const toPeerId = message.targets?.mode === 'unicast'
             ? message.targets.toPeerId

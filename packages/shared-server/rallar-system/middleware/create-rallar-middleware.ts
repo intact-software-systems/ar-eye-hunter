@@ -17,10 +17,8 @@ export function createRallarMiddleware(
     );
     const inboxServices = createRallarMiddlewareInboxServices(options, infrastructure);
     const registeredQueue = queueRegistration.registerExactTasks({
-        wsQBoxServerService: infrastructure.wsQBoxServerService,
         inboxQueueReader: infrastructure.inboxQueueReader,
         outboxQueueReader: infrastructure.outboxQueueReader,
-        wsOutboxResilience: options.resilience.outbox ?? options.resilience.inbox,
         appInboxResilience: infrastructure.appInboxResilience,
         appOutboxResilience: infrastructure.appOutboxResilience
     });

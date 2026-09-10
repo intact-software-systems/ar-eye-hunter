@@ -2,13 +2,10 @@ import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/re
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 export interface RegisterRallarMiddlewareQueueTasksInput {
-    readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly wsOutboxResilience: ResourceInboxResilience;
     readonly appInboxResilience: ResourceInboxResilience;
     readonly appOutboxResilience: ResourceInboxResilience;
 }
@@ -61,7 +58,6 @@ export class RallarMiddlewareQueueRegistration {
         if (this.#state !== 'unregistered') {
             throw new Error('Rallar middleware queue tasks have already been registered');
         }
-        registerWsQueueBoxOutboxTask(this.#engine, input);
         registerApplicationQueueReaderTasks({
             engine: this.#engine,
             inboxQueueReader: input.inboxQueueReader,
@@ -119,27 +115,6 @@ export function registerApplicationQueueReaderTasks(
             input.outboxQueueReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 input.appOutboxResilience
-            ),
-        ongoingTasks: []
-    });
-}
-
-function registerWsQueueBoxOutboxTask(
-    engine: Pick<InboxOutboxEngine, 'includeTask'>,
-    input: RegisterRallarMiddlewareQueueTasksInput
-): void {
-    engine.includeTask(WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE, {
-        name: WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
-        maxConcurrency: () => 1,
-        isWork: () =>
-            input.wsQBoxServerService.outbox.isAnyEntryToLock(
-                WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-                input.wsOutboxResilience.toWorkAdvertisementOptions()
-            ),
-        runnable: () =>
-            input.wsQBoxServerService.dequeueOutbox(
-                WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-                input.wsOutboxResilience
             ),
         ongoingTasks: []
     });

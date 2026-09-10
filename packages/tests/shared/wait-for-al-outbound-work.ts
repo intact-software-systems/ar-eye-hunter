@@ -46,3 +46,17 @@ export async function yieldToOutboundWork(): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+const MICROTASK_DRAIN_TURNS = 50;
+
+/**
+ * Settles the batch a caller-owned runtime's own commit already started, without crossing a
+ * macrotask boundary. A caller-owned runtime schedules its own recheck via `setTimeout` on first
+ * `ready()`; a timer-based yield (`yieldToOutboundWork`) would give that recheck a turn too, which
+ * is not "wait for only the batch this call committed."
+ */
+export async function settleCommittedOutboundBatch(): Promise<void> {
+    for (let turn = 0; turn < MICROTASK_DRAIN_TURNS; turn += 1) {
+        await Promise.resolve();
+    }
+}

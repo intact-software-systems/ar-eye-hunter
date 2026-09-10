@@ -25,11 +25,13 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
+    captureOutboundWorkRunnable,
     computeOutboundTestAdmission,
     createOutboundMessage,
     peekOutboundWorkReadyAt
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 interface CapturedRtcConnection extends shared.WebRtcConnectionService {
     readonly sendByPeerId: ReadonlyMap<string, readonly object[]>;
@@ -126,6 +128,8 @@ describe('multicast QoS integration', () => {
         const overlays = createReadableCache<OverlayInfo>({});
         const base = createResourceInboxResilience();
         const resilience = new shared.ResourceInboxResilience({ ...base, retryPolicy: { ...base.retryPolicy, maxAttempts: 1 } });
+        const engine = new InboxOutboxEngine();
+        const drainOnce = captureOutboundWorkRunnable(engine);
         const manager = new shared.WebRtcOverlayMulticastManager({
             connectionService,
             groupCache: groups,
@@ -133,7 +137,7 @@ describe('multicast QoS integration', () => {
             multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             dequeueResilience: resilience
@@ -148,11 +152,16 @@ describe('multicast QoS integration', () => {
             { ttlMs: 30_000 }
         );
         const entry = shared.QueueBoxUtilities.toResourceEntryFromMsg(message, shared.EnqueuedType.RTC_OUTBOX);
-        await manager.outbox.enqueue(entry);
+        // toResourceEntryFromMsg's createdTs falls back through Temporal.Now (local wall clock)
+        // reinterpreted as UTC; a due nextTs sidesteps that gap instead of relying on it for readiness.
+        await manager.outbox.enqueue({
+            ...entry,
+            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
+        });
         const failure = vi.spyOn(resilience, 'failure');
         const success = vi.spyOn(resilience, 'success');
         for (let cycle = 0; cycle < 25; cycle += 1) {
-            await manager.dequeue(shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
+            await drainOnce();
             const waiting = await manager.outbox.getItem(entry.key);
             expect(waiting?.dequeueAudit.attempts).toBe(0);
             expect(waiting?.status).toBe(shared.EntityStatus.RETRY);
@@ -167,9 +176,9 @@ describe('multicast QoS integration', () => {
         }
         groups.set('group-1', createGroupSnapshot(['self', 'peer-1']));
         overlays.set('group-1', createOverlayInfo(['peer-1']));
-        await manager.dequeue(shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
-        // The dequeue admits the row; the send it commits runs on the owner's follow-up batch.
-        await manager.dequeue(shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
+        // The first drain admits the row; the send it commits runs on the owner's follow-up batch.
+        await drainOnce();
+        await drainOnce();
         expect(connectionService.sendByPeerId.get('peer-1') ?? []).toHaveLength(atExpiry ? 0 : 1);
         expect(success).toHaveBeenCalledTimes(atExpiry ? 0 : 1);
         expect(failure).not.toHaveBeenCalled();
@@ -402,10 +411,7 @@ describe('multicast QoS integration', () => {
         );
 
         await enqueueRtcAndDrain(manager, msg);
-        await manager.dequeue(
-            shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await settleCommittedOutboundBatch();
 
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
     });
@@ -487,10 +493,7 @@ describe('multicast QoS integration', () => {
             );
 
             await enqueueRtcAndDrain(manager, msg);
-            await manager.dequeue(
-                shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-                createResourceInboxResilience()
-            );
+            await settleCommittedOutboundBatch();
 
             expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
             expect(connectionService.sendByPeerId.get('peer-2')).toBeUndefined();
@@ -558,10 +561,7 @@ describe('multicast QoS integration', () => {
         );
 
         await enqueueRtcAndDrain(manager, msg);
-        await manager.dequeue(
-            shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await settleCommittedOutboundBatch();
         if (authority === 'missing') {
             groups.clearAll();
         }
@@ -761,16 +761,13 @@ describe('multicast QoS integration', () => {
     });
 });
 
-/** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
 async function enqueueRtcAndDrain(
     manager: shared.WebRtcOverlayMulticastManager,
     msg: shared.ALMessage
 ): Promise<shared.ALOutboundEnqueueResult> {
     const result = await manager.enqueueIfAbsent(msg);
-    await manager.dequeue(
-        shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-        createDefaultALOutboundDequeueResilience()
-    );
+    await settleCommittedOutboundBatch();
     return result;
 }
 

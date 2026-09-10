@@ -34,6 +34,11 @@ import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
+export type {
+    ALOutboundControlAdmission,
+    ALOutboundControlAdmissionResult
+} from './control/al-outbound-control-admission.ts';
+
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
 export interface ALOutboundSettledSendResult {

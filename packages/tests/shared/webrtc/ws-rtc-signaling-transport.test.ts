@@ -1,4 +1,3 @@
-import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     afterEach,
     beforeEach,
@@ -17,7 +16,7 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { createDefaultWsQueueBoxClientService, WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     QRtcSignalingChannel,
@@ -83,13 +82,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         const socket = await openSignalingConnection(transport, createSignalingObservations().callbacks);
         const payload = createSignalingPayload();
 
+        // Admission returns before its own send batch; wait for that batch to settle before asserting it.
         await transport.send(payload);
-        await service.dequeueOutbox(
-            WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-            createDefaultALOutboundDequeueResilience()
-        );
-
-        expect(socket.sent).toHaveLength(1);
+        await expect.poll(() => socket.sent).toHaveLength(1);
         const sent = decodePersistedALMessage(socket.sent[0]);
         expect(sent.payload.typeId).toBe('rtc');
         expect(sent.id.senderId).toBe(payload.fromId);

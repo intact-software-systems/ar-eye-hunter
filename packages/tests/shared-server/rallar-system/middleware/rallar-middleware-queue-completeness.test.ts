@@ -17,7 +17,10 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    createDefaultWsQueueBoxServerService,
+    type WsQueueBoxServerService
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     describe,
@@ -57,10 +60,11 @@ describe('Rallar middleware queue registration completeness', () => {
             published.push(msg.id.msgId);
         });
         createRallarMiddlewareQueueRegistration(engine).registerExactTasks(input);
-        const physical = includeTask.mock.calls.find(([name]) => name === 'WS_OUTBOX')?.[1];
+        // The runtime's own work handler is the only registered owner now; it claims admit-message
+        // rows and, once committed, the WS_OUTBOX rows those commits create, in separate batch passes.
         const admission = includeTask.mock.calls.find(([name]) => name.startsWith('al-outbound:'))?.[1];
-        if (!physical || !admission) {
-            throw new Error('Expected both registered owners');
+        if (!admission) {
+            throw new Error('Expected the registered owner');
         }
         const message = newALUnicastMessage('self', { topicId: 'chat', resourceId: 'pending', contextId: 'direct' }, 'remote-peer', 'chat.message', {}, {
             ttlMs: 60_000,
@@ -69,8 +73,7 @@ describe('Rallar middleware queue registration completeness', () => {
         const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message);
         expect(result.status).toBe('pending-admission');
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
-        expect(await physical.isWork()).toBe(false);
-        await physical.runnable();
+        await admission.runnable();
         expect(published).toEqual([]);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         const rows = await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
@@ -81,16 +84,14 @@ describe('Rallar middleware queue registration completeness', () => {
         await claims.release();
         await admission.runnable();
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.NEW);
-        expect(await physical.isWork()).toBe(true);
-        await physical.runnable();
+        await admission.runnable();
         expect(published).toEqual([message.id.msgId]);
         // Restore the original pending observation to model lost completion after the admission commit.
         await stores.workQueue.enqueue(pending);
         await admission.runnable();
         expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).status).toBe('duplicate');
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
-        expect(await physical.isWork()).toBe(false);
-        await physical.runnable();
+        await admission.runnable();
         expect(published).toEqual([message.id.msgId]);
     });
     it('retains canonical payload and identity through the registered WS work advertisement', async () => {
@@ -99,16 +100,18 @@ describe('Rallar middleware queue registration completeness', () => {
         onTestFinished(() => {
             vi.restoreAllMocks();
         });
-        const input = createQueueTaskInput();
+        // The service's own work handler registers on whatever engine it is built with; give it the
+        // engine this test observes so the registered owner is the one the middleware also drives.
+        const input = createQueueTaskInput(undefined, engine);
         const published: string[] = [];
         input.wsQBoxServerService.onOutboxClusterPublishDo(async (message) => {
             published.push(message.id.msgId);
         });
         const registration = createRallarMiddlewareQueueRegistration(engine);
         registration.registerExactTasks(input);
-        const task = includeTask.mock.calls.find(([name]) => name === 'WS_OUTBOX')?.[1];
+        const task = includeTask.mock.calls.find(([name]) => name.startsWith('al-outbound:'))?.[1];
         if (!task) {
-            throw new Error('Expected the registered physical WS worker');
+            throw new Error('Expected the registered WS work owner');
         }
         const message = newALUnicastMessage(
             'server',
@@ -197,7 +200,7 @@ describe('Rallar middleware queue registration completeness', () => {
 function createQueueTaskInput(
     outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>,
     queueEngine?: InboxOutboxEngine
-): RegisterRallarMiddlewareQueueTasksInput {
+): RegisterRallarMiddlewareQueueTasksInput & { readonly wsQBoxServerService: WsQueueBoxServerService; } {
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
@@ -212,7 +215,6 @@ function createQueueTaskInput(
         wsQBoxServerService,
         inboxQueueReader: new InboxQueueReader(queue),
         outboxQueueReader: new OutboxQueueReader(queue),
-        wsOutboxResilience: resilience,
         appInboxResilience: resilience,
         appOutboxResilience: resilience
     };

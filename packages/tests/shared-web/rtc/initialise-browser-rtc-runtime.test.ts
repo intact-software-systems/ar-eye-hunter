@@ -1,5 +1,3 @@
-import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import {
     afterEach,
     beforeEach,
@@ -11,6 +9,8 @@ import {
 } from 'vitest';
 
 import '../../setup-browser-indexeddb.ts';
+
+import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -172,9 +172,11 @@ describe('browser RTC runtime composition', () => {
             }
         }
         expect(fixture.service.readyPeerIdsForLane()).toEqual(['accepted-peer', 'planned-peer']);
+        const qboxEngine = new InboxOutboxEngine();
+        const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             webRtcConnectionService: fixture.service,
-            qboxEngine: new InboxOutboxEngine()
+            qboxEngine
         });
         onTestFinished(() => manager.dispose());
 
@@ -197,10 +199,7 @@ describe('browser RTC runtime composition', () => {
         expect(result.entries).toHaveLength(1);
         expect(result.entry?.status).toBe('COMPLETED');
         // Admission returns before its own send batch; the transport attempt runs on that batch.
-        await manager.dequeue(
-            WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createDefaultALOutboundDequeueResilience()
-        );
+        await drainOnce();
         const acceptedMessages = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
         const plannedMessages = fixture.nativePeer('planned-peer').channels.flatMap((channel) => channel.sent);
         expect(acceptedMessages).toHaveLength(1);

@@ -578,14 +578,6 @@ export class WsQueueBoxClientService {
         return await this.outboundRuntime.enqueueIfAbsent(message);
     }
 
-    async dequeueOutbox(_typesToDequeue: Set<string>, _resilience: ResourceInboxResilience) {
-        if (this.closed) {
-            return;
-        }
-
-        await this.outboundRuntime.drainWork();
-    }
-
     private hasInboxConsumer(message: ALMessage): boolean {
         return this.onInboxMessageCallbacks.has(message.payload.typeId) ||
             this.onInboxMessageCallbacks.has(WsQueueBoxClientService.ALL_IN) ||

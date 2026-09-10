@@ -356,17 +356,6 @@ export class WebRtcOverlayMulticastManager {
         return toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
     }
 
-    async dequeue(
-        _typesToDequeue: Set<string>,
-        _resilience: ResourceInboxResilience
-    ): Promise<void> {
-        if (this.disposed) {
-            return;
-        }
-
-        await this.outboundRuntime.drainWork();
-    }
-
     async acceptControlMessage(msg: ALMessage): Promise<void> {
         if (this.disposed) {
             return;
