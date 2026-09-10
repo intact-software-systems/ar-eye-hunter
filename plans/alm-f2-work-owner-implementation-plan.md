@@ -148,6 +148,16 @@ counters.
 
 ---
 
+## Execution adjustments (2026-09-10, after PR #559's first Release Gate)
+
+- The blocking gate failed at the Postgres shared-server integration step (a lease stamped from the
+  JavaScript clock versus a readiness derived from the row's Postgres `startTs`; a pre-existing ALM
+  race test leaking a non-JSON queue row that the group-state connect test parses first since the
+  Task 9 key layout). The non-blocking observation job showed F2 moved the runner stall rather than
+  removing it (send median 1.9 s → 7.4 s on the runner; RTC readiness 24–40 s through delayed
+  signaling). Maintainer decision: hold #559 and fix inside it (rulings R76, R77). Task 13 below
+  carries both repairs and the throughput fix; the plan stays incomplete until its Step 6.
+
 ### Task 1: The ALM work queue port
 
 **Files:**
@@ -1579,6 +1589,64 @@ was measured on, the storage snapshot numbers, the probe result), Risk and rollb
 browser schema id and key layout; every pending ALM browser row from the previous schema is discarded
 on first open; rollback is the revert, and a reverted build resets the database again on the old
 schema id), Follow-up (S1).
+
+### Task 13: Outbound admission throughput on slow storage
+
+Added 2026-09-10 after PR #559's first Release Gate. Maintainer decision (option 2): hold #559 and land
+the fix inside it. The observation job (run 34500712415, diagnosis in the session scratchpad
+`alm-observation-47a9c2ae1-diagnosis.md`) showed the runner's ws delivery-baseline send spending 3.8 s
+queued behind another commit's 5.5 s per-sender lock hold and 9.2 s inside `commitDispatchOnce` before
+its 10 s budget; send median 1.9 s on F1's runner → 7.4 s on F2's, on an environment only 1.4× slower
+than local; the RTC smoke cells regressed from passing to 24–40 s readiness because signaling answers
+travel through the same admission path. Two causes: `readOutgoingMessage` still performs 7+ sequential
+IndexedDB round trips under the lock (the F1 assessment's item never landed), and F2's fire-and-forget
+`committed()` lets the drain's commits re-enter the same per-sender queue and lock, charged to the next
+send as queue wait.
+
+**Files:**
+
+- Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts` (`readOutgoingMessage`
+  and the control/repair reads that share its shape), `packages/shared/alm/outbound/admission/al-outbound-admission-store.ts`,
+  `packages/shared/alm/indexed-db-admission-backend.ts` (one readonly transaction for a decision-surface read),
+  `packages/shared/alm/outbound/al-outbound-message-runtime.ts` (commit queue and lock policy),
+  `packages/shared/alm/work/al-work-queue-port.ts` (lease from the row's `startTs`),
+  `packages/tests/shared-server/integration/postgres/al-admission-queue-work.test.ts`,
+  `packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts`.
+- Test: `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`,
+  `packages/tests/shared/alm/outbound/*.test.ts`, `packages/tests/shared/alm/work/al-work-queue-port.test.ts`.
+
+**Interfaces:**
+
+- Consumes: the outbound diagnostics events (Task 6b, extended by Step 1 with `read`/`commit` lock-hold
+  phases and the commit's origin), `storage.counters`, the IndexedDB operation observer.
+- Produces: no public surface change; the admission result values and the fence-abort invariant (R58/R69)
+  are unchanged.
+
+- [ ] **Step 0: Repair the Postgres gate** — the claim's `leaseUntilMs` derives from the reserved row's
+      `dequeueAudit.startTs` (ceil to the millisecond, shared with `resolveALOutboundWorkReadyAt`) plus the
+      lease, never from the JavaScript clock (`al-outbound-effect-claims.test.ts:60` failed by 1 ms); the
+      ALM race test writes a JSON resource and cleans up `actionKey`, and `reserveTopologyWork` filters by the
+      key it owns before parsing (`group-connect-trigger-sql.test.ts:276`).
+- [ ] **Step 1: Instrumentation** — a `storage.counters` step right after connect in every conformance
+      scenario (manifests regenerated), the lock hold split into `read` and `commit` phases, and each commit's
+      queue wait attributed to a send or a drain origin; diagnostics contract doc updated; pinned in the
+      diagnostics tests.
+- [ ] **Step 2: Pin the current read cost** — an operation-count test records the IndexedDB transactions
+      and round trips one typed send's `readOutgoingMessage` performs (RED at the measured count).
+- [ ] **Step 3: One readonly transaction per decision-surface read** — `readOutgoingMessage` (and the
+      control/repair reads with the same shape) issue every key read inside one transaction through the
+      backend's read API; read → compute → validate → commit is unchanged; the pin from Step 2 goes GREEN at
+      one transaction; the fences tests stay green over memory, IndexedDB, and PGlite.
+- [ ] **Step 4: Drain commits off the sender's critical path** — with the Step 1 events, measure the queue
+      wait attributed to drain commits after Step 3; if it still dominates a send's wall clock on the runner
+      (Step 5 artifact), give the drain its own commit lane behind the admission revision fence, recorded as a
+      ruling with the figures; otherwise record the measurement and leave the lock policy alone.
+- [ ] **Step 5: Re-observe on the runner** — push, let the observation job run, read
+      `alm-conformance-lane-<sha>`: the ws smoke cell green on all three scenarios, per-send admission wall
+      clock on the runner recorded against the 1.9 s F1 baseline, RTC readiness back under the 30 s budget;
+      one more iteration is allowed before the maintainer is asked again.
+- [ ] **Step 6: Final gates** — the Task 12 list on the final tree plus the Postgres lanes on the gate;
+      the PR body's Validation and Findings sections updated with the runner figures.
 
 ---
 
