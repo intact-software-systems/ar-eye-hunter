@@ -1735,6 +1735,21 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-outbound-control-write-free-no-batch",
+      "domain": "ALM outbound control admission work wake",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control message the outbound owner did not handle writes nothing, so it owes no work batch; a committed one does. Executable assertion: \u201cstarts a work batch only for a control admission that wrote\u201d.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#starts a work batch only for a control admission that wrote",
+      "coverageRelation": "The test drives the real outbound runtime over an engine it does not own, so the only claim the queue can see is the one the runtime's own post-commit wake started.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxResourceEntryRepository.reserveEntries called by the outbound work batch",
+        "observableEffect": "Every batch reserves rows, which spends the queue's reservation budget and each row's attempt.",
+        "requiredConstraint": "A not-handled or rejected control starts no batch; a committed control starts one.",
+        "failureRationale": "Both controls end with the same queue contents and the same admission result, so only the reservation call distinguishes the batch a write-free control must not start from the batch a commit owes."
+      }
+    },
+    {
       "id": "alm-outbound-held-claim-quiescence",
       "domain": "ALM outbound held-claim test fixture",
       "owner": "Rallar shared maintainers",
@@ -2059,6 +2074,28 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-8476c70422e7a937",
+      "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-control-write-free-no-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent reservation is the only witness that a write-free control started no batch; the queue contents and the admission result are identical either way.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#starts a work batch only for a control admission that wrote"
+    },
+    {
+      "id": "test-structure-coupling-715d3806644feb6a",
+      "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-control-write-free-no-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The paired positive count is what makes the preceding absence a statement about this control rather than about a runtime that never batches at all.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#starts a work batch only for a control admission that wrote"
+    },
     {
       "id": "test-structure-coupling-d58f46e97b581e00",
       "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
