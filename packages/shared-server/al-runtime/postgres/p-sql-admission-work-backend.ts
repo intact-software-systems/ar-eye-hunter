@@ -1,7 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '@shared/alm/al-admission-work-backend.ts';
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
+} from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { requireLivePersistenceWrite } from '@shared/persistence/persistence-write-deadline.ts';
 import { toResourceEntrySnapshot } from '@shared/queuebox/resource-entry-observations.ts';
@@ -53,6 +57,19 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 
     async ready(): Promise<void> {}
+
+    /**
+     * One collector per session, so the chain reads each row once. Postgres serves every statement
+     * from a consistent snapshot on its own, so a read session opens no SQL transaction.
+     */
+    async readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
+        return await read(
+            new PSqlAdmissionReadSession(
+                new PSqlAdmissionMutationCollector(this.repository, this.namespace, this.nowMs),
+                this.workQueue
+            )
+        );
+    }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
         return await new PSqlAdmissionMutationCollector(
@@ -114,6 +131,29 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
             throw error;
         }
         return result;
+    }
+}
+
+/** The read half of one admission decision surface: state rows from a collector, work from the queue. */
+class PSqlAdmissionReadSession implements ALAdmissionReadSession {
+    private readonly collector: PSqlAdmissionMutationCollector;
+    private readonly workQueue: PSqlQueueBox;
+
+    constructor(collector: PSqlAdmissionMutationCollector, workQueue: PSqlQueueBox) {
+        this.collector = collector;
+        this.workQueue = workQueue;
+    }
+
+    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+        return await this.collector.read(key, decode);
+    }
+
+    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
+        return await this.collector.list(prefix, decode);
+    }
+
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        return await this.workQueue.getItem(key);
     }
 }
 

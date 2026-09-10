@@ -19,7 +19,7 @@ interface IndexedDbAdmissionSnapshot {
     readonly stored: readonly IndexedDbAdmissionStoredRow[];
 }
 
-type IndexedDbAdmissionSelection =
+export type IndexedDbAdmissionSelection =
     | Readonly<{ kind: 'key'; key: string; }>
     | Readonly<{ kind: 'prefixes'; prefixes: readonly string[]; }>
     | Readonly<{ kind: 'expired'; maximumExpireAtTimestamp: number; }>
@@ -43,7 +43,8 @@ export async function readIndexedDbAdmissionSnapshot(
     return { stored: rows, revision: decodeIndexedDbAdmissionRevision(revisionValue) };
 }
 
-async function readIndexedDbAdmissionSelection(
+/** Issues one selection against a store the caller already opened, so a session read joins it. */
+export async function readIndexedDbAdmissionSelection(
     store: IDBObjectStore,
     selection: IndexedDbAdmissionSelection
 ): Promise<readonly IndexedDbAdmissionStoredRow[]> {

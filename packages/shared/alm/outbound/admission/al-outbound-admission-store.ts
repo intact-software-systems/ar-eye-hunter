@@ -10,7 +10,11 @@ import { PersistenceWriteExpiredError } from '../../../persistence/persistence-w
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
+} from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
@@ -348,38 +352,38 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     async readOutgoingMessage(
         input: ALOutboundOutgoingReadInput<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
-        return await this.reads.readOutgoingMessage(input);
+        return await this.backend.readWithin((session) => this.reads.readOutgoingMessage(session, input));
     }
 
     async readRepairMessage(
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
-        return await this.reads.readRepairMessage(msgId, planner);
+        return await this.backend.readWithin((session) => this.reads.readRepairMessage(session, msgId, planner));
     }
 
     async isMessageSuperseded(msg: ALMessage): Promise<boolean> {
-        return await this.reads.isMessageSuperseded(msg);
+        return await this.backend.readWithin((session) => this.reads.isMessageSuperseded(session, msg));
     }
 
     async hasSentMessageAdmission(msgId: string): Promise<boolean> {
-        return await this.reads.hasSentMessageAdmission(msgId);
+        return await this.backend.readWithin((session) => this.reads.hasSentMessageAdmission(session, msgId));
     }
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
-        return await this.reads.readSentMessage(msgId);
+        return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
-        return await this.reads.readSentMessageByOrdering(trackKey, seq);
+        return await this.backend.readWithin((session) => this.reads.readSentMessageByOrdering(session, trackKey, seq));
     }
 
     async readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        return await this.reads.readPendingAck(msgId);
+        return await this.backend.readWithin((session) => this.reads.readPendingAck(session, msgId));
     }
 
     async readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        return await this.reads.readReceiptState(msgId);
+        return await this.backend.readWithin((session) => this.reads.readReceiptState(session, msgId));
     }
 
     async readWorkSnapshot(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
@@ -392,10 +396,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
 
         const nowMs = this.nowMs();
-        const effects = this.effectStore.computeEffects(
-            await this.effectStore.readEffects(bundle.durableEffects, bundle.canonicalEntry),
-            nowMs
-        );
+        // One snapshot answers everything the commit decides on: the effect rows it may replace and
+        // the canonical pair it may write. The conditional write re-reads its own fences separately.
+        const observed = await this.backend.readWithin(async (session) => ({
+            effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
+            canonicalWrites: await this.readCanonicalWrites(session, bundle)
+        }));
+        const effects = this.effectStore.computeEffects(observed.effects, nowMs);
         const issues = this.effectStore.validateEffects(effects);
         if (issues.length > 0) {
             throw new TypeError(issues.map((issue) => issue.message).join('; '));
@@ -410,13 +417,14 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 (effects.length > 0
                     ? Math.min(...effects.map((effect) => effect.entry.audit.expiryTs.epochMilliseconds))
                     : null),
-            canonicalWrites: await this.readCanonicalWrites(bundle),
+            canonicalWrites: observed.canonicalWrites,
             mutations: this.mutations.computeStateWrites(bundle.mutations, nowMs),
             versionExpireAt: nowMs + this.retention.versionTtlMs
         });
     }
 
     private async readCanonicalWrites(
+        session: ALAdmissionReadSession,
         bundle: ALOutboundCommitBundle<TPrepared>
     ): Promise<readonly ALOutboundCanonicalFactWrite[]> {
         if (!bundle.canonicalEntry) {
@@ -424,7 +432,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
         const captured = bundle.mutations.find((mutation) => mutation.kind === 'set-sent-message')?.creationExpiry;
         return await readALOutboundCanonicalWrites({
-            queue: this.backend.workQueue,
+            queue: { getItem: (key) => session.readWork(key) },
             scope: this.canonicalScope,
             entry: bundle.canonicalEntry,
             creationExpiry: captured ??
@@ -491,7 +499,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         candidate: ALOutboundCommitCandidate<TPrepared>
     ): Promise<void> {
         const { bundle, effects, mutations } = candidate;
-        const current = await this.reads.readClientRecordWithin(tx, bundle.senderId);
+        const current = await this.reads.readClientRecord(tx, bundle.senderId);
         if (current?.version !== bundle.expectedVersion) {
             throw new ALAdmissionBackendConflictError('Outbound sender version changed');
         }

@@ -7,7 +7,11 @@ import { jsonEquals } from '../../../repository/state-utils.ts';
 import { toError } from '../../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
+} from '../../al-admission-work-backend.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import {
     captureALOutboundCreationExpiry,
@@ -76,14 +80,15 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
     }
 
     async readEffects(
+        session: ALAdmissionReadSession,
         effects: readonly ALOutboundDurableEffectWrite<TPrepared>[],
         canonicalEntry?: ResourceEntry
     ): Promise<readonly ALOutboundEffectObservation<TPrepared>[]> {
         return await Promise.all(effects.map(async (effect) => {
             const message = (effect.payload.kind === 'send-prepared' || effect.payload.kind === 'admit-message')
-                ? await this.readReferencedMessage(effect.payload.message, canonicalEntry)
+                ? await this.readReferencedMessage(session, effect.payload.message, canonicalEntry)
                 : undefined;
-            const existing = await this.backend.workQueue.getItem(toALOutboundWorkKey(this.namespace, effect.effectId));
+            const existing = await session.readWork(toALOutboundWorkKey(this.namespace, effect.effectId));
             const preparedRead = { decodePrepared: this.decodePrepared, message };
             decodeALOutboundEffectPayload(effect.payload, effect.effectId, preparedRead);
             const existingPayload = existing
@@ -97,7 +102,7 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
     async readWorkSnapshot(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
         return decodeALOutboundWorkEntry(entry, this.namespace, {
             decodePrepared: this.decodePrepared,
-            message: await this.readWorkCanonicalMessage(entry)
+            message: await this.backend.readWithin((session) => this.readWorkCanonicalMessage(session, entry))
         });
     }
 
@@ -180,12 +185,16 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
         }
     }
 
-    private async readWorkCanonicalMessage(entry: ResourceEntry): Promise<ALMessage | undefined> {
+    private async readWorkCanonicalMessage(
+        session: ALAdmissionReadSession,
+        entry: ResourceEntry
+    ): Promise<ALMessage | undefined> {
         const reference = readALOutboundWorkMessageReference(entry);
-        return reference === undefined ? undefined : await this.readReferencedMessage(reference);
+        return reference === undefined ? undefined : await this.readReferencedMessage(session, reference);
     }
 
     private async readReferencedMessage(
+        session: ALAdmissionReadSession,
         reference: ALOutboundMessageReference,
         candidate?: ResourceEntry
     ): Promise<ALMessage> {
@@ -195,14 +204,14 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
                 new TypeError('Outbound reference belongs to another local scope')
             );
         }
-        const canonical = candidate ?? await this.backend.workQueue.getItem(reference.key);
+        const canonical = candidate ?? await session.readWork(reference.key);
         const identity = candidate
             ? toALOutboundIdentityEntry(
                 reference,
                 candidate,
                 captureALOutboundCreationExpiry(decodePersistedALMessage(candidate.resource))
             )
-            : await this.backend.workQueue.getItem(toALOutboundIdentityKey(reference.key));
+            : await session.readWork(toALOutboundIdentityKey(reference.key));
         return decodeALOutboundCanonicalMessage(reference, canonical, identity);
     }
 }

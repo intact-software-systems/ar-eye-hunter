@@ -151,20 +151,32 @@ export async function readStoredQueueEntries(
         transaction,
         async () =>
             await Promise.all(
-                keyStrings.map((key) => readIndexedDbRequest(store.get(key)))
+                keyStrings.map((key) => readStoredQueueEntryWithin(store, key))
             )
     );
     const entries = new Map<ResourceEntryKeyString, StoredResourceEntry>();
-    for (const [index, value] of stored.entries()) {
-        if (value !== undefined) {
-            const entry = decodeStoredResourceEntryValue(value);
-            if (entry.keyString !== keyStrings[index]) {
-                throw new TypeError('IndexedDB queue lookup returned a row for another key');
-            }
+    for (const [index, entry] of stored.entries()) {
+        if (entry !== undefined) {
             entries.set(keyStrings[index], entry);
         }
     }
     return entries;
+}
+
+/** One queue row from a store the caller already opened, so a session read joins its transaction. */
+export async function readStoredQueueEntryWithin(
+    store: IDBObjectStore,
+    keyString: ResourceEntryKeyString
+): Promise<StoredResourceEntry | undefined> {
+    const value = await readIndexedDbRequest(store.get(keyString));
+    if (value === undefined) {
+        return undefined;
+    }
+    const entry = decodeStoredResourceEntryValue(value);
+    if (entry.keyString !== keyString) {
+        throw new TypeError('IndexedDB queue lookup returned a row for another key');
+    }
+    return entry;
 }
 
 /**

@@ -5,7 +5,11 @@ import {
 } from '../../../al-contracts/al-control.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
+} from '../../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
@@ -105,7 +109,9 @@ export class ALOutboundControlAdmission<TPrepared> {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         const effects = this.effectStore.computeEffects(
-            await this.effectStore.readEffects(computed.repairEffect ? [computed.repairEffect] : []),
+            await this.backend.readWithin((session) =>
+                this.effectStore.readEffects(session, computed.repairEffect ? [computed.repairEffect] : [])
+            ),
             nowMs
         );
         const workIssues = this.effectStore.validateEffects(effects);
@@ -183,7 +189,10 @@ export class ALOutboundControlAdmission<TPrepared> {
         attempts: number
     ): Promise<ALOutboundNotYetInSyncRetryScheduleResult> {
         const nowMs = this.clock.nowMs();
-        const candidates = this.effectStore.computeEffects(await this.effectStore.readEffects([effect]), nowMs);
+        const candidates = this.effectStore.computeEffects(
+            await this.backend.readWithin((session) => this.effectStore.readEffects(session, [effect])),
+            nowMs
+        );
         const issues = this.effectStore.validateEffects(candidates);
         if (issues.length > 0) {
             throw new ALAdmissionCorruptionError(
@@ -198,7 +207,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         try {
             return await this.backend.write(async (tx) => {
                 const versionKey = toALOutboundVersionKey(this.namespace, schedule.senderId);
-                const current = await this.reads.readClientRecordWithin(tx, schedule.senderId);
+                const current = await this.reads.readClientRecord(tx, schedule.senderId);
                 if (current?.version !== schedule.expectedVersion) {
                     throw new ALAdmissionBackendConflictError('AL retry sender version moved before its commit');
                 }
@@ -261,30 +270,38 @@ export class ALOutboundControlAdmission<TPrepared> {
         nowMs: number
     ): Promise<ALControlAdmissionRead> {
         const targetMsgId = controlTargetMsgId(parsed);
-        const owner = await this.backend.read(
-            toALOutboundMessageOwnerKey(this.namespace, targetMsgId),
-            decodeALAdmissionString
-        );
-        return {
-            parsed,
-            targetMsgId,
-            nowMs,
-            owner,
-            ownerVersion: owner ? await this.reads.readClientRecord(owner) : undefined,
-            sent: await this.reads.readStoredMessage(targetMsgId),
-            pending: await this.reads.readReceiptState(targetMsgId),
-            history: await this.readControlHistory(parsed, targetMsgId)
-        };
+        return await this.backend.readWithin(async (session) => {
+            const owner = await session.read(
+                toALOutboundMessageOwnerKey(this.namespace, targetMsgId),
+                decodeALAdmissionString
+            );
+            return {
+                parsed,
+                targetMsgId,
+                nowMs,
+                owner,
+                ownerVersion: owner ? await this.reads.readClientRecord(session, owner) : undefined,
+                sent: await this.reads.readStoredMessage(session, targetMsgId),
+                pending: await this.reads.readReceiptState(session, targetMsgId),
+                history: await this.readControlHistory(session, parsed, targetMsgId)
+            };
+        });
     }
 
-    private async readControlHistory(parsed: ALParsedControlMessage, msgId: string) {
+    private async readControlHistory(
+        session: ALAdmissionReadSession,
+        parsed: ALParsedControlMessage,
+        msgId: string
+    ) {
         switch (parsed.type) {
             case 'ack':
-                return await this.reads.readControlHistory('acks', msgId) ?? { kind: 'acks' as const, values: [] };
+                return await this.reads.readControlHistory(session, 'acks', msgId) ??
+                    { kind: 'acks' as const, values: [] };
             case 'nack':
-                return await this.reads.readControlHistory('nacks', msgId) ?? { kind: 'nacks' as const, values: [] };
+                return await this.reads.readControlHistory(session, 'nacks', msgId) ??
+                    { kind: 'nacks' as const, values: [] };
             case 'repair':
-                return await this.reads.readControlHistory('repairs', msgId) ??
+                return await this.reads.readControlHistory(session, 'repairs', msgId) ??
                     { kind: 'repairs' as const, values: [] };
         }
     }
@@ -301,7 +318,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             return false;
         }
         const currentVersion = currentOwner
-            ? await this.reads.readClientRecordWithin(tx, currentOwner)
+            ? await this.reads.readClientRecord(tx, currentOwner)
             : undefined;
         return currentVersion?.version === read.ownerVersion?.version;
     }

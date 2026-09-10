@@ -11,7 +11,7 @@ import {
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
 } from '../../al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type { ALAdmissionReadSession, ALAdmissionWorkBackend } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundSentMessageSnapshot
@@ -64,7 +64,11 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly supersedenceTrackTtlMs: number;
 }
 
-/** Assembles the decision surface every outbound admission computes on; it never writes. */
+/**
+ * Assembles the decision surface every outbound admission computes on; it never writes. Each chain
+ * runs against one caller-owned read session, so a session that is a store snapshot serves the whole
+ * surface, and the same chain runs inside an open write when a fence has to re-read it.
+ */
 export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
     private readonly nowMs: () => number;
@@ -90,15 +94,20 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     async readOutgoingMessage(
+        session: ALAdmissionReadSession,
         input: ALOutboundOutgoingReadInput<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const { msg, observedCanonicalEntry } = input;
         const nowMs = this.nowMs();
-        const clientRecord = await this.readClientRecord(msg.id.senderId);
-        const stored = await this.readStoredMessage(msg.id.msgId);
+        const [clientRecord, stored, control, repairs] = await Promise.all([
+            this.readClientRecord(session, msg.id.senderId),
+            this.readStoredMessage(session, msg.id.msgId),
+            this.readControlTracking(session, msg.id.msgId),
+            this.readRepairs(session, msg.id.msgId)
+        ]);
         const { entry: canonicalEntry, message: canonical, creationExpiry } = await readALOutboundCanonicalMessage({
             nowMs: this.nowMs,
-            queue: { getItem: (key) => this.readQueueItem(key) },
+            queue: { getItem: (key) => this.readQueueItem(session, key) },
             scope: this.canonicalScope,
             message: msg,
             stored,
@@ -106,7 +115,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         });
         const plan = this.readDispatchPlan(input, canonical, stored);
         const supersedenceInput = toALOutboundSupersedenceInput(msg, plan);
-        const supersedence = await this.readSupersedenceState(supersedenceInput?.key, msg.id.msgId);
+        const supersedence = await this.readSupersedenceState(session, supersedenceInput?.key, msg.id.msgId);
 
         return {
             kind: 'outgoing',
@@ -127,8 +136,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
                     supersedenceKey: stored.supersedenceKey ?? null
                 }
                 : undefined,
-            ...await this.readControlTracking(msg.id.msgId),
-            repairs: await this.readRepairs(msg.id.msgId),
+            ...control,
+            repairs,
             supersedence,
             supersedenceAcceptance: supersedenceInput
                 ? acceptALSupersedenceObservation({
@@ -143,16 +152,18 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     async readRepairMessage(
+        session: ALAdmissionReadSession,
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
-        const owner = await this.readStoredMessage(msgId);
+        const owner = await this.readStoredMessage(session, msgId);
         const senderId = owner?.reference.senderId;
-        const clientRecord = senderId ? await this.readClientRecord(senderId) : undefined;
-        // The fenced row is read after the version that fences it: a delete landing between the two
-        // must be visible here rather than pairing a stale snapshot with a version that counted it.
-        const stored = senderId ? await this.readStoredMessage(msgId) : undefined;
-        const sentSnapshot = await this.readCanonicalSentMessage(msgId, stored);
+        const clientRecord = senderId ? await this.readClientRecord(session, senderId) : undefined;
+        // The fenced row is read after the version that fences it, so the two always agree: one
+        // session snapshot answers both, and a chain whose snapshot ended re-reads the row rather
+        // than pairing a stale one with a version that already counted its delete.
+        const stored = senderId ? await this.readStoredMessage(session, msgId) : undefined;
+        const sentSnapshot = await this.readCanonicalSentMessage(session, msgId, stored);
         const msg = sentSnapshot?.msg;
         const plan = msg && stored ? applyALOutboundCapturedPolicy(planner(msg), stored.policy) : undefined;
         if (msg && plan) {
@@ -164,17 +175,17 @@ export class ALOutboundAdmissionReads<TPrepared> {
             nowMs: this.nowMs(),
             clientRecord,
             sentSnapshot,
-            ...await this.readControlTracking(msgId),
+            ...await this.readControlTracking(session, msgId),
             plan
         };
     }
 
-    async isMessageSuperseded(msg: ALMessage): Promise<boolean> {
-        const tracking = (await this.readStoredMessage(msg.id.msgId))?.policy.supersedenceTracking;
+    async isMessageSuperseded(session: ALAdmissionReadSession, msg: ALMessage): Promise<boolean> {
+        const tracking = (await this.readStoredMessage(session, msg.id.msgId))?.policy.supersedenceTracking;
         if (!tracking?.enabled || !tracking.key) {
             return false;
         }
-        const read = await this.readSupersedenceState(tracking.key, msg.id.msgId);
+        const read = await this.readSupersedenceState(session, tracking.key, msg.id.msgId);
         return computeALSupersedenceObservation({
             supersedence: {
                 key: tracking.key,
@@ -191,97 +202,117 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     /** The admission fact outlives the canonical payload: retention, not the message ttl, ends it. */
-    async hasSentMessageAdmission(msgId: string): Promise<boolean> {
-        const stored = await this.readStoredMessage(msgId);
+    async hasSentMessageAdmission(session: ALAdmissionReadSession, msgId: string): Promise<boolean> {
+        const stored = await this.readStoredMessage(session, msgId);
         this.assertSentMessageScope(msgId, stored);
         return stored !== undefined;
     }
 
-    async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
-        return await this.readCanonicalSentMessage(msgId, await this.readStoredMessage(msgId));
+    async readSentMessage(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundSentMessageSnapshot | undefined> {
+        return await this.readCanonicalSentMessage(session, msgId, await this.readStoredMessage(session, msgId));
     }
 
-    async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
+    async readSentMessageByOrdering(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        seq: number
+    ): Promise<ALOutboundSentMessageSnapshot | undefined> {
         const key = toALOutboundOrderingMessageKey(this.namespace, trackKey, seq);
-        const msgId = await this.readValue(key, decodeALAdmissionString);
-        const sent = msgId ? await this.readSentMessage(msgId) : undefined;
+        const msgId = await this.readValue(session, key, decodeALAdmissionString);
+        const sent = msgId ? await this.readSentMessage(session, msgId) : undefined;
         if (sent && (toALOrderingTrackKey(sent.msg) !== trackKey || sent.msg.ordering?.seq !== seq)) {
             throw new ALAdmissionCorruptionError(key, new TypeError('Ordering index differs from canonical message'));
         }
         return sent;
     }
 
-    async readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        const receipts = await this.readReceiptState(msgId);
+    async readPendingAck(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundPendingAckSnapshot | undefined> {
+        const receipts = await this.readReceiptState(session, msgId);
         return receipts && !isALOutboundReceiptComplete(receipts) ? receipts : undefined;
     }
 
-    async readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
+    async readReceiptState(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundPendingAckSnapshot | undefined> {
         return await this.readValue(
+            session,
             toALOutboundPendingAckKey(this.namespace, msgId),
             (value) => decodeALOutboundPendingAck(value, msgId)
         );
     }
 
-    async readAcks(msgId: string): Promise<readonly ALAckPayload[]> {
-        return (await this.readControlHistory('acks', msgId))?.values ?? [];
+    async readAcks(session: ALAdmissionReadSession, msgId: string): Promise<readonly ALAckPayload[]> {
+        return (await this.readControlHistory(session, 'acks', msgId))?.values ?? [];
     }
 
-    async readNacks(msgId: string): Promise<readonly ALNackPayload[]> {
-        return (await this.readControlHistory('nacks', msgId))?.values ?? [];
+    async readNacks(session: ALAdmissionReadSession, msgId: string): Promise<readonly ALNackPayload[]> {
+        return (await this.readControlHistory(session, 'nacks', msgId))?.values ?? [];
     }
 
-    async readRepairs(msgId: string): Promise<readonly ALRepairPayload[]> {
-        return (await this.readControlHistory('repairs', msgId))?.values ?? [];
+    async readRepairs(session: ALAdmissionReadSession, msgId: string): Promise<readonly ALRepairPayload[]> {
+        return (await this.readControlHistory(session, 'repairs', msgId))?.values ?? [];
     }
 
-    async readControlHistory<TKind extends ALOutboundControlHistoryKind>(kind: TKind, msgId: string) {
+    async readControlHistory<TKind extends ALOutboundControlHistoryKind>(
+        session: ALAdmissionReadSession,
+        kind: TKind,
+        msgId: string
+    ) {
         return await this.readValue(
+            session,
             toALOutboundControlHistoryKey(this.namespace, kind, msgId),
             (value) => decodeALAdmissionControlValue(value, msgId, kind)
         );
     }
 
-    async readStoredMessage(msgId: string): Promise<ALStoredOutboundMessage | undefined> {
+    async readStoredMessage(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALStoredOutboundMessage | undefined> {
         return await this.readValue(
+            session,
             toALOutboundSentMessageKey(this.namespace, msgId),
             (value) => decodeALOutboundSentMessage(value, msgId)
         );
     }
 
-    async readClientRecord(senderId: string) {
+    /** The sender fence, read from a session snapshot or from inside an open admission write. */
+    async readClientRecord(session: ALAdmissionReadSession, senderId: string) {
         return await this.readValue(
-            toALOutboundVersionKey(this.namespace, senderId),
-            (value) => decodeALAdmissionClientRecord(value, senderId)
-        );
-    }
-
-    /** The same sender fence, read inside an open admission write. */
-    async readClientRecordWithin(tx: ALAdmissionWorkWriteContext, senderId: string) {
-        return await tx.read(
+            session,
             toALOutboundVersionKey(this.namespace, senderId),
             (value) => decodeALAdmissionClientRecord(value, senderId)
         );
     }
 
     async readSupersedenceState(
+        session: ALAdmissionReadSession,
         key: string | undefined,
         msgId: string
     ): Promise<ALOutboundSupersedenceReadState> {
         if (!key) {
             return {};
         }
-        return {
-            key,
-            latest: await this.readValue(
+        const [latest, replacement] = await Promise.all([
+            this.readValue(
+                session,
                 toALOutboundSupersedenceLatestKey(this.namespace, key),
                 (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
             ),
-            replacement: await this.readValue(
+            this.readValue(
+                session,
                 toALOutboundSupersedenceReplacementKey(this.namespace, msgId),
                 (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
             )
-        };
+        ]);
+        return { key, latest, replacement };
     }
 
     private readDispatchPlan(
@@ -299,27 +330,37 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     private async readControlTracking(
+        session: ALAdmissionReadSession,
         msgId: string
     ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'repairAttempt' | 'acks' | 'nacks'>> {
-        return {
-            pendingAck: await this.readPendingAck(msgId),
-            repairAttempt: await this.readValue(
+        const [pendingAck, repairAttempt, acks, nacks] = await Promise.all([
+            this.readPendingAck(session, msgId),
+            this.readValue(
+                session,
                 toALOutboundRepairAttemptKey(this.namespace, msgId),
                 (value) => decodeALOutboundRepairAttempt(value, msgId)
             ),
-            acks: await this.readAcks(msgId),
-            nacks: await this.readNacks(msgId)
-        };
+            this.readAcks(session, msgId),
+            this.readNacks(session, msgId)
+        ]);
+        return { pendingAck, repairAttempt, acks, nacks };
     }
 
-    private async readValue<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+    private async readValue<V>(
+        session: ALAdmissionReadSession,
+        key: string,
+        decode: ALAdmissionDecoder<V>
+    ): Promise<V | undefined> {
         this.readOperationCount += 1;
-        return await this.backend.read(key, decode);
+        return await session.read(key, decode);
     }
 
-    private async readQueueItem(key: Key): Promise<ResourceEntry | undefined> {
+    private async readQueueItem(
+        session: ALAdmissionReadSession,
+        key: Key
+    ): Promise<ResourceEntry | undefined> {
         this.readOperationCount += 1;
-        return await this.backend.workQueue.getItem(key);
+        return await session.readWork(key);
     }
 
     private assertSentMessageScope(msgId: string, stored: ALStoredOutboundMessage | undefined): void {
@@ -332,6 +373,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     private async readCanonicalSentMessage(
+        session: ALAdmissionReadSession,
         msgId: string,
         stored: ALStoredOutboundMessage | undefined
     ): Promise<ALOutboundSentMessageSnapshot | undefined> {
@@ -339,8 +381,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         this.assertSentMessageScope(msgId, stored);
-        const canonical = await this.readQueueItem(stored.reference.key);
-        const identity = await this.readQueueItem(toALOutboundIdentityKey(stored.reference.key));
+        const [canonical, identity] = await Promise.all([
+            this.readQueueItem(session, stored.reference.key),
+            this.readQueueItem(session, toALOutboundIdentityKey(stored.reference.key))
+        ]);
         if (stored.reference.expiresAtMs <= this.nowMs()) {
             return undefined;
         }

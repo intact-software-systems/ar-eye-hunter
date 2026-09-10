@@ -13,6 +13,7 @@ import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-
 import { decodeALAdmissionNumber, decodeALAdmissionRecord } from './al-admission-value-validation.ts';
 import {
     AL_ADMISSION_WORK_COMPLETED_RETENTION,
+    type ALAdmissionReadSession,
     type ALAdmissionWorkBackend,
     type ALAdmissionWorkWriteContext
 } from './al-admission-work-backend.ts';
@@ -35,16 +36,18 @@ export interface ALAdmissionBackendEntry<V> {
     readonly value: V;
 }
 
-export interface ALAdmissionBackend {
-    ready(): Promise<void>;
+/** What every admission reader offers, whether it reads the store directly or inside a transaction. */
+export interface ALAdmissionReadContext {
     read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined>;
     list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]>;
+}
+
+export interface ALAdmissionBackend extends ALAdmissionReadContext {
+    ready(): Promise<void>;
     write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>, executionExpiresAtMs?: number | null): Promise<T>;
 }
 
-export interface ALAdmissionWriteContext {
-    read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined>;
-    list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]>;
+export interface ALAdmissionWriteContext extends ALAdmissionReadContext {
     set<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void>;
     remove(key: string): Promise<void>;
 }
@@ -73,6 +76,18 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async ready(): Promise<void> {
+    }
+
+    /**
+     * The map holds no snapshot to keep open, so the backend is its own read session. It returns the
+     * chain's own promise rather than awaiting it: a session must not cost a caller an extra turn.
+     */
+    readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
+        return read(this);
+    }
+
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        return await this.workQueue.getItem(key);
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
