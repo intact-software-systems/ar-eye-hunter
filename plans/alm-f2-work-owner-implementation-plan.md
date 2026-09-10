@@ -90,7 +90,19 @@ counters.
   (`initialise-browser-middleware.ts`, no caller today) from the black-box composition beside
   `RallarDiagnosticsPorts`, and raises the conformance `EXPIRY_TTL_MS` above the measured admission
   latency so `deadline-expiry` asserts what it claims. The lane returns to `test:ci` when Task 12
-  proves it on the runner (observation job).
+  proves it on the runner (observation job). Done in Task 6b (sink topic
+  `rallar.browser.alm.outbound_diagnostics`, `EXPIRY_TTL_MS` 7 500 ms, manifest 18 regenerated).
+- R39/R43 (Task 5 fix round 2): the inbound runtime announces a commit only when it wrote work,
+  and an empty batch stays off the same tick (a zero-mutation duplicate admission had started a
+  fire-and-forget batch that outlived a closing PGlite and spun). A batch can still outlive
+  `dispose()` (uncancellable port operations; lease expiry recovers) — recorded for the final
+  review; `dispose(): void` stays in F2.
+- R40 (Task 11): the outbound admission family (`al-outbound-admission-store.ts`, `-reads.ts`,
+  `-keys.ts`, `-effect-store.ts`, `-validation.ts`, plus a `-mutations.ts` split of the store's
+  compute/apply half) moves into `packages/shared/alm/outbound/admission/` in one move with
+  lineage entries; that takes the directory from 23 to 18 direct files (clearing the zero-tolerance
+  layout metrics) and lands the store under the warn tier; `al-outbound-message-runtime.ts` (55)
+  and `al-outbound-repair-admission.ts` (60) are split along a real boundary in the same task.
 
 ---
 
@@ -1015,7 +1027,7 @@ private async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>):
 `packages/shared/queuebox/resource-inbox/resource-inbox-resilience.ts` and add it as a pure read of
 the circuit breaker's configured open duration if absent.
 
-- [ ] **Step 1: Write the failing dequeue-work test**
+- [x] **Step 1: Write the failing dequeue-work test**
 
 Create `packages/tests/shared/alm/outbound/al-outbound-dequeue-work.test.ts` using the fixture in
 `outbound-runtime-test-fixture.ts` (extend `OutboundTestRuntimeInput` with `dequeue`):
@@ -1049,12 +1061,12 @@ it('keeps a no-route dequeue on the retry budget and a failed admission non-retr
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/outbound/al-outbound-dequeue-work.test.ts`
 Expected: FAIL, `dequeue` is not a fixture option.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create the keys module and replace both stores' private builders. Move the control store to
 `outbound/control/`, rename the class `ALOutboundControlAdmission`, take `decodePrepared` from the
@@ -1081,12 +1093,12 @@ measured (1.3–5 s) while staying below the receive window. Land `al-outbound-a
 `create-default-al-outbound-message-runtime.ts` return the stores' `workQueue` as a resource (the
 backend is the composition root's own value, so the store no longer exposes the queue).
 
-- [ ] **Step 4: Run the outbound suites and the typecheck**
+- [x] **Step 4: Run the outbound suites and the typecheck**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-outbound-message-runtime.test.ts packages/tests/shared/al-outbound-durable-effects.test.ts packages/tests/shared/al-durable-runtime.test.ts && npx tsc -p packages/shared/tsconfig.json --noEmit`
 Expected: PASS and exit 0 (the runtime tests that called `runtime.dequeue(...)` are rewritten to enqueue a foreign row and drive the engine).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/tests
@@ -1467,9 +1479,17 @@ git commit -m "feat(alm): schema identity with delete-on-mismatch reset for the 
 
 Delete the entries, then run:
 `node scripts/repo-style-check.mjs --cognitive-metrics --root packages/shared/alm | grep -c "file.cognitive-load"`
-Expected: `0`. If a file still reports a warn-tier load, split it along a real boundary (the two
-admission stores must each be under 700 lines after Tasks 3 to 6; if not, move the pure `read*`
-snapshot assembly into `al-inbound-admission-reads.ts` / `al-outbound-admission-reads.ts`).
+Expected: `0`. Measured after Task 6: `compute-al-inbound-admission.ts` 64,
+`validate-al-inbound-commit-bundle.ts` 58, `al-outbound-admission-store.ts` 62,
+`al-outbound-message-runtime.ts` 55, `al-outbound-repair-admission.ts` 60. Ruling R40: move the
+outbound admission family into `packages/shared/alm/outbound/admission/` (store, reads, keys,
+effect store, validation, plus `al-outbound-admission-mutations.ts` holding the store's
+compute/apply half) in one move with lineage entries, which also clears the directory's
+zero-tolerance layout metrics (23 → 18 direct files); split the runtime's ack-timeout/repair
+dispatch and the repair admission's retry scheduling along their real boundaries; split the two
+inbound files along theirs (the admission compute's dedup/ordering halves; the bundle validation's
+effect/mutation halves). `validateALInboundControlAdmission` returns every issue (global
+constraint), not the first.
 
 - [ ] **Step 2: Run the changed gate**
 
