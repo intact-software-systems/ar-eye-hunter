@@ -28,7 +28,7 @@ import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adop
 
 export interface OverlayRepositoryOptions
     extends Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'> {
-    readonly ttlMs: number;
+    readonly ttlMs: number | undefined;
 }
 
 export interface OverlayRepositoryCacheConfiguration {

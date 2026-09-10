@@ -150,6 +150,7 @@ function createBrowserRtcComposition(
         readSession,
         readWsStatus: () => wsController.facade.status(),
         resolveRoomTransportTarget: input.state.resolveRoomTransportTarget,
+        subscribeRoomTransportTarget: input.state.subscribeRoomTransportTarget,
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),
         toRoomId: (room) => input.state.roomStateStore.toRoomId(room),
         resolveRtcWaitTimeoutMs: (timeoutMs) => timeoutMs ?? input.state.readDefaults()?.rtc?.waitTimeoutMs,
@@ -180,7 +181,9 @@ function createBrowserRealtimeChannelComposition(
         resolveRoomRef: (room: string | GroupRef) => input.state.roomStateStore.resolveRoomRef(room),
         resolveRoomTransportTarget: input.state.resolveRoomTransportTarget,
         resolveLaneId: (laneId?: string) =>
-            laneId ?? input.state.readDefaults()?.realtime?.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID,
+            laneId ??
+                input.state.readDefaults()?.realtime?.laneId ??
+                DEFAULT_RALLAR_REALTIME_LANE_ID,
         resolveOpenTimeoutMs: (openTimeoutMs?: number) =>
             openTimeoutMs ??
                 input.state.readDefaults()?.realtime?.openTimeoutMs ??

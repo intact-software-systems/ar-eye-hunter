@@ -275,7 +275,7 @@ layout/ready-peer algorithm from health JSON. QueueBox and multicast delivery
 semantics remain unchanged: making an early no-route send durable would be a
 separate product decision, not a readiness fix.
 
-Implement the correction in two concrete TDD slices on this PR:
+The original correction starts with two concrete TDD slices on this PR:
 
 1. Add a deterministic shared-web regression that starts the public room wait
    before accepted-layout arrival, prove the current premature return, then add
@@ -298,12 +298,46 @@ all-scenarios matrix—validates the diagnosis but must be rerun after the
 ownership correction. Keep implementation, review, validation, and proof in
 this one PR; do not split another hypothesis or test-only branch from it.
 
+The first post-correction local default matrix then exposed a second ownership
+detail before any proof count began. Agent A's canonical wait returned the
+still-valid accepted layout for the earlier two-member formation while the
+authoritative server had already completed the three-member lifecycle. The
+benchmark's exact-topology assertion correctly rejected its one-peer target.
+A local cache cannot infer an unseen remote revision, so the permanent boundary
+has two complementary parts: the black-box lifecycle operation performs one
+exact-room refresh after its out-of-band HTTP mutations, and shared-web treats
+an accepted layout as settled only when its presence revision covers the
+current authoritative room snapshot. It then waits event-first for the matching
+accepted publication and RTC lanes. This is one bounded synchronization read,
+not a health poll, retry loop, timeout increase, or second readiness algorithm;
+Playwright still only supplies and checks the B06-specific exact peer set.
+
+The next retry-free default attempt passed that stale-layout barrier and then
+failed a realtime broadcast after the stable accepted-layout cache crossed its
+60-second TTL. The sender still held both open lanes, but the room authority
+read returned no accepted target and filtered both explicit peers, producing
+`RALLAR_BB_RTC_NO_PEERS`. Accepted layouts are durable connection-lifecycle
+facts: authoritative group identity changes explicitly reconcile or remove
+them, and reconnect creates fresh browser repositories. They must therefore
+remain readable for that lifecycle rather than expiring on elapsed wall time.
+Remove only the browser accepted-layout TTL, retain the planned-layout and
+state-snapshot TTLs, and prove the distinction with a fake-clock regression.
+This avoids periodic refresh traffic and keeps long-lived sends on the same
+constant-time local authority read.
+
+The first default matrix after both evidence-driven follow-ups passed locally
+in 5.0 minutes without a retry. It is smoke evidence only because it ran before
+the implementation candidate was committed. The immutable proof count starts
+again after the final reviewed candidate is pushed. The black-box browser
+runtime contract now requires canonical room readiness outright; no optional
+method, capability fallback, old overload, or legacy test-double path remains.
+
 ### Current execution horizon
 
-| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Archive run 34430533353                                   | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                              |
-| 2     | Complete and merge active-layout correction/proof PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
+| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
@@ -4262,7 +4296,7 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       failed primary, preserve it unchanged in observation PR #556, and do not
       accept metrics or run a repeat.
 - [ ] Merge PR #556's verified failed ZIP/index row unchanged.
-- [ ] Merge the single active-layout correction/proof PR #557 after shared-web
+- [ ] Merge the single canonical room-readiness/proof PR #557 after shared-web
       owns event-driven room readiness, black-box transport policy delegates to
       that owner, exact B06 topology assertions remain at the benchmark edge,
       and deterministic regressions, repeated default/all-scenarios E3 proof,

@@ -1,9 +1,4 @@
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type {
     BlackBoxRallarDeliveryObservation,
@@ -15,7 +10,10 @@ import {
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 
-import { createSpaBrowserRallarRuntime, installSpaBrowserRallarEventBridge } from '../../../apps/rallar-black-box/src/browser-rallar-runtime.ts';
+import {
+    createSpaBrowserRallarRuntime,
+    installSpaBrowserRallarEventBridge
+} from '../../../apps/rallar-black-box/src/browser-rallar-runtime.ts';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRoomRefreshOptions
@@ -23,11 +21,14 @@ import {
 import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import type { RallarMessageSendResult } from '../../../packages/shared-web/browser/messages/rallar-message-contracts.ts';
-import { newALRoute, newALUntargetedMessage } from '../../../packages/shared/al-contracts/al-contract.ts';
+import {
+    newALRoute,
+    newALUntargetedMessage
+} from '../../../packages/shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueStatus } from '../../../packages/shared/alm/outbound/al-outbound-message-runtime.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 
-import { createBrowserRallarAlmMethodsTestDouble } from '../shared-test/browser-rallar-alm-methods-test-double.ts';
+import { createBrowserRallarRequiredMethodsTestDouble } from '../shared-test/browser-rallar-required-methods-test-double.ts';
 import {
     events,
     facade,
@@ -43,7 +44,10 @@ interface BrowserRuntimeTiming {
 async function withBrowserRuntime(
     run: (nativeRuntime: BlackBoxRallarRuntime) => Promise<void>
 ): Promise<void> {
-    await withBrowserRuntimeTiming({ now: Date.now, delay: async () => undefined }, run);
+    await withBrowserRuntimeTiming(
+        { now: Date.now, delay: async () => undefined },
+        run
+    );
 }
 
 async function withBrowserRuntimeTiming(
@@ -93,16 +97,31 @@ function almConnectionConfig(): Parameters<BlackBoxRallarRuntime['connect']>[0] 
     };
 }
 
-const almRoomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const almRoomRef = {
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'room-1'
+};
 
-function almSendResult(status: ALOutboundEnqueueStatus, msgId: string): RallarMessageSendResult {
+function almSendResult(
+    status: ALOutboundEnqueueStatus,
+    msgId: string
+): RallarMessageSendResult {
     return {
         transport: 'ws',
         status,
         message: {
             id: { v: 2, msgId, ts: 0, senderId: 'client-1' },
-            route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
-            payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' }
+            route: {
+                topicId: 'alm.conformance',
+                contextId: 'room-1',
+                resourceId: 'room-1'
+            },
+            payload: {
+                typeId: 'alm.conformance',
+                contentType: 'application/json',
+                resource: '{}'
+            }
         },
         entries: []
     };
@@ -124,14 +143,22 @@ async function sendAlmMessage(
 const OVERSIZED_PAYLOAD_MESSAGE = '$.payload: Payload exceeds 65536 bytes.';
 
 function oversizedPayloadError(): RallarValidationError {
-    return new RallarValidationError(OVERSIZED_PAYLOAD_MESSAGE, [{
-        path: '$.payload',
-        code: 'payload-too-large',
-        message: 'Payload exceeds 65536 bytes.'
-    }]);
+    return new RallarValidationError(OVERSIZED_PAYLOAD_MESSAGE, [
+        {
+            path: '$.payload',
+            code: 'payload-too-large',
+            message: 'Payload exceeds 65536 bytes.'
+        }
+    ]);
 }
 
-const almDeliveryStateCases: ReadonlyArray<readonly [ALOutboundEnqueueStatus, BlackBoxRallarDeliveryObservation['state'], boolean]> = [
+const almDeliveryStateCases: ReadonlyArray<
+    readonly [
+        ALOutboundEnqueueStatus,
+        BlackBoxRallarDeliveryObservation['state'],
+        boolean
+    ]
+> = [
     ['enqueued', 'accepted', true],
     ['accepted', 'accepted', true],
     ['skipped', 'accepted', false],
@@ -153,8 +180,16 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 status: 'enqueued',
                 message: {
                     id: { v: 2, msgId: 'msg-1', ts: 0, senderId: 'client-1' },
-                    route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
-                    payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' }
+                    route: {
+                        topicId: 'alm.conformance',
+                        contextId: 'room-1',
+                        resourceId: 'room-1'
+                    },
+                    payload: {
+                        typeId: 'alm.conformance',
+                        contentType: 'application/json',
+                        resource: '{}'
+                    }
                 },
                 entries: []
             });
@@ -174,13 +209,17 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 carrier: 'ws',
                 status: 'enqueued'
             });
-            expect(facade.records.typedChannelOpens).toEqual([{
-                typeId: 'alm.conformance',
-                topicId: undefined,
-                roomId: 'room-1',
-                roomRef: almRoomRef
-            }]);
-            expect(facade.records.typedSends).toEqual([[{ n: 1 }, { strategy: 'ws' }]]);
+            expect(facade.records.typedChannelOpens).toEqual([
+                {
+                    typeId: 'alm.conformance',
+                    topicId: undefined,
+                    roomId: 'room-1',
+                    roomRef: almRoomRef
+                }
+            ]);
+            expect(facade.records.typedSends).toEqual([
+                [{ n: 1 }, { strategy: 'ws' }]
+            ]);
 
             const observed = await nativeRuntime.observeDelivery({
                 connection: 'aliceAlm',
@@ -195,10 +234,18 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 submitted: true,
                 attempts: 1
             });
-            await expect(nativeRuntime.cancelDelivery({ connection: 'aliceAlm', handleId: 'h-1' }))
-                .resolves.toMatchObject({ handleId: 'h-1', state: 'cancelled' });
-            await expect(nativeRuntime.readReceipts({ connection: 'aliceAlm', handleId: 'h-1' }))
-                .resolves.toMatchObject({ confirmedPeerIds: [], unconfirmedPeerIds: [] });
+            await expect(
+                nativeRuntime.cancelDelivery({
+                    connection: 'aliceAlm',
+                    handleId: 'h-1'
+                })
+            ).resolves.toMatchObject({ handleId: 'h-1', state: 'cancelled' });
+            await expect(
+                nativeRuntime.readReceipts({ connection: 'aliceAlm', handleId: 'h-1' })
+            ).resolves.toMatchObject({
+                confirmedPeerIds: [],
+                unconfirmedPeerIds: []
+            });
         });
     });
 
@@ -219,21 +266,27 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 transportFaultPort: faults,
                 indexedDbOperationObserver: storage
             });
-            expect(faults.decideSend(
-                'ws',
-                JSON.stringify(newALUntargetedMessage(
-                    'alice',
-                    newALRoute('room.alm-conformance', 'room-1', 'resource-1'),
-                    'alm.conformance',
-                    { marker: 'drop-me' }
-                ))
-            )).toEqual({ kind: 'drop', faultId: 'drop-once' });
+            expect(
+                faults.decideSend(
+                    'ws',
+                    JSON.stringify(
+                        newALUntargetedMessage(
+                            'alice',
+                            newALRoute('room.alm-conformance', 'room-1', 'resource-1'),
+                            'alm.conformance',
+                            { marker: 'drop-me' }
+                        )
+                    )
+                )
+            ).toEqual({ kind: 'drop', faultId: 'drop-once' });
             expect(faults.getObservations()).toEqual([
                 { faultId: 'drop-once', carrier: 'ws', decision: 'drop' }
             ]);
 
             storage.observe({ owner: 'al-admission', kind: 'write' });
-            await expect(nativeRuntime.readStorageCounters({ reset: false })).resolves.toEqual({
+            await expect(
+                nativeRuntime.readStorageCounters({ reset: false })
+            ).resolves.toEqual({
                 total: 1,
                 byOwner: { 'al-admission': 1, 'al-work': 0 },
                 byKind: { write: 1 }
@@ -249,19 +302,23 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 rallar: { ...config.rallar, applicationId: undefined }
             });
 
-            await expect(nativeRuntime.injectFault({
-                faultId: 'drop-once',
-                carrier: 'ws',
-                match: { typeId: 'alm.conformance' },
-                action: 'drop',
-                remaining: 1
-            })).rejects.toThrow(
+            await expect(
+                nativeRuntime.injectFault({
+                    faultId: 'drop-once',
+                    carrier: 'ws',
+                    match: { typeId: 'alm.conformance' },
+                    action: 'drop',
+                    remaining: 1
+                })
+            ).rejects.toThrow(
                 new TypeError(
                     'Scripted transport and storage ports are not installed: ' +
                         'fault.inject needs a connection that names an application.'
                 )
             );
-            await expect(nativeRuntime.readStorageCounters({ reset: false })).rejects.toThrow(
+            await expect(
+                nativeRuntime.readStorageCounters({ reset: false })
+            ).rejects.toThrow(
                 new TypeError(
                     'Scripted transport and storage ports are not installed: ' +
                         'storage.counters needs a connection that names an application.'
@@ -274,15 +331,19 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
         'maps the %s admission status to a %s observation',
         async (status, state, submitted) => {
             await withBrowserRuntime(async (nativeRuntime) => {
-                facade.behavior.typedSend.mockResolvedValue(almSendResult(status, `msg-${status}`));
+                facade.behavior.typedSend.mockResolvedValue(
+                    almSendResult(status, `msg-${status}`)
+                );
                 await nativeRuntime.connect(almConnectionConfig());
 
                 await sendAlmMessage(nativeRuntime, `h-${status}`);
 
-                await expect(nativeRuntime.readReceipts({
-                    connection: 'aliceAlm',
-                    handleId: `h-${status}`
-                })).resolves.toEqual({
+                await expect(
+                    nativeRuntime.readReceipts({
+                        connection: 'aliceAlm',
+                        handleId: `h-${status}`
+                    })
+                ).resolves.toEqual({
                     handleId: `h-${status}`,
                     state,
                     submitted,
@@ -303,17 +364,23 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
             }
         };
         await withBrowserRuntimeTiming(timing, async (nativeRuntime) => {
-            facade.behavior.typedSend.mockResolvedValue(almSendResult('pending-admission', 'msg-pending'));
-            facade.behavior.messageAdmission.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+            facade.behavior.typedSend.mockResolvedValue(
+                almSendResult('pending-admission', 'msg-pending')
+            );
+            facade.behavior.messageAdmission
+                .mockResolvedValueOnce(false)
+                .mockResolvedValueOnce(true);
             await nativeRuntime.connect(almConnectionConfig());
             await sendAlmMessage(nativeRuntime, 'h-pending');
 
-            await expect(nativeRuntime.observeDelivery({
-                connection: 'aliceAlm',
-                handleId: 'h-pending',
-                state: ['accepted'],
-                timeoutMs: 1_000
-            })).resolves.toMatchObject({
+            await expect(
+                nativeRuntime.observeDelivery({
+                    connection: 'aliceAlm',
+                    handleId: 'h-pending',
+                    state: ['accepted'],
+                    timeoutMs: 1_000
+                })
+            ).resolves.toMatchObject({
                 handleId: 'h-pending',
                 state: 'accepted',
                 submitted: true
@@ -331,17 +398,23 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
         };
 
         await withBrowserRuntimeTiming(timing, async (nativeRuntime) => {
-            facade.behavior.typedSend.mockResolvedValue(almSendResult('enqueued', 'msg-1'));
+            facade.behavior.typedSend.mockResolvedValue(
+                almSendResult('enqueued', 'msg-1')
+            );
             await nativeRuntime.connect(almConnectionConfig());
             await sendAlmMessage(nativeRuntime, 'h-1');
 
-            await expect(nativeRuntime.observeDelivery({
-                connection: 'aliceAlm',
-                handleId: 'h-1',
-                state: ['acknowledged'],
-                timeoutMs: 100
-            })).rejects.toThrow(
-                new TypeError('Delivery handle h-1 did not reach [acknowledged]; last state accepted')
+            await expect(
+                nativeRuntime.observeDelivery({
+                    connection: 'aliceAlm',
+                    handleId: 'h-1',
+                    state: ['acknowledged'],
+                    timeoutMs: 100
+                })
+            ).rejects.toThrow(
+                new TypeError(
+                    'Delivery handle h-1 did not reach [acknowledged]; last state accepted'
+                )
             );
             expect(clockEpochMs).toBeGreaterThanOrEqual(100);
         });
@@ -349,15 +422,19 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
 
     it('emits the send_started and send_completed diagnostics topics', async () => {
         await withBrowserRuntime(async (nativeRuntime) => {
-            facade.behavior.typedSend.mockResolvedValue(almSendResult('enqueued', 'msg-1'));
+            facade.behavior.typedSend.mockResolvedValue(
+                almSendResult('enqueued', 'msg-1')
+            );
             await nativeRuntime.connect(almConnectionConfig());
 
             await sendAlmMessage(nativeRuntime, 'h-1');
 
-            expect(topics()).toEqual(expect.arrayContaining([
-                'rallar.browser.messages.send_started',
-                'rallar.browser.messages.send_completed'
-            ]));
+            expect(topics()).toEqual(
+                expect.arrayContaining([
+                    'rallar.browser.messages.send_started',
+                    'rallar.browser.messages.send_completed'
+                ])
+            );
         });
     });
 
@@ -365,10 +442,12 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
         await withBrowserRuntime(async (nativeRuntime) => {
             await nativeRuntime.connect(almConnectionConfig());
 
-            await expect(nativeRuntime.readReceipts({
-                connection: 'aliceAlm',
-                handleId: 'missing-1'
-            })).rejects.toThrow('Unknown delivery handle missing-1');
+            await expect(
+                nativeRuntime.readReceipts({
+                    connection: 'aliceAlm',
+                    handleId: 'missing-1'
+                })
+            ).rejects.toThrow('Unknown delivery handle missing-1');
         });
     });
 
@@ -377,7 +456,9 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
             facade.behavior.typedSend.mockRejectedValue(oversizedPayloadError());
             await nativeRuntime.connect(almConnectionConfig());
 
-            await expect(sendAlmMessage(nativeRuntime, 'h-oversized')).resolves.toEqual({
+            await expect(
+                sendAlmMessage(nativeRuntime, 'h-oversized')
+            ).resolves.toEqual({
                 handleId: 'h-oversized',
                 msgId: undefined,
                 carrier: 'ws',
@@ -386,10 +467,12 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
                 message: undefined
             });
 
-            await expect(nativeRuntime.readReceipts({
-                connection: 'aliceAlm',
-                handleId: 'h-oversized'
-            })).resolves.toEqual({
+            await expect(
+                nativeRuntime.readReceipts({
+                    connection: 'aliceAlm',
+                    handleId: 'h-oversized'
+                })
+            ).resolves.toEqual({
                 handleId: 'h-oversized',
                 state: 'rejected',
                 submitted: false,
@@ -408,7 +491,9 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
             await sendAlmMessage(nativeRuntime, 'h-oversized');
 
             expect(
-                events.find((event) => event.topic === 'rallar.browser.messages.send_completed')?.data
+                events.find(
+                    (event) => event.topic === 'rallar.browser.messages.send_completed'
+                )?.data
             ).toEqual({
                 handleId: 'h-oversized',
                 msgId: undefined,
@@ -425,11 +510,15 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
             facade.behavior.typedSend.mockRejectedValue(new Error('ws lane closed'));
             await nativeRuntime.connect(almConnectionConfig());
 
-            await expect(sendAlmMessage(nativeRuntime, 'h-lane-closed')).rejects.toThrow('ws lane closed');
-            await expect(nativeRuntime.readReceipts({
-                connection: 'aliceAlm',
-                handleId: 'h-lane-closed'
-            })).rejects.toThrow('Unknown delivery handle h-lane-closed');
+            await expect(
+                sendAlmMessage(nativeRuntime, 'h-lane-closed')
+            ).rejects.toThrow('ws lane closed');
+            await expect(
+                nativeRuntime.readReceipts({
+                    connection: 'aliceAlm',
+                    handleId: 'h-lane-closed'
+                })
+            ).rejects.toThrow('Unknown delivery handle h-lane-closed');
         });
     });
 });
@@ -437,57 +526,152 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
 describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('returns browser runtime results through the SPA bridge', async () => {
         await withBrowserRuntime(async () => {
-            facade.behavior.realtimeSend.mockResolvedValue([{
-                peerId: 'bob-session',
-                laneId: 'realtime',
-                result: { status: 'sent', bufferedAmount: 0 }
-            }]);
-            const runtime = createSpaBrowserRallarRuntime();
-            await expect(runtime.connect({
-                connection: 'aliceRtc',
-                roomId: 'room-1',
-                rallar: {
-                    apiBaseUrl: 'https://api.example.test',
+            facade.behavior.realtimeSend.mockResolvedValue([
+                {
+                    peerId: 'bob-session',
+                    laneId: 'realtime',
+                    result: { status: 'sent', bufferedAmount: 0 }
+                }
+            ]);
+            facade.behavior.rtcWaitForRoom.mockResolvedValue({
+                roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    username: 'alice',
-                    password: 'secret'
+                    groupId: 'room-1'
+                },
+                ws: { connected: true } as never,
+                rtc: {
+                    desired: true,
+                    mode: 'lazy',
+                    state: 'open',
+                    acceptedLayoutIdentity: {
+                        groupRevision: 2,
+                        presenceRevision: 2,
+                        version: 1,
+                        state: 'active'
+                    },
+                    desiredPeerIds: ['bob-session'],
+                    knownPeerIds: ['bob-session'],
+                    activePeerIds: ['bob-session'],
+                    readyPeerIds: ['bob-session'],
+                    failedPeerIds: [],
+                    peers: [],
+                    laneId: 'realtime'
                 }
-            })).resolves.toMatchObject({
+            });
+            const runtime = createSpaBrowserRallarRuntime();
+            await expect(
+                runtime.connect({
+                    connection: 'aliceRtc',
+                    roomId: 'room-1',
+                    rallar: {
+                        apiBaseUrl: 'https://api.example.test',
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        username: 'alice',
+                        password: 'secret'
+                    }
+                })
+            ).resolves.toMatchObject({
                 status: 'connected',
                 connection: 'aliceRtc',
                 sessionId: facade.session.sessionId
             });
-            await expect(runtime.send({ peerIds: ['bob-session'], data: { text: 'hello' } }))
-                .resolves.toMatchObject({ status: 'sent', peerIds: ['bob-session'] });
-            await expect(runtime.sendWs?.({ typeId: 'room.manual.message', payload: { text: 'hello ws' } }))
-                .resolves.toMatchObject({ status: 'sent', transport: 'ws', typeId: 'room.manual.message' });
-            await expect(runtime.refreshRoom({ timeoutMs: 100 })).resolves.toBeUndefined();
+            await expect(
+                runtime.send({ peerIds: ['bob-session'], data: { text: 'hello' } })
+            ).resolves.toMatchObject({ status: 'sent', peerIds: ['bob-session'] });
+            await expect(
+                runtime.sendWs?.({
+                    typeId: 'room.manual.message',
+                    payload: { text: 'hello ws' }
+                })
+            ).resolves.toMatchObject({
+                status: 'sent',
+                transport: 'ws',
+                typeId: 'room.manual.message'
+            });
+            await expect(
+                runtime.refreshRoom({ timeoutMs: 100 })
+            ).resolves.toBeUndefined();
             expect(facade.records.roomStateRefreshes).toContainEqual([
-                { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-                { timeoutMs: 100, scope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
+                {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
+                },
+                {
+                    timeoutMs: 100,
+                    scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+                }
             ]);
-            await expect(runtime.health({ includeRtcDiagnostics: true })).resolves.toMatchObject({
+            await expect(
+                runtime.waitForRoom({
+                    connect: true,
+                    minReadyPeers: 1,
+                    timeoutMs: 100
+                })
+            ).resolves.toMatchObject({
+                rtc: { state: 'open', readyPeerIds: ['bob-session'] }
+            });
+            expect(facade.records.rtcRoomWaits).toContainEqual([
+                {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
+                },
+                {
+                    connect: true,
+                    laneId: 'realtime',
+                    minReadyPeers: 1,
+                    signal: undefined,
+                    timeoutMs: 100
+                }
+            ]);
+            await expect(
+                runtime.health({ includeRtcDiagnostics: true })
+            ).resolves.toMatchObject({
                 connected: true,
                 rtcDiagnostics: { sessionId: facade.session.sessionId, peerCount: 1 }
             });
-            await expect(runtime.close()).resolves.toMatchObject({ status: 'closed', disconnected: true, cleanupErrors: [] });
+            await expect(runtime.close()).resolves.toMatchObject({
+                status: 'closed',
+                disconnected: true,
+                cleanupErrors: []
+            });
         });
     });
 
     it('returns director operation diagnostics through the SPA bridge', async () => {
         await withBrowserRuntime(async (nativeRuntime) => {
-            vi.spyOn(nativeRuntime.director, 'appoint').mockResolvedValue({ status: 'appointed' });
-            vi.spyOn(nativeRuntime.director, 'resign').mockResolvedValue({ status: 'resigned' });
-            vi.spyOn(nativeRuntime.director, 'status').mockResolvedValue({ status: 'status' });
-            vi.spyOn(nativeRuntime.director, 'relayStart').mockResolvedValue({ status: 'relay_started' });
-            vi.spyOn(nativeRuntime.director, 'intent').mockResolvedValue({ status: 'intent_sent' });
-            vi.spyOn(nativeRuntime.director, 'syncRequest').mockResolvedValue({ status: 'sync_requested' });
-            vi.spyOn(nativeRuntime.director, 'relayStop').mockResolvedValue({ status: 'relay_stopped' });
+            vi.spyOn(nativeRuntime.director, 'appoint').mockResolvedValue({
+                status: 'appointed'
+            });
+            vi.spyOn(nativeRuntime.director, 'resign').mockResolvedValue({
+                status: 'resigned'
+            });
+            vi.spyOn(nativeRuntime.director, 'status').mockResolvedValue({
+                status: 'status'
+            });
+            vi.spyOn(nativeRuntime.director, 'relayStart').mockResolvedValue({
+                status: 'relay_started'
+            });
+            vi.spyOn(nativeRuntime.director, 'intent').mockResolvedValue({
+                status: 'intent_sent'
+            });
+            vi.spyOn(nativeRuntime.director, 'syncRequest').mockResolvedValue({
+                status: 'sync_requested'
+            });
+            vi.spyOn(nativeRuntime.director, 'relayStop').mockResolvedValue({
+                status: 'relay_stopped'
+            });
             const runtime = createSpaBrowserRallarRuntime();
 
-            await expect(runtime.director?.appoint({ roomId: 'room-1' })).resolves.toEqual({ status: 'appointed' });
-            await expect(runtime.director?.status({ roomId: 'room-1' })).resolves.toEqual({ status: 'status' });
+            await expect(
+                runtime.director?.appoint({ roomId: 'room-1' })
+            ).resolves.toEqual({ status: 'appointed' });
+            await expect(
+                runtime.director?.status({ roomId: 'room-1' })
+            ).resolves.toEqual({ status: 'status' });
             await expect(
                 runtime.director?.relayStart({
                     handle: 'relay-1',
@@ -495,11 +679,21 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     outputTypeId: 'output'
                 })
             ).resolves.toEqual({ status: 'relay_started' });
-            await expect(runtime.director?.intent({ handle: 'relay-1', intent: { intentId: 'intent-1' } }))
-                .resolves.toEqual({ status: 'intent_sent' });
-            await expect(runtime.director?.syncRequest({ handle: 'relay-1' })).resolves.toEqual({ status: 'sync_requested' });
-            await expect(runtime.director?.relayStop({ handle: 'relay-1' })).resolves.toEqual({ status: 'relay_stopped' });
-            await expect(runtime.director?.resign({ roomId: 'room-1' })).resolves.toEqual({ status: 'resigned' });
+            await expect(
+                runtime.director?.intent({
+                    handle: 'relay-1',
+                    intent: { intentId: 'intent-1' }
+                })
+            ).resolves.toEqual({ status: 'intent_sent' });
+            await expect(
+                runtime.director?.syncRequest({ handle: 'relay-1' })
+            ).resolves.toEqual({ status: 'sync_requested' });
+            await expect(
+                runtime.director?.relayStop({ handle: 'relay-1' })
+            ).resolves.toEqual({ status: 'relay_stopped' });
+            await expect(
+                runtime.director?.resign({ roomId: 'room-1' })
+            ).resolves.toEqual({ status: 'resigned' });
         });
     });
 
@@ -536,9 +730,10 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
             expect(result.ok).toBe(true);
             expect(
-                selectRallarBlackBoxDiagnostics(runtime.state()).some((event) =>
-                    event.topic === 'rallar.browser.connect.phase_completed' &&
-                    event.connection === 'aliceRtc'
+                selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                    (event) =>
+                        event.topic === 'rallar.browser.connect.phase_completed' &&
+                        event.connection === 'aliceRtc'
                 )
             ).toBe(true);
         });
@@ -548,11 +743,13 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         await withBrowserRuntime(async (nativeRuntime) => {
             const connect = vi.spyOn(nativeRuntime, 'connect');
             const send = vi.spyOn(nativeRuntime, 'send');
-            facade.behavior.realtimeSend.mockResolvedValue([{
-                peerId: 'bob-session',
-                laneId: 'realtime',
-                result: { status: 'sent', bufferedAmount: 0 }
-            }]);
+            facade.behavior.realtimeSend.mockResolvedValue([
+                {
+                    peerId: 'bob-session',
+                    laneId: 'realtime',
+                    result: { status: 'sent', bufferedAmount: 0 }
+                }
+            ]);
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: createSpaBrowserRallarRuntime()
             });
@@ -617,16 +814,18 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 }
             });
             expect(
-                selectRallarBlackBoxDiagnostics(runtime.state()).some((event) =>
-                    event.topic === 'rallar.bb.rtc.send_completed' &&
-                    event.commandId === 'send-real-command-path'
+                selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                    (event) =>
+                        event.topic === 'rallar.bb.rtc.send_completed' &&
+                        event.commandId === 'send-real-command-path'
                 )
             ).toBe(true);
         });
     });
 
     it('waits for rtc.connect readiness before reporting success', async () => {
-        const health = vi.fn()
+        const health = vi
+            .fn()
             .mockResolvedValueOnce({
                 rtcStatus: {
                     readyPeerIds: []
@@ -639,7 +838,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             });
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -671,18 +870,220 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 minReadyPeers: 2
             }
         });
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
-            'rallar.bb.rtc.readiness_wait_started',
-            'rallar.bb.rtc.readiness_ready',
-            'rallar.bb.rtc.connected'
-        ]));
+        expect(
+            selectRallarBlackBoxDiagnostics(runtime.state()).map(
+                (event) => event.topic
+            )
+        ).toEqual(
+            expect.arrayContaining([
+                'rallar.bb.rtc.readiness_wait_started',
+                'rallar.bb.rtc.readiness_ready',
+                'rallar.bb.rtc.connected'
+            ])
+        );
+    });
+
+    it('delegates messages.rtc readiness to the canonical room wait', async () => {
+        const waitForRoom = vi.fn<BlackBoxRallarRuntime['waitForRoom']>(
+            async () => ({
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
+                },
+                ws: { connected: true } as never,
+                rtc: {
+                    desired: true,
+                    mode: 'lazy',
+                    state: 'open',
+                    acceptedLayoutIdentity: {
+                        groupRevision: 2,
+                        presenceRevision: 2,
+                        version: 1,
+                        state: 'active'
+                    },
+                    desiredPeerIds: ['peer-a'],
+                    knownPeerIds: ['peer-a'],
+                    activePeerIds: ['peer-a'],
+                    readyPeerIds: ['peer-a'],
+                    failedPeerIds: [],
+                    peers: [],
+                    laneId: 'realtime'
+                }
+            })
+        );
+        const rallarRuntime = {
+            ...createBrowserRallarRequiredMethodsTestDouble(),
+            connect: vi.fn(async () => ({ connected: true })),
+            send: vi.fn(),
+            refreshRoom: vi.fn(async () => undefined),
+            waitForRoom,
+            close: vi.fn(),
+            health: vi.fn(async () => {
+                throw new Error(
+                    'messages.rtc readiness must not poll global RTC health.'
+                );
+            })
+        };
+        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-ready-room',
+            connection: 'rtc',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            transport: 'messages.rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 50,
+                intervalMs: 1
+            }
+        });
+
+        expect(result.ok).toBe(true);
+        expect(waitForRoom).toHaveBeenCalledWith({
+            connect: true,
+            minReadyPeers: 1,
+            signal: expect.any(AbortSignal),
+            timeoutMs: expect.any(Number)
+        });
+        expect(result.value).toMatchObject({
+            readiness: {
+                ready: true,
+                readyPeerIds: ['peer-a'],
+                room: {
+                    rtc: {
+                        state: 'open'
+                    }
+                }
+            }
+        });
+    });
+
+    it('fails messages.rtc readiness from canonical room state without polling global health', async () => {
+        const refreshRoom = vi.fn(async () => undefined);
+        const waitForRoom = vi.fn<BlackBoxRallarRuntime['waitForRoom']>(
+            async () => ({
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
+                },
+                ws: { connected: true } as never,
+                rtc: {
+                    desired: true,
+                    mode: 'lazy',
+                    state: 'idle',
+                    desiredPeerIds: [],
+                    knownPeerIds: [],
+                    activePeerIds: [],
+                    readyPeerIds: [],
+                    failedPeerIds: [],
+                    peers: [],
+                    laneId: 'realtime'
+                }
+            })
+        );
+        const health = vi.fn(async () => {
+            throw new Error(
+                'messages.rtc readiness must not poll global RTC health.'
+            );
+        });
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(),
+                refreshRoom,
+                waitForRoom,
+                close: vi.fn(),
+                health
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-room-not-ready',
+            connection: 'rtc',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            transport: 'messages.rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 50,
+                intervalMs: 1
+            }
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BB_RTC_READY_TIMEOUT',
+            message: 'RTC connect timed out waiting for room transport readiness.'
+        });
+        expect(result.value).toMatchObject({
+            readiness: {
+                ready: false,
+                roomRefreshAttempts: 1,
+                roomRefreshSuccesses: 1,
+                roomRefreshRetryableFailures: 0,
+                room: { rtc: { state: 'idle' } }
+            }
+        });
+        expect(refreshRoom).toHaveBeenCalledTimes(1);
+        expect(waitForRoom).toHaveBeenCalledTimes(1);
+        expect(health).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a messages.rtc authority refresh failure', async () => {
+        const refreshError = new Error('transient point-read failure');
+        const refreshRoom = vi.fn().mockRejectedValue(refreshError);
+        const waitForRoom = vi.fn<BlackBoxRallarRuntime['waitForRoom']>();
+        const health = vi.fn();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(),
+                refreshRoom,
+                waitForRoom,
+                close: vi.fn(),
+                health
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-room-refresh-failure',
+            connection: 'rtc',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            transport: 'messages.rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 1_500,
+                intervalMs: 100
+            }
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            message: refreshError.message
+        });
+        expect(refreshRoom).toHaveBeenCalledTimes(1);
+        expect(waitForRoom).not.toHaveBeenCalled();
+        expect(health).not.toHaveBeenCalled();
     });
 
     it('refreshes room authority before accepting an already-ready RTC peer', async () => {
         const refreshRoom = vi.fn(async () => undefined);
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
                 send: vi.fn(),
                 close: vi.fn(),
@@ -718,9 +1119,11 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
     it('refreshes room state while waiting for an initially undiscovered RTC peer', async () => {
         let roomStateRefreshed = false;
-        const refreshRoom = vi.fn(async (_options: RallarBlackBoxBrowserRoomRefreshOptions) => {
-            roomStateRefreshed = true;
-        });
+        const refreshRoom = vi.fn(
+            async (_options: RallarBlackBoxBrowserRoomRefreshOptions) => {
+                roomStateRefreshed = true;
+            }
+        );
         const health = vi.fn(async () => ({
             rtcStatus: {
                 readyPeerIds: roomStateRefreshed ? ['peer-a'] : []
@@ -728,7 +1131,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         }));
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -774,12 +1177,12 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('does not let a pending room refresh overrun rtc.connect readiness', async () => {
         vi.useFakeTimers();
         try {
-            const refreshRoom = vi.fn((
-                _options: RallarBlackBoxBrowserRoomRefreshOptions
-            ) => new Promise<void>(() => undefined));
+            const refreshRoom = vi.fn(
+                (_options: RallarBlackBoxBrowserRoomRefreshOptions) => new Promise<void>(() => undefined)
+            );
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
-                    ...createBrowserRallarAlmMethodsTestDouble(),
+                    ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -831,12 +1234,12 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('cancels a pending room refresh when distributed execution is cancelled', async () => {
         vi.useFakeTimers();
         try {
-            const refreshRoom = vi.fn((
-                _options: RallarBlackBoxBrowserRoomRefreshOptions
-            ) => new Promise<void>(() => undefined));
+            const refreshRoom = vi.fn(
+                (_options: RallarBlackBoxBrowserRoomRefreshOptions) => new Promise<void>(() => undefined)
+            );
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
-                    ...createBrowserRallarAlmMethodsTestDouble(),
+                    ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -882,14 +1285,15 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         try {
             const refreshError = new Error('transient point-read failure');
             let roomStateRefreshed = false;
-            const refreshRoom = vi.fn()
+            const refreshRoom = vi
+                .fn()
                 .mockRejectedValueOnce(refreshError)
                 .mockImplementationOnce(async () => {
                     roomStateRefreshed = true;
                 });
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
-                    ...createBrowserRallarAlmMethodsTestDouble(),
+                    ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -940,12 +1344,13 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         vi.useFakeTimers();
         try {
             const refreshError = new Error('transient point-read failure');
-            const refreshRoom = vi.fn()
+            const refreshRoom = vi
+                .fn()
                 .mockRejectedValueOnce(refreshError)
                 .mockResolvedValueOnce(undefined);
             const runtime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: {
-                    ...createBrowserRallarAlmMethodsTestDouble(),
+                    ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
                     send: vi.fn(),
                     close: vi.fn(),
@@ -1004,67 +1409,74 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         ],
         [
             'configuration validation',
-            new RallarValidationError('$.roomRef: Exact room reference is required.', [
-                {
-                    path: '$.roomRef',
-                    code: 'room-ref-required',
-                    message: 'Exact room reference is required.'
-                }
-            ])
+            new RallarValidationError(
+                '$.roomRef: Exact room reference is required.',
+                [
+                    {
+                        path: '$.roomRef',
+                        code: 'room-ref-required',
+                        message: 'Exact room reference is required.'
+                    }
+                ]
+            )
         ]
-    ])('fails rtc.connect immediately after a permanent %s refresh failure', async (_label, refreshError) => {
-        vi.useFakeTimers();
-        try {
-            const refreshRoom = vi.fn().mockRejectedValue(refreshError);
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
-                rallarRuntime: {
-                    ...createBrowserRallarAlmMethodsTestDouble(),
-                    connect: vi.fn(async () => ({ connected: true })),
-                    send: vi.fn(),
-                    close: vi.fn(),
-                    health: vi.fn(async () => ({
-                        rtcStatus: {
-                            readyPeerIds: []
-                        }
-                    })),
-                    refreshRoom
-                }
-            });
+    ])(
+        'fails rtc.connect immediately after a permanent %s refresh failure',
+        async (_label, refreshError) => {
+            vi.useFakeTimers();
+            try {
+                const refreshRoom = vi.fn().mockRejectedValue(refreshError);
+                const runtime = createRallarBlackBoxBrowserTestRuntime({
+                    rallarRuntime: {
+                        ...createBrowserRallarRequiredMethodsTestDouble(),
+                        connect: vi.fn(async () => ({ connected: true })),
+                        send: vi.fn(),
+                        close: vi.fn(),
+                        health: vi.fn(async () => ({
+                            rtcStatus: {
+                                readyPeerIds: []
+                            }
+                        })),
+                        refreshRoom
+                    }
+                });
 
-            const pending = runtime.execute({
-                kind: 'rtc.connect',
-                commandId: `connect-after-${refreshError.name}`,
-                connection: 'rtc',
-                readiness: {
-                    minReadyPeers: 1,
-                    timeoutMs: 25,
-                    intervalMs: 1
-                }
-            });
-            let completed = false;
-            void pending.then(() => {
-                completed = true;
-            });
-            await vi.advanceTimersByTimeAsync(0);
-            expect(completed).toBe(true);
-            const result = await pending;
+                const pending = runtime.execute({
+                    kind: 'rtc.connect',
+                    commandId: `connect-after-${refreshError.name}`,
+                    connection: 'rtc',
+                    readiness: {
+                        minReadyPeers: 1,
+                        timeoutMs: 25,
+                        intervalMs: 1
+                    }
+                });
+                let completed = false;
+                void pending.then(() => {
+                    completed = true;
+                });
+                await vi.advanceTimersByTimeAsync(0);
+                expect(completed).toBe(true);
+                const result = await pending;
 
-            expect(result.ok).toBe(false);
-            expect(result.error).toMatchObject({
-                code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
-                message: refreshError.message,
-                details: {
-                    name: refreshError.name
-                }
-            });
+                expect(result.ok).toBe(false);
+                expect(result.error).toMatchObject({
+                    code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                    message: refreshError.message,
+                    details: {
+                        name: refreshError.name
+                    }
+                });
+            }
+            finally {
+                vi.useRealTimers();
+            }
         }
-        finally {
-            vi.useRealTimers();
-        }
-    });
+    );
 
     it('uses the readiness timeout window after rtc.connect completes', async () => {
-        const health = vi.fn()
+        const health = vi
+            .fn()
             .mockResolvedValueOnce({
                 rtcStatus: {
                     readyPeerIds: []
@@ -1077,7 +1489,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             });
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -1116,7 +1528,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('fails rtc.connect when readiness times out', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
                     connected: true,
                     rtcStatus: {
@@ -1151,10 +1563,11 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             message: 'RTC connect timed out waiting for ready peers.'
         });
         expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).some((event) =>
-                event.topic === 'rallar.bb.rtc.readiness_timeout' &&
-                event.commandId === 'connect-ready-timeout' &&
-                event.severity === 'error'
+            selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                (event) =>
+                    event.topic === 'rallar.bb.rtc.readiness_timeout' &&
+                    event.commandId === 'connect-ready-timeout' &&
+                    event.severity === 'error'
             )
         ).toBe(true);
     });
@@ -1162,7 +1575,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('fails realtime send commands when the browser runtime resolves no peers', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
                 send: vi.fn(async () => ({
                     status: 'no-peers',
@@ -1197,10 +1610,11 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             message: 'RTC send resolved no target peers.'
         });
         expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).some((event) =>
-                event.topic === 'rallar.bb.rtc.send_failed' &&
-                event.commandId === 'manual-send-no-peers' &&
-                event.severity === 'error'
+            selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                (event) =>
+                    event.topic === 'rallar.bb.rtc.send_failed' &&
+                    event.commandId === 'manual-send-no-peers' &&
+                    event.severity === 'error'
             )
         ).toBe(true);
     });
@@ -1208,7 +1622,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('fails messages.rtc send commands when the browser runtime reports no route', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
-                ...createBrowserRallarAlmMethodsTestDouble(),
+                ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
                 send: vi.fn(async () => ({
                     status: 'sent',
@@ -1247,10 +1661,11 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             message: 'RTC send failed with status no-route: No outbound transport route for message test-msg'
         });
         expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).some((event) =>
-                event.topic === 'rallar.bb.rtc.send_failed' &&
-                event.commandId === 'manual-send-no-route' &&
-                event.severity === 'error'
+            selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                (event) =>
+                    event.topic === 'rallar.bb.rtc.send_failed' &&
+                    event.commandId === 'manual-send-no-route' &&
+                    event.severity === 'error'
             )
         ).toBe(true);
     });

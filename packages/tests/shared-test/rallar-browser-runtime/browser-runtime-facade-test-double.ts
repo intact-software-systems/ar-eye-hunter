@@ -20,7 +20,10 @@ import type {
     RallarTypedPayloadHandler
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
+import type {
+    RallarCrdtDocument,
+    RallarCrdtOpenOptions
+} from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
@@ -79,6 +82,7 @@ export interface BrowserRuntimeFacadeRecords {
     readonly typedRtcHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
     typedUnsubscribeCount: number;
     readonly rtcDiagnosticsReads: Array<Parameters<BlackBoxBrowserRtcDependency['diagnostics']>>;
+    readonly rtcRoomWaits: Array<Parameters<BlackBoxBrowserRtcDependency['waitForRoom']>>;
     readonly crdtOpens: Array<Parameters<BlackBoxBrowserCrdtDependency['open']>>;
     readonly directorAppointments: Array<Parameters<BlackBoxBrowserDirectorDependency['appoint']>>;
 }
@@ -113,6 +117,7 @@ const records: BrowserRuntimeFacadeRecords = {
     typedRtcHandlers: [],
     typedUnsubscribeCount: 0,
     rtcDiagnosticsReads: [],
+    rtcRoomWaits: [],
     crdtOpens: [],
     directorAppointments: []
 };
@@ -151,6 +156,7 @@ export const facadeBehavior = {
     rtcStatus: vi.fn<BlackBoxBrowserRtcDependency['status']>(),
     rtcOnStatus: vi.fn<BlackBoxBrowserRtcDependency['onStatus']>(),
     rtcRoomStatus: vi.fn<BlackBoxBrowserRtcDependency['roomStatus']>(),
+    rtcWaitForRoom: vi.fn<BlackBoxBrowserRtcDependency['waitForRoom']>(),
     rtcOnLifecycle: vi.fn<BlackBoxBrowserRtcDependency['onLifecycle']>(),
     wsOnLifecycle: vi.fn<BlackBoxBrowserWsDependency['onLifecycle']>(),
     rtcDiagnostics: vi.fn<BlackBoxBrowserRtcDependency['diagnostics']>(),
@@ -187,7 +193,11 @@ const defaultRtcMessageSendResult: RallarMessageSendResult = {
     message: {
         id: { v: 2, msgId: 'test-message', ts: 0, senderId: 'client-1' },
         route: { topicId: 'test', contextId: 'test', resourceId: 'test' },
-        payload: { typeId: 'test', contentType: 'application/json', resource: '{}' }
+        payload: {
+            typeId: 'test',
+            contentType: 'application/json',
+            resource: '{}'
+        }
     },
     entries: []
 };
@@ -250,7 +260,9 @@ const realtime: BlackBoxBrowserRealtimeDependency = {
 };
 
 const messages: BlackBoxBrowserMessagesDependency = {
-    room: <T>(definition: RallarRoomMessageChannelDefinition): RallarTypedMessageChannel<T> => {
+    room: <T>(
+        definition: RallarRoomMessageChannelDefinition
+    ): RallarTypedMessageChannel<T> => {
         records.typedChannelOpens.push(definition);
         return createTypedChannelTestDouble<T>();
     },
@@ -262,7 +274,10 @@ const messages: BlackBoxBrowserMessagesDependency = {
         onMessage: (selector, handler) => {
             const recordedHandler = toRecordedMessageHandler(handler);
             records.rtcMessageSubscriptions.push([selector, recordedHandler]);
-            const unsubscribe = facadeBehavior.rtcMessageOnMessage(selector, recordedHandler);
+            const unsubscribe = facadeBehavior.rtcMessageOnMessage(
+                selector,
+                recordedHandler
+            );
             return () => {
                 records.rtcMessageUnsubscribeCount += 1;
                 unsubscribe();
@@ -277,7 +292,10 @@ const messages: BlackBoxBrowserMessagesDependency = {
         onMessage: (selector, handler) => {
             const recordedHandler = toRecordedMessageHandler(handler);
             records.wsMessageSubscriptions.push([selector, recordedHandler]);
-            const unsubscribe = facadeBehavior.wsMessageOnMessage(selector, recordedHandler);
+            const unsubscribe = facadeBehavior.wsMessageOnMessage(
+                selector,
+                recordedHandler
+            );
             return () => {
                 records.wsMessageUnsubscribeCount += 1;
                 unsubscribe();
@@ -290,6 +308,10 @@ const rtc: BlackBoxBrowserRtcDependency = {
     onLifecycle: (listener, options) => facadeBehavior.rtcOnLifecycle(listener, options),
     onStatus: (listener, options) => facadeBehavior.rtcOnStatus(listener, options),
     roomStatus: (room, options) => facadeBehavior.rtcRoomStatus(room, options),
+    waitForRoom: async (room, options) => {
+        records.rtcRoomWaits.push([room, options]);
+        return await facadeBehavior.rtcWaitForRoom(room, options);
+    },
     status: (options) => facadeBehavior.rtcStatus(options),
     diagnostics: async (options) => {
         records.rtcDiagnosticsReads.push([options]);
@@ -339,8 +361,7 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     readRtcMessageNacks: async () => [],
-    hasMessageAdmission: async (messageId, transport) =>
-        await facadeBehavior.messageAdmission(messageId, transport),
+    hasMessageAdmission: async (messageId, transport) => await facadeBehavior.messageAdmission(messageId, transport),
     configure: (config) => {
         records.configurationWrites.push(config);
         facadeBehavior.configure(config);
@@ -396,6 +417,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.roomFormation.mockImplementation(() => createIdleRoomFormation());
     facadeBehavior.rtcOnStatus.mockImplementation(() => () => {});
     facadeBehavior.rtcRoomStatus.mockImplementation(() => createIdleRoomTransportStatus());
+    facadeBehavior.rtcWaitForRoom.mockImplementation(async () => createIdleRoomTransportStatus());
     facadeBehavior.realtimeHealth.mockReturnValue([]);
     facadeBehavior.rtcOnLifecycle.mockImplementation((listener, options) => {
         if (options?.emitCurrent) {
@@ -446,6 +468,7 @@ function clearRecords(): void {
             records.typedWsHandlers,
             records.typedRtcHandlers,
             records.rtcDiagnosticsReads,
+            records.rtcRoomWaits,
             records.crdtOpens,
             records.directorAppointments
         ]
@@ -464,24 +487,33 @@ function clearRecords(): void {
 
 function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
     const unsupported = (): never => {
-        throw new Error('The facade test double only drives typed channel send and subscribe.');
+        throw new Error(
+            'The facade test double only drives typed channel send and subscribe.'
+        );
     };
     return {
         send: async (payload, options) => {
             const sendOptions = options as RallarTypedMessageSendOptions<RallarMessagePayload> | undefined;
             records.typedSends.push([payload as RallarMessagePayload, sendOptions]);
-            return await facadeBehavior.typedSend(payload as RallarMessagePayload, sendOptions);
+            return await facadeBehavior.typedSend(
+                payload as RallarMessagePayload,
+                sendOptions
+            );
         },
         sendRtc: unsupported,
         sendWs: unsupported,
         onWs: (handler) => {
-            records.typedWsHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
+            records.typedWsHandlers.push(
+                handler as RallarTypedPayloadHandler<RallarMessagePayload>
+            );
             return () => {
                 records.typedUnsubscribeCount += 1;
             };
         },
         onRtc: (handler) => {
-            records.typedRtcHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
+            records.typedRtcHandlers.push(
+                handler as RallarTypedPayloadHandler<RallarMessagePayload>
+            );
             return () => {
                 records.typedUnsubscribeCount += 1;
             };
@@ -517,7 +549,11 @@ function createIdleRoomFormation(): RallarRoomFormation {
         throw new Error('The facade test double does not drive room formation.');
     };
     return {
-        roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+        roomRef: {
+            applicationId: 'app',
+            workspaceId: 'workspace',
+            groupId: 'room'
+        },
         status: () => undefined,
         readView: unsupported,
         plan: unsupported,

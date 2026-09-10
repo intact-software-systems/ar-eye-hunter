@@ -51,13 +51,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // The maintainer approved necessary ALM and formation-command growth.
-        // Keep the smallest whole-KiB strict limit containing the measured
-        // behavior, with all operator dependency exclusions intact.
-        // Measured 252.37 KiB brotli after the reviewed RTC authority recovery and
-        // live durable-admission observation landed; the maintainer approved the
-        // smallest strict whole-KiB limit containing that behavior.
-        expect(result.brotliKiB).toBeLessThan(253);
+        // The maintainer approved the necessary browser-agent growth. Canonical
+        // room readiness measures 253.10546875 KiB Brotli; keep the smallest
+        // strict whole-KiB limit while preserving every dependency exclusion.
+        expect(result.brotliKiB).toBeLessThan(254);
     });
 });
 

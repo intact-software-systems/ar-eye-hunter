@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
 const agentB = { agent: { prefix: 'B' as const }, suffix: 'lifecycle-1-uuid' };
@@ -45,5 +45,60 @@ describe('live RTC formation command ids', () => {
         const commandId = operations.createCommandId(agentB, 'presence');
 
         expect(commandId).toMatch(/^formation-presence-B-lifecycle-1-uuid-\d+$/u);
+    });
+
+    it('refreshes the exact room once before delegating formation readiness', async () => {
+        const operations = createLiveRtcFormationOperations();
+        const calls: string[] = [];
+        const refreshRoom = vi.fn(async () => {
+            calls.push('refresh');
+        });
+        const executeOk = vi.fn(async () => {
+            calls.push('readiness');
+            return {} as never;
+        });
+        const roomRef = {
+            applicationId: 'application',
+            workspaceId: 'workspace',
+            groupId: 'room'
+        };
+
+        await operations.readiness({
+            control: {
+                executeOk,
+                resultValue: () => ({
+                    readyAtEpochMs: 1,
+                    formation: { stage: 'active' }
+                })
+            },
+            runId: 'run',
+            agent: {
+                prefix: 'A',
+                agentId: 'agent-a',
+                actor: 'alice',
+                connection: 'connection-a',
+                refreshRoom
+            },
+            roomRef,
+            suffix: 'fresh-room',
+            timeoutMs: 1_000
+        });
+
+        expect(calls).toEqual(['refresh', 'readiness']);
+        expect(refreshRoom).toHaveBeenCalledOnce();
+        expect(refreshRoom).toHaveBeenCalledWith({
+            timeoutMs: expect.any(Number)
+        });
+        expect(executeOk).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: expect.objectContaining({
+                    kind: 'formation.readiness',
+                    roomId: roomRef.groupId,
+                    applicationId: roomRef.applicationId,
+                    workspaceId: roomRef.workspaceId,
+                    timeoutMs: expect.any(Number)
+                })
+            })
+        );
     });
 });
