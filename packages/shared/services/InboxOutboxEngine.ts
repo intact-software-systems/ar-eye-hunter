@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-breaker.ts';
 import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
+import { toError } from '../resilience/to-error.ts';
 
 const NOT_SET = -1;
 
@@ -61,7 +62,8 @@ export class InboxOutboxEngine {
      * Registers a listener for every wake. A wake is the announcement that someone may have written
      * work this engine's tasks own, so a task that answers readiness from memory drops that memory
      * here instead of waiting out the idle ceiling. A listener runs synchronously during the wake
-     * and must not wake the engine.
+     * and must not wake the engine. One that throws is reported and skipped: the wake is an
+     * announcement every other owner still needs.
      */
     includeWakeListener(id: string, listener: () => void): InboxOutboxEngine {
         this.wakeListeners.set(id, listener);
@@ -164,8 +166,13 @@ export class InboxOutboxEngine {
     }
 
     private notifyWake(): void {
-        for (const listener of this.wakeListeners.values()) {
-            listener();
+        for (const [id, listener] of this.wakeListeners) {
+            try {
+                listener();
+            }
+            catch (error) {
+                console.error('TaskEngine wake listener error', id, toError(error));
+            }
         }
     }
 

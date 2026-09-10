@@ -29,6 +29,27 @@ describe('engine', () => {
         engine.stop();
     });
 
+    it('keeps one throwing wake listener from stealing the wake from the others', () => {
+        const engine = new InboxOutboxEngine();
+        const announced: string[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        engine.includeWakeListener('first', () => announced.push('first'));
+        engine.includeWakeListener('throws', () => {
+            throw new Error('listener refused the wake');
+        });
+        engine.includeWakeListener('last', () => announced.push('last'));
+
+        engine.wake();
+
+        // Every owner's remembered readiness is dropped, not just the ones ahead of the failure.
+        expect(announced).toEqual(['first', 'last']);
+        expect(consoleError).toHaveBeenCalledWith(
+            'TaskEngine wake listener error',
+            'throws',
+            expect.objectContaining({ message: 'listener refused the wake' })
+        );
+    });
+
     it('wakes for a registered task deadline before idle backoff elapses', async () => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();
