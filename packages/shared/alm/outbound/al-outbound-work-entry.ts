@@ -123,21 +123,24 @@ export interface ALOutboundDequeueDeferral {
 
 /**
  * Retained work is due now, retried work at its own `nextTs`, gated dequeue work no earlier than the
- * breaker allows, and an expired row is never advertised. A page that still owes a cursor and holds
- * a due row answers `nowMs`: one status never hides the next. A cursor-owing page whose visible rows
- * are all expired or gated answers from those rows alone, so a full page of expired rows advertises
- * nothing and leaves the remainder to the queue's own expiry cleanup.
+ * breaker allows, and an expired row is never advertised. A page that held more rows than it returned
+ * and holds a due row answers `nowMs`: one status never hides the next. A truncated page whose visible
+ * rows are all expired or gated answers from those rows alone, so a full page of expired rows
+ * advertises nothing and leaves the remainder to the queue's own expiry cleanup. Every status is read
+ * in one scan, so the probe the engine runs on each round costs one round trip to storage.
  */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,
     nowMs: number,
     deferral: ALOutboundDequeueDeferral
 ): Promise<number | undefined> {
+    const scans = await port.readPages(
+        AL_OUTBOUND_SCAN_STATUSES.map((status) => ({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
+    );
     let readyAtMs: number | undefined;
-    for (const status of AL_OUTBOUND_SCAN_STATUSES) {
-        const page = await port.readPage({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE, cursor: null });
+    for (const scan of scans) {
         let hasDueEntry = false;
-        for (const entry of page.entries) {
+        for (const entry of scan.entries) {
             if (entry.audit.expiryTs.epochMilliseconds <= nowMs) {
                 continue;
             }
@@ -145,7 +148,7 @@ export async function readALOutboundWorkReadyAt(
             hasDueEntry ||= candidateAtMs <= nowMs;
             readyAtMs = Math.min(readyAtMs ?? candidateAtMs, candidateAtMs);
         }
-        if (hasDueEntry && page.nextCursor !== null) {
+        if (hasDueEntry && scan.hasMoreEntries) {
             return nowMs;
         }
     }

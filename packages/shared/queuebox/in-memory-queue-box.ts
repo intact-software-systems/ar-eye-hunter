@@ -102,6 +102,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         };
     }
 
+    async readWorkPages(requests: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
+        return await Promise.all(requests.map((request) => this.readWorkPage(request)));
+    }
+
     private storeEntry(key: string, entry: ResourceEntry): void {
         this.workIndex.replace(key, this.data.get(key), entry);
         this.data.set(key, entry);

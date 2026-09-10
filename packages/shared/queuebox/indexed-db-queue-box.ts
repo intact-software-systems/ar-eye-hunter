@@ -32,6 +32,7 @@ import {
     readStoredQueueEntriesByTypesAndStatuses,
     readStoredQueueEntry,
     readStoredQueueWorkPage,
+    readStoredQueueWorkPages,
     toIndexedDbQueueStoreDefinition
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
@@ -165,19 +166,19 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
-        const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
-        const validated = validateResourceInboxWorkPageRequest(request);
-        if (validated.left) {
-            throw validated.left;
-        }
+        const request = toValidatedWorkPageRequest(input);
         const db = await this.#connection.open();
         const stored = await readStoredQueueWorkPage(db, this.#storeName, request);
-        return {
-            entries: stored.map(decodeStoredResourceEntry),
-            nextCursor: stored.length === request.maxToRead
-                ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
-                : null
-        };
+        return toResourceInboxWorkPage(stored, request);
+    }
+
+    /** One transaction serves every request, so a readiness scan is one operation, not one per page. */
+    async readWorkPages(inputs: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
+        this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+        const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
+        const db = await this.#connection.open();
+        const pages = await readStoredQueueWorkPages(db, this.#storeName, requests);
+        return pages.map((stored, index) => toResourceInboxWorkPage(stored, requests[index]));
     }
 
     /** The opportunistic sweep hot paths trigger: rate limited, so it runs at most once per window. */
@@ -846,4 +847,25 @@ function hasIndexedDbFinalizationWork(input: IndexedDbFinalizationWorkInput): bo
             staleBefore
         }) !== undefined
     );
+}
+
+function toValidatedWorkPageRequest(input: ResourceInboxWorkPage.Request): ResourceInboxWorkPage.Request {
+    const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
+    const validated = validateResourceInboxWorkPageRequest(request);
+    if (validated.left) {
+        throw validated.left;
+    }
+    return request;
+}
+
+function toResourceInboxWorkPage(
+    stored: readonly StoredResourceEntry[],
+    request: ResourceInboxWorkPage.Request
+): ResourceInboxWorkPage {
+    return {
+        entries: stored.map(decodeStoredResourceEntry),
+        nextCursor: stored.length === request.maxToRead
+            ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
+            : null
+    };
 }

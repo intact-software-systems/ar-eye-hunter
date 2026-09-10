@@ -110,6 +110,39 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         expect(await queue.getItem(third.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
     });
 
+    it('answers a batch of work-page requests exactly as the same requests read one at a time', async () => {
+        const queue = await createQueue(storage);
+        for (
+            const entry of [
+                createEntry('first'),
+                createEntry('second'),
+                createEntry('third'),
+                { ...createEntry('other-type'), typeId: 'another-work-type' },
+                { ...createEntry('retried'), status: EntityStatus.RETRY, dequeueAudit: { attempts: 1, nextTs: Temporal.Now.instant() } }
+            ]
+        ) {
+            await queue.enqueue(entry);
+        }
+        const requests = [
+            { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null },
+            { typeId: 'ordered-work', status: EntityStatus.RETRY, maxToRead: 2, cursor: null },
+            { typeId: 'another-work-type', status: EntityStatus.NEW, maxToRead: 2, cursor: null },
+            { typeId: 'ordered-work', status: EntityStatus.RESERVED, maxToRead: 2, cursor: null }
+        ] as const;
+
+        const batched = await queue.readWorkPages(requests);
+
+        const separate = [];
+        for (const request of requests) {
+            separate.push(await queue.readWorkPage(request));
+        }
+        expect(batched).toEqual(separate);
+        expect(batched[0].nextCursor).not.toBeNull();
+        expect(await queue.readWorkPages([{ ...requests[0], cursor: batched[0].nextCursor }]))
+            .toEqual([await queue.readWorkPage({ ...requests[0], cursor: batched[0].nextCursor })]);
+        expect(await queue.readWorkPages([])).toEqual([]);
+    });
+
     it('reflects replacement, reservation and release without retaining work in an old status', async () => {
         const queue = await createQueue(storage);
         const entry = createEntry('transition');

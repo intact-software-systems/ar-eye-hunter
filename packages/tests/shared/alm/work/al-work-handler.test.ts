@@ -173,6 +173,7 @@ describe('ALWorkHandler', () => {
         const port: ALWorkQueuePort = {
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
+            readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
             claim: async ({ maxCount }) => pending.splice(0, maxCount),
             finalizeExhausted: async () => [],
             release: async (claim, outcome) => {
@@ -296,6 +297,7 @@ describe('ALWorkHandler', () => {
         const port: ALWorkQueuePort = {
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
+            readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
             claim: async ({ maxCount }) => {
                 claimCallCount += 1;
                 return pending.splice(0, maxCount);
@@ -767,6 +769,7 @@ function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
     return {
         retainIfAbsent: async (entry) => entry,
         readPage: async () => ({ entries: [], nextCursor: null }),
+        readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
         claim: async ({ maxCount }) => pending.splice(0, maxCount),
         finalizeExhausted: async () => {
             const claims = exhausted;

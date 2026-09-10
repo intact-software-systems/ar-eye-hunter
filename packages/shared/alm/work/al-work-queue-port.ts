@@ -31,6 +31,19 @@ export interface ReadALWorkPageInput {
     readonly cursor: ResourceInboxWorkPage.Cursor | null;
 }
 
+/** One status of a readiness scan: a scan always starts at the beginning, so it carries no cursor. */
+export interface ReadALWorkPageScanInput {
+    readonly status: EntityStatus;
+    readonly maxToRead: number;
+}
+
+export interface ALWorkPageScan {
+    /** The merged page `readPage` would have returned for this status, in work-type order. */
+    readonly entries: readonly ResourceEntry[];
+    /** The queue holds more rows of this status than the cap returned. */
+    readonly hasMoreEntries: boolean;
+}
+
 export interface ClaimALWorkInput {
     readonly maxCount: number;
     /** Observations from a prior page read; undefined lets the queue select. */
@@ -40,6 +53,8 @@ export interface ClaimALWorkInput {
 export interface ALWorkQueuePort {
     retainIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;
     readPage(input: ReadALWorkPageInput): Promise<ALWorkPage>;
+    /** The readiness scan: several statuses read together, so a probe costs one round trip. */
+    readPages(inputs: readonly ReadALWorkPageScanInput[]): Promise<readonly ALWorkPageScan[]>;
     claim(input: ClaimALWorkInput): Promise<readonly ALWorkClaim[]>;
     finalizeExhausted(maxCount: number): Promise<readonly ALWorkClaim[]>;
     release(claim: ALWorkClaim, outcome: ALWorkOutcome): Promise<void>;
@@ -60,6 +75,7 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
     return {
         retainIfAbsent: (entry) => queue.enqueueIfAbsent(entry),
         readPage: (pageInput) => readMergedALWorkPage(queue, workTypes, pageInput),
+        readPages: (scanInputs) => readMergedALWorkPageScans(queue, workTypes, scanInputs),
         claim: async ({ maxCount, observedEntries }) => {
             const pending = await queue.reserveEntries({
                 typeIds: new Set(workTypes),
@@ -162,6 +178,30 @@ function toReleaseDisposition(
                 : { status: EntityStatus.RETRY, delayMs: Math.max(1, decision.delayMs ?? 1) };
         }
     }
+}
+
+/**
+ * Reads every status of a scan across every type in `workTypes` from one repository call. Each status
+ * keeps the page `readPage` would have produced -- whole per-type pages in type order, cut at
+ * `maxToRead` -- and reports whether the queue held more rows than that cap returned, which is what
+ * the single-page read expressed as a cursor it never resumed from.
+ */
+async function readMergedALWorkPageScans(
+    queue: QueueBoxResourceEntryRepository,
+    workTypes: ReadonlySet<string>,
+    inputs: readonly ReadALWorkPageScanInput[]
+): Promise<readonly ALWorkPageScan[]> {
+    const types = [...workTypes];
+    const pages = await queue.readWorkPages(
+        inputs.flatMap((input) =>
+            types.map((typeId) => ({ typeId, status: input.status, maxToRead: input.maxToRead, cursor: null }))
+        )
+    );
+    return inputs.map((input, index) => {
+        const entries = pages.slice(index * types.length, (index + 1) * types.length)
+            .flatMap((page) => page.entries);
+        return { entries: entries.slice(0, input.maxToRead), hasMoreEntries: entries.length >= input.maxToRead };
+    });
 }
 
 /**

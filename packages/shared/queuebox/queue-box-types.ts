@@ -396,4 +396,10 @@ export interface QueueBoxResourceEntryRepository
         EnqueueResourceEntryController,
         PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
     readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage>;
+
+    /**
+     * Answers every request exactly as `readWorkPage` would. A store that can read them together does
+     * so from one snapshot, so a scan across statuses and work types costs one round trip.
+     */
+    readWorkPages(requests: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]>;
 }

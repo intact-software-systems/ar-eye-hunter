@@ -115,16 +115,39 @@ export async function readStoredQueueWorkPage(
     storeName: string,
     request: ResourceInboxWorkPage.Request
 ): Promise<readonly StoredResourceEntry[]> {
+    const [page] = await readStoredQueueWorkPages(db, storeName, [request]);
+    return page;
+}
+
+/**
+ * Every request is answered exactly as a single-page read would, from one readonly transaction, so a
+ * readiness scan across statuses and work types costs one round trip over one store snapshot.
+ */
+export async function readStoredQueueWorkPages(
+    db: IDBDatabase,
+    storeName: string,
+    requests: readonly ResourceInboxWorkPage.Request[]
+): Promise<readonly (readonly StoredResourceEntry[])[]> {
+    if (requests.length === 0) {
+        return [];
+    }
+    const transaction = db.transaction(storeName, 'readonly');
+    const pages = await readIndexedDbTransaction(transaction, async () => {
+        const index = transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
+        return await Promise.all(
+            requests.map((request) =>
+                readIndexedDbRequest(index.getAll(toStoredQueueWorkPageRange(request), request.maxToRead))
+            )
+        );
+    });
+    return pages.map((values) => values.map(decodeStoredResourceEntryValue));
+}
+
+function toStoredQueueWorkPageRange(request: ResourceInboxWorkPage.Request): IDBKeyRange {
     const lower = request.cursor === null
         ? [request.typeId, request.status]
         : [request.typeId, request.status, request.cursor.position];
-    const range = IDBKeyRange.bound(lower, [request.typeId, request.status, []], request.cursor !== null, true);
-    const transaction = db.transaction(storeName, 'readonly');
-    const values = await readIndexedDbTransaction(transaction, async () =>
-        await readIndexedDbRequest(
-            transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME).getAll(range, request.maxToRead)
-        ));
-    return values.map(decodeStoredResourceEntryValue);
+    return IDBKeyRange.bound(lower, [request.typeId, request.status, []], request.cursor !== null, true);
 }
 
 export async function readStoredQueueEntry(
