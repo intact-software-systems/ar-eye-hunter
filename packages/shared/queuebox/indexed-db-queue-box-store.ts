@@ -58,14 +58,6 @@ interface ReadCompletedStoredQueueEntriesAcrossStatusesInput {
     readonly maxToRead: number;
 }
 
-interface ReadFairnessDueStoredQueueEntriesInput {
-    readonly db: IDBDatabase;
-    readonly storeName: string;
-    readonly typeId: string;
-    readonly dueBeforeEpochMs: number;
-    readonly maxToRead: number;
-}
-
 export const INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME = 'by-type-status-next-key';
 const INDEXED_DB_QUEUE_WORK_INDEX_NAME = 'by-type-status-key';
 export const INDEXED_DB_QUEUE_EXPIRY_INDEX_NAME = 'by-expiry';
@@ -157,20 +149,8 @@ export async function readStoredQueueEntries(
     return entries;
 }
 
-/** getAllKeys() has no type/status to scope by; it is the one caller that still needs every row. */
-export async function readStoredQueueEntriesForKeyEnumeration(
-    db: IDBDatabase,
-    storeName: string
-): Promise<readonly StoredResourceEntry[]> {
-    const transaction = db.transaction(storeName, 'readonly');
-    const entries = await readIndexedDbTransaction(
-        transaction,
-        async () => await readIndexedDbRequest(transaction.objectStore(storeName).getAll())
-    );
-    return entries.map(decodeStoredResourceEntryValue);
-}
-
-export async function readStoredQueueEntriesByTypeStatus(
+/** Internal primitive: `readStoredQueueEntriesByTypesAndStatuses` is the reservation-read surface. */
+async function readStoredQueueEntriesByTypeStatus(
     input: ReadStoredQueueEntriesByTypeStatusInput
 ): Promise<readonly StoredResourceEntry[]> {
     const { db, storeName, typeId, status, maxToRead } = input;
@@ -228,7 +208,8 @@ export async function readExpiredStoredQueueEntries(
     return values.map(decodeStoredResourceEntryValue);
 }
 
-export async function readCompletedStoredQueueEntriesBefore(
+/** Internal primitive: `readCompletedStoredQueueEntriesAcrossStatuses` is the cleanup-read surface. */
+async function readCompletedStoredQueueEntriesBefore(
     input: ReadCompletedStoredQueueEntriesBeforeInput
 ): Promise<readonly StoredResourceEntry[]> {
     const { db, storeName, status, endBeforeEpochMs, maxToRead } = input;
@@ -269,26 +250,6 @@ export async function readCompletedStoredQueueEntriesAcrossStatuses(
         remainingBudget -= rows.length;
     }
     return candidates;
-}
-
-/** A cheap existence probe: is there a due RETRY row for this type, ordered by the fairness index. */
-export async function readFairnessDueStoredQueueEntries(
-    input: ReadFairnessDueStoredQueueEntriesInput
-): Promise<readonly StoredResourceEntry[]> {
-    const { db, storeName, typeId, dueBeforeEpochMs, maxToRead } = input;
-    const transaction = db.transaction(storeName, 'readonly');
-    const range = IDBKeyRange.bound(
-        [typeId, EntityStatus.RETRY, 0],
-        [typeId, EntityStatus.RETRY, dueBeforeEpochMs]
-    );
-    const values = await readIndexedDbTransaction(
-        transaction,
-        async () =>
-            await readIndexedDbRequest(
-                transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME).getAll(range, maxToRead)
-            )
-    );
-    return values.map(decodeStoredResourceEntryValue);
 }
 
 export async function readFairnessStoredQueueEntries(

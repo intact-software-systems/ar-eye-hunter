@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
+import { readIndexedDbRequest, readIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
@@ -9,6 +10,7 @@ import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release
 import { validateResourceInboxReleaseDisposition } from './compute-resource-inbox-release.ts';
 import {
     decodeStoredResourceEntry,
+    decodeStoredResourceEntryValue,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
 import {
@@ -25,11 +27,9 @@ import {
     INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
     readCompletedStoredQueueEntriesAcrossStatuses,
     readExpiredStoredQueueEntries,
-    readFairnessDueStoredQueueEntries,
     readFairnessStoredQueueEntries,
     readStoredQueueEntries,
     readStoredQueueEntriesByTypesAndStatuses,
-    readStoredQueueEntriesForKeyEnumeration,
     readStoredQueueEntry,
     readStoredQueueWorkPage,
     toIndexedDbQueueStoreDefinition
@@ -543,6 +543,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const db = await this.#connection.open();
         const now = this.#now();
         const nowEpochMs = Number(now.epochMilliseconds);
+        // maxToScan = typeIds.size reads exactly the earliest due RETRY row per type, no cursor
+        // continuation: the same probe readFairnessDueStoredQueueEntries used to provide alone.
+        const fairnessDueByType = await readFairnessStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
+            typeIds: [...typeIds],
+            overdueBeforeEpochMs: nowEpochMs,
+            maxToScan: typeIds.size
+        });
         const newAndRetryCandidates: StoredResourceEntry[] = [
             ...await readStoredQueueEntriesByTypesAndStatuses({
                 db,
@@ -550,19 +560,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 typeIds,
                 statusIds: [EntityStatus.NEW],
                 maxToReadPerCombination: 1
-            })
+            }),
+            ...[...fairnessDueByType.values()].flat()
         ];
-        for (const typeId of typeIds) {
-            newAndRetryCandidates.push(
-                ...await readFairnessDueStoredQueueEntries({
-                    db,
-                    storeName: this.#storeName,
-                    typeId,
-                    dueBeforeEpochMs: nowEpochMs,
-                    maxToRead: 1
-                })
-            );
-        }
         const reservedCandidates = await readStoredQueueEntriesByTypesAndStatuses({
             db,
             storeName: this.#storeName,
@@ -682,8 +682,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async getAllKeys(): Promise<Key[]> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
         const db = await this.#connection.open();
-        // Unscoped by type or status: every other read narrows by an index, this one cannot.
-        const entries = await readStoredQueueEntriesForKeyEnumeration(db, this.#storeName);
+        // Unscoped by type or status: every other read narrows by an index, this one cannot, so
+        // it reads the store directly instead of a single-caller store-module export for it.
+        const transaction = db.transaction(this.#storeName, 'readonly');
+        const rawValues = await readIndexedDbTransaction(
+            transaction,
+            async () => await readIndexedDbRequest(transaction.objectStore(this.#storeName).getAll())
+        );
+        const entries = rawValues.map(decodeStoredResourceEntryValue);
         const now = this.#now();
         const keys: Key[] = [];
         const mutations: ComputedIndexedDbQueueMutation[] = [];
