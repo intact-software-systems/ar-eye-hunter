@@ -23,9 +23,13 @@ import {
 } from './indexed-db-queue-box-entry.ts';
 import {
     INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
-    readAllStoredQueueEntries,
+    readCompletedStoredQueueEntriesAcrossStatuses,
+    readExpiredStoredQueueEntries,
+    readFairnessDueStoredQueueEntries,
     readFairnessStoredQueueEntries,
     readStoredQueueEntries,
+    readStoredQueueEntriesByTypesAndStatuses,
+    readStoredQueueEntriesForKeyEnumeration,
     readStoredQueueEntry,
     readStoredQueueWorkPage,
     toIndexedDbQueueStoreDefinition
@@ -68,6 +72,12 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.
 import { writeComputedIndexedDbQueueMutations } from './write-computed-indexed-db-queue-mutations.ts';
 
 export { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
+
+/** Per-run cap on rows an opportunistic cleanupAsync() pass deletes for each reason. */
+const INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE = 256;
+const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE = 256;
+/** Per-type row budget for advertisement probes and poison-skipping recovery scans. */
+const INDEXED_DB_QUEUE_PROBE_MAX_TO_READ = 64;
 
 interface IndexedDbQueueComputedWrite<Result> {
     readonly mutations: readonly ComputedIndexedDbQueueMutation[];
@@ -166,16 +176,30 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             async () => {
                 const db = await this.#connection.open();
                 const now = this.#now();
-                const entries = await readAllStoredQueueEntries(db, this.#storeName);
-                const expired = entries.filter(
+                const nowEpochMs = Number(now.epochMilliseconds);
+                const expired = await readExpiredStoredQueueEntries({
+                    db,
+                    storeName: this.#storeName,
+                    nowEpochMs,
+                    maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
+                });
+                const completedCandidates = await readCompletedStoredQueueEntriesAcrossStatuses({
+                    db,
+                    storeName: this.#storeName,
+                    statusIds: COMPLETED_STATUSES,
+                    endBeforeEpochMs: nowEpochMs,
+                    maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE
+                });
+                // A completed row can also already be expired; skip it here so it is not deleted twice.
+                const completed = completedCandidates.filter(
                     (stored) =>
-                        isStoredQueueEntryExpired(stored, now) ||
-                        (COMPLETED_STATUSES.has(stored.status) &&
-                            !matchesQueueBoxCompletedRetention(stored, this.#completedRetention))
+                        !isStoredQueueEntryExpired(stored, now) &&
+                        !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
                 );
+                const toDelete = [...expired, ...completed];
                 const removedEntries = await this.#write(db, {
-                    mutations: expired.map(computeIndexedDbQueueDelete),
-                    result: expired.length
+                    mutations: toDelete.map(computeIndexedDbQueueDelete),
+                    result: toDelete.length
                 });
                 if (removedEntries > 0) {
                     console.log('Removed entries: ', removedEntries);
@@ -310,16 +334,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
         const db = await this.#connection.open();
         const now = this.#now();
-        const entries = observations === undefined
-            ? await readAllStoredQueueEntries(db, this.#storeName)
-            : (await readStoredQueueEntries(
+        const candidates = observations === undefined
+            ? await readStoredQueueEntriesByTypesAndStatuses({
+                db,
+                storeName: this.#storeName,
+                typeIds,
+                statusIds: [EntityStatus.RESERVED],
+                maxToReadPerCombination: maxToReserve
+            })
+            : [...(await readStoredQueueEntries(
                 db,
                 this.#storeName,
                 [...observations.values()].map((entry) => toKeyAsString(entry.key))
-            )).values();
+            )).values()];
         const reserved = new Map<Key, ResourceEntry>();
         const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
+        for (const stored of candidates) {
             if (reserved.size >= maxToReserve) {
                 break;
             }
@@ -361,16 +391,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
         const db = await this.#connection.open();
         const now = this.#now();
-        const entries = observations === undefined
-            ? await readAllStoredQueueEntries(db, this.#storeName)
-            : (await readStoredQueueEntries(
+        const candidates = observations === undefined
+            ? await readStoredQueueEntriesByTypesAndStatuses({
+                db,
+                storeName: this.#storeName,
+                typeIds,
+                statusIds,
+                maxToReadPerCombination: maxToReserve
+            })
+            : [...(await readStoredQueueEntries(
                 db,
                 this.#storeName,
                 [...observations.values()].map((entry) => toKeyAsString(entry.key))
-            )).values();
+            )).values()];
         const reserved = new Map<Key, ResourceEntry>();
         const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
+        for (const stored of candidates) {
             if (reserved.size >= maxToReserve) {
                 break;
             }
@@ -456,10 +492,18 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const db = await this.#connection.open();
         const now = this.#now();
         const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
+        // Read past maxToReserve so an exhausted (poison) generation cannot mask a valid sibling.
+        const perTypeMaxToRead = Math.max(options.maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ);
+        const candidates = await readStoredQueueEntriesByTypesAndStatuses({
+            db,
+            storeName: this.#storeName,
+            typeIds,
+            statusIds: [EntityStatus.RESERVED],
+            maxToReadPerCombination: perTypeMaxToRead
+        });
         const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
         const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
+        for (const stored of candidates) {
             if (reserved.size >= options.maxToReserve) {
                 break;
             }
@@ -497,12 +541,39 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
             toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
         const now = this.#now();
+        const nowEpochMs = Number(now.epochMilliseconds);
+        const newAndRetryCandidates: StoredResourceEntry[] = [
+            ...await readStoredQueueEntriesByTypesAndStatuses({
+                db,
+                storeName: this.#storeName,
+                typeIds,
+                statusIds: [EntityStatus.NEW],
+                maxToReadPerCombination: 1
+            })
+        ];
+        for (const typeId of typeIds) {
+            newAndRetryCandidates.push(
+                ...await readFairnessDueStoredQueueEntries({
+                    db,
+                    storeName: this.#storeName,
+                    typeId,
+                    dueBeforeEpochMs: nowEpochMs,
+                    maxToRead: 1
+                })
+            );
+        }
+        const reservedCandidates = await readStoredQueueEntriesByTypesAndStatuses({
+            db,
+            storeName: this.#storeName,
+            typeIds,
+            statusIds: [EntityStatus.RESERVED],
+            maxToReadPerCombination: INDEXED_DB_QUEUE_PROBE_MAX_TO_READ
+        });
         const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>
-                entries.some((stored) =>
+                reservedCandidates.some((stored) =>
                     stored.dequeueAudit.attempts < maxAttempts &&
                     isStoredQueueEntryTimedOut({
                         stored,
@@ -514,7 +585,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             false
         );
 
-        const newAndRetryEntryToLock = entries.some((stored) =>
+        const newAndRetryEntryToLock = newAndRetryCandidates.some((stored) =>
             isStoredQueueEntryReservable({
                 stored,
                 typeIds,
@@ -525,7 +596,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         );
         const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkFinalization,
-            async () => hasIndexedDbFinalizationWork({ entries, typeIds, now, maxAttempts, finalizationStaleAfterMs }),
+            async () =>
+                hasIndexedDbFinalizationWork({
+                    entries: reservedCandidates,
+                    typeIds,
+                    now,
+                    maxAttempts,
+                    finalizationStaleAfterMs
+                }),
             false
         );
 
@@ -604,7 +682,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async getAllKeys(): Promise<Key[]> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
         const db = await this.#connection.open();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
+        // Unscoped by type or status: every other read narrows by an index, this one cannot.
+        const entries = await readStoredQueueEntriesForKeyEnumeration(db, this.#storeName);
         const now = this.#now();
         const keys: Key[] = [];
         const mutations: ComputedIndexedDbQueueMutation[] = [];
@@ -623,8 +702,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
         const db = await this.#connection.open();
         const now = this.#now();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
-        const expired = entries.filter((stored) => isStoredQueueEntryExpired(stored, now));
+        const expired = await readExpiredStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            nowEpochMs: Number(now.epochMilliseconds),
+            maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
+        });
         return await this.#write(db, {
             mutations: expired.map(computeIndexedDbQueueDelete),
             result: expired.length
