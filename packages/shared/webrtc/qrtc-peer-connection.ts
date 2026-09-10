@@ -66,6 +66,20 @@ export namespace QRtcPeerConnection {
         onDisconnected?: () => Promise<void>;
         onFailed?: () => Promise<void>;
         onClosed?: (peerId: string) => Promise<void>;
+        /**
+         * A signal this peer could not hand to the transport. A terminal admission strands the
+         * peer -- an offer that never left leaves it in `have-local-offer`, where
+         * `onnegotiationneeded` cannot fire again -- so the hop that failed is reported rather
+         * than logged and dropped.
+         */
+        onSignalingFailed?: (failure: QRtcPeerConnection.SignalingFailure) => void;
+    }
+
+    /** One outbound signal that never reached the transport, named by the hop that produced it. */
+    export interface SignalingFailure {
+        readonly peerSessionId: string;
+        readonly signalType: QRtcSignalingType;
+        readonly error: Error;
     }
 
     export interface InputDto {
@@ -145,6 +159,7 @@ export class QRtcPeerConnection {
     private readonly onRemoteStreamCallbacks = new Map<string, QRtcOnRemoteStreamCallback>();
     private iceGatheringStateChangeListener: ((event: Event) => void) | undefined;
     private diagnostics: QRtcPeerConnectionDiagnosticCounters = createInitialDiagnostics();
+    private stateCallbacks: QRtcPeerConnection.StateCallbacks = {};
 
     public readonly signaler: QRtcSignalingSender;
     public readonly input: QRtcPeerConnection.InputDto;
@@ -294,6 +309,7 @@ export class QRtcPeerConnection {
             this.reset();
         }
         this.status.state = QRtcSessionState.Connecting;
+        this.stateCallbacks = callbacks;
         const pc = new RTCPeerConnection(this.configuration);
         this.status.pc = pc;
         pc.onnegotiationneeded = () => this.handleNegotiationNeeded(pc);
@@ -316,7 +332,7 @@ export class QRtcPeerConnection {
             await this.sendSignal(QRtcSignalingType.Offer, { description: pc.localDescription, candidate: null });
         }
         catch (caught) {
-            console.error('RTC negotiation failed', toError(caught));
+            this.notifySignalingFailure(QRtcSignalingType.Offer, toError(caught));
         }
         finally {
             this.status.makingOffer = false;
@@ -331,8 +347,25 @@ export class QRtcPeerConnection {
             await this.sendSignal(QRtcSignalingType.IceCandidate, { description: null, candidate: event.candidate });
         }
         catch (caught) {
-            console.error('RTC ICE candidate signaling failed', toError(caught));
+            this.notifySignalingFailure(QRtcSignalingType.IceCandidate, toError(caught));
         }
+    }
+
+    /**
+     * The peer's own report that a hop is lost. A composition with no listener has nowhere to put
+     * it, so that one still logs: a swallowed offer is the failure this exists to make visible.
+     */
+    private notifySignalingFailure(signalType: QRtcSignalingType, error: Error): void {
+        const failure: QRtcPeerConnection.SignalingFailure = {
+            peerSessionId: this.input.peerSessionId,
+            signalType,
+            error
+        };
+        if (this.stateCallbacks.onSignalingFailed === undefined) {
+            console.error('RTC signaling failed', signalType, error);
+            return;
+        }
+        this.stateCallbacks.onSignalingFailed(failure);
     }
 
     private async notifyDataChannel(event: RTCDataChannelEvent): Promise<void> {

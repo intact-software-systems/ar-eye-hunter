@@ -305,6 +305,38 @@ describe('QRtcPeerConnection', () => {
         });
     });
 
+    it('reports the hop a terminal signaling failure lost, instead of logging and dropping it', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        const terminal = new Error('Signaling admission returned expired');
+        const signaler: QRtcSignalingSender = {
+            send: async () => {
+                throw terminal;
+            }
+        };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        onTestFinished(() => peer.reset());
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+        const native = runtime.createdConnections[0];
+        if (!native) {
+            throw new Error('Expected a native connection after connect');
+        }
+
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await native.onicecandidate?.call(native, new NativeIceCandidateEvent('ice-1'));
+
+        expect(failures).toEqual([
+            { peerSessionId: 'peer-1', signalType: QRtcSignalingType.Offer, error: terminal },
+            { peerSessionId: 'peer-1', signalType: QRtcSignalingType.IceCandidate, error: terminal }
+        ]);
+        // The counters back the report up, and neither hop is reduced to a log line.
+        expect(peer.readDiagnostics().outboundSignalingErrorCount).toBe(2);
+        expect(consoleError.mock.calls.map(([message]) => message)).not.toContain('RTC negotiation failed');
+        expect(consoleError.mock.calls.map(([message]) => message)).not.toContain('RTC signaling failed');
+    });
+
     it('cleans up peer connection handlers and listeners on reset', () => {
         const { peer, native } = createPeerFixture(true);
         expect(getEventListeners(native, 'icegatheringstatechange')).toHaveLength(1);

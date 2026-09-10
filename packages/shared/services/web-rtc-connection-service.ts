@@ -328,6 +328,12 @@ export namespace WebRtcConnectionService {
         onConnectExhausted?(
             event: PeerConnectionAttemptExhaustedEvent
         ): void;
+
+        /** A signal the peer could not hand to the transport; a lost offer strands that peer. */
+        onSignalingFailed?(
+            peerDto: QRtcPeerDto,
+            failure: QRtcPeerConnection.SignalingFailure
+        ): void;
     }
 
     export interface InboundPeerCreationPolicyInput {
@@ -752,7 +758,12 @@ export class WebRtcConnectionService {
                 this.clearPeerEstablishmentTimeout(peer.peerId);
                 // Churn must not refund the consumed establishment attempts.
                 this.removePeerIfPresent(peer.peerId, { resetAttemptBudget: false });
-            }
+            },
+            onSignalingFailed: (failure) =>
+                this.notifyPeerLifecycle(
+                    'onSignalingFailed',
+                    (callback) => callback.onSignalingFailed?.(peer, failure)
+                )
         });
     }
 
