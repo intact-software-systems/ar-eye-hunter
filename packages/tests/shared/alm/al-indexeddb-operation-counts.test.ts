@@ -156,9 +156,10 @@ describe('outbound work owner IndexedDB scan volume', () => {
         await handler.ready();
         await engine.executeOnce();
 
-        // The row reaches the queue without this runtime's admission: only the wake announces it.
+        // The row reaches the queue without this runtime's admission: only the external-write wake
+        // announces it.
         await port.retainIfAbsent(newOutboundWorkEntry(WORK_TYPES[1], 'external-write'));
-        engine.wake();
+        engine.wakeAfterExternalWrite();
         await engine.executeOnce();
 
         await vi.waitFor(() => expect(claimed).toEqual(['external-write']));

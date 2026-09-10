@@ -12,20 +12,22 @@ afterEach(() => {
 });
 
 describe('engine', () => {
-    it('tells every wake listener that someone announced work, until it is excluded', async () => {
+    it('tells every wake listener that an external writer announced work, until it is excluded', async () => {
         const engine = new InboxOutboxEngine();
         const announced: string[] = [];
         engine.includeWakeListener('owner', () => announced.push('owner'));
 
         // A stopped engine schedules nothing, but the announcement is still true.
+        engine.wakeAfterExternalWrite();
+        // An owner waking for its own progress reschedules and announces nothing, and so does start().
         engine.wake();
         engine.start();
-        expect(announced).toEqual(['owner', 'owner']);
+        expect(announced).toEqual(['owner']);
 
         engine.excludeWakeListener('owner');
-        engine.wake();
+        engine.wakeAfterExternalWrite();
 
-        expect(announced).toEqual(['owner', 'owner']);
+        expect(announced).toEqual(['owner']);
         engine.stop();
     });
 
@@ -39,7 +41,7 @@ describe('engine', () => {
         });
         engine.includeWakeListener('last', () => announced.push('last'));
 
-        engine.wake();
+        engine.wakeAfterExternalWrite();
 
         // Every owner's remembered readiness is dropped, not just the ones ahead of the failure.
         expect(announced).toEqual(['first', 'last']);

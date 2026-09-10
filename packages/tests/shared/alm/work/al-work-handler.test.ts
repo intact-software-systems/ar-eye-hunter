@@ -685,14 +685,58 @@ describe('ALWorkHandler', () => {
         await engine.executeOnce();
 
         // Nobody's runtime wrote this: a server AppInbox transaction or a pub/sub requeue puts the
-        // row in the queue and announces it with the engine wake alone.
+        // row in the queue and announces it with the engine's external-write wake alone.
         await queue.enqueue(newWorkEntry('AL_TEST', 'externally-written'));
-        engine.wake();
+        engine.wakeAfterExternalWrite();
         await engine.executeOnce();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(claimed).toEqual(['externally-written']);
         handler.dispose();
+    });
+
+    it('leaves the other owner on one engine its remembered answer when an owner wakes for itself', async () => {
+        const nowMs = 10_000;
+        const engine = createEngine();
+        const probeCounts = { inbound: 0, outbound: 0 };
+        const handlers = (['inbound', 'outbound'] as const).map((role) =>
+            new ALWorkHandler({
+                workerId: `${role}-owner`,
+                port: fakePort({ claims: [], onRelease: () => {} }),
+                queueEngine: engine,
+                ownsQueueEngine: false,
+                clock: { nowMs: () => nowMs },
+                pageSize: 16,
+                readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+                readNextReadyAtMs: async () => {
+                    probeCounts[role] += 1;
+                    return undefined;
+                },
+                selectReady: async () => ({ claims: [], nextReadyAtMs: undefined }),
+                runClaim: async () => ({ status: 'completed' }),
+                diagnostics: undefined
+            })
+        );
+        for (const handler of handlers) {
+            await handler.ready();
+        }
+        await engine.executeOnce();
+        const afterBootstrap = { ...probeCounts };
+
+        // The inbound owner's own progress: it reschedules the engine and announces nothing.
+        engine.wake();
+        await engine.executeOnce();
+
+        // The outbound owner still answers from memory; only an external write costs it a read.
+        expect(probeCounts.outbound).toBe(afterBootstrap.outbound);
+
+        engine.wakeAfterExternalWrite();
+        await engine.executeOnce();
+
+        expect(probeCounts.outbound).toBeGreaterThan(afterBootstrap.outbound);
+        for (const handler of handlers) {
+            handler.dispose();
+        }
     });
 
     it('turns a remembered ready time into a batch without reading storage again', async () => {

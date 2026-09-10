@@ -19,7 +19,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
@@ -390,6 +390,33 @@ describe('QueueBoxPubSubBridge', () => {
         ]);
     });
 
+    it('announces a requeued row as an external write, because the requeue runs outside every runtime', async () => {
+        const bridge = createBridge();
+        // A remote process reserved the row; delivery on this one is what fails below.
+        const entry = { ...createWsOutboxEntry(), status: EntityStatus.RESERVED };
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const wakeQueueEngine = vi.fn();
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                sendToTargetsWithResult: failedLiveSendResult
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            wakeQueueEngine
+        });
+
+        await bridge.subscriber?.(
+            toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry })
+        );
+
+        // The row is back in the queue and the owner that must claim it learns of it only from here.
+        expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
+        expect(wakeQueueEngine).toHaveBeenCalledOnce();
+    });
+
     it('reports only exact durable outbox key receives through the optional wake seam', async () => {
         const bridge = createBridge();
         const entry = createWsOutboxEntry();
@@ -616,6 +643,19 @@ function sentLiveResult(message: ALMessage): WsServerLiveSendResult {
         sentCount: 1,
         failedCount: 0,
         failures: []
+    };
+}
+
+function failedLiveSendResult(message: ALMessage): WsServerLiveSendResult {
+    const recipient = { peerId: 'peer-1', connectionId: 'connection-1' };
+    return {
+        status: 'sent-live',
+        message,
+        recipients: [recipient],
+        recipientCount: 1,
+        sentCount: 0,
+        failedCount: 1,
+        failures: [recipient]
     };
 }
 

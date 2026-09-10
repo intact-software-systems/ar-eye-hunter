@@ -102,13 +102,12 @@ export class ALWorkHandler {
             runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
             ongoingTasks: []
         });
-        // Every writer that is not this owner announces its row by waking the engine -- a server
-        // AppInbox transaction, a pub/sub requeue, another tab. The wake is therefore the moment the
-        // remembered answer stopped describing storage. It reaches every owner sharing the engine,
-        // not only the one the row belongs to: the inbound owner's progress re-probes the outbound
-        // owner. That amplification is bounded by one probe per owner per engine pass, and is
-        // accepted -- a wake that skipped the owners it could not attribute the row to would let a
-        // stale memory answer for rows the writer did mean for them.
+        // Every writer this engine does not own announces its row with an external-write wake -- a
+        // server AppInbox transaction, a pub/sub requeue, another tab. That wake is the moment the
+        // remembered answer stopped describing storage, and it reaches every owner sharing the
+        // engine, because the writer cannot say which of them the row belongs to. Only those wakes
+        // do: the owners' own progress reaches `wake`, which reschedules and announces nothing, so
+        // one owner running a batch no longer costs every other owner its memory.
         dependencies.queueEngine.includeWakeListener(dependencies.workerId, () => this.forgetReadiness());
     }
 

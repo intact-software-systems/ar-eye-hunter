@@ -48,7 +48,8 @@ export function createRallarMiddlewareInfrastructure(
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
-            wsQBoxServerService
+            wsQBoxServerService,
+            wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
 
@@ -62,7 +63,7 @@ export function createRallarMiddlewareInfrastructure(
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
-        wakeQueueEngine: () => queueEngine.wake()
+        wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
 }
 

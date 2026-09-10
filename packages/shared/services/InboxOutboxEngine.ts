@@ -59,11 +59,12 @@ export class InboxOutboxEngine {
     }
 
     /**
-     * Registers a listener for every wake. A wake is the announcement that someone may have written
-     * work this engine's tasks own, so a task that answers readiness from memory drops that memory
-     * here instead of waiting out the idle ceiling. A listener runs synchronously during the wake
-     * and must not wake the engine. One that throws is reported and skipped: the wake is an
-     * announcement every other owner still needs.
+     * Registers a listener for every external-write wake. Such a wake is the announcement that a
+     * writer this engine does not own may have written work its tasks own, so a task that answers
+     * readiness from memory drops that memory here instead of waiting out the idle ceiling. The
+     * owners' own progress reaches `wake` instead and notifies nobody. A listener runs synchronously
+     * during the wake and must not wake the engine. One that throws is reported and skipped: the
+     * announcement is one every other owner still needs.
      */
     includeWakeListener(id: string, listener: () => void): InboxOutboxEngine {
         this.wakeListeners.set(id, listener);
@@ -112,8 +113,27 @@ export class InboxOutboxEngine {
         this.scheduledAtMs = undefined;
     }
 
+    /**
+     * Brings the next pass forward and tells no one. This is the owners' own progress -- a batch that
+     * ended, a commit an owner made itself, a retained claim settling, the first start -- and every
+     * such path already invalidated the memory its own write staled. Announcing it here would instead
+     * make each owner drop the answers of every other owner sharing the engine.
+     */
     wake(): void {
+        this.rescheduleNow();
+    }
+
+    /**
+     * The announcement that a writer this engine does not own put work in a queue: a server AppInbox
+     * transaction, a pub/sub requeue, another tab. Such a writer cannot say which owner the row
+     * belongs to, so every owner drops its remembered readiness and re-reads storage once.
+     */
+    wakeAfterExternalWrite(): void {
         this.notifyWake();
+        this.rescheduleNow();
+    }
+
+    private rescheduleNow(): void {
         if (!this.running) {
             return;
         }

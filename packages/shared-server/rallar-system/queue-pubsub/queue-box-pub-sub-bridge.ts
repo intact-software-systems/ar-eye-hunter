@@ -49,6 +49,11 @@ export interface InstallQueueBoxPubSubBridgeOptions {
     readonly retryPolicy?: ResourceInboxRetryPolicy;
     readonly jitterUnit?: () => number;
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
+    /**
+     * Announces a requeued row to the engine that owns the outbox. A requeue writes outside every ALM
+     * runtime, so absence leaves the row waiting out the owner's idle ceiling.
+     */
+    readonly wakeQueueEngine?: () => void;
 }
 
 interface RegisterQueueBoxOutboxPublisherInput {
@@ -68,6 +73,7 @@ interface ReceiveQueueBoxPubSubMessageDependencies {
     readonly retryPolicy: ResourceInboxRetryPolicy;
     readonly jitterUnit: () => number;
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
+    readonly wakeQueueEngine?: () => void;
 }
 
 interface SendRemoteQueueBoxOutboxEntryDependencies {
@@ -76,6 +82,7 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
     readonly timing?: RallarTimingSink;
     readonly retryPolicy: ResourceInboxRetryPolicy;
     readonly jitterUnit: () => number;
+    readonly wakeQueueEngine?: () => void;
 }
 
 interface ResolveResourceEntryFromPubSubMessageDependencies {
@@ -124,7 +131,8 @@ export function installQueueBoxPubSubBridge(
                     timing,
                     retryPolicy,
                     jitterUnit,
-                    onValidatedOutboxKeyReceived: options.onValidatedOutboxKeyReceived
+                    onValidatedOutboxKeyReceived: options.onValidatedOutboxKeyReceived,
+                    wakeQueueEngine: options.wakeQueueEngine
                 });
             });
         }
@@ -217,7 +225,8 @@ async function receiveQueueBoxPubSubMessage(
         publisherId: options.publisherId,
         timing: options.timing,
         retryPolicy: options.retryPolicy,
-        jitterUnit: options.jitterUnit
+        jitterUnit: options.jitterUnit,
+        wakeQueueEngine: options.wakeQueueEngine
     });
 }
 
@@ -277,6 +286,9 @@ async function sendRemoteQueueBoxOutboxEntry(
             reservationAttempt: entry.dequeueAudit.attempts
         }
     });
+    if (requeued !== undefined) {
+        options.wakeQueueEngine?.();
+    }
 }
 
 export interface ToPubSubMessageInput {
