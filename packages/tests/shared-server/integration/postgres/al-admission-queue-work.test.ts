@@ -681,9 +681,11 @@ interface RemainingStorageRow {
 }
 
 async function cleanupStorage({ sql, namespace, ownedKeys }: CleanupStorageInput): Promise<void> {
-    // The work context is normalized independently of the raw metadata namespace.
-    // Delete by the complete fixture context, including terminal or malformed work.
-    const workContext = toALOutboundWorkKey(namespace, 'cleanup-context').contextId;
+    // Every AL outbound work row this namespace owns shares one topic and resource id and differs
+    // only by the effect id it carries in its context, so the namespace sweep is keyed on that
+    // pair. It names an effect id only because the key builder takes one; the sweep ignores it,
+    // which is what lets it reach terminal or malformed work no test kept a key for.
+    const work = toALOutboundWorkKey(namespace, 'any-effect-id');
     for (const key of ownedKeys) {
         await sql`
             delete from resource_inbox
@@ -699,12 +701,14 @@ async function cleanupStorage({ sql, namespace, ownedKeys }: CleanupStorageInput
     }
     await sql`
         delete from resource_inbox
-        where fk_ext_bank_id = ${namespace} or fk_ext_bank_id = ${workContext}
+        where fk_ext_bank_id = ${namespace}
+            or (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
     `;
     await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
     const remainingWork = await sql<RemainingStorageRow[]>`
         select ri_resource_id as identity from resource_inbox
-        where fk_ext_bank_id = ${namespace} or fk_ext_bank_id = ${workContext}
+        where fk_ext_bank_id = ${namespace}
+            or (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
     `;
     const remainingMetadata = await sql<RemainingStorageRow[]>`
         select store_key as identity from runtime_state_store where store_namespace = ${namespace}
