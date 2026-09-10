@@ -46,10 +46,27 @@ const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     preparedMessages: [{ text: msg.id.msgId }]
 });
 
-/** Every transaction the run opened, in order, so a pin can separate the read chain from the write. */
-function recordIndexedDbTransactions(): { modes(): readonly IDBTransactionMode[]; } {
+interface RecordedIndexedDbTransactions {
+    /** Every transaction the run opened, in order, so a pin can separate the read chain from the write. */
+    modes(): readonly IDBTransactionMode[];
+    /** How many earlier transactions still held their store locks as each one was created. */
+    liveWhenOpened(): readonly number[];
+    /** How many transactions still hold their store locks now. */
+    liveCount(): number;
+}
+
+function recordIndexedDbTransactions(): RecordedIndexedDbTransactions {
     const modes: IDBTransactionMode[] = [];
+    const liveWhenOpened: number[] = [];
+    const live = new Set<IDBTransaction>();
     const openTransaction = IDBDatabase.prototype.transaction;
+    const abortTransaction = IDBTransaction.prototype.abort;
+    // abort() finishes the transaction there and then; its event arrives a task later, which is
+    // already too late to say whether the write that followed queued behind it.
+    vi.spyOn(IDBTransaction.prototype, 'abort').mockImplementation(function (this: IDBTransaction) {
+        live.delete(this);
+        abortTransaction.call(this);
+    });
     vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
         this: IDBDatabase,
         storeNames: string | Iterable<string>,
@@ -57,9 +74,19 @@ function recordIndexedDbTransactions(): { modes(): readonly IDBTransactionMode[]
         options?: IDBTransactionOptions
     ) {
         modes.push(mode ?? 'readonly');
-        return openTransaction.call(this, storeNames, mode, options);
+        liveWhenOpened.push(live.size);
+        const transaction = openTransaction.call(this, storeNames, mode, options);
+        live.add(transaction);
+        for (const ended of ['complete', 'abort', 'error']) {
+            transaction.addEventListener(ended, () => live.delete(transaction));
+        }
+        return transaction;
     });
-    return { modes: () => modes };
+    return {
+        modes: () => modes,
+        liveWhenOpened: () => liveWhenOpened,
+        liveCount: () => live.size
+    };
 }
 
 /**
@@ -176,6 +203,23 @@ it('commits one bundle with one read snapshot, one fence snapshot and one write'
     expect(await store.commitBundle(bundle)).toBe('committed');
 
     expect(recorded.modes()).toEqual(COMMITTING_ADMISSION_TRANSACTIONS);
+    // Each one starts on an unlocked store: the write phase's fence snapshot is closed before the
+    // conditional write is created, so the readwrite never queues behind an idle readonly.
+    expect(recorded.liveWhenOpened()).toEqual([0, 0, 0]);
+});
+
+it('closes the fence snapshot of a commit that conflicts inside its own write phase', async () => {
+    const { store } = await createAdmissionFixture('commit-conflict');
+    const message = createOutboundMessage('commit-conflict');
+    const winner = await computeOutboundTestAdmission(store, message, SEND_PLANNER);
+    const stale = await computeOutboundTestAdmission(store, message, SEND_PLANNER);
+    expect(await store.commitBundle(winner)).toBe('committed');
+
+    const recorded = recordIndexedDbTransactions();
+    // The fence rejects this one inside the write callback, which is the normal conflict path.
+    expect(await store.commitBundle(stale)).toBe('conflict');
+
+    expect(recorded.liveCount()).toBe(0);
 });
 
 it('reads a repair decision surface from one readonly transaction', async () => {

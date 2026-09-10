@@ -184,40 +184,57 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     ): Promise<T> {
         this.#observer.observe({ owner: 'al-admission', kind: 'write' });
         const db = await this.#connection.open();
-        // The revision opens the snapshot every fence the callback re-reads then joins, so the
-        // whole write phase observes one store state before it computes its conditional commit.
-        const session = this.#createReadSession(db);
-        const expectedRevision = await session.readRevision();
-        const buffer = new IndexedDbAdmissionWriteBuffer({
-            session,
-            nowMs: this.#nowMs,
-            newWriteToken: this.#newWriteToken
-        });
-        const result = await fn(buffer);
-        session.close();
+        const fenced = await this.#readFencedWrite(db, fn);
         const deadline = executionExpiresAtMs === null
             ? undefined
             : { expiresAtMs: executionExpiresAtMs, nowMs: this.#nowMs };
-        const committed = buffer.usedMetadata
+        const committed = fenced.buffer.usedMetadata
             ? await writeIndexedDbAdmissionMutations({
                 deadline,
-                queueMutations: buffer.queueMutations(),
+                queueMutations: fenced.buffer.queueMutations(),
                 db,
                 storeName: this.#storeName,
-                expectedRevision,
-                mutations: buffer.mutations(),
-                revisionWrite: computeIndexedDbAdmissionRevisionWrite(expectedRevision)
+                expectedRevision: fenced.expectedRevision,
+                mutations: fenced.buffer.mutations(),
+                revisionWrite: computeIndexedDbAdmissionRevisionWrite(fenced.expectedRevision)
             })
             : await writeComputedIndexedDbQueueMutations({
                 db,
                 storeName: AL_ADMISSION_WORK_STORE_NAME,
-                mutations: buffer.queueMutations(),
+                mutations: fenced.buffer.queueMutations(),
                 deadline
             });
         if (!committed) {
             throw new ALAdmissionBackendConflictError('IndexedDB AL admission write conflicted');
         }
-        return result;
+        return fenced.result;
+    }
+
+    /**
+     * The revision opens the snapshot every fence the callback re-reads then joins, so the whole
+     * write phase observes one store state before it computes its conditional commit. The snapshot
+     * is closed before the caller creates its readwrite -- a readwrite queues behind an idle
+     * two-store readonly -- and a callback that throws its own conflict is the normal path, so the
+     * close belongs in a finally. The revision compare inside the readwrite is what keeps a commit
+     * that lands in between from being missed.
+     */
+    async #readFencedWrite<T>(
+        db: IDBDatabase,
+        fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>
+    ): Promise<IndexedDbAdmissionFencedWrite<T>> {
+        const session = this.#createReadSession(db);
+        try {
+            const expectedRevision = await session.readRevision();
+            const buffer = new IndexedDbAdmissionWriteBuffer({
+                session,
+                nowMs: this.#nowMs,
+                newWriteToken: this.#newWriteToken
+            });
+            return { expectedRevision, buffer, result: await fn(buffer) };
+        }
+        finally {
+            session.close();
+        }
     }
 
     #createReadSession(db: IDBDatabase): IndexedDbAdmissionReadSession {
@@ -228,6 +245,13 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
             observer: this.#observer
         });
     }
+}
+
+/** What one write phase's fence snapshot produced, ready for the conditional write that follows it. */
+interface IndexedDbAdmissionFencedWrite<T> {
+    readonly expectedRevision: number;
+    readonly buffer: IndexedDbAdmissionWriteBuffer;
+    readonly result: T;
 }
 
 namespace IndexedDbAdmissionWriteBuffer {
