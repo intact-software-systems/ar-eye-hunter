@@ -70,11 +70,9 @@ export function resolveRtcRoomTransportState(
         return 'idle';
     }
 
-    const minimumReady = input.minReadyPeers <= 0 ||
-        input.readyPeerCount >= input.minReadyPeers;
     if (
-        minimumReady &&
-        (input.desiredPeerCount === 0 || input.readyPeerCount === input.desiredPeerCount)
+        input.readyPeerCount === input.desiredPeerCount &&
+        input.readyPeerCount >= input.minReadyPeers
     ) {
         return 'open';
     }
