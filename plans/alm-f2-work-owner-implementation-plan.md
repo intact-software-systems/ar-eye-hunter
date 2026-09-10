@@ -1491,7 +1491,7 @@ git commit -m "feat(alm): schema identity with delete-on-mismatch reset for the 
 - Modify: every touched ALM file for banned verbs, `room` in the shared `Source` contract (rename `roomRecipientPeerIds` → `groupRecipientPeerIds` with its producer in `rallar-server-ws-router.ts`), optional persisted fields `outboxKey?`/`supersedenceKey?` in `al-runtime-state-stores.ts:86-91` (make them `| null` required), and `toAdmissionAcceptance`'s string-prefix match in `al-inbound-message-admission.ts:163` (the plan returns a typed `dropReasonCode: 'duplicate' | ...`; add the code to `ALMessageHandlingPlan` in `al-policy.ts` beside `dropReason`)
 - Create: `packages/tests/shared/alm/al-storage-snapshot.test.ts`
 
-- [ ] **Step 1: Delete the dispositions and measure**
+- [x] **Step 1: Delete the dispositions and measure**
 
 Delete the entries, then run:
 `node scripts/repo-style-check.mjs --cognitive-metrics --root packages/shared/alm | grep -c "file.cognitive-load"`
@@ -1507,13 +1507,13 @@ inbound files along theirs (the admission compute's dedup/ordering halves; the b
 effect/mutation halves). `validateALInboundControlAdmission` returns every issue (global
 constraint), not the first.
 
-- [ ] **Step 2: Run the changed gate**
+- [x] **Step 2: Run the changed gate**
 
 Run: `npm run check:repo-style:changed -- origin/main HEAD`
 Expected: `PASS: no new repository style findings`. A finding here is fixed in code, never by a new
 disposition.
 
-- [ ] **Step 3: Update the navigation maps**
+- [x] **Step 3: Update the navigation maps**
 
 Rewrite the "Construction and registration", "Admission and invocation paths", and "Selection,
 failure, and cleanup" sections of both READMEs to name `ALWorkQueuePort`, `ALWorkHandler`, the
@@ -1522,7 +1522,7 @@ the reset. Remove the sentences that no longer hold ("wakes the existing worker 
 becomes true and stays; "inbound effects can still contain envelope copies" is deleted; "the scan
 currently visits the AL work range before filtering by session" is deleted).
 
-- [ ] **Step 4: Write the storage snapshot test**
+- [x] **Step 4: Write the storage snapshot test**
 
 Create `packages/tests/shared/alm/al-storage-snapshot.test.ts`: with `fake-indexeddb/auto`, run the
 standard workload (eight superseding updates to three recipients at 128 B, 4 KiB, and 64 KiB) through
@@ -1531,7 +1531,7 @@ standard workload (eight superseding updates to three recipients at 128 B, 4 KiB
 (commit from `git rev-parse HEAD` via `node:child_process`) and assert the file has the four keys. The
 PR body cites its numbers next to #521's 47,465-byte readback figure.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/repo-style-check packages/shared packages/shared-server packages/tests
