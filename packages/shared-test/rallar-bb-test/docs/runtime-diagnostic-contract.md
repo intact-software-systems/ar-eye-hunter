@@ -138,6 +138,12 @@ every session the page opens. The event's `data` is the event itself:
   `commitDurationMs` and `commitOutcome` for the write transaction —
   `committed`, `conflict`, `expired`, or `not-attempted` when the admission
   settled before opening one
+- `readOperationCount` counts read **operations**, not transactions: several
+  keys read from one storage transaction are several operations. It is also an
+  upper bound rather than an exact per-call count, because the commit samples a
+  store-level counter before and after its own chain and reports the window
+  delta — a concurrent commit on the same store (another sender, or the same
+  sender's drain) lands in that window and is counted too
 
 This is the evidence a `deadline-expiry` conformance run uses to attribute a
 slow admission (the serialized IndexedDB chain a typed send commits through)
