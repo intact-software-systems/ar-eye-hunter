@@ -10,6 +10,7 @@ import type {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
+import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 interface BrowserRtcPeerStatusInput {
     readonly peerId: string;
@@ -150,12 +151,13 @@ function toRtcConnectionStatus(
         iceCandidateQueueSize: status?.iceCandidateQueue.length ?? 0,
         localStreamId: status?.localStream?.id,
         remoteStreamIds: Array.from(status?.remoteStreams.keys() ?? []),
-        signaling: toRtcSignalingCounts(peer)
+        signaling: toRtcSignalingCounts(peer?.connection.readDiagnostics())
     };
 }
 
-function toRtcSignalingCounts(peer: QRtcPeerDto | undefined): RallarRtcPeerSignalingCounts {
-    const diagnostics = peer?.connection.readDiagnostics();
+function toRtcSignalingCounts(
+    diagnostics: QRtcPeerConnection.Diagnostics | undefined
+): RallarRtcPeerSignalingCounts {
     return {
         outboundOfferCount: diagnostics?.outboundOfferCount ?? 0,
         outboundAnswerCount: diagnostics?.outboundAnswerCount ?? 0,
