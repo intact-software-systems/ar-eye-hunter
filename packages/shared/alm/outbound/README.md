@@ -59,8 +59,11 @@ every admission key string;
 [`ALOutboundAdmissionEffectStore`](./admission/al-outbound-admission-effect-store.ts)
 owns durable effect rows; and
 [`al-outbound-admission-validation.ts`](./admission/al-outbound-admission-validation.ts)
-decodes the persisted snapshots. A moved supersedence observation is a typed
-`'conflict'` result, not an exception.
+decodes the persisted snapshots. Every fence — the sender version, the pending-admission
+row, an observed effect row, and a moved supersedence observation — resolves a conflict
+the same way: the guard throws `ALAdmissionBackendConflictError` inside the transaction so
+the backend aborts without a write or a revision bump, and the store catches it at its
+public boundary and returns the typed `'conflict'` result.
 
 ## Canonical message storage
 

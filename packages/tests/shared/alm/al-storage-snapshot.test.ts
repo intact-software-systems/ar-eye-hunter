@@ -25,6 +25,23 @@ const WORKLOAD = {
     payloadBytes: [128, 4 * 1024, 64 * 1024]
 } as const;
 
+/**
+ * The resident serialized bytes both object stores hold once the whole workload has run. This is not
+ * comparable to the 47,465-byte figure in #521, which measured one readback. Supersedence retains
+ * all eight updates per recipient per size until their deadline, so the store keeps 216 rows (72
+ * messages x 3) and every payload, not the three latest. The band is the run-to-run spread of
+ * identity and timestamp digits: the readback serializes each row without whitespace, so nothing
+ * else moves.
+ */
+const EXPECTED_BYTES_BY_TOPIC = {
+    AL_OUTBOUND: 1_813_460,
+    AL_OUTBOUND_MESSAGE: 1_743_590,
+    AL_ADMISSION: 101_570,
+    AL_OUTBOUND_IDENTITY: 69_760
+} as const;
+const EXPECTED_TOTAL_BYTES = 3_728_380;
+const BYTES_TOLERANCE = 0.02;
+
 const SNAPSHOT_PATH = 'tmp/perf/alm-storage-snapshot.json';
 const DB_NAME = 'rallar-alm-storage-snapshot';
 const ADMISSION_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
@@ -100,8 +117,21 @@ describe('ALM browser storage snapshot', () => {
             'AL_OUTBOUND_IDENTITY',
             'AL_OUTBOUND_MESSAGE'
         ]);
+        for (const [topicId, expected] of Object.entries(EXPECTED_BYTES_BY_TOPIC)) {
+            expectBytesWithinBand(snapshot.bytesByTopic[topicId], expected);
+        }
+        expectBytesWithinBand(
+            Object.values(snapshot.bytesByTopic).reduce((total, bytes) => total + bytes, 0),
+            EXPECTED_TOTAL_BYTES
+        );
     }, 120_000);
 });
+
+/** A footprint regression has to move these figures deliberately, not drift into them. */
+function expectBytesWithinBand(actual: number | undefined, expected: number): void {
+    expect(actual ?? 0).toBeGreaterThanOrEqual(Math.floor(expected * (1 - BYTES_TOLERANCE)));
+    expect(actual ?? 0).toBeLessThanOrEqual(Math.ceil(expected * (1 + BYTES_TOLERANCE)));
+}
 
 function toSupersedenceKey(msg: ALMessage): string {
     return `${msg.route.resourceId}:${msg.targets?.mode === 'unicast' ? msg.targets.toPeerId : 'all'}`;

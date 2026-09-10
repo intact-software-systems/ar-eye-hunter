@@ -484,7 +484,7 @@ export class WebRtcOverlayMulticastManager {
 
     private planDequeuedMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const admissionPlan = this.planIncomingMessage(msg);
-        if (admissionPlan.dropReason === 'not-yet-in-sync') {
+        if (admissionPlan.dropReasonCode === 'not-yet-in-sync') {
             throw new NotReadyException(50, 'Awaiting RTC room authority before dequeuing the transport copy');
         }
         return this.planOutgoingMessage(msg);

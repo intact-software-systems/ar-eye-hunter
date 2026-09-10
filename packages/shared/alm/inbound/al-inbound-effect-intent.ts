@@ -204,7 +204,7 @@ export function shouldDeferALInboundLocalDelivery(
 }
 
 export function shouldRetryALInboundDelivery(plan: ALMessageHandlingPlan): boolean {
-    return plan.dropReason === 'not-yet-in-sync' ||
+    return plan.dropReasonCode === 'not-yet-in-sync' ||
         (Boolean(plan.dropReason) && plan.nack.reason === 'overloaded') ||
         (!plan.dropReason && shouldDeferALInboundLocalDelivery(plan));
 }

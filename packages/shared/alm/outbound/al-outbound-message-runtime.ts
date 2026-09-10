@@ -10,12 +10,10 @@ import { ALWorkHandler, type ALWorkAttemptResult, type ALWorkReadySelection } fr
 import {
     createALWorkQueuePort,
     type ALWorkClaim,
-    type ALWorkOutcome,
     type ALWorkQueuePort
 } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
-    ALOutboundDurableEffect,
     ALOutboundEffectSnapshot,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';

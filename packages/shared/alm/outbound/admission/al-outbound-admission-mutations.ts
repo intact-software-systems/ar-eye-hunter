@@ -128,11 +128,6 @@ export class ALOutboundAdmissionMutations {
         return mutations.map((mutation) => this.computeStateWrite(mutation, nowMs));
     }
 
-    /**
-     * Throws so the backend aborts the transaction rather than committing an empty one, which would
-     * still bump the admission revision and invalidate every other in-flight optimistic write. The
-     * store's own catch turns this into the typed `'conflict'` result its callers read.
-     */
     async assertCurrentObservations(
         transaction: ALAdmissionWorkWriteContext,
         writes: readonly ALOutboundStateWrite[]
@@ -206,33 +201,12 @@ export class ALOutboundAdmissionMutations {
                     supersedenceGuard: undefined
                 };
             case 'set-msg-owner':
-                return {
-                    key: toALOutboundMessageOwnerKey(this.namespace, mutation.msgId),
-                    value: mutation.senderId,
-                    expireAtTimestamp: Math.max(
-                        mutation.expireAtTimestamp ?? 0,
-                        nowMs + this.retention.msgOwnerTtlMs,
-                        nowMs + this.retention.controlHistoryTtlMs
-                    ),
-                    supersedenceGuard: undefined
-                };
+                return this.computeMessageOwnerWrite(mutation, nowMs);
             case 'set-sent-message':
                 return this.computeSentMessageWrite(mutation, nowMs);
             case 'set-repair-attempt':
-                return {
-                    key: toALOutboundRepairAttemptKey(this.namespace, mutation.snapshot.msgId),
-                    value: mutation.snapshot,
-                    expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.repairAttemptTtlMs,
-                    supersedenceGuard: undefined
-                };
             case 'set-pending-ack':
-                return {
-                    key: toALOutboundPendingAckKey(this.namespace, mutation.snapshot.msgId),
-                    value: mutation.snapshot,
-                    expireAtTimestamp: mutation.expireAtTimestamp ??
-                        toALOutboundPendingAckExpireAtTimestamp(mutation.snapshot),
-                    supersedenceGuard: undefined
-                };
+                return this.computeReceiptWrite(mutation, nowMs);
             case 'delete-sent-message':
             case 'delete-pending-ack':
             case 'delete-repair-attempt':
@@ -246,6 +220,43 @@ export class ALOutboundAdmissionMutations {
             case 'set-supersedence-replacement':
                 return this.computeSupersedenceWrite(mutation);
         }
+    }
+
+    /** The owner row answers control that arrives after the message itself is gone, so it outlives both. */
+    private computeMessageOwnerWrite(
+        mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-msg-owner'; }>,
+        nowMs: number
+    ): ALOutboundStateWrite {
+        return {
+            key: toALOutboundMessageOwnerKey(this.namespace, mutation.msgId),
+            value: mutation.senderId,
+            expireAtTimestamp: Math.max(
+                mutation.expireAtTimestamp ?? 0,
+                nowMs + this.retention.msgOwnerTtlMs,
+                nowMs + this.retention.controlHistoryTtlMs
+            ),
+            supersedenceGuard: undefined
+        };
+    }
+
+    private computeReceiptWrite(
+        mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-repair-attempt' | 'set-pending-ack'; }>,
+        nowMs: number
+    ): ALOutboundStateWrite {
+        return mutation.kind === 'set-repair-attempt'
+            ? {
+                key: toALOutboundRepairAttemptKey(this.namespace, mutation.snapshot.msgId),
+                value: mutation.snapshot,
+                expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.repairAttemptTtlMs,
+                supersedenceGuard: undefined
+            }
+            : {
+                key: toALOutboundPendingAckKey(this.namespace, mutation.snapshot.msgId),
+                value: mutation.snapshot,
+                expireAtTimestamp: mutation.expireAtTimestamp ??
+                    toALOutboundPendingAckExpireAtTimestamp(mutation.snapshot),
+                supersedenceGuard: undefined
+            };
     }
 
     private toDeletedMutationKey(

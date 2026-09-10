@@ -39,12 +39,10 @@ export namespace ALOutboundRepairRetransmission {
 
 /** Turns a repair hint into a new dispatch admission; the retry schedule that emitted the hint is elsewhere. */
 export class ALOutboundRepairRetransmission<TPrepared> {
-    private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private readonly dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
-        this.admissionStore = dependencies.admissionStore;
     }
 
     async retransmitFromRepairHint(
@@ -56,7 +54,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             let retransmitted = false;
 
             for (const seq of request.missingSeqs) {
-                const cached = await this.admissionStore.readSentMessageByOrdering(request.orderingTrackKey, seq);
+                const cached = await this.dependencies.admissionStore.readSentMessageByOrdering(
+                    request.orderingTrackKey,
+                    seq
+                );
                 if (!cached) {
                     continue;
                 }
@@ -77,7 +78,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         msgId: string,
         options: ALOutboundRetransmitOptions
     ): Promise<void> {
-        const sent = await this.admissionStore.readSentMessage(msgId);
+        const sent = await this.dependencies.admissionStore.readSentMessage(msgId);
         if (!sent) {
             console.warn(`No cached outbound message found for retransmit ${msgId}`);
             return;
@@ -99,7 +100,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         request: ALOutboundRepairHint,
         attemptIdentity: string
     ): Promise<void> {
-        const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
+        const read = await this.dependencies.admissionStore.readRepairMessage(
+            msgId,
+            this.dependencies.planOutgoingMessage
+        );
         const msg = read.sentSnapshot?.msg;
         const plan = read.plan;
         if (!msg || !plan || plan.dropReason) {

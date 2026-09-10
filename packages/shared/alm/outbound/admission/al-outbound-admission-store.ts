@@ -385,11 +385,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         if (issues.length > 0) {
             throw new TypeError(issues.map((issue) => issue.message).join('; '));
         }
-        const writeAtMs = this.nowMs();
-        if (
-            (bundle.canonicalEntry && bundle.canonicalEntry.audit.expiryTs.epochMilliseconds <= writeAtMs) ||
-            effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= writeAtMs)
-        ) {
+        if (this.hasExpiredWork(bundle.canonicalEntry, effects)) {
             return 'expired';
         }
         return await this.writeCommit({
@@ -431,20 +427,18 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const versionKey = toALOutboundVersionKey(this.namespace, bundle.senderId);
         try {
             return await this.backend.write(async (tx) => {
-                if (!await this.hasCurrentCommitFence(tx, bundle, effects)) {
-                    return 'conflict';
-                }
-                await this.mutations.assertCurrentObservations(tx, mutations);
-                await this.mutations.assertMessageIdentities(tx, bundle.mutations);
-                const eligibilityAtMs = this.nowMs();
-                if (
-                    (bundle.canonicalEntry &&
-                        bundle.canonicalEntry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs) ||
-                    effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs)
-                ) {
+                // A deadline the reads above already crossed answers before any fence: the message is
+                // dead, so its caller must stop rather than recompute the bundle a conflict invites.
+                if (this.hasExpiredWork(bundle.canonicalEntry, effects)) {
                     return 'expired';
                 }
-                if (await writeALOutboundCanonicalFacts(tx, canonicalWrites, this.nowMs) === 'expired') {
+                await this.assertCurrentCommitFence(tx, bundle, effects);
+                await this.mutations.assertCurrentObservations(tx, mutations);
+                await this.mutations.assertMessageIdentities(tx, bundle.mutations);
+                if (
+                    this.hasExpiredWork(bundle.canonicalEntry, effects) ||
+                    await writeALOutboundCanonicalFacts(tx, canonicalWrites, this.nowMs) === 'expired'
+                ) {
                     return 'expired';
                 }
                 this.effectStore.writeEffects(tx, effects);
@@ -464,23 +458,36 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
     }
 
+    private hasExpiredWork(
+        canonicalEntry: ResourceEntry | undefined,
+        effects: readonly ALOutboundEffectCandidate<TPrepared>[]
+    ): boolean {
+        const eligibilityAtMs = this.nowMs();
+        return (canonicalEntry !== undefined &&
+            canonicalEntry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs) ||
+            effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs);
+    }
+
     /** The sender fence, the pending-admission row and every observed effect row, re-read inside the write. */
-    private async hasCurrentCommitFence(
+    private async assertCurrentCommitFence(
         tx: ALAdmissionWorkWriteContext,
         bundle: ALOutboundCommitBundle<TPrepared>,
         effects: readonly ALOutboundEffectCandidate<TPrepared>[]
-    ): Promise<boolean> {
+    ): Promise<void> {
         const current = await this.reads.readClientRecordWithin(tx, bundle.senderId);
         if (current?.version !== bundle.expectedVersion) {
-            return false;
+            throw new ALAdmissionBackendConflictError('Outbound sender version changed');
         }
         if (bundle.pendingAdmission) {
             const pending = await tx.readWork(bundle.pendingAdmission.key);
             if (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission)) {
-                return false;
+                throw new ALAdmissionBackendConflictError('Outbound pending admission changed');
             }
         }
-        return (await this.effectStore.validateObservedWork(tx, effects)).length === 0;
+        const issues = await this.effectStore.validateObservedWork(tx, effects);
+        if (issues.length > 0) {
+            throw new ALAdmissionBackendConflictError(issues.map((issue) => issue.message).join('; '));
+        }
     }
 
     async retainPendingAdmission(
