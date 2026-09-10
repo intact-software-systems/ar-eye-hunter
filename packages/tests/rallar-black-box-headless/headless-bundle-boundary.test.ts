@@ -61,6 +61,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // Measured 254.40 KiB brotli after adding the ALM storage schema identity and
         // delete-on-mismatch reset, including its black-box diagnostic relay (F2 Task 10); the
         // limit was raised to 255.
+        // Main measured 252.37 KiB brotli for the RTC authority recovery and live
+        // durable-admission observation (#554) against a 253 limit; merging both lines
+        // measured MERGE_MEASUREMENT_PLACEHOLDER KiB, so the larger limit governs.
         expect(result.brotliKiB).toBeLessThan(255);
     });
 });

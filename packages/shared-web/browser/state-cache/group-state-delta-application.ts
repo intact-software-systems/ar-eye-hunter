@@ -140,7 +140,11 @@ async function adoptMaterializedGroupSnapshot(
     rereadGroupSnapshots?: RereadGroupSnapshots
 ): Promise<'adopted' | 'revision-conflict'> {
     try {
-        await acceptGroupStateSnapshotsOrRecompute([snapshot], scope, rereadGroupSnapshots);
+        await acceptGroupStateSnapshotsOrRecompute(
+            [snapshot],
+            scope,
+            { rereadGroupSnapshots }
+        );
         return 'adopted';
     }
     catch (error) {

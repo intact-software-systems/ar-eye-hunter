@@ -61,7 +61,7 @@ async function refreshGroupStateAtDeltaFloor(
         await acceptAuthoritativeGroupStateSnapshot(
             pulled.snapshot,
             input.scope,
-            input.rereadGroupSnapshots
+            { rereadGroupSnapshots: input.rereadGroupSnapshots }
         );
     }
     catch {
@@ -80,7 +80,7 @@ async function rereadGroupSnapshotsAfterFailedPointRead(
         await acceptGroupStateSnapshotsOrRecompute(
             snapshots,
             input.scope,
-            input.rereadGroupSnapshots
+            { rereadGroupSnapshots: input.rereadGroupSnapshots }
         );
     }
     catch {

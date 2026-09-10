@@ -8,7 +8,8 @@
 > `rallar-testing`, and `publishing-plan-progress` workflows.
 
 **Goal:** Produce reproducible, correctness-gated RTC evidence for the accepted
-`RTC-B01` through `RTC-B06` workloads without changing production RTC behavior.
+`RTC-B01` through `RTC-B06` workloads, separating measurement from any
+independently reviewed RTC correctness corrections that failed evidence exposes.
 Browser and live-RTC observations are an append-only stream over the `main`
 snapshot selected by each run; they do not wait for a permanently stable head.
 
@@ -61,7 +62,7 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-08
+**Updated:** 2026-09-10
 
 **Status:** Tasks 4A/4B, B04, native-browser B05 capture, the continuous B05
 observation stream, and B06 E3-memory observation tooling are merged. Five
@@ -154,28 +155,106 @@ receiver recorded zero application messages. Heartbeat traffic shares those
 lanes, so aggregate raw receive counters cannot prove that the application
 frame reached the receiver. The retained result summary also omitted the
 sender's AL admission status, leaving native-send versus admitted-work delay
-unresolved. PR #530 therefore adds a payload-free send-result summary with the
+unresolved. PR #530 therefore added a payload-free send-result summary with the
 outer runtime status, actual admission status and reason, message identity,
-and entry statuses before its next diagnostic. Because this changes the
-candidate head, its same-head diagnostic proof count remains zero. There is
+and entry statuses. Runs 34241815984, 34242537392, and 34243137827 all passed
+on exact head `dcabd512e33d1729eaf4d8aab675f3015867a182`; PR #530 then merged as
+`9f900256bc13e88d2fb083e907e2bb9cfcbec6a7`. Publish run 34361576057 observed
+later moving-main commit `0ef98dd2025e6b6f5b41f9c8e1375ddc73e66e5f` and passed source,
+tooling, archive verification, and publication. Its third retained default
+attempt timed out waiting for the probe's received `not-yet-in-sync` NACK, so
+the primary correctly has `acceptedMetrics: false` and no repeat. Observation
+PR #553 contains that verified failed ZIP and index row. Three exact-main local
+reproductions passed, so the current evidence does not justify changing RTC
+behavior or extending the timeout. It instead exposes a publication-tooling
+gap: the failed attempt retains only the producer exit status, not the bounded
+wire/send/endpoint facts needed to diagnose an intermittent NACK miss. There is
 not yet a valid B06 E3 result. B07 remains held, and evidence ranking cannot
 start until a valid B06 primary and any required repeat are archived.
 
+PR #554 is the single correction-and-proof PR for the failures exposed while
+closing that tooling gap. It keeps the NACK diagnostics, makes transient
+signaling layout mismatches return through the existing QueueBox retry path,
+pulls the authoritative room snapshot when an RTC application message is
+blocked on a newer causal floor, and makes the black-box delivery handle poll
+the existing durable AL admission record instead of freezing its initial
+`pending-admission` result. It adds no lock, library, compatibility path,
+Playwright retry, or command-timeout increase. The current candidate passes more
+than 190 focused tests and repository type checking. Its recovery behavior passed five
+retry-free delivery-only browser repetitions and three retry-free repetitions
+of the complete RTC smoke family; after the ownership-only standards closure,
+the exact candidate passed the complete RTC smoke family again without retries.
+The added recovery and live observation behavior measured 252.37 KiB Brotli in
+the headless browser bundle; the maintainer approved its smallest containing
+strict whole-KiB ceiling, `<253 KiB`, without changing any operator dependency
+exclusions.
+Whole-branch review then found two release blockers in the first candidate:
+the authoritative room refresh could outlive its browser transport, and the
+black-box admission observer lost its fact when the admitted message payload
+expired. Both corrections stay in PR #554. The room refresh is now owned and
+disposed by the RTC receive runtime and aborts its point read and fallback work.
+Follow-up review reproduced a write after abort inside the asynchronous cache
+adoption owner, so the lifecycle assertion now runs at every actual group-cache
+mutation boundary. Its conflict fallback performs a validated, read-only group
+fetch before that guarded reconciliation; it no longer reconciles global client
+or group caches while the caller is still checking session ownership. Delivery
+observation now asks the existing sent-message admission fact, whose configured
+retention outlives payload expiry, instead of reconstructing admission from the
+expired canonical payload, and rejects facts owned by a different canonical
+scope. Focused lifecycle, mutation-boundary, and real-store clock regressions
+pass, as does the retry-free RTC ALM conformance lane that previously exposed
+the deadline-expiry miss. Exact-head Branch Release Gate run 34412280953 then
+exposed a conformance-fixture contradiction rather than a product regression:
+the deadline scenario allowed `messages.send` five seconds to finish but expired
+its message after one second, so the hosted RTC send that completed after 2.475
+seconds correctly returned `expired` before the recipe could observe admission.
+The fixture now keeps that expiring message live for the existing five-second
+send contract while retaining the bounded 14-second receiver absence window.
+It rejects recipe deadlines below 14.5 seconds, the minimum that contains two
+three-second pre-send fault budgets, the five-second message lifetime, a 2.5-second
+post-expiry observation, and the one-second response margin. The exact CI-shaped
+local ALM run then passed WS, RTC, and RTC-with-WS-fallback. Subsequent exact-head
+run 34415215630 showed that the deadline fix held, but a separate non-expiring
+delivery-baseline send crossed the harness's five-second command cutoff on WS
+(5.281 seconds) and RTC-with-WS-fallback (5.359 seconds); RTC succeeded at 4.854
+seconds. The fixture therefore keeps an expiring send's command timeout bounded
+by its five-second TTL while allowing non-expiring conformance sends ten seconds.
+Cancellation and receipt reads retain their five-second command budget. The
+fixture then passed the exact CI-shaped WS, RTC, and RTC-with-WS-fallback lane
+locally without retries. Exact-head run 34417380695 removed the send cutoff and
+exposed two later harness faults: positive receive windows did not include the
+new non-expiring send budget, and reused RTC connections could satisfy peer
+readiness before refreshing current room/overlay authority. The readiness loop
+now refreshes room authority before accepting peer health, requires at least one
+successful refresh before treating cached peer health as ready, and observes an
+already-started refresh promise even when cancellation arrived first. This
+matches the existing live-RTC readiness pattern without allowing a retryable
+refresh failure or pre-aborted call to bypass its lifecycle boundary. Positive
+receive windows include the ten-second
+non-expiring send budget; bounded-rejection and deadline-expiry absence windows
+remain unchanged. The exact CI-shaped local lane again passed all three carriers
+without retries after both corrections. This changes no product timeout or
+retry. No compatibility surface or legacy callback remains.
+Keep subsequent corrections and local proof in PR #554 until this exact slice
+is complete; do not create another hypothesis PR or spend a full CI cycle after
+each local observation.
+
 ### Current execution horizon
 
-| Order | Slice                                                          | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ----- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Prove and merge PR #530 without intermediate hypothesis merges | Three separate `diagnostic` workflow run IDs check out the same exact PR head and pass the default memory-mode three-browser scenario. Diagnostic artifacts retain the source commit and logs temporarily but create no observation archive or publication PR. Any change to the PR head resets the three-run count. Focused, type/build/style/structure, full-unit, review, and branch gates also pass before merge. |
-| 2     | Capture B06 E3-memory again from moving `main`                 | Manually dispatch `RTC-B06 Performance Observation` in `publish` mode after the proved correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                                                                                                                             |
+| Order | Slice                                                                | Completion evidence                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Archive run 34361576057                                               | PR #553 merges the verified failed ZIP/index row unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2     | Complete and merge correction/proof PR #554                           | Keep bounded NACK diagnostics, the evidenced RTC recovery corrections, lifecycle-owned room refresh, durable admission-fact observation, all local stress repetitions, branch review, and final CI in this one PR. The exact candidate passes focused tests, type/build/style/structure checks, the retry-free RTC ALM conformance lane, five retry-free delivery-only runs, three retry-free complete RTC smoke runs, and one final Branch Release Gate. Do not split further hypothesis or test-only PRs from this slice. |
+After this two-slice horizon is complete, manually dispatch
+`RTC-B06 Performance Observation` in `publish` mode from the then-current
+moving `main`. The workflow must archive one verified primary with
+`acceptedMetrics: true`; when the controller requires a repeat, that repeat
+must also be valid and archived. If it fails, its archive itself contains the
+bounded facts needed for diagnosis. Task 12 then chooses the B05 observation
+window, revisits whether the candidate call path requires E4-pg, and reconciles
+the unlike-environment evidence before ranking at most one candidate—or `none`.
 
-After these two slices, Task 12 will choose the B05 observation window,
-revisit whether the candidate call path requires E4-pg, and reconcile the
-unlike-environment evidence before ranking at most one candidate—or `none`.
-
-If a PR #530 diagnostic fails, diagnose the first failed attempt, update the
-same PR, and restart its three-run proof from the new exact head. Do not merge
-the hypothesis or open another correction PR merely to obtain runtime feedback.
-If the later published B06 run fails, retain it as failed evidence and diagnose
+If a later published B06 run fails, retain it as failed evidence and diagnose
 the first failed attempt from that run. Fix only the evidenced tooling or
 product defect, then dispatch a new observation from whatever `main` snapshot
 exists at that time. Do not pin, rebase, or wait for a quiet `main` merely to
@@ -3959,7 +4038,8 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains nine failed B06 primaries and no accepted metrics.
+Current evidence contains nine failed B06 primaries archived on `main`, one
+verified failed primary pending in PR #553, and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
@@ -4105,12 +4185,19 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       after PR #526 merged.
 - [x] Verify and merge observation PR #528, retaining its failed ZIP/index row
       with `acceptedMetrics: false` and no repeat.
-- [ ] Pass three independent `diagnostic` workflow runs on one exact PR #530
+- [x] Pass three independent `diagnostic` workflow runs on one exact PR #530
       head. If that head changes, discard the earlier diagnostic count and
       restart; do not merge an intermediate hypothesis.
-- [ ] Merge PR #530's focused lifecycle corrections after their regressions,
+- [x] Merge PR #530's focused lifecycle corrections after their regressions,
       exact default E3, type/build/style/structure, full-unit, branch review
       gates, and same-head diagnostic proof pass.
+- [x] Dispatch run 34361576057 from moving `main`; verify its failed primary,
+      preserve it unchanged in observation PR #553, and do not accept metrics
+      or run a repeat.
+- [ ] Merge PR #554's bounded, payload-free NACK failure diagnostics,
+      lifecycle-owned RTC authority recovery, and durable admission-fact
+      observation after focused tests, exact default E3,
+      type/build/style/structure, and branch review gates pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.

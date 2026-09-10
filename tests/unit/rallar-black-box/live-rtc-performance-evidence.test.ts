@@ -315,6 +315,7 @@ function defaultRawEvidence(
                 ]
             }
         ],
+        failureDiagnostics: [],
         retention: null,
         assertions: {
             matrixPassed: true,

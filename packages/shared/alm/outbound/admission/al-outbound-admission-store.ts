@@ -237,6 +237,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     readonly isMessageSuperseded: (msg: ALMessage) => Promise<boolean>;
 
+    /** True while the admission fact is retained, including after the canonical payload expired. */
+    readonly hasSentMessageAdmission: (msgId: string) => Promise<boolean>;
+
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
     readonly readSentMessageByOrdering: (
@@ -349,6 +352,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async isMessageSuperseded(msg: ALMessage): Promise<boolean> {
         return await this.reads.isMessageSuperseded(msg);
+    }
+
+    async hasSentMessageAdmission(msgId: string): Promise<boolean> {
+        return await this.reads.hasSentMessageAdmission(msgId);
     }
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {

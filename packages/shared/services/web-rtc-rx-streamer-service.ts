@@ -1,5 +1,6 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
+    decodeALMessageValue,
     decodePersistedALMessage
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
@@ -42,6 +43,14 @@ export namespace WebRtcRxStreamerService {
         mediaPolicy: QRtcMediaPolicy | undefined;
     }
 
+    export interface RoomAuthorityRefresh {
+        afterInboundAdmission(
+            message: ALMessage,
+            acceptance: ALInboundMessageRuntime.Acceptance
+        ): Promise<void>;
+        dispose(): void;
+    }
+
     export interface Input {
         readonly queueEngine?: InboxOutboxEngine;
         readonly multicast: WebRtcOverlayMulticastManager;
@@ -49,6 +58,7 @@ export namespace WebRtcRxStreamerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly nowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
+        readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
     }
 
     export interface Dependencies {
@@ -60,6 +70,7 @@ export namespace WebRtcRxStreamerService {
             readonly maxMissedPings: number;
             readonly pingFrequencyMsecs: number;
         };
+        readonly roomAuthorityRefresh: RoomAuthorityRefresh | undefined;
     }
 }
 
@@ -141,12 +152,20 @@ export class WebRtcRxStreamerService {
                 {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
                     onMessage: async (value) => {
+                        const message = decodeALMessageValue(value).right;
                         const acceptance = await this.inboundRuntime.admitIncomingMessage(value, {
                             kind: 'rtc-peer',
                             peerId: peerDto.peerId
                         });
                         if (acceptance.left) {
                             console.warn('Rejected RTC message', acceptance.left.code);
+                            return;
+                        }
+                        if (acceptance.right && message) {
+                            await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
+                                message,
+                                acceptance.right
+                            );
                         }
                     }
                 }
@@ -208,6 +227,7 @@ export class WebRtcRxStreamerService {
 
     dispose(): void {
         this.disposed = true;
+        this.dependencies.roomAuthorityRefresh?.dispose();
         this.inboundRuntime.dispose();
         this.stopAllHeartbeats();
     }
@@ -453,6 +473,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
         heartbeat: input.heartbeat ?? {
             maxMissedPings: defaultMaxMissedPings,
             pingFrequencyMsecs: defaultPingFrequencyMsecs
-        }
+        },
+        roomAuthorityRefresh: input.roomAuthorityRefresh
     });
 }

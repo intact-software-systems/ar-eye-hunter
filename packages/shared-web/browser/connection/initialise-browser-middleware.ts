@@ -8,6 +8,7 @@ import type {
 } from '@shared/api/api-config.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { toStateScope } from '@shared/api/api-type-utils.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -29,6 +30,7 @@ import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { readSession } from '@shared/api/auth.ts';
+import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
@@ -39,7 +41,9 @@ import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connect
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
@@ -47,6 +51,8 @@ import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
+import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
+import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
     browserStateCacheLifecycle,
@@ -113,12 +119,18 @@ export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
 ): void {
-    const peerCreationPolicy: WebRtcConnectionService.OutboundDialPolicy = ({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
+    const peerIsInCurrentLayout = (peerId: string): boolean =>
+        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId);
+    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
+        peerIsInCurrentLayout(peerId)
             ? { decision: 'allow' }
-            : { decision: 'deny', reason: 'stage-layout-mismatch' };
-    webRtcConnectionService.setInboundPeerCreationPolicy(peerCreationPolicy);
-    webRtcConnectionService.setOutboundDialPolicy(peerCreationPolicy);
+            : { decision: 'retry', reason: 'stage-layout-mismatch' }
+    );
+    webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
+        peerIsInCurrentLayout(peerId)
+            ? { decision: 'allow' }
+            : { decision: 'deny', reason: 'stage-layout-mismatch' }
+    );
 }
 
 interface BrowserWebSocketTransport {
@@ -276,7 +288,8 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcOverlayMulticastManager,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            clientData: input.clientData
+            clientData: input.clientData,
+            roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input)
         }
     );
     registerBrowserRttEgress(input, rtcRxStreamer);
@@ -292,6 +305,70 @@ async function initialiseBrowserRtcTransport(
         webRtcGroupManager,
         webRtcOverlayMulticastManager
     };
+}
+
+function createBrowserRtcGroupSnapshotRefresh(
+    input: InitialiseBrowserRtcTransportInput
+): RtcGroupSnapshotRefresh {
+    return new RtcGroupSnapshotRefresh({
+        refreshGroupSnapshot: async (roomRef, minSnapshotVersion, signal) => {
+            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+            const scope = toStateScope(roomRef);
+            const { snapshot } = await new Command(
+                async (commandSignal) => await readStateGroupSnapshot(
+                    roomRef.groupId,
+                    scope,
+                    {
+                        authSession: input.session,
+                        signal: commandSignal,
+                        minCausalRevision: {
+                            groupRevision: minSnapshotVersion,
+                            presenceRevision: 0
+                        }
+                    }
+                ),
+                { signal, timeoutMs: input.options.timeoutMs }
+            ).run();
+            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+            await acceptAuthoritativeGroupStateSnapshot(
+                snapshot,
+                scope,
+                {
+                    assertCanMutate: () =>
+                        assertRtcGroupSnapshotRefreshIsCurrent(input, signal),
+                    rereadGroupSnapshots: async (refreshScope) => {
+                        const groups = await new Command(
+                            async (commandSignal) => await listStateGroups(
+                                refreshScope,
+                                {
+                                    authSession: input.session,
+                                    signal: commandSignal
+                                }
+                            ),
+                            { signal, timeoutMs: input.options.timeoutMs }
+                        ).run();
+                        assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+                        validateAuthoritativeGroupSnapshotList(groups, refreshScope);
+                        return groups;
+                    }
+                }
+            );
+            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+            input.webSocketTransport.qboxEngine.wake();
+        }
+    });
+}
+
+function assertRtcGroupSnapshotRefreshIsCurrent(
+    input: InitialiseBrowserRtcTransportInput,
+    signal: AbortSignal
+): void {
+    signal.throwIfAborted();
+    if (readSession()?.sessionId !== input.clientData.sessionId) {
+        throw new Error('RTC group-snapshot refresh belongs to an inactive browser session.');
+    }
 }
 
 function initialiseBrowserRtcConnection(

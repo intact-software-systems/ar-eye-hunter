@@ -2011,6 +2011,51 @@ moved or changed test.
         "requiredConstraint": "Paging past retained rows must stay bounded per run: an opportunistic sweep may not read the whole terminal range in one pass.",
         "failureRationale": "Without the page cap a store holding a large retained backlog would make every cleanup pass walk the entire terminal index, turning an opportunistic background sweep into an unbounded read on the browser's main storage path."
       }
+    },
+    {
+      "id": "rtc-group-refresh-skips-admitted-messages",
+      "domain": "Browser RTC group authority recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "An RTC message that completed admission does not request an authoritative group refresh. Executable assertion: “does not read authority after successful admission”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after successful admission",
+      "coverageRelation": "The test reports successful admission through the public recovery callback and observes the injected authoritative group-refresh port remain unused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
+        "observableEffect": "A successfully admitted RTC message produces no authoritative point read, cache adoption, or QueueBox wake.",
+        "requiredConstraint": "Only a not-yet-in-sync admission result may request current group authority.",
+        "failureRationale": "Refreshing after ordinary successful delivery would add an HTTP read and cache reconciliation to every room message and wake QueueBox without retained work to recover."
+      }
+    },
+    {
+      "id": "rtc-group-refresh-coalesces-concurrent-requests",
+      "domain": "Browser RTC group authority recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "Concurrent not-yet-in-sync messages for one group share one active authoritative refresh. Executable assertion: “coalesces repeated recovery requests for the same group and snapshot floor”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#coalesces repeated recovery requests for the same group and snapshot floor",
+      "coverageRelation": "The test holds the first injected group-refresh request open, reports the same recovery condition again, and observes one request through completion.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
+        "observableEffect": "Two concurrent recovery reports for one scoped group issue one authoritative refresh.",
+        "requiredConstraint": "At most one authoritative group refresh is active per scoped group.",
+        "failureRationale": "Duplicate point reads can race cache adoption, multiply server load during a stale-layout burst, and issue redundant QueueBox wakes."
+      }
+    },
+    {
+      "id": "rtc-group-refresh-retries-after-failure",
+      "domain": "Browser RTC group authority recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "A failed authoritative refresh releases its coalescing slot so the retained QueueBox retry can request authority again. Executable assertion: “leaves failed refreshes to the retained QueueBox retry”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry",
+      "coverageRelation": "The test rejects the first injected group-refresh request, reports the retained recovery condition again, and observes a second request succeed.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
+        "observableEffect": "Two sequential recovery reports separated by a failed refresh issue two authoritative refresh attempts.",
+        "requiredConstraint": "A settled failed refresh must not leave the scoped group permanently marked active.",
+        "failureRationale": "A retained failed task would suppress every later QueueBox recovery attempt and strand messages behind stale room authority."
+      }
     }
   ],
   "entries": [
@@ -4609,6 +4654,39 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The surviving unretained row proves the run stopped before reaching it, but only the index-read count separates a run that stopped on its page budget from one that stopped for any other reason, such as a mis-sized page or an exhausted range.",
       "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget"
+    },
+    {
+      "id": "test-structure-coupling-8e9755e2fc1d5b45",
+      "path": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-group-refresh-skips-admitted-messages",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The absent refresh call proves successful message admission does not add an authoritative read and QueueBox wake to the normal RTC delivery path.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after successful admission"
+    },
+    {
+      "id": "test-structure-coupling-c7847aaa460d293a",
+      "path": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-group-refresh-coalesces-concurrent-requests",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The single-call assertion rejects a duplicate authoritative read while the same scoped group's first recovery is still active.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#coalesces repeated recovery requests for the same group and snapshot floor"
+    },
+    {
+      "id": "test-structure-coupling-2aec3da56cd4fa42",
+      "path": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-group-refresh-retries-after-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The two-call assertion proves the failed first refresh released its group slot and the next retained recovery report reached the authority port.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry"
     }
   ]
 }

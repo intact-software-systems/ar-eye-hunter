@@ -50,6 +50,7 @@ import {
     normalizeJson,
     requiredJsonRecord
 } from './live-rtc-evidence-json.ts';
+import type { LiveRtcNackWireObservationSummary } from './live-rtc-wire-observation.ts';
 
 export interface LiveRtcPerformanceIdentity {
     workloadId: 'RTC-B06';
@@ -124,12 +125,104 @@ export interface LiveRtcPerformanceAssertions {
     reconnectPassed: boolean | null;
 }
 
+export type LiveRtcNackProbeStage =
+    | 'start-observation'
+    | 'send'
+    | 'message-identity'
+    | 'receive'
+    | 'record-receipt';
+
+export interface LiveRtcNackAgentHealth {
+    readonly captureSucceeded: boolean;
+    readonly commandSucceeded: boolean | null;
+    readonly settledPeerCount: number | null;
+    readonly readyPeerCount: number | null;
+    readonly laneCount: number | null;
+    readonly openLaneCount: number | null;
+    readonly reconnectableLaneCount: number | null;
+    readonly connectionTimerActive: boolean | null;
+    readonly peerCount: number | null;
+    readonly connectedPeerCount: number | null;
+    readonly relayPeerCount: number | null;
+}
+
+export interface LiveRtcNackSendResultSummary {
+    readonly ok: boolean;
+    readonly runtimeStatus: 'sent' | 'other' | 'missing';
+    readonly admissionStatus:
+        | 'accepted'
+        | 'enqueued'
+        | 'skipped'
+        | 'duplicate'
+        | 'pending-admission'
+        | 'superseded'
+        | 'expired'
+        | 'no-route'
+        | 'rate-limited'
+        | 'circuit-open'
+        | 'failed'
+        | 'other'
+        | 'missing';
+    readonly reason: 'not-yet-in-sync' | 'other' | 'missing';
+    readonly messageIdPresent: boolean;
+    readonly messageIdMatchesProbe: boolean | null;
+    readonly entryCount: number;
+    readonly entryStatuses: readonly (
+        | 'NEW'
+        | 'RETRY'
+        | 'RESERVED'
+        | 'COMPLETED'
+        | 'FAILED'
+        | 'ABORTED'
+        | 'NON_RETRYABLE'
+        | 'PARTITIONED'
+        | 'MERGED'
+        | 'other'
+    )[];
+}
+
+export interface LiveRtcNackEventClassification {
+    readonly agentRole: 'sender' | 'target' | 'other' | 'missing';
+    readonly kind: 'message' | 'other' | 'missing';
+    readonly transport: 'realtime' | 'messages.rtc' | 'other' | 'missing';
+    readonly topicPresent: boolean;
+    readonly matrixIdPresent: boolean;
+    readonly deliveryMode: 'nack' | 'other' | 'missing';
+}
+
+export interface LiveRtcNackResultClassification {
+    readonly agentRole: 'sender' | 'target' | 'other' | 'missing';
+    readonly commandRole: 'probe' | 'health' | 'other';
+    readonly ok: boolean;
+}
+
+export interface LiveRtcNackFailureDiagnostic {
+    readonly kind: 'nack-probe-failure';
+    readonly runId: string;
+    readonly senderAgentId: string;
+    readonly targetAgentId: string;
+    readonly commandId: string;
+    readonly stage: LiveRtcNackProbeStage;
+    readonly messageId: string | null;
+    readonly senderSessionId: string;
+    readonly targetSessionId: string;
+    readonly capturedAtEpochMs: number;
+    readonly failureMessage: string;
+    readonly healthByAgentId: Readonly<Record<string, LiveRtcNackAgentHealth>>;
+    readonly runCaptureSucceeded: boolean;
+    readonly sendResult: LiveRtcNackSendResultSummary | null;
+    readonly wireObservation: LiveRtcNackWireObservationSummary;
+    readonly recentResults: readonly LiveRtcNackResultClassification[];
+    readonly recentEvents: readonly LiveRtcNackEventClassification[];
+}
+
 export interface LiveRtcPerformanceRawEvidence {
     identity: LiveRtcPerformanceIdentity;
     producer: LiveRtcPerformanceProducer;
     runtime: LiveRtcPerformanceRuntime;
     timings: readonly LiveRtcPerformanceTiming[];
     diagnostics: readonly LiveRtcDiagnosticsCheckpoint[];
+    failureDiagnostics: readonly LiveRtcNackFailureDiagnostic[];
     retention: LiveRtcRetentionEvidence | null;
     assertions: LiveRtcPerformanceAssertions;
 }

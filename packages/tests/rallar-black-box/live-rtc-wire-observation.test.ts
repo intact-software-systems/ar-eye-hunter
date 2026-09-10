@@ -6,7 +6,11 @@ import {
     vi
 } from 'vitest';
 
-import { hasLiveRtcNotYetInSyncNack, installLiveRtcWireObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-wire-observation.ts';
+import {
+    hasLiveRtcNotYetInSyncNack,
+    installLiveRtcWireObservation,
+    summarizeLiveRtcNackWireObservation
+} from '../../../tests/playwright/rallar-black-box/live-rtc-wire-observation.ts';
 
 describe('live RTC wire observation', () => {
     afterEach(() => vi.unstubAllGlobals());
@@ -89,5 +93,71 @@ describe('received not-yet-in-sync NACK proof', () => {
         JSON.stringify({ payload: { typeId: 'al.control.nack.v1', resource: JSON.stringify({ ...nack, reason: 'unauthorized' }) } })
     ])('rejects malformed, echoed, or different protocol evidence %#', (unrelated) => {
         expect(hasLiveRtcNotYetInSyncNack({ ...probe, frames: [unrelated] })).toBe(false);
+    });
+
+    it('summarizes protocol identities without retaining arbitrary frame payloads', () => {
+        const unrelatedSecret = 'credential=must-not-be-retained';
+        const mismatchedNack = JSON.stringify({
+            payload: {
+                typeId: 'al.control.nack.v1',
+                resource: JSON.stringify({
+                    ...nack,
+                    msgId: 'another-message',
+                    credential: 'must-not-be-retained'
+                })
+            }
+        });
+        const summary = summarizeLiveRtcNackWireObservation({
+            ...probe,
+            frames: [
+                unrelatedSecret,
+                JSON.stringify({
+                    payload: {
+                        typeId: 'manual.type',
+                        resource: 'must-not-be-retained'
+                    }
+                }),
+                mismatchedNack,
+                JSON.stringify({ payload: { typeId: 'al.control.nack.v1', resource: 'invalid resource' } })
+            ]
+        });
+
+        expect(summary).toEqual({
+            frameCount: 4,
+            malformedFrameCount: 1,
+            typedFrameCount: 3,
+            nackFrameCount: 2,
+            malformedNackFrameCount: 1,
+            nackFrames: [{
+                hasMessageId: true,
+                messageIdMatchesProbe: false,
+                reason: 'not-yet-in-sync',
+                hasFromPeerId: true,
+                fromPeerIdMatchesTarget: true,
+                hasToPeerId: true,
+                toPeerIdMatchesSender: true,
+                matchesProbe: false
+            }]
+        });
+        expect(JSON.stringify(summary)).not.toContain('must-not-be-retained');
+    });
+
+    it('bounds retained NACK classifications while counting every observed frame', () => {
+        const frames = Array.from({ length: 25 }, (_, index) => JSON.stringify({
+            payload: {
+                typeId: 'al.control.nack.v1',
+                resource: JSON.stringify({ ...nack, msgId: `other-${index}` })
+            }
+        }));
+
+        const summary = summarizeLiveRtcNackWireObservation({ ...probe, frames });
+
+        expect(summary).toMatchObject({
+            frameCount: 25,
+            typedFrameCount: 25,
+            nackFrameCount: 25,
+            malformedNackFrameCount: 0
+        });
+        expect(summary.nackFrames).toHaveLength(20);
     });
 });

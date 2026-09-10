@@ -6,7 +6,10 @@ import {
 } from 'vitest';
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
-import { createLiveRtcDeliveryOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
+import {
+    createLiveRtcDeliveryOperations,
+    LiveRtcNackProbeFailure
+} from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 
 const config = {
     apiBaseUrl: 'http://localhost:18080',
@@ -380,6 +383,90 @@ describe('live RTC delivery owner', () => {
                 })
             })
         ]);
+    });
+
+    it('propagates captured NACK evidence when reading the browser wire fails', async () => {
+        const recording = new RecordingLiveRtcControl();
+        const operations = createLiveRtcDeliveryOperations(config);
+        const formation = await operations.runGroupFormation({
+            control: recording,
+            runId: 'nack-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'nack-room',
+            suffix: 'nack-timeout',
+            readinessScope: 'all'
+        });
+        const wireFailure = new Error('wire observation failed');
+        const page = {
+            evaluate: vi.fn()
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(['observed-before-failure'])
+                .mockRejectedValueOnce(wireFailure)
+                .mockResolvedValueOnce(undefined)
+        };
+        const diagnostic = {
+            kind: 'nack-probe-failure' as const,
+            runId: 'nack-run',
+            senderAgentId: 'A',
+            targetAgentId: 'B',
+            commandId: 'nack-not-yet-in-sync-nack-timeout',
+            stage: 'receive' as const,
+            messageId: 'attempted-message',
+            senderSessionId: formation.sessions.A,
+            targetSessionId: formation.sessions.B,
+            capturedAtEpochMs: 0,
+            failureMessage: 'RTC NACK probe did not observe the expected response.',
+            healthByAgentId: {},
+            runCaptureSucceeded: true,
+            sendResult: null,
+            wireObservation: {
+                frameCount: 0,
+                malformedFrameCount: 0,
+                typedFrameCount: 0,
+                nackFrameCount: 0,
+                malformedNackFrameCount: 0,
+                nackFrames: []
+            },
+            recentResults: [],
+            recentEvents: []
+        };
+        const captureNackFailure = vi.fn(async () => diagnostic);
+        const control = Object.assign(recording, {
+            requireSentMessageId: () => 'attempted-message',
+            recordReceivedNack: async () => undefined,
+            captureNackFailure
+        });
+        const agent = {
+            ...recording.agents[0],
+            page: page as Pick<LiveRtcControlClient.Agent['page'], 'evaluate'>
+        };
+
+        await expect(operations.runNackProbe({
+            testInfo: { attach: async () => undefined },
+            senderSessionId: formation.sessions.A,
+            control,
+            runId: 'nack-run',
+            agent,
+            targetAgentId: recording.agents[1].agentId,
+            groupId: 'nack-room',
+            suffix: 'nack-timeout',
+            targetSessionId: formation.sessions.B
+        })).rejects.toMatchObject({
+            name: LiveRtcNackProbeFailure.name,
+            diagnostic
+        });
+        expect(captureNackFailure).toHaveBeenCalledWith({
+            runId: 'nack-run',
+            senderAgentId: 'A',
+            targetAgentId: 'B',
+            commandId: 'nack-not-yet-in-sync-nack-timeout',
+            stage: 'receive',
+            messageId: 'attempted-message',
+            senderSessionId: formation.sessions.A,
+            targetSessionId: formation.sessions.B,
+            frames: ['observed-before-failure']
+        });
     });
 });
 

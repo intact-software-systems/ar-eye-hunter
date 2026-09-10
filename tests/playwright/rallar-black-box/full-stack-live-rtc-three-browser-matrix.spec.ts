@@ -11,7 +11,11 @@ import {
     type LiveRtcBrowserAgentAuth
 } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-delivery-operations.ts';
+import {
+    createLiveRtcDeliveryOperations,
+    LiveRtcNackProbeFailure,
+    type AgentPrefix
+} from './live-rtc-delivery-operations.ts';
 import {
     buildLiveRtcExternalAttempt,
     captureLiveRtcPostGcHeap,
@@ -20,6 +24,7 @@ import {
     writeLiveRtcPerformanceEvidence,
     writeLiveRtcRetentionCohortIfComplete,
     type LiveRtcDiagnosticsCheckpoint,
+    type LiveRtcNackFailureDiagnostic,
     type LiveRtcPerformanceAttemptContext,
     type LiveRtcPerformanceRawEvidence,
     type LiveRtcPerformanceTiming,
@@ -280,6 +285,7 @@ interface WriteAttemptEvidenceInput {
     readonly producerExitStatus: number;
     readonly timings: readonly LiveRtcPerformanceTiming[];
     readonly diagnostics: readonly LiveRtcDiagnosticsCheckpoint[];
+    readonly failureDiagnostics: readonly LiveRtcNackFailureDiagnostic[];
     readonly retention: LiveRtcPerformanceRawEvidence['retention'];
     readonly assertions: LiveRtcPerformanceRawEvidence['assertions'];
 }
@@ -399,6 +405,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             const commandIds: string[] = [];
             const timings: LiveRtcPerformanceTiming[] = [];
             const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
+            const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
             const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
             let producerExitStatus = 0;
             let matrixPassed = false;
@@ -521,6 +528,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         agent: messageAgents[0],
                         groupId,
                         suffix,
+                        targetAgentId: messageAgents[1].agentId,
                         targetSessionId: messages.sessions.B
                     })
                 );
@@ -590,6 +598,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             }
             catch (error) {
                 producerExitStatus = 1;
+                if (error instanceof LiveRtcNackProbeFailure) {
+                    failureDiagnostics.push(error.diagnostic);
+                }
                 throw toError(error);
             }
             finally {
@@ -603,6 +614,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     producerExitStatus,
                     timings,
                     diagnostics,
+                    failureDiagnostics,
                     retention: null,
                     assertions: {
                         matrixPassed,
@@ -650,6 +662,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
+        const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         let producerExitStatus = 0;
         let matrixPassed = false;
         let artifactBundlePassed = false;
@@ -786,6 +799,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     agent: messageAgents[0],
                     groupId,
                     suffix,
+                    targetAgentId: messageAgents[1].agentId,
                     targetSessionId: messages.sessions.B
                 })
             );
@@ -912,6 +926,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         }
         catch (error) {
             producerExitStatus = 1;
+            if (error instanceof LiveRtcNackProbeFailure) {
+                failureDiagnostics.push(error.diagnostic);
+            }
             throw toError(error);
         }
         finally {
@@ -925,6 +942,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 producerExitStatus,
                 timings,
                 diagnostics,
+                failureDiagnostics,
                 retention: null,
                 assertions: {
                     matrixPassed,
@@ -968,6 +986,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const commandIds: string[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
+        const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const checkpoints: LiveRtcRetentionCheckpoint[] = [];
         const openHandles: LiveRtcControlClient.Agent[] = [];
         let producerExitStatus = 0;
@@ -1087,6 +1106,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         }
         catch (error) {
             producerExitStatus = 1;
+            if (error instanceof LiveRtcNackProbeFailure) {
+                failureDiagnostics.push(error.diagnostic);
+            }
             throw toError(error);
         }
         finally {
@@ -1100,6 +1122,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 producerExitStatus,
                 timings,
                 diagnostics,
+                failureDiagnostics,
                 retention: {
                     cycles: 100,
                     checkpoints,
@@ -1158,6 +1181,7 @@ function toLiveRtcRawEvidence(
         },
         timings: input.timings,
         diagnostics: input.diagnostics,
+        failureDiagnostics: input.failureDiagnostics,
         retention: input.retention,
         assertions: input.assertions
     };

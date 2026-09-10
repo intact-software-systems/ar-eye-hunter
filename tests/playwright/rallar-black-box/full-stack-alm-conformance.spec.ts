@@ -28,9 +28,9 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
     .filter((entry) => entry.length > 0);
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
-const CONFORMANCE_DEADLINE_MS = 15_000;
-// 4 scenarios x 15s deadline x 2 (sender+receiver) + 60s RTC readiness = 180s expected; kept at
-// 300s for the configured retry and slow-CI slack rather than rounded down to the expected figure.
+const CONFORMANCE_DEADLINE_MS = 18_000;
+// 4 scenarios x 18s deadline x 2 (sender+receiver) + 60s RTC readiness = 204s expected; kept at
+// 300s for slow-CI slack rather than rounded down to the expected figure.
 const CARRIER_TEST_TIMEOUT_MS = 300_000;
 
 /**
@@ -62,9 +62,6 @@ function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier 
 }
 
 test.describe('ALM conformance lane', () => {
-    // A cold RTC handshake intermittently reports no ready peer even within the widened readiness
-    // budget; the retry costs one extra run of a carrier.
-    test.describe.configure({ retries: 1 });
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
 
     for (const carrier of carriers) {

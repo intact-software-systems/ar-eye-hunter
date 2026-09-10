@@ -47,7 +47,24 @@ describe('live RTC control client', () => {
                 results.push({
                     commandId: command.commandId,
                     ok: true,
-                    result: { value: { rallar: { rtcStatus: { readyPeerIds } } } }
+                    result: {
+                        value: {
+                            rallar: {
+                                rtcStatus: {
+                                    activePeerIds: readyPeerIds,
+                                    readyPeerIds
+                                },
+                                rtcDiagnostics: {
+                                    sessionId: 'health-session',
+                                    generatedAtEpochMs: 0,
+                                    peerCount: 0,
+                                    connectedPeerCount: 0,
+                                    relayPeerCount: 0,
+                                    peers: []
+                                }
+                            }
+                        }
+                    }
                 });
                 response.writeHead(202).end('{}');
                 return;
@@ -303,6 +320,125 @@ describe('live RTC control client', () => {
             senderSessionId: 'session-a',
             targetSessionId: 'session-b',
             frames: ['received-wire-frame']
+        });
+    });
+
+    it('captures bounded NACK failure evidence without raw frames or credentials', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'nack-not-yet-in-sync-timeout',
+            ok: true,
+            result: {
+                value: {
+                    status: 'sent',
+                    message: {
+                        status: 'pending-admission',
+                        reason: 'credential=must-not-be-retained',
+                        message: {
+                            id: { msgId: 'probe-message' },
+                            payload: { resource: 'must-not-be-retained' }
+                        },
+                        entries: Array.from({ length: 25 }, () => ({ status: 'NEW' }))
+                    },
+                    credential: 'must-not-be-retained'
+                }
+            }
+        });
+        events.push({
+            agentId: 'agent-b',
+            payload: {
+                kind: 'message',
+                transport: 'messages.rtc',
+                topic: 'credential=must-not-be-retained',
+                payload: {
+                    data: {
+                        matrixId: 'credential=must-not-be-retained',
+                        credential: 'must-not-be-retained'
+                    }
+                }
+            }
+        });
+        const diagnostic = await control.captureNackFailure({
+            runId: 'run-nack-timeout',
+            senderAgentId: 'agent-a',
+            targetAgentId: 'agent-b',
+            commandId: 'nack-not-yet-in-sync-timeout',
+            stage: 'receive',
+            messageId: 'probe-message',
+            senderSessionId: 'session-a',
+            targetSessionId: 'session-b',
+            frames: [
+                'credential=must-not-be-retained',
+                JSON.stringify({
+                    payload: {
+                        typeId: 'al.control.nack.v1',
+                        resource: JSON.stringify({
+                            msgId: 'different-message',
+                            reason: 'not-yet-in-sync',
+                            fromPeerId: 'session-b',
+                            toPeerId: 'session-a',
+                            credential: 'must-not-be-retained'
+                        })
+                    }
+                })
+            ]
+        });
+
+        const artifactBody = JSON.stringify(diagnostic);
+        expect(artifactBody).not.toContain('must-not-be-retained');
+        expect(diagnostic).toMatchObject({
+            kind: 'nack-probe-failure',
+            runId: 'run-nack-timeout',
+            senderAgentId: 'agent-a',
+            targetAgentId: 'agent-b',
+            commandId: 'nack-not-yet-in-sync-timeout',
+            stage: 'receive',
+            failureMessage: 'RTC NACK probe did not observe the expected response.',
+            healthByAgentId: {
+                'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                'agent-b': { captureSucceeded: true, commandSucceeded: true }
+            },
+            runCaptureSucceeded: true,
+            sendResult: {
+                ok: true,
+                runtimeStatus: 'sent',
+                admissionStatus: 'pending-admission',
+                reason: 'other',
+                messageIdPresent: true,
+                messageIdMatchesProbe: true
+            },
+            wireObservation: {
+                frameCount: 2,
+                malformedFrameCount: 1,
+                typedFrameCount: 1,
+                nackFrameCount: 1,
+                malformedNackFrameCount: 0,
+                nackFrames: [{
+                    hasMessageId: true,
+                    messageIdMatchesProbe: false,
+                    reason: 'not-yet-in-sync',
+                    hasFromPeerId: true,
+                    fromPeerIdMatchesTarget: true,
+                    hasToPeerId: true,
+                    toPeerIdMatchesSender: true,
+                    matchesProbe: false
+                }]
+            },
+            recentEvents: [{
+                agentRole: 'target',
+                kind: 'message',
+                transport: 'messages.rtc',
+                topicPresent: true,
+                matrixIdPresent: true,
+                deliveryMode: 'missing'
+            }]
+        });
+        expect(diagnostic.sendResult?.entryCount).toBe(25);
+        expect(diagnostic.sendResult?.entryStatuses).toHaveLength(20);
+        expect(diagnostic.recentResults).toContainEqual({
+            agentRole: 'sender',
+            commandRole: 'probe',
+            ok: true
         });
     });
 });

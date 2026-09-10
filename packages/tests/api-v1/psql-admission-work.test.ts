@@ -133,6 +133,7 @@ describe('PostgreSQL inbound admission', () => {
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
+        const expireAtTimestamp = Date.now() + 60_000;
 
         await store.commitMutations({
             senderId: 'peer-1',
@@ -146,7 +147,7 @@ describe('PostgreSQL inbound admission', () => {
                         source: { kind: 'ws-client', peerId: 'peer-1' },
                         supersedenceKey: null
                     },
-                    expireAtTimestamp: Date.now() + 60_000
+                    expireAtTimestamp
                 },
                 {
                     kind: 'set-control-pending',
@@ -162,13 +163,13 @@ describe('PostgreSQL inbound admission', () => {
                             ackedFromPeerIds: []
                         }
                     },
-                    expireAtTimestamp: Date.now() + 60_000
+                    expireAtTimestamp
                 },
                 {
                     kind: 'set-control-owners',
                     msgId: 'msg-1',
                     value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
-                    expireAtTimestamp: Date.now() + 60_000
+                    expireAtTimestamp
                 }
             ]
         });

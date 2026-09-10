@@ -180,6 +180,13 @@ export class ALOutboundAdmissionReads<TPrepared> {
         }).status === 'superseded';
     }
 
+    /** The admission fact outlives the canonical payload: retention, not the message ttl, ends it. */
+    async hasSentMessageAdmission(msgId: string): Promise<boolean> {
+        const stored = await this.readStoredMessage(msgId);
+        this.assertSentMessageScope(msgId, stored);
+        return stored !== undefined;
+    }
+
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.readCanonicalSentMessage(msgId, await this.readStoredMessage(msgId));
     }
@@ -295,6 +302,15 @@ export class ALOutboundAdmissionReads<TPrepared> {
         };
     }
 
+    private assertSentMessageScope(msgId: string, stored: ALStoredOutboundMessage | undefined): void {
+        if (stored !== undefined && stored.reference.scope !== this.canonicalScope) {
+            throw new ALAdmissionCorruptionError(
+                toALOutboundSentMessageKey(this.namespace, msgId),
+                new TypeError('Sent message belongs to another local scope')
+            );
+        }
+    }
+
     private async readCanonicalSentMessage(
         msgId: string,
         stored: ALStoredOutboundMessage | undefined
@@ -302,12 +318,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (!stored || stored.reference.expiresAtMs <= this.nowMs()) {
             return undefined;
         }
-        if (stored.reference.scope !== this.canonicalScope) {
-            throw new ALAdmissionCorruptionError(
-                toALOutboundSentMessageKey(this.namespace, msgId),
-                new TypeError('Sent message belongs to another local scope')
-            );
-        }
+        this.assertSentMessageScope(msgId, stored);
         const canonical = await this.backend.workQueue.getItem(stored.reference.key);
         const identity = await this.backend.workQueue.getItem(toALOutboundIdentityKey(stored.reference.key));
         if (stored.reference.expiresAtMs <= this.nowMs()) {

@@ -1,4 +1,7 @@
-import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import {
+    resolveBrowserRtcOverlayALOutboundRuntimeStores,
+    resolveBrowserWsClientALOutboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
@@ -124,6 +127,7 @@ export interface BlackBoxBrowserRallarRuntimeDependency extends
     connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<void>;
     disconnect(): Promise<void>;
     refreshRoomState(roomRef: GroupRef, options: BlackBoxRoomStateRefreshOptions): Promise<void>;
+    hasMessageAdmission(messageId: string, transport: 'rtc' | 'ws'): Promise<boolean>;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
@@ -305,6 +309,20 @@ export async function readBlackBoxRtcMessageNacks(
     return observation.nacks;
 }
 
+export async function hasBlackBoxBrowserMessageAdmission(
+    sessionId: string | undefined,
+    messageId: string,
+    transport: 'rtc' | 'ws'
+): Promise<boolean> {
+    if (!sessionId) {
+        throw new Error('Message admission diagnostics require an authenticated session.');
+    }
+    const { admissionStore } = transport === 'rtc'
+        ? resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId)
+        : resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
+    return await admissionStore.hasSentMessageAdmission(messageId);
+}
+
 export async function refreshBlackBoxBrowserRoomState(
     input: RefreshBlackBoxBrowserRoomStateInput
 ): Promise<void> {
@@ -446,6 +464,12 @@ function toBlackBoxBrowserRuntimeDependency(
         },
         readRtcMessageNacks: async (messageId) =>
             await readBlackBoxRtcMessageNacks(session.connection.session()?.sessionId, messageId),
+        hasMessageAdmission: async (messageId, transport) =>
+            await hasBlackBoxBrowserMessageAdmission(
+                session.connection.session()?.sessionId,
+                messageId,
+                transport
+            ),
         refreshRoomState: async (roomRef, options) =>
             await refreshBlackBoxBrowserRoomState({
                 roomRef,

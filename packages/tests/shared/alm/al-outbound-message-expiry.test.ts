@@ -2,8 +2,10 @@ import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
@@ -223,6 +225,68 @@ describe('outbound message expiry', () => {
         await repair.retryPendingAck(message.id.msgId);
         expect(await store.readPendingAck(message.id.msgId)).toBeUndefined();
         commit.mockRestore();
+    });
+
+    it('retains the admission fact after payload expiry until sent-message retention ends', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
+            canonicalScope: 'post-expiry-admission',
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            namespace: 'post-expiry-admission',
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention({
+                sentMessageTtlMs: 100,
+                controlHistoryTtlMs: 100
+            })
+        });
+        const message = createOutboundMessage('post-expiry-admission', { ttlMs: 10 });
+        const bundle = await computeOutboundTestAdmission(store, message);
+        expect(await store.commitBundle(bundle)).toBe('committed');
+
+        vi.setSystemTime(1_010);
+
+        expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
+        expect(await store.hasSentMessageAdmission(message.id.msgId)).toBe(true);
+
+        vi.setSystemTime(1_100);
+
+        expect(await store.hasSentMessageAdmission(message.id.msgId)).toBe(false);
+    });
+
+    it('rejects a retained admission fact owned by another canonical scope', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const state = createInMemoryALAdmissionState();
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
+            backend: new InMemoryAdmissionBackend(state, Date.now),
+            canonicalScope: 'current-session',
+            namespace: 'scoped-admission',
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        const message = createOutboundMessage('foreign-scope-admission');
+        const bundle = await computeOutboundTestAdmission(store, message);
+        expect(await store.commitBundle(bundle)).toBe('committed');
+        const sent = state.data.get(`scoped-admission:sent:${message.id.msgId}`);
+        if (sent === undefined) {
+            throw new Error('Expected a retained sent-message admission fact');
+        }
+        const stored = sent.value as ALStoredOutboundMessage;
+        state.data.set(sent.key, {
+            ...sent,
+            value: {
+                ...stored,
+                reference: { ...stored.reference, scope: 'another-session' }
+            }
+        });
+
+        await expect(store.hasSentMessageAdmission(message.id.msgId))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('rejects a RESERVED observation without a start timestamp while valid siblings remain claimable', async () => {
