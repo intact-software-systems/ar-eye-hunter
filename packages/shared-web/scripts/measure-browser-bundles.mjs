@@ -33,11 +33,12 @@ const entries = [
         // transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
         // Splitting the outbound commit hold into its read and write phases measures 202.896 KiB.
         // Leasing a claim from the reservation the queue stamped measures 203.065 KiB, so the
-        // ceiling moves to 204.
+        // ceiling moves to 204. Naming the hop that drops an RTC offer -- the peer's signaling
+        // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 204
+        brotliBudgetKiB: 205
     },
     {
         label: 'browser/rallar-core.ts',

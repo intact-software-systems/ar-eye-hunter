@@ -2,6 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type {
     RallarRtcLaneStatus,
     RallarRtcPeerConnectionStatus,
+    RallarRtcPeerSignalingCounts,
     RallarRtcPeerStatus,
     RallarRtcStatus,
     RallarRtcStatusOptions
@@ -148,7 +149,22 @@ function toRtcConnectionStatus(
         ignoreOffer: status?.ignoreOffer ?? false,
         iceCandidateQueueSize: status?.iceCandidateQueue.length ?? 0,
         localStreamId: status?.localStream?.id,
-        remoteStreamIds: Array.from(status?.remoteStreams.keys() ?? [])
+        remoteStreamIds: Array.from(status?.remoteStreams.keys() ?? []),
+        signaling: toRtcSignalingCounts(peer)
+    };
+}
+
+function toRtcSignalingCounts(peer: QRtcPeerDto | undefined): RallarRtcPeerSignalingCounts {
+    const diagnostics = peer?.connection.readDiagnostics();
+    return {
+        outboundOfferCount: diagnostics?.outboundOfferCount ?? 0,
+        outboundAnswerCount: diagnostics?.outboundAnswerCount ?? 0,
+        outboundIceCandidateCount: diagnostics?.outboundIceCandidateCount ?? 0,
+        inboundOfferCount: diagnostics?.inboundOfferCount ?? 0,
+        inboundAnswerCount: diagnostics?.inboundAnswerCount ?? 0,
+        inboundIceCandidateCount: diagnostics?.inboundIceCandidateCount ?? 0,
+        outboundSignalingErrorCount: diagnostics?.outboundSignalingErrorCount ?? 0,
+        inboundSignalingErrorCount: diagnostics?.inboundSignalingErrorCount ?? 0
     };
 }
 

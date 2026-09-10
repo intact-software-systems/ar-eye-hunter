@@ -7,6 +7,8 @@ import type {
 export namespace ALOutboundCommitPhases {
     export interface Input {
         readonly senderId: string;
+        readonly msgId: string;
+        readonly typeId: string;
         readonly origin: ALOutboundCommitOrigin;
         readonly nowMs: () => number;
         readonly getReadOperationCount: () => number;
@@ -59,6 +61,8 @@ export class ALOutboundCommitPhases {
         return {
             kind: 'commit-phases',
             senderId: this.input.senderId,
+            msgId: this.input.msgId,
+            typeId: this.input.typeId,
             origin: this.input.origin,
             readDurationMs: this.readDurationMs,
             readOperationCount: this.readOperationCount,

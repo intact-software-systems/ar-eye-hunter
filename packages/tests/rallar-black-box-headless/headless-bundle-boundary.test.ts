@@ -66,7 +66,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // measured 255.46 KiB, so the limit was raised to 256.
         // Measured 256.19 KiB brotli after splitting the outbound commit hold into its read and
         // write phases and attributing each commit to its origin; the limit was raised to 257.
-        expect(result.brotliKiB).toBeLessThan(257);
+        // Measured 257.34 KiB brotli after cutting the readiness scan volume and naming the hop
+        // that drops an RTC offer (F2 Task 13 Step 4); the limit was raised to 258.
+        expect(result.brotliKiB).toBeLessThan(258);
     });
 });
 

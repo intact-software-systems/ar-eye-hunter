@@ -203,6 +203,7 @@ export type {
     RallarRtcLifecycleListener,
     RallarRtcPeerConnectionStatus,
     RallarRtcPeerDiagnostics,
+    RallarRtcPeerSignalingCounts,
     RallarRtcPeerStatus,
     RallarRtcReconnectOptions,
     RallarRtcRecoveryResult,

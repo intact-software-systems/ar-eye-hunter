@@ -19,6 +19,7 @@ export type {
     RallarRtcLaneStatus,
     RallarRtcPeerConnectionStatus,
     RallarRtcPeerDiagnostics,
+    RallarRtcPeerSignalingCounts,
     RallarRtcPeerStatus,
     RallarRtcStatus
 } from '@shared-web/browser/rtc-diagnostics/rallar-rtc-diagnostics-contracts.ts';

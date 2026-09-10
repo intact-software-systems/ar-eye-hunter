@@ -131,6 +131,9 @@ every session the page opens. The event's `data` is the event itself:
   sender's queue, or `none` when the queue was empty. A drain's own commits
   re-enter the same per-sender queue, so this says when a send's wait is the
   batch it caused rather than another send
+- `commit-phases` also carries `msgId` and `typeId`, so one message -- an RTC
+  offer, say -- can be followed from the commit that admitted it to the drain
+  that sent it, and a lane's commits can be counted apart from the rest
 - `commit-phases` splits what `browser-lock-hold` measures as one number:
   `readDurationMs` and `readOperationCount` for the admission read chain
   (`readOutgoingMessage` plus the pending-admission probe, and the

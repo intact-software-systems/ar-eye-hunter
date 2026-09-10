@@ -73,13 +73,17 @@ it.each(['memory', 'indexeddb'] as const)(
             sendPreparedMessage: async () => ({ status: 'sent' as const })
         });
 
-        const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage('msg-commit-phases'));
+        const message = createOutboundMessage('msg-commit-phases');
+        const enqueued = await runtime.enqueueIfAbsent(message);
 
         expect(enqueued.status).toBe('enqueued');
         const [phases] = commitPhasesOf(diagnostics);
         expect(phases).toMatchObject({
             kind: 'commit-phases',
             senderId: 'self',
+            // The message and its lane, so a readiness timeout can name which send stalled.
+            msgId: message.id.msgId,
+            typeId: 'chat.private-text.v1',
             origin: 'send',
             readOperationCount: FIRST_SEND_READ_OPERATIONS,
             commitOutcome: 'committed'
@@ -131,7 +135,12 @@ it('charges the drain its own commit rather than leaving it on the next send', a
         return commitPhasesOf(diagnostics).filter((event) => event.origin === 'drain').length;
     }).toBeGreaterThan(0);
     const [drained] = commitPhasesOf(diagnostics).filter((event) => event.origin === 'drain');
-    expect(drained).toMatchObject({ origin: 'drain', commitOutcome: 'committed' });
+    expect(drained).toMatchObject({
+        origin: 'drain',
+        commitOutcome: 'committed',
+        msgId: pending.message.id.msgId,
+        typeId: 'chat.private-text.v1'
+    });
     expect(drained?.readOperationCount).toBeGreaterThan(0);
     expect(senderQueueWaitsOf(diagnostics).map((event) => event.origin)).toContain('drain');
     runtime.dispose();

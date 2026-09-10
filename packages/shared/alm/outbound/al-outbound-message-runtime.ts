@@ -146,6 +146,10 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
         kind: 'commit-phases';
         senderId: string;
+        /** The message this commit admitted, so one signaling offer can be followed across the phases. */
+        msgId: string;
+        /** The message's payload type: which lane the commit belongs to (RTC signaling, app traffic, control). */
+        typeId: string;
         origin: ALOutboundCommitOrigin;
         readDurationMs: number;
         /** Admission-store round trips observed while this commit's read chain ran. */

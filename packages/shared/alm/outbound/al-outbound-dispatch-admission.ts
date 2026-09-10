@@ -101,6 +101,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         const phases = new ALOutboundCommitPhases({
             senderId: dispatch.msg.id.senderId,
+            msgId: dispatch.msg.id.msgId,
+            typeId: dispatch.msg.payload.typeId,
             origin: dispatch.origin,
             nowMs: () => this.readNowMs(),
             getReadOperationCount: () => this.admissionStore.getReadOperationCount()

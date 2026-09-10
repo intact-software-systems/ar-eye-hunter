@@ -190,6 +190,13 @@ describe('Rallar RTC diagnostics', () => {
                 ['realtime', { readHealth: vi.fn(() => realtimeHealth) }]
             ]
         });
+        vi.spyOn(peer.connection, 'readDiagnostics').mockReturnValue({
+            ...peer.connection.readDiagnostics(),
+            outboundOfferCount: 1,
+            outboundIceCandidateCount: 4,
+            inboundIceCandidateCount: 1,
+            outboundSignalingErrorCount: 2
+        });
         vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
             .mockReturnValue(['peer-1']);
         vi.mocked(mocks.webRtcConnectionService.activePeerIds)
@@ -226,7 +233,19 @@ describe('Rallar RTC diagnostics', () => {
                     disconnectPending: false,
                     iceCandidateQueueSize: 1,
                     localStreamId: 'local-stream',
-                    remoteStreamIds: ['remote-stream']
+                    remoteStreamIds: ['remote-stream'],
+                    // Which hop dropped a stalled handshake: four candidates left, one arrived, and
+                    // two sends were rejected outright -- with no answer in and no offer in.
+                    signaling: {
+                        outboundOfferCount: 1,
+                        outboundAnswerCount: 0,
+                        outboundIceCandidateCount: 4,
+                        inboundOfferCount: 0,
+                        inboundAnswerCount: 0,
+                        inboundIceCandidateCount: 1,
+                        outboundSignalingErrorCount: 2,
+                        inboundSignalingErrorCount: 0
+                    }
                 },
                 lanes: [
                     {
