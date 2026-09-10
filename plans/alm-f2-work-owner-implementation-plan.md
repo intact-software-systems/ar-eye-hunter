@@ -97,6 +97,10 @@ counters.
   fire-and-forget batch that outlived a closing PGlite and spun). A batch can still outlive
   `dispose()` (uncancellable port operations; lease expiry recovers) — recorded for the final
   review; `dispose(): void` stays in F2.
+- R46 (Task 7 fix round): every queue-entry writer (`toResourceEntry`, `toResourceEntryWithKey`,
+  `QueueBoxUtilities.toResourceEntryFromMsg`) stamps `date`/`createdTs` from one UTC instant — the
+  readers reinterpret `createdTs` as UTC wall clock, and the old `isAnyEntryToLock` path had masked
+  the local-zone stamp until the handler's probe became the sole cold-discovery path.
 - R40 (Task 11): the outbound admission family (`al-outbound-admission-store.ts`, `-reads.ts`,
   `-keys.ts`, `-effect-store.ts`, `-validation.ts`, plus a `-mutations.ts` split of the store's
   compute/apply half) moves into `packages/shared/alm/outbound/admission/` in one move with
@@ -1118,29 +1122,29 @@ git commit -m "refactor(alm): one outbound work owner, control admission as its 
 - Modify: `packages/shared/services/queue-box-utilities.ts` (delete `defaultDequeue` if `rg -n "defaultDequeue" packages apps` finds no remaining caller other than the RTC rx streamer's inbox, which stays)
 - Test: update `packages/tests/shared/services/ws-queue-box-server-ingress.test.ts`, `ws-queue-box-client-ingress.test.ts`, `packages/tests/shared/webrtc-overlay-services.test.ts`, `packages/tests/shared-server/rallar-system/middleware/rallar-middleware-queue-completeness.test.ts`, `apps/api-v1/test/services/ws-room-live-fanout.test.ts`
 
-- [ ] **Step 1: Find every registration and caller**
+- [x] **Step 1: Find every registration and caller**
 
 Run: `rg -n "dequeueOutbox|outboundRuntime\.dequeue|OUTBOX_DEQUEUE_TYPES|includeTask\(" packages/shared/services packages/shared/multicast packages/shared-server/rallar-system/middleware apps/api-v1/src`
 Expected: the sites listed above plus the RTC rx streamer's inbox task, which is out of scope.
 
-- [ ] **Step 2: Run the affected tests to see them fail after deletion**
+- [x] **Step 2: Run the affected tests to see them fail after deletion**
 
 Delete the methods and registrations, then run:
 `npx vitest run packages/tests/shared/services packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared-server/rallar-system/middleware`
 Expected: FAIL on tests that called `dequeueOutbox` directly.
 
-- [ ] **Step 3: Rewrite those tests to drive the engine**
+- [x] **Step 3: Rewrite those tests to drive the engine**
 
 Each test that called `service.dequeueOutbox(types, resilience)` now enqueues the outbox row and
 awaits `engine.wake()` followed by the runtime's batch (use the same `drainEngine()` helper as
 Task 6's test; put it in `packages/tests/shared/alm/outbound-runtime-test-fixture.ts`).
 
-- [ ] **Step 4: Run tests, typechecks, and the Deno check**
+- [x] **Step 4: Run tests, typechecks, and the Deno check**
 
 Run: `npx vitest run packages/tests/shared/services packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared-server packages/tests/api-v1 && npm --workspace @ar-eye-hunter/shared-server run typecheck && cd apps/api-v1 && deno task check`
 Expected: PASS and exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/shared-server packages/tests apps/api-v1
