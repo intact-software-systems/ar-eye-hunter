@@ -115,7 +115,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
             await queue.enqueue(entry);
         }
 
-        await expect(queue.cleanupAsync()).resolves.toBe(true);
+        await expect(queue.cleanupAsync()).resolves.toMatchObject({ saturated: false });
 
         expect(await queue.getItem(expiredActive.key)).toBeUndefined();
         expect(await queue.getItem(expiredCompleted.key)).toBeUndefined();
@@ -140,7 +140,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
         await queue.enqueue(expiredCompleted);
 
         // The row is on both sweep lists; a second mutation for its key would reject the write.
-        await expect(queue.cleanupAsync()).resolves.toBe(true);
+        await expect(queue.cleanupAsync()).resolves.toMatchObject({ saturated: false });
 
         expect(await queue.getItem(expiredCompleted.key)).toBeUndefined();
     });
@@ -162,7 +162,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
             await queue.enqueue(entry);
         }
 
-        await expect(queue.cleanupAsync()).resolves.toBe(true);
+        await expect(queue.cleanupAsync()).resolves.toMatchObject({ saturated: false });
 
         const survivingKeys = await queue.getAllKeys();
         expect(survivingKeys).toHaveLength(retained.length);
@@ -200,7 +200,9 @@ describe('IndexedDbQueueBox indexed reads', () => {
         );
 
         const getAllSpy = vi.spyOn(IDBIndex.prototype, 'getAll');
-        await expect(queue.cleanupAsync()).resolves.toBe(false);
+        // A run that exhausts its page budget without deleting is not saturated: re-running it would
+        // page from the same start and make no progress, so the bound is the sweep's own, not a loop's.
+        await expect(queue.cleanupAsync()).resolves.toEqual({ deleted: 0, saturated: false });
 
         expect(await queue.getItem(swept[0].key)).toBeDefined();
         expect(getAllSpy.mock.calls.length).toBeLessThanOrEqual(CLEANUP_MAX_PAGES_PER_RUN + 1);

@@ -23,7 +23,10 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { readBrowserALWorkCleanupRows } from '@shared-web/browser/al-runtime/browser-al-work-cleanup.ts';
+import {
+    readBrowserALWorkCleanupRows,
+    writeBrowserALWorkExpiryCleanup
+} from '@shared-web/browser/al-runtime/browser-al-work-cleanup.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
@@ -34,7 +37,10 @@ import { decodeALOutboundIdentityFact, toALOutboundIdentityKey } from '@shared/a
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
-import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
+import {
+    INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE,
+    IndexedDbQueueBox
+} from '@shared/queuebox/indexed-db-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
@@ -199,6 +205,42 @@ describe('browser canonical outbound cleanup', () => {
         expect(remaining.filter((row) => target.keys.has(row.keyString))).toEqual([]);
         expect(remaining.filter((row) => other.keys.has(row.keyString))).toHaveLength(other.keys.size);
         expect(remaining.some((row) => row.keyString.includes(unrelated.key.resourceId))).toBe(true);
+    });
+
+    it('re-arms the per-run deletion budget until every expired work row is drained', async () => {
+        const nowMs = Date.now();
+        const expiredCount = INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE + 40;
+        const session = `budget-${crypto.randomUUID()}`;
+        configureBrowserALRuntimeStores(session, { diagnosticsPorts });
+        const stores = resolveBrowserWsClientALInboundRuntimeStores(session);
+        await stores.admissionStore.ready();
+        const keyStrings = new Set<string>();
+        for (let index = 0; index < expiredCount; index += 1) {
+            const entry = computeALInboundWorkEntry({
+                namespace: stores.admissionStore.namespace,
+                observedAtMs: nowMs - 120_000,
+                effectId: `budget-${index}`,
+                expireAtTimestamp: nowMs - 60_000,
+                payload: { kind: 'release-buffered', trackKey: 'budget-track', seq: index }
+            }).entry;
+            keyStrings.add(toKeyAsString(entry.key));
+            await stores.workQueue.enqueue(entry);
+        }
+        const db = await openIndexedDbAdmissionDatabase({
+            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
+        try {
+            expect(await writeBrowserALWorkExpiryCleanup(db, nowMs)).toBe(true);
+        }
+        finally {
+            db.close();
+        }
+
+        const remaining = await readRawWorkRows();
+        expect(remaining.filter((row) => keyStrings.has(row.keyString))).toEqual([]);
     });
 
     it('deletes one session\'s AL work rows through bounded per-owner cursor ranges', async () => {

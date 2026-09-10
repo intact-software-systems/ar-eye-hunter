@@ -74,8 +74,14 @@ import { writeComputedIndexedDbQueueMutations } from './write-computed-indexed-d
 
 export { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
 
+export interface IndexedDbQueueCleanupResult {
+    readonly deleted: number;
+    /** The pass deleted a whole per-reason budget, so more rows of that kind may remain. */
+    readonly saturated: boolean;
+}
+
 /** Per-run cap on rows an opportunistic cleanupAsync() pass deletes for each reason. */
-const INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE = 256;
+export const INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE = 256;
 const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE = 256;
 /** Retained rows spend pages without spending deletions, so one run also gets a page budget. */
 const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES = 8;
@@ -166,44 +172,48 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         };
     }
 
+    /** The opportunistic sweep hot paths trigger: rate limited, so it runs at most once per window. */
     cleanup(): void {
+        if (!this.#cleanupRateLimiter.allow()) {
+            return;
+        }
         void this.cleanupAsync().catch((e) => {
             console.error('Failed to cleanup IndexedDB queue entries', e);
         });
     }
 
-    async cleanupAsync(): Promise<boolean> {
+    /**
+     * One bounded pass. A pass that deletes a whole per-reason budget reports `saturated`, so a
+     * caller that owns a bound of its own can run the next pass instead of leaving the remainder
+     * until some later trigger.
+     */
+    async cleanupAsync(): Promise<IndexedDbQueueCleanupResult> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
-        return await RateLimiter.tryToExecuteOrDefault(
-            this.#cleanupRateLimiter,
-            async () => {
-                const db = await this.#connection.open();
-                const now = this.#now();
-                const expired = await this.#readExpiredEntries(db, now);
-                const completed = await readDeletableCompletedStoredQueueEntries({
-                    db,
-                    storeName: this.#storeName,
-                    statusIds: COMPLETED_STATUSES,
-                    endAtOrBeforeEpochMs: Number(now.epochMilliseconds),
-                    maxToDelete: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE,
-                    maxPages: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES,
-                    isDeletable: (stored) => !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
-                });
-                // A row can be expired and terminal at once; a duplicate key rejects the whole write.
-                const toDelete = new Map<ResourceEntryKeyString, StoredResourceEntry>(
-                    [...expired, ...completed].map((stored) => [stored.keyString, stored])
-                );
-                const removedEntries = await this.#write(db, {
-                    mutations: [...toDelete.values()].map(computeIndexedDbQueueDelete),
-                    result: toDelete.size
-                });
-                if (removedEntries > 0) {
-                    console.log('Removed entries: ', removedEntries);
-                }
-                return removedEntries > 0;
-            },
-            false
+        const db = await this.#connection.open();
+        const now = this.#now();
+        const expired = await this.#readExpiredEntries(db, now);
+        const completed = await readDeletableCompletedStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            statusIds: COMPLETED_STATUSES,
+            endAtOrBeforeEpochMs: Number(now.epochMilliseconds),
+            maxToDelete: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE,
+            maxPages: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES,
+            isDeletable: (stored) => !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
+        });
+        // A row can be expired and terminal at once; a duplicate key rejects the whole write.
+        const toDelete = new Map<ResourceEntryKeyString, StoredResourceEntry>(
+            [...expired, ...completed].map((stored) => [stored.keyString, stored])
         );
+        const deleted = await this.#write(db, {
+            mutations: [...toDelete.values()].map(computeIndexedDbQueueDelete),
+            result: toDelete.size
+        });
+        return {
+            deleted,
+            saturated: expired.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE ||
+                completed.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE
+        };
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
@@ -549,9 +559,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             now
         });
 
-        void this.cleanupAsync().catch((e) => {
-            console.error('Failed to cleanup entries', e);
-        });
+        this.cleanup();
 
         return anyEntryToLock;
     }
@@ -704,6 +712,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         return await this.#write(db, { mutations, result: keys });
     }
 
+    /**
+     * One bounded page per call: a returned count that reaches the per-run budget is the caller's
+     * signal that more expired rows remain, so the bound belongs to the caller and not to a loop here.
+     */
     async deleteExpired(): Promise<number> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
         const db = await this.#connection.open();
