@@ -107,6 +107,12 @@ counters.
   one the run deletes nothing, accepted until V1's retention budgets); `reserveTimeoutEntries` reads
   `max(maxToReserve, 64)` per type so the probe and the reservation agree; the readiness probe is
   split into one reader per status class; `browser/rallar.ts` budget 202 KiB (201.04 recorded).
+- R52–R55 (Tasks 9–10): every browser cleanup range ends at the key delimiter; AL work expiry is
+  store-wide by construction (only the KV metadata rows are session-scoped) and the contract says
+  so; an undecodable schema row resets like a missing one; the eviction interval returns a stop
+  handle and the tests tear it down — production session teardown does not consume that handle
+  yet (the interval and its `onStorageReset` closure stay pinned to the first session for the
+  tab's lifetime; pre-existing; recorded for the final review and S1).
 - R40 (Task 11): the outbound admission family (`al-outbound-admission-store.ts`, `-reads.ts`,
   `-keys.ts`, `-effect-store.ts`, `-validation.ts`, plus a `-mutations.ts` split of the store's
   compute/apply half) moves into `packages/shared/alm/outbound/admission/` in one move with
@@ -1270,19 +1276,19 @@ git commit -m "perf(queuebox): indexed IndexedDB reads replace every whole-store
 - Modify: `packages/shared-web/browser/al-runtime/browser-al-work-cleanup.ts` (replace the full-range cursor with one bounded range per owned prefix and topic), `browser-al-runtime-cleanup.ts`
 - Test: update `packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-validation.test.ts`, `browser-outbound-cleanup.test.ts`, `browser-al-runtime-ownership.test.ts`
 
-- [ ] **Step 1: Write the failing cleanup test**
+- [x] **Step 1: Write the failing cleanup test**
 
 Add to `browser-outbound-cleanup.test.ts` a case that seeds work and canonical rows for two sessions,
 runs the session cleanup for one, and asserts through a spied `IDBObjectStore.prototype.openCursor`
 that every range passed starts with `AL_INBOUND/<prefix>` or `AL_OUTBOUND/<prefix>` or
 `AL_OUTBOUND_MESSAGE/scope-<hash>` and that the other session's rows survive.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime/browser-outbound-cleanup.test.ts`
 Expected: FAIL (the current cursor range is the whole AL topic range).
 
-- [ ] **Step 3: Implement the key layout and the range reads**
+- [x] **Step 3: Implement the key layout and the range reads**
 
 Change the three key builders. In `readBrowserALWorkCleanupRows` replace the single
 `IDBKeyRange.bound('AL_INBOUND', 'AL_OUTBOUND￿')` with one cursor per range in
@@ -1317,12 +1323,12 @@ passes the global prefix and uses the queue box's`cleanupAsync`for expired rows 
 range scan. Delete`isSelectedBrowserCanonicalScope` and the identity-fact decoding that only served
 scope filtering.
 
-- [ ] **Step 4: Run the shared-web suites**
+- [x] **Step 4: Run the shared-web suites**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts packages/tests/shared/alm/al-admission-backend.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/shared-web packages/tests
@@ -1373,7 +1379,7 @@ close the database, `indexedDB.deleteDatabase(dbName)` (reject with `ALStorageRe
 if `blocked` fires and does not resolve within 5 s), call `onStorageReset`, and open once more; a
 second mismatch throws. The schema record is written as an initial record `{ key: AL_ADMISSION_SCHEMA_KEY, value: schemaId, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts` with `fake-indexeddb/auto`:
 open a database through `openIndexedDbAdmissionDatabase` with `schemaId: 'old'`, write one admission
@@ -1383,12 +1389,12 @@ was emitted once, the old row is gone, and the schema record now holds the new i
 database created with a different store set (open `indexedDB.open(dbName)` and create a single store
 named `legacy`) resets with `reason: 'store-schema-mismatch'`.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts`
 Expected: FAIL, the function does not accept an input object.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 export async function openIndexedDbAdmissionDatabase(
@@ -1462,12 +1468,12 @@ those a typed `IndexedDbSchemaMismatchError` in `open-indexed-db.ts` rather than
 `diagnosticsPorts.onStorageReset`. The black-box page composition records the event as a diagnostic
 `rallar.browser.alm.storage_reset`.
 
-- [ ] **Step 4: Run the suites**
+- [x] **Step 4: Run the suites**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/shared-web packages/tests
