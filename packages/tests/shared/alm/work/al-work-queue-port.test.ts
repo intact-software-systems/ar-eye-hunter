@@ -38,6 +38,30 @@ describe('ALWorkQueuePort', () => {
         expect(retried?.dequeueAudit.attempts).toBe(1);
     });
 
+    it('leases from the reservation the queue stamped, not from the claiming clock', async () => {
+        // 9_998.5 ms: behind the port's clock and sub-millisecond, so a JS-clock lease and a
+        // truncating one both differ from the readiness a reserved row reports.
+        const queueNow = Temporal.Instant.fromEpochNanoseconds(9_998_500_000n);
+        const queue = new InMemoryQueueBox(undefined, () => queueNow);
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => 10_000,
+            random: () => 0.5
+        });
+        await port.retainIfAbsent(newWorkEntry('AL_TEST', 'w-lease'));
+
+        const [claim] = await port.claim({ maxCount: 1, observedEntries: undefined });
+
+        const startTs = claim.entry.dequeueAudit.startTs;
+        expect(startTs?.epochNanoseconds).toBe(9_998_500_000n);
+        expect(claim.leaseUntilMs).toBe(
+            Number(startTs?.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds) + 5_000
+        );
+        expect(claim.leaseUntilMs).toBe(14_999);
+    });
+
     it('completes and rejects work and tolerates a lost reservation', async () => {
         let now = 10_000;
         const queue = new InMemoryQueueBox(

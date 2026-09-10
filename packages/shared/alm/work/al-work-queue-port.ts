@@ -55,7 +55,7 @@ export interface CreateALWorkQueuePortInput {
 }
 
 export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWorkQueuePort {
-    const { queue, workTypes, leaseMs, nowMs } = input;
+    const { queue, workTypes, leaseMs } = input;
     const maxAttempts = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts;
     return {
         retainIfAbsent: (entry) => queue.enqueueIfAbsent(entry),
@@ -76,7 +76,7 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
                 timeSinceStartTs: Temporal.Duration.from({ milliseconds: leaseMs }),
                 observedEntries
             });
-            return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, nowMs() + leaseMs));
+            return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, leaseMs));
         },
         finalizeExhausted: async (maxCount) => {
             const reserved = await queue.reserveRetryExhaustionFinalizations(new Set(workTypes), {
@@ -84,15 +84,40 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
                 maxToReserve: maxCount,
                 staleAfterMs: leaseMs
             });
-            return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, nowMs() + leaseMs));
+            return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, leaseMs));
         },
         release: (claim, outcome) => releaseALWorkClaim(queue, claim, toReleaseDisposition(outcome, claim, input)),
         readEntry: (key) => queue.getItem(key)
     };
 }
 
-function toALWorkClaim(entry: ResourceEntry, leaseUntilMs: number): ALWorkClaim {
-    return { entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs };
+/**
+ * The lease belongs to the reservation, not to the caller's clock: a queue that stamps the start
+ * from its own store (Postgres `now()`) would otherwise disagree with a claim measured after the
+ * round trip. Readiness probes round the stored start up to the millisecond, so this does too.
+ */
+export function computeALWorkLeaseUntilMs(entry: ResourceEntry, leaseMs: number): number {
+    const startTs = entry.dequeueAudit.startTs;
+    assertReservedWorkStart(startTs);
+    return Number(
+        startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds
+    ) + leaseMs;
+}
+
+function assertReservedWorkStart(
+    startTs: Temporal.Instant | undefined
+): asserts startTs is Temporal.Instant {
+    if (startTs === undefined) {
+        throw new TypeError('A reserved work entry carries no reservation start');
+    }
+}
+
+function toALWorkClaim(entry: ResourceEntry, leaseMs: number): ALWorkClaim {
+    return {
+        entry,
+        attempts: entry.dequeueAudit.attempts,
+        leaseUntilMs: computeALWorkLeaseUntilMs(entry, leaseMs)
+    };
 }
 
 async function releaseALWorkClaim(

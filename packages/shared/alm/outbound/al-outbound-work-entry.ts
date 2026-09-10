@@ -12,7 +12,7 @@ import {
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
-import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import { computeALWorkLeaseUntilMs, type ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -207,12 +207,7 @@ export function isPendingALOutboundWork(entry: ResourceEntry): boolean {
 
 export function resolveALOutboundWorkReadyAt(entry: ResourceEntry): number {
     if (entry.status === EntityStatus.RESERVED) {
-        if (entry.dequeueAudit.startTs === undefined) {
-            throw new TypeError('Outbound work reservation start is missing');
-        }
-        return Number(
-            entry.dequeueAudit.startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds
-        ) + AL_OUTBOUND_WORK_LEASE_MS;
+        return computeALWorkLeaseUntilMs(entry, AL_OUTBOUND_WORK_LEASE_MS);
     }
     return Number(
         entry.dequeueAudit.nextTs?.epochMilliseconds ??
