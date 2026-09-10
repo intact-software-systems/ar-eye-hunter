@@ -104,7 +104,11 @@ export class ALWorkHandler {
         });
         // Every writer that is not this owner announces its row by waking the engine -- a server
         // AppInbox transaction, a pub/sub requeue, another tab. The wake is therefore the moment the
-        // remembered answer stopped describing storage.
+        // remembered answer stopped describing storage. It reaches every owner sharing the engine,
+        // not only the one the row belongs to: the inbound owner's progress re-probes the outbound
+        // owner. That amplification is bounded by one probe per owner per engine pass, and is
+        // accepted -- a wake that skipped the owners it could not attribute the row to would let a
+        // stale memory answer for rows the writer did mean for them.
         dependencies.queueEngine.includeWakeListener(dependencies.workerId, () => this.forgetReadiness());
     }
 
