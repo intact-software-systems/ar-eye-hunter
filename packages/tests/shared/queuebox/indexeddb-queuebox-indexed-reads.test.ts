@@ -72,6 +72,31 @@ describe('IndexedDbQueueBox indexed reads', () => {
         expect(storeGetAllSpy).not.toHaveBeenCalled();
     });
 
+    it('reads every claimed type and status of one reservation from one readonly transaction', async () => {
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-indexed-reads-one-tx-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        await seedMixedTypeAndStatusEntries(queue);
+        // The shape a WS outbound owner claims: its own work type plus the foreign outbox type.
+        const typeIds = new Set([SEEDED_TYPES[0], SEEDED_TYPES[1]]);
+
+        const readonlyTransactions = countReadonlyTransactions();
+        const reserved = await queue.reserveEntries({
+            typeIds,
+            statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 4, maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts }
+        });
+        await queue.reserveTimeoutEntries({
+            typeIds,
+            reservationInput: { maxToReserve: 4, maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts },
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 30 })
+        });
+
+        expect(reserved.size).toBe(4);
+        expect(readonlyTransactions.count()).toBeLessThanOrEqual(2);
+    });
+
     it('cleanupAsync removes only expired rows and completed rows past retention', async () => {
         const now = Temporal.Now.instant();
         const sweptTypeId = 'cleanup.swept.v1';
@@ -338,6 +363,24 @@ async function writeRawQueueEntries(
             store.put(row);
         }
     });
+}
+
+/** Counts the readonly transactions a claim opens: one per reserve call is the contract. */
+function countReadonlyTransactions(): { count(): number; } {
+    const opened: string[] = [];
+    const openTransaction = IDBDatabase.prototype.transaction;
+    vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
+        this: IDBDatabase,
+        storeNames: string | Iterable<string>,
+        mode?: IDBTransactionMode,
+        options?: IDBTransactionOptions
+    ) {
+        if (mode === undefined || mode === 'readonly') {
+            opened.push(String(storeNames));
+        }
+        return openTransaction.call(this, storeNames, mode, options);
+    });
+    return { count: () => opened.length };
 }
 
 function createEntry(

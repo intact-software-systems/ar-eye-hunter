@@ -19,14 +19,6 @@ interface ReadFairnessStoredQueueEntriesInput {
     readonly typeIds: readonly string[];
 }
 
-interface ReadStoredQueueEntriesByTypeStatusInput {
-    readonly db: IDBDatabase;
-    readonly storeName: string;
-    readonly typeId: string;
-    readonly status: EntityStatus;
-    readonly maxToRead: number;
-}
-
 interface ReadStoredQueueEntriesByTypesAndStatusesInput {
     readonly db: IDBDatabase;
     readonly storeName: string;
@@ -169,47 +161,30 @@ export async function readStoredQueueEntries(
     return entries;
 }
 
-/** Internal primitive: `readStoredQueueEntriesByTypesAndStatuses` is the reservation-read surface. */
-async function readStoredQueueEntriesByTypeStatus(
-    input: ReadStoredQueueEntriesByTypeStatusInput
-): Promise<readonly StoredResourceEntry[]> {
-    const { db, storeName, typeId, status, maxToRead } = input;
-    const transaction = db.transaction(storeName, 'readonly');
-    const range = IDBKeyRange.bound([typeId, status], [typeId, status, []]);
-    const values = await readIndexedDbTransaction(
-        transaction,
-        async () =>
-            await readIndexedDbRequest(
-                transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME).getAll(range, maxToRead)
-            )
-    );
-    return values.map(decodeStoredResourceEntryValue);
-}
-
 /**
- * The candidate-gathering loop for per-type reservation reads: callers keep one flat list plus
- * their unchanged per-row predicate loop, instead of each owning this typeId x status nesting.
+ * The candidate-gathering read for reservation: callers keep one flat list plus their unchanged
+ * per-row predicate loop. Every typeId x status page is read from one readonly transaction, so a
+ * claim over several work types costs one transaction rather than one per combination, and every
+ * page in it observes the same store snapshot.
  */
 export async function readStoredQueueEntriesByTypesAndStatuses(
     input: ReadStoredQueueEntriesByTypesAndStatusesInput
 ): Promise<readonly StoredResourceEntry[]> {
     const { db, storeName, typeIds, statusIds, maxToReadPerCombination } = input;
-    const statuses = [...statusIds];
-    const candidates: StoredResourceEntry[] = [];
-    for (const typeId of typeIds) {
-        for (const status of statuses) {
-            candidates.push(
-                ...await readStoredQueueEntriesByTypeStatus({
-                    db,
-                    storeName,
-                    typeId,
-                    status,
-                    maxToRead: maxToReadPerCombination
-                })
-            );
-        }
+    const combinations = [...typeIds].flatMap((typeId) => [...statusIds].map((status) => ({ typeId, status })));
+    if (combinations.length === 0) {
+        return [];
     }
-    return candidates;
+    const transaction = db.transaction(storeName, 'readonly');
+    const pages = await readIndexedDbTransaction(transaction, async () => {
+        const index = transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
+        return await Promise.all(combinations.map(({ typeId, status }) =>
+            readIndexedDbRequest(
+                index.getAll(IDBKeyRange.bound([typeId, status], [typeId, status, []]), maxToReadPerCombination)
+            )
+        ));
+    });
+    return pages.flat().map(decodeStoredResourceEntryValue);
 }
 
 export async function readExpiredStoredQueueEntries(
