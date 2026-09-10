@@ -373,7 +373,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
 
         const admitted = await this.repairAdmission.acceptControlMessage(msg);
-        this.work.committed();
+        // A foreign control and a rejected one write nothing, so they owe no batch.
+        if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
+            this.work.committed();
+        }
         return admitted;
     }
 

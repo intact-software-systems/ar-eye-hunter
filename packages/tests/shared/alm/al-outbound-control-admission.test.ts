@@ -26,6 +26,7 @@ import {
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     describe,
     expect,
@@ -346,6 +347,32 @@ describe('outbound control admission identity', () => {
         await expect.poll(async () => (await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind)).toContain('nack-retry');
     });
 
+    it('starts a work batch only for a control admission that wrote', async () => {
+        const { admissionStore, workQueue } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const runtime = createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
+            stores: { admissionStore, workQueue },
+            // An engine the runtime does not own never ticks, so a claim proves the commit woke a batch.
+            queueEngine: new InboxOutboxEngine(),
+            decodePreparedMessage: decodeALOutboundTransportMessage,
+            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const })
+        });
+        await runtime.ready();
+        const claimed = vi.spyOn(workQueue, 'reserveEntries');
+
+        const foreign = newALRepairControlMessage(
+            { v: 2, msgId: 'control-foreign', senderId: 'receiver', ts: 1 },
+            { fromPeerId: 'receiver', toPeerId: 'sender', msgId: 'unowned', reason: 'retransmit', observedAtEpochMs: 1 }
+        );
+        expect(await runtime.acceptControlMessage(foreign)).toEqual({ kind: 'not-handled' });
+        await settleOutboundBatches();
+        expect(claimed).not.toHaveBeenCalled();
+
+        expect(await runtime.acceptControlMessage(repairControl(1))).toEqual({ kind: 'committed' });
+        await expect.poll(() => claimed.mock.calls.length).toBeGreaterThan(0);
+    });
+
     it('commits an accepted repair and the work it forwards in one transaction', async () => {
         const { backend, admissionStore, workQueue, control } = createFixture();
         await seedDirectObligation(admissionStore);
@@ -399,6 +426,13 @@ function createFixture() {
             nowMs: Date.now
         })
     };
+}
+
+/** Lets every already-started work batch settle, so "no batch ran" is a claim about a quiet queue. */
+async function settleOutboundBatches(): Promise<void> {
+    for (let pass = 0; pass < 5; pass += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
 }
 
 /** The work rows the owner retained for this scope, decoded the way its worker decodes them. */
