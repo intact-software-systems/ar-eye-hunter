@@ -332,6 +332,19 @@ again after the final reviewed candidate is pushed. The black-box browser
 runtime contract now requires canonical room readiness outright; no optional
 method, capability fallback, old overload, or legacy test-double path remains.
 
+Independent review of the committed candidate then reproduced one final
+projection defect: a zero-deadline or already-aborted authority wait discarded
+its terminal outcome. When the retained older layout still had an open lane,
+the subsequent cached status read could therefore report `open` even though
+that accepted layout did not cover current room presence. The correction keeps
+the authority-wait outcome inside `BrowserRtcRoomRuntime`, uses the same causal
+predicate for direct status and wait completion, and reports the timeout or
+abort without opening a lane. Deterministic regressions cover both exits with a
+stale accepted layout and a previously ready peer. This adds no public result
+field, polling, retry, timeout, compatibility path, or legacy implementation;
+it also resets the immutable browser-proof count until the corrected head has
+completed final review and validation.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |

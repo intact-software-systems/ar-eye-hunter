@@ -3,7 +3,7 @@ import {
     isSameGroupRef,
     toScopedOverlayId
 } from '@shared/api/api-type-utils.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { OverlayRepositoryChange } from '@shared/repository/overlays-repository.ts';
 
 import type { RallarRoomLayoutSlotsPort } from './formation/room-layout-slots.ts';
@@ -16,7 +16,7 @@ export interface SubscribeRoomTransportTargetInput {
 }
 
 interface RoomTransportStateChange {
-    readonly groups: readonly Pick<GroupSnapshot, 'group'>[];
+    readonly groups: readonly Readonly<{ group: GroupRef; }>[];
 }
 
 /** Wakes when authoritative membership or the accepted layout changes for one room. */

@@ -24,6 +24,23 @@ interface LaneOpenRequest {
     readonly timeoutMs: number | undefined;
 }
 
+function withPreviousAcceptedPresenceRevision(
+    snapshot: GroupSnapshot
+): GroupSnapshot {
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            acceptedLayoutIdentity: {
+                groupRevision: snapshot.causalRevision.groupRevision,
+                presenceRevision: snapshot.causalRevision.presenceRevision - 1,
+                version: 1,
+                state: 'active'
+            }
+        }
+    };
+}
+
 describe('Rallar RTC room wait', () => {
     beforeEach(resetRtcWaitTestRuntime);
 
@@ -597,18 +614,7 @@ describe('Rallar RTC room wait', () => {
             'peer-1',
             'peer-2'
         ]);
-        const staleSnapshot: GroupSnapshot = {
-            ...currentSnapshot,
-            group: {
-                ...currentSnapshot.group,
-                acceptedLayoutIdentity: {
-                    groupRevision: currentSnapshot.causalRevision.groupRevision,
-                    presenceRevision: currentSnapshot.causalRevision.presenceRevision - 1,
-                    version: 1,
-                    state: 'active'
-                }
-            }
-        };
+        const staleSnapshot = withPreviousAcceptedPresenceRevision(currentSnapshot);
         const snapshots = [staleSnapshot];
         const acceptedOverlays = [
             createAcceptedOverlay(staleSnapshot, ['session-1', 'peer-1'])
@@ -674,10 +680,19 @@ describe('Rallar RTC room wait', () => {
         });
     });
 
-    it('ends a missing-authority wait at its timeout without opening a lane', async () => {
+    it('reports a stale accepted layout as timed out without opening a lane', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
-        mockGroupSnapshots([snapshot], []);
+        const currentSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-1',
+            'peer-2'
+        ]);
+        const staleSnapshot = withPreviousAcceptedPresenceRevision(currentSnapshot);
+        mockGroupSnapshots(
+            [staleSnapshot],
+            [createAcceptedOverlay(staleSnapshot, ['session-1', 'peer-1'])]
+        );
+        await mockOpenRtcLane('peer-1', 'realtime');
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             () => {
                 throw new Error('A timed-out authority wait must not open a lane.');
@@ -694,16 +709,27 @@ describe('Rallar RTC room wait', () => {
         ).resolves.toMatchObject({
             rtc: {
                 state: 'idle',
-                acceptedLayoutIdentity: undefined,
-                readyPeerIds: []
+                acceptedLayoutIdentity: staleSnapshot.group.acceptedLayoutIdentity,
+                desiredPeerIds: ['peer-1'],
+                readyPeerIds: ['peer-1'],
+                reason: 'Room RTC wait ended with timeout.'
             }
         });
     });
 
-    it('ends a missing-authority wait when aborted without opening a lane', async () => {
+    it('reports a stale accepted layout as aborted without opening a lane', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
-        mockGroupSnapshots([snapshot], []);
+        const currentSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-1',
+            'peer-2'
+        ]);
+        const staleSnapshot = withPreviousAcceptedPresenceRevision(currentSnapshot);
+        mockGroupSnapshots(
+            [staleSnapshot],
+            [createAcceptedOverlay(staleSnapshot, ['session-1', 'peer-1'])]
+        );
+        await mockOpenRtcLane('peer-1', 'realtime');
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             () => {
                 throw new Error('An aborted authority wait must not open a lane.');
@@ -723,8 +749,10 @@ describe('Rallar RTC room wait', () => {
         ).resolves.toMatchObject({
             rtc: {
                 state: 'idle',
-                acceptedLayoutIdentity: undefined,
-                readyPeerIds: []
+                acceptedLayoutIdentity: staleSnapshot.group.acceptedLayoutIdentity,
+                desiredPeerIds: ['peer-1'],
+                readyPeerIds: ['peer-1'],
+                reason: 'Room RTC wait ended with aborted.'
             }
         });
     });

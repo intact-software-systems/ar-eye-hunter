@@ -40,6 +40,15 @@ export namespace BrowserRtcRoomRuntime {
             options: RallarRtcRoomLaneWaitOptions
         ): Promise<RallarRtcRoomLaneWaitResult>;
     }
+
+    export type Readiness =
+        | Readonly<{ authorityWaitStatus: 'timeout' | 'aborted'; }>
+        | Readonly<{ lane: RallarRtcRoomLaneWaitResult; }>;
+}
+
+interface RoomTransportAuthorityObservation {
+    readonly target: BrowserRoomTransportTarget;
+    readonly status: 'current' | 'timeout' | 'aborted';
 }
 
 /** Owns room-scoped RTC transport status, opening, and readiness views. */
@@ -53,7 +62,7 @@ export class BrowserRtcRoomRuntime {
     public status(
         room: string | GroupRef,
         options: RallarRtcRoomTransportOptions = {},
-        readiness?: RallarRtcRoomLaneWaitResult
+        readiness?: BrowserRtcRoomRuntime.Readiness
     ): RallarRoomTransportStatus {
         const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
         const mode = options.mode ?? 'lazy';
@@ -70,9 +79,17 @@ export class BrowserRtcRoomRuntime {
             0,
             options.minReadyPeers ?? desiredPeerIds.length
         );
+        const laneReadiness = readiness && 'lane' in readiness
+            ? readiness.lane
+            : undefined;
+        const authorityWaitStatus = readiness && 'authorityWaitStatus' in readiness
+            ? readiness.authorityWaitStatus
+            : undefined;
+        const waitStatus = laneReadiness?.status ?? authorityWaitStatus;
         const state = resolveRtcRoomTransportState({
             mode,
-            hasAcceptedLayout: target.acceptedLayoutIdentity !== undefined,
+            hasAcceptedLayout: authorityWaitStatus === undefined &&
+                target.acceptedLayoutCoversCurrentPresence,
             transportState: target.transportState,
             desiredPeerCount: desiredPeerIds.length,
             knownPeerCount: peers.knownPeerIds.length,
@@ -80,7 +97,7 @@ export class BrowserRtcRoomRuntime {
             readyPeerCount: peers.readyPeerIds.length,
             failedPeerCount: peers.failedPeerIds.length,
             minReadyPeers,
-            waitStatus: readiness?.status
+            waitStatus
         });
 
         return {
@@ -96,7 +113,7 @@ export class BrowserRtcRoomRuntime {
                 ...peers,
                 laneId,
                 lastChangedAtEpochMs: Date.now(),
-                reason: describeRtcRoomTransport(state, readiness)
+                reason: describeRtcRoomTransport(state, waitStatus)
             }
         };
     }
@@ -138,33 +155,45 @@ export class BrowserRtcRoomRuntime {
         room: string | GroupRef,
         laneId: string,
         options: RallarRtcRoomLaneWaitOptions
-    ): Promise<RallarRtcRoomLaneWaitResult | undefined> {
+    ): Promise<BrowserRtcRoomRuntime.Readiness> {
         const target = this.input.resolveRoomTransportTarget(room);
         if (!this.input.isConnected() || isRoomTransportAuthoritySettled(target)) {
-            return await this.input.waitForRoomLane(room, laneId, options);
+            return { lane: await this.input.waitForRoomLane(room, laneId, options) };
         }
 
         const timeoutMs = normalizeWaitTimeoutMs(
             this.input.resolveWaitTimeoutMs(options.timeoutMs)
         );
         const startedAtMs = Date.now();
-        const settledTarget = await waitForSettledRead({
-            readResult: () => this.input.resolveRoomTransportTarget(room),
-            isSettled: isRoomTransportAuthoritySettled,
+        const readAuthority = (
+            status: RoomTransportAuthorityObservation['status'] = 'current'
+        ): RoomTransportAuthorityObservation => ({
+            target: this.input.resolveRoomTransportTarget(room),
+            status
+        });
+        const observation = await waitForSettledRead({
+            readResult: readAuthority,
+            isSettled: (current) => isRoomTransportAuthoritySettled(current.target),
             subscribe: (listener) => this.input.subscribeRoomTransportTarget(room, listener),
             signal: options.signal,
             timeoutMs,
-            toTimedOut: () => this.input.resolveRoomTransportTarget(room),
-            toAborted: () => this.input.resolveRoomTransportTarget(room)
+            toTimedOut: () => readAuthority('timeout'),
+            toAborted: () => readAuthority('aborted')
         });
-        if (!isRoomTransportAuthoritySettled(settledTarget)) {
-            return undefined;
+        if (!isRoomTransportAuthoritySettled(observation.target)) {
+            return {
+                authorityWaitStatus: observation.status === 'aborted'
+                    ? 'aborted'
+                    : 'timeout'
+            };
         }
 
-        return await this.input.waitForRoomLane(room, laneId, {
-            ...options,
-            timeoutMs: Math.max(0, timeoutMs - (Date.now() - startedAtMs))
-        });
+        return {
+            lane: await this.input.waitForRoomLane(room, laneId, {
+                ...options,
+                timeoutMs: Math.max(0, timeoutMs - (Date.now() - startedAtMs))
+            })
+        };
     }
 }
 
