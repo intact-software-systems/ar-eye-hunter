@@ -64,7 +64,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // Main measured 252.37 KiB brotli for the RTC authority recovery and live
         // durable-admission observation (#554) against a 253 limit; merging both lines
         // measured 255.46 KiB, so the limit was raised to 256.
-        // Measured 256.21 KiB brotli after splitting the outbound commit hold into its read and
+        // Measured 256.19 KiB brotli after splitting the outbound commit hold into its read and
         // write phases and attributing each commit to its origin; the limit was raised to 257.
         expect(result.brotliKiB).toBeLessThan(257);
     });

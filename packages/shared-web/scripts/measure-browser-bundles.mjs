@@ -30,12 +30,12 @@ const entries = [
     {
         // Maintainer approved necessary ALM growth; the queue box's paged terminal sweep and
         // split readiness probe measure 201.043 KiB. Merging the RTC group-snapshot refresh and
-        // transient-admission recovery (#554) measures 202.426 KiB. Splitting the outbound commit
-        // hold into its read and write phases measures 203.038 KiB, so the ceiling moves to 204.
+        // transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
+        // Splitting the outbound commit hold into its read and write phases measures 202.896 KiB.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 204
+        brotliBudgetKiB: 203
     },
     {
         label: 'browser/rallar-core.ts',
