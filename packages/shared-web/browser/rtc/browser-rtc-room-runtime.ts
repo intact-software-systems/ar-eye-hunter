@@ -91,9 +91,12 @@ export class BrowserRtcRoomRuntime {
             ? readiness.waitStatus
             : undefined;
         const waitStatus = laneReadiness?.status ?? observedWaitStatus;
+        const observedWaitFailed = observedWaitStatus === 'timeout' ||
+            observedWaitStatus === 'aborted';
         const state = resolveRtcRoomTransportState({
             mode,
-            hasAcceptedLayout: target.acceptedLayoutCoversCurrentPresence,
+            hasAcceptedLayout: !observedWaitFailed &&
+                target.acceptedLayoutCoversCurrentPresence,
             transportState: target.transportState,
             desiredPeerCount: desiredPeerIds.length,
             knownPeerCount: peers.knownPeerIds.length,
@@ -172,7 +175,7 @@ export class BrowserRtcRoomRuntime {
         }
 
         const target = this.input.resolveRoomTransportTarget(room);
-        if (isRoomTransportAuthoritySettled(target)) {
+        if (isRoomTransportConnectTargetSettled(target, options.minReadyPeers)) {
             return { lane: await this.input.waitForRoomLane(room, laneId, options) };
         }
 
@@ -182,14 +185,23 @@ export class BrowserRtcRoomRuntime {
         ): RoomTransportObservation => this.readObservation(room, laneId, status);
         const observation = await waitForSettledRead({
             readResult: readAuthority,
-            isSettled: (current) => isRoomTransportAuthoritySettled(current.target),
+            isSettled: (current) =>
+                isRoomTransportConnectTargetSettled(
+                    current.target,
+                    options.minReadyPeers
+                ),
             subscribe: (listener) => this.input.subscribeRoomTransportTarget(room, listener),
             signal: options.signal,
             timeoutMs,
             toTimedOut: () => readAuthority('timeout'),
             toAborted: () => readAuthority('aborted')
         });
-        if (!isRoomTransportAuthoritySettled(observation.target)) {
+        if (
+            !isRoomTransportConnectTargetSettled(
+                observation.target,
+                options.minReadyPeers
+            )
+        ) {
             return {
                 waitStatus: observation.status === 'aborted'
                     ? 'aborted'
@@ -262,13 +274,17 @@ export class BrowserRtcRoomRuntime {
     }
 }
 
-function isRoomTransportAuthoritySettled(
-    target: BrowserRoomTransportTarget
+function isRoomTransportConnectTargetSettled(
+    target: BrowserRoomTransportTarget,
+    minReadyPeers: number | undefined
 ): boolean {
-    return (
-        target.transportState === 'halted' ||
-        target.acceptedLayoutCoversCurrentPresence
-    );
+    if (target.transportState === 'halted') {
+        return true;
+    }
+    return target.acceptedLayoutCoversCurrentPresence &&
+        (minReadyPeers === undefined ||
+            minReadyPeers <= 0 ||
+            target.peerIds.length >= minReadyPeers);
 }
 
 function isRoomTransportReadinessSettled(
@@ -283,7 +299,8 @@ function isRoomTransportReadinessSettled(
         return false;
     }
     const desiredPeerCount = target.peerIds.length;
-    return desiredPeerCount === 0 ||
-        readyPeerCount === desiredPeerCount ||
-        (minReadyPeers !== undefined && minReadyPeers > 0 && readyPeerCount >= minReadyPeers);
+    if (minReadyPeers !== undefined && minReadyPeers > 0) {
+        return readyPeerCount >= minReadyPeers;
+    }
+    return desiredPeerCount === 0 || readyPeerCount === desiredPeerCount;
 }

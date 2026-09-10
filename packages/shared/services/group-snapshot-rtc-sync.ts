@@ -44,21 +44,20 @@ export async function acceptGroupSnapshotUpdate(
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
         clearGroupOverlayRoles(snapshot);
-        await waitForGroupOverlayRolesIdle();
-
         await webRtcGroupManager.delete(snapshot.group);
+        await waitForGroupOverlayRolesIdle();
         return;
     }
 
     if (!isSessionInGroup(snapshot, bootstrapOverlayPolicy.localSessionId)) {
         clearGroupOverlayRoles(snapshot);
-        await waitForGroupOverlayRolesIdle();
         if (webRtcGroupManager.has(snapshot.group)) {
             await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
         }
         else {
             await webRtcGroupManager.ensureAllGroupsConnected();
         }
+        await waitForGroupOverlayRolesIdle();
         return;
     }
 
@@ -67,8 +66,8 @@ export async function acceptGroupSnapshotUpdate(
         acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined
     });
     createAndSetBootstrapOverlays([snapshot], bootstrapOverlayPolicy);
-    await waitForGroupOverlayRolesIdle();
     await webRtcGroupManager.acceptGroupUpdate(snapshot);
+    await waitForGroupOverlayRolesIdle();
 }
 
 export async function acceptGroupSnapshotRemoval(
@@ -76,9 +75,8 @@ export async function acceptGroupSnapshotRemoval(
     webRtcGroupManager: Pick<WebRtcGroupManager, 'delete'>
 ): Promise<void> {
     clearGroupOverlayRoles(snapshot);
-    await waitForGroupOverlayRolesIdle();
-
     await webRtcGroupManager.delete(snapshot.group);
+    await waitForGroupOverlayRolesIdle();
 }
 
 function clearGroupOverlayRoles(snapshot: GroupSnapshot): void {

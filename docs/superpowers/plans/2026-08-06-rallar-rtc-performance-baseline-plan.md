@@ -426,6 +426,47 @@ obsolete `fixme` path remains. These runs are diagnostic until the correction
 is committed and pushed, after which exact-head default repetitions,
 all-scenarios proof, branch review, and final gates must run again.
 
+Committed head `2bd33dc67d3045df58b6644718c297a9ccda1a75` then passed the
+default browser matrix three consecutive times in 3.6 minutes and the complete
+all-scenarios matrix once in 2.0 minutes, all without a retry. Independent
+review nevertheless found a terminal-result race: timeout or abort could win
+the event wait, but subscription cleanup could expose a newly current layout or
+ready lane before the final status projection. The returned reason remained
+terminal while the state incorrectly became `open`. Three deterministic
+cleanup-boundary regressions now keep non-connecting timeout, non-connecting
+abort, and connecting authority timeout terminal even when readiness changes
+during cleanup.
+
+The exact-head ALM conformance gate then exposed a separate positive-threshold
+gap. A `minReadyPeers: 1` room wait could settle on an accepted zero-peer layout
+before the second participant joined. Both the connecting authority barrier
+and the non-connecting composite observer now require a target large enough to
+satisfy an explicit positive minimum; ordinary zero-peer room status remains
+immediate when no positive minimum was requested. Deterministic tests cover a
+peer joining an already accepted solo room for both `connect: true` and
+`connect: false`. No old zero-peer branch or overload remains.
+
+A focused real-browser ALM retry initially still failed and resolved the final
+ordering defect. Accepted-overlay cache writes publish observers
+asynchronously. Both direct topology adoption and group-snapshot promotion had
+waited for those browser observers before invalidating or updating
+`WebRtcGroupManager`, so a room wait could observe the new target and ask for
+its lane against the previous outbound-dial policy. The policy rejected that
+single request; the manager created the peer milliseconds later, after the
+caller had already returned `failed`. Red tests reproduced both observer-first
+orders. The correction applies synchronous cache state to RTC ownership before
+draining the associated observer queue for adoption, promotion, removal, and
+membership loss. It keeps the existing group manager, dial policy, connection
+budget, QueueBox, retry policy, and perfect-negotiation initiator rule.
+
+The first browser attempt after only direct-adoption ordering changed remained
+red and identified group-snapshot promotion as the active path; it is retained
+as diagnostic evidence. After both ordering boundaries were corrected, the
+same single bounded-rejection RTC ALM scenario passed in 41.8 seconds (44.7
+seconds including harness startup) without a retry. Full ALM, exact-head B06
+matrices, touched-file closure, final review, and branch gates remain mandatory
+before PR #557 is ready.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

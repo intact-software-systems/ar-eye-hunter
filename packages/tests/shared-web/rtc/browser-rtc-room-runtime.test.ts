@@ -644,7 +644,163 @@ describe('Rallar RTC room wait', () => {
                 readyPeerIds: ['peer-1']
             }
         });
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
+    });
+
+    it('observes a peer added to an accepted solo room when one ready peer is required', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const soloSnapshot = createGroupSnapshot('room-1', ['session-1']);
+        const pairedSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-1'
+        ]);
+        const snapshots = [soloSnapshot];
+        const acceptedOverlays = [createAcceptedOverlay(soloSnapshot)];
+        const cacheChangeListeners = new Set<StateCacheChangeListener>();
+        mocks.onCacheChange.mockImplementation((listener) => {
+            cacheChangeListeners.add(listener);
+            return () => cacheChangeListeners.delete(listener);
+        });
+        mockGroupSnapshots(snapshots, acceptedOverlays);
+        let rtcLifecycle: WebRtcConnectionService.PeerLifecycleCallback | undefined;
+        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(
+            (_id, callbacks) => {
+                rtcLifecycle = callbacks;
+                return mocks.webRtcConnectionService;
+            }
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            connect: false,
+            laneId: 'realtime',
+            minReadyPeers: 1,
+            timeoutMs: 250
+        });
+        expect(rtcLifecycle).toBeDefined();
+        const opened = await mockOpenRtcLane('peer-1', 'realtime');
+        if (!rtcLifecycle || !opened.peer) {
+            throw new Error('Room readiness did not subscribe before the peer joined.');
+        }
+        rtcLifecycle.onCreated(opened.peer);
+        snapshots[0] = pairedSnapshot;
+        acceptedOverlays[0] = createAcceptedOverlay(pairedSnapshot);
+        for (const listener of cacheChangeListeners) {
+            void listener({ clients: [], groups: [pairedSnapshot] });
+        }
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'open',
+                acceptedLayoutIdentity: pairedSnapshot.group.acceptedLayoutIdentity,
+                desiredPeerIds: ['peer-1'],
+                readyPeerIds: ['peer-1']
+            }
+        });
+    });
+
+    it('connects a peer added to an accepted solo room when one ready peer is required', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const soloSnapshot = createGroupSnapshot('room-1', ['session-1']);
+        const pairedSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-1'
+        ]);
+        const snapshots = [soloSnapshot];
+        const acceptedOverlays = [createAcceptedOverlay(soloSnapshot)];
+        const cacheChangeListeners = new Set<StateCacheChangeListener>();
+        mocks.onCacheChange.mockImplementation((listener) => {
+            cacheChangeListeners.add(listener);
+            return () => cacheChangeListeners.delete(listener);
+        });
+        mockGroupSnapshots(snapshots, acceptedOverlays);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => await mockOpenRtcLane(peerId, laneId)
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            connect: true,
+            laneId: 'realtime',
+            minReadyPeers: 1,
+            timeoutMs: 250
+        });
+        queueMicrotask(() => {
+            snapshots[0] = pairedSnapshot;
+            acceptedOverlays[0] = createAcceptedOverlay(pairedSnapshot);
+            for (const listener of cacheChangeListeners) {
+                void listener({ clients: [], groups: [pairedSnapshot] });
+            }
+        });
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'open',
+                acceptedLayoutIdentity: pairedSnapshot.group.acceptedLayoutIdentity,
+                desiredPeerIds: ['peer-1'],
+                readyPeerIds: ['peer-1']
+            }
+        });
+    });
+
+    it('keeps a non-connecting timeout terminal when RTC becomes ready during cleanup', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
+        mockGroupSnapshot(snapshot);
+        mocks.onCacheChange.mockImplementation(() => () => {
+            mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([
+                'peer-1'
+            ]);
+        });
+        const facade = createRallarFacade();
+        await facade.connect();
+        vi.useFakeTimers();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            connect: false,
+            laneId: 'realtime',
+            timeoutMs: 1
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'idle',
+                readyPeerIds: ['peer-1'],
+                reason: 'Room RTC wait ended with timeout.'
+            }
+        });
+    });
+
+    it('keeps a non-connecting abort terminal when RTC becomes ready during cleanup', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
+        mockGroupSnapshot(snapshot);
+        mocks.onCacheChange.mockImplementation(() => () => {
+            mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([
+                'peer-1'
+            ]);
+        });
+        const facade = createRallarFacade();
+        await facade.connect();
+        const controller = new AbortController();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            connect: false,
+            laneId: 'realtime',
+            signal: controller.signal,
+            timeoutMs: 250
+        });
+        controller.abort();
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'idle',
+                readyPeerIds: ['peer-1'],
+                reason: 'Room RTC wait ended with aborted.'
+            }
+        });
     });
 
     it('waits for an accepted layout that covers the current room presence revision', async () => {
@@ -750,6 +906,52 @@ describe('Rallar RTC room wait', () => {
             rtc: {
                 state: 'idle',
                 acceptedLayoutIdentity: staleSnapshot.group.acceptedLayoutIdentity,
+                desiredPeerIds: ['peer-1'],
+                readyPeerIds: ['peer-1'],
+                reason: 'Room RTC wait ended with timeout.'
+            }
+        });
+    });
+
+    it('keeps an authority timeout terminal when the layout becomes current during cleanup', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const currentSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-1'
+        ]);
+        const staleSnapshot = withPreviousAcceptedPresenceRevision(currentSnapshot);
+        const snapshots = [staleSnapshot];
+        const acceptedOverlays = [
+            createAcceptedOverlay(staleSnapshot, ['session-1', 'peer-1'])
+        ];
+        mockGroupSnapshots(snapshots, acceptedOverlays);
+        await mockOpenRtcLane('peer-1', 'realtime');
+        mocks.onCacheChange.mockImplementation(() => () => {
+            snapshots[0] = currentSnapshot;
+            acceptedOverlays[0] = createAcceptedOverlay(currentSnapshot, [
+                'session-1',
+                'peer-1'
+            ]);
+        });
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            () => {
+                throw new Error('A timed-out authority wait must not open a lane.');
+            }
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+        vi.useFakeTimers();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            laneId: 'realtime',
+            timeoutMs: 1
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'idle',
+                acceptedLayoutIdentity: currentSnapshot.group.acceptedLayoutIdentity,
                 desiredPeerIds: ['peer-1'],
                 readyPeerIds: ['peer-1'],
                 reason: 'Room RTC wait ended with timeout.'
