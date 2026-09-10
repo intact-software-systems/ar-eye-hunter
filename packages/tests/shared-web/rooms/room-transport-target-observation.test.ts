@@ -19,27 +19,33 @@ describe('room transport target observation', () => {
     it('wakes for the bound room snapshot and accepted slot only, then unsubscribes both sources', async () => {
         let onCacheChange: StateCacheChangeListener = () => undefined;
         let onAcceptedChange: OverlayRepositoryChangeListener = () => undefined;
-        const unsubscribeState = vi.fn();
-        const unsubscribeAccepted = vi.fn();
-        const listener = vi.fn();
+        let stateSubscribed = true;
+        let acceptedSubscribed = true;
+        let wakeCount = 0;
         const unsubscribe = subscribeRoomTransportTarget(
             {
                 room: roomRef,
                 stateStore: {
                     onCacheChange: vi.fn((next) => {
                         onCacheChange = next;
-                        return unsubscribeState;
+                        return () => {
+                            stateSubscribed = false;
+                        };
                     }),
                     resolveRoomRef: vi.fn(() => roomRef)
                 },
                 slots: {
                     onAcceptedChange: vi.fn((next) => {
                         onAcceptedChange = next;
-                        return unsubscribeAccepted;
+                        return () => {
+                            acceptedSubscribed = false;
+                        };
                     })
                 }
             },
-            listener
+            () => {
+                wakeCount += 1;
+            }
         );
 
         await onCacheChange({
@@ -72,8 +78,8 @@ describe('room transport target observation', () => {
         });
         unsubscribe();
 
-        expect(listener).toHaveBeenCalledTimes(2);
-        expect(unsubscribeAccepted).toHaveBeenCalledOnce();
-        expect(unsubscribeState).toHaveBeenCalledOnce();
+        expect(wakeCount).toBe(2);
+        expect(acceptedSubscribed).toBe(false);
+        expect(stateSubscribed).toBe(false);
     });
 });

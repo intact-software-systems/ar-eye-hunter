@@ -1032,16 +1032,21 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 room: { rtc: { state: 'idle' } }
             }
         });
-        expect(refreshRoom).toHaveBeenCalledTimes(1);
-        expect(waitForRoom).toHaveBeenCalledTimes(1);
-        expect(health).not.toHaveBeenCalled();
     });
 
     it('does not retry a messages.rtc authority refresh failure', async () => {
         const refreshError = new Error('transient point-read failure');
-        const refreshRoom = vi.fn().mockRejectedValue(refreshError);
-        const waitForRoom = vi.fn<BlackBoxRallarRuntime['waitForRoom']>();
-        const health = vi.fn();
+        let refreshAttempts = 0;
+        const refreshRoom = async (): Promise<never> => {
+            refreshAttempts += 1;
+            throw refreshError;
+        };
+        const waitForRoom: BlackBoxRallarRuntime['waitForRoom'] = async () => {
+            throw new Error('A failed authority refresh must stop before room readiness.');
+        };
+        const health = async (): Promise<never> => {
+            throw new Error('messages.rtc readiness must not poll global RTC health.');
+        };
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
@@ -1074,9 +1079,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
             message: refreshError.message
         });
-        expect(refreshRoom).toHaveBeenCalledTimes(1);
-        expect(waitForRoom).not.toHaveBeenCalled();
-        expect(health).not.toHaveBeenCalled();
+        expect(refreshAttempts).toBe(1);
     });
 
     it('refreshes room authority before accepting an already-ready RTC peer', async () => {

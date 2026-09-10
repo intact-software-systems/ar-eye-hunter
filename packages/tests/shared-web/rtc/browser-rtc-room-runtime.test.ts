@@ -655,6 +655,9 @@ describe('Rallar RTC room wait', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
         mockGroupSnapshots([snapshot], []);
+        mocks.onCacheChange.mockImplementation(() => {
+            throw new Error('A disconnected room wait must not subscribe to authority.');
+        });
         const facade = createRallarFacade();
 
         await expect(
@@ -669,16 +672,19 @@ describe('Rallar RTC room wait', () => {
                 readyPeerIds: []
             }
         });
-        expect(mocks.onCacheChange).not.toHaveBeenCalled();
     });
 
     it('ends a missing-authority wait at its timeout without opening a lane', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
         mockGroupSnapshots([snapshot], []);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            () => {
+                throw new Error('A timed-out authority wait must not open a lane.');
+            }
+        );
         const facade = createRallarFacade();
         await facade.connect();
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockClear();
 
         await expect(
             facade.rtc.waitForRoom('room-1', {
@@ -692,18 +698,19 @@ describe('Rallar RTC room wait', () => {
                 readyPeerIds: []
             }
         });
-        expect(
-            mocks.webRtcConnectionService.ensurePeerLaneOpen
-        ).not.toHaveBeenCalled();
     });
 
     it('ends a missing-authority wait when aborted without opening a lane', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
         mockGroupSnapshots([snapshot], []);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            () => {
+                throw new Error('An aborted authority wait must not open a lane.');
+            }
+        );
         const facade = createRallarFacade();
         await facade.connect();
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockClear();
         const controller = new AbortController();
         controller.abort();
 
@@ -720,9 +727,6 @@ describe('Rallar RTC room wait', () => {
                 readyPeerIds: []
             }
         });
-        expect(
-            mocks.webRtcConnectionService.ensurePeerLaneOpen
-        ).not.toHaveBeenCalled();
     });
 
     it('returns empty for a room RTC lane when the room has no remote peers', async () => {
