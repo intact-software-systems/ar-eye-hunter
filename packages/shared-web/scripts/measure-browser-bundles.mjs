@@ -32,10 +32,12 @@ const entries = [
         // split readiness probe measure 201.043 KiB. Merging the RTC group-snapshot refresh and
         // transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
         // Splitting the outbound commit hold into its read and write phases measures 202.896 KiB.
+        // Leasing a claim from the reservation the queue stamped measures 203.065 KiB, so the
+        // ceiling moves to 204.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 203
+        brotliBudgetKiB: 204
     },
     {
         label: 'browser/rallar-core.ts',
