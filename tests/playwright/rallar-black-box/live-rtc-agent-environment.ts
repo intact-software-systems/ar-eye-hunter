@@ -1,4 +1,8 @@
 import { toError } from '@shared/resilience/to-error.ts';
+import {
+    readFullStackControlBaseUrl,
+    toFullStackControlWebSocketUrl
+} from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 
 import {
     closeLiveRtcBrowserAgentContexts,
@@ -16,8 +20,8 @@ import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
  */
 
 export const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
-export const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
-export const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
+export const CONTROL_BASE_URL = readFullStackControlBaseUrl();
+export const CONTROL_WS_URL = toFullStackControlWebSocketUrl(CONTROL_BASE_URL);
 
 export const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
 export const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');

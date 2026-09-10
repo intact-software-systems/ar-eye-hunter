@@ -1,10 +1,21 @@
-import { expect, test, type Browser, type TestInfo } from '@playwright/test';
+import { expect, test, type TestInfo } from '@playwright/test';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
-    closeLiveRtcBrowserAgentContexts,
-    openLiveRtcBrowserAgent,
-    type LiveRtcBrowserAgentAuth
-} from './live-rtc-browser-agents.ts';
+    agentAuth,
+    apiBaseUrl,
+    applicationId,
+    booleanEnv,
+    CONTROL_BASE_URL,
+    envValue,
+    firstEnvValue,
+    hasThreeAgentConfig,
+    numberEnv,
+    openAgentTrio,
+    rawEnvironmentValue,
+    roomSeed,
+    workspaceId
+} from './live-rtc-agent-environment.ts';
+import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     createLiveRtcDeliveryOperations,
@@ -27,37 +38,15 @@ import {
     type LiveRtcRetentionCheckpoint
 } from './live-rtc-performance-evidence.ts';
 
-const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
-const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
-const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
-
-const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
-const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');
-const applicationId = envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter';
-const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
 const messagesRtcTypeId = firstEnvValue('VITE_RALLAR_MESSAGES_RTC_TYPE_ID', 'VITE_RALLAR_TYPE_ID') ??
     'manual.type';
 const messagesRtcTopicId = firstEnvValue('VITE_RALLAR_MESSAGES_RTC_TOPIC_ID', 'VITE_RALLAR_TOPIC_ID') ??
     'manual.topic';
-const fullStackEnabled = booleanEnv('RALLAR_BLACK_BOX_FULL_STACK');
-const liveMatrixEnabled = booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_MATRIX');
 const liveAllScenariosEnabled = booleanEnv(
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS'
 );
 const liveRetentionSoakEnabled = booleanEnv(
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK'
-);
-const agentAAuth = resolveLiveRtcBrowserAgentAuth('A');
-const agentBAuth = resolveLiveRtcBrowserAgentAuth('B');
-const agentCAuth = resolveLiveRtcBrowserAgentAuth('C');
-const hasThreeAgentConfig = Boolean(
-    fullStackEnabled &&
-        liveMatrixEnabled &&
-        apiBaseUrl &&
-        roomSeed &&
-        agentAAuth &&
-        agentBAuth &&
-        agentCAuth
 );
 const liveRtcDeliveryOperations = createLiveRtcDeliveryOperations({
     apiBaseUrl,
@@ -67,165 +56,6 @@ const liveRtcDeliveryOperations = createLiveRtcDeliveryOperations({
     messagesRtcTopicId,
     formation: createLiveRtcFormationOperations()
 });
-
-function envValue(key: string): string | undefined {
-    const value = process.env[key]?.trim();
-    return value && value.length > 0 ? value : undefined;
-}
-
-function rawEnvironmentValue(key: string): string | null {
-    return process.env[key] ?? null;
-}
-
-function firstEnvValue(...keys: readonly string[]): string | undefined {
-    for (const key of keys) {
-        const value = envValue(key);
-        if (value) {
-            return value;
-        }
-    }
-    return undefined;
-}
-
-function booleanEnv(key: string): boolean {
-    const normalized = envValue(key)?.toLowerCase();
-    return (
-        normalized === '1' ||
-        normalized === 'true' ||
-        normalized === 'yes' ||
-        normalized === 'on'
-    );
-}
-
-function numberEnv(key: string): number | undefined {
-    const parsed = Number.parseInt(process.env[key] ?? '', 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function resolveLiveRtcBrowserAgentAuth(
-    prefix: AgentPrefix
-): LiveRtcBrowserAgentAuth | undefined {
-    const genericUsername = prefix === 'A' ? ['VITE_RALLAR_USERNAME'] : [];
-    const genericPassword = prefix === 'A' ? ['VITE_RALLAR_PASSWORD'] : [];
-    const username = firstEnvValue(
-        `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
-        `VITE_RALLAR_${prefix}_USERNAME`,
-        ...genericUsername
-    );
-    const password = firstEnvValue(
-        `VITE_RALLAR_AGENT_${prefix}_PASSWORD`,
-        `VITE_RALLAR_${prefix}_PASSWORD`,
-        ...genericPassword
-    );
-    if (username && password) {
-        return {
-            kind: 'login',
-            username,
-            password
-        };
-    }
-
-    const restoreUsername = firstEnvValue(
-        `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
-        `VITE_RALLAR_${prefix}_USERNAME`
-    );
-    const token = firstEnvValue(
-        `VITE_RALLAR_AGENT_${prefix}_TOKEN`,
-        `VITE_RALLAR_${prefix}_TOKEN`
-    );
-    const clientId = firstEnvValue(
-        `VITE_RALLAR_AGENT_${prefix}_CLIENT_ID`,
-        `VITE_RALLAR_${prefix}_CLIENT_ID`
-    );
-    const sessionId = firstEnvValue(
-        `VITE_RALLAR_AGENT_${prefix}_SESSION_ID`,
-        `VITE_RALLAR_${prefix}_SESSION_ID`
-    );
-    if (!restoreUsername || !token || !clientId || !sessionId) {
-        return undefined;
-    }
-
-    return {
-        kind: 'restore',
-        session: {
-            clientId,
-            accessToken: token,
-            username: restoreUsername,
-            sessionId,
-            expiresAtEpochMs: numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-                numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-                Date.now() + 30 * 60 * 1000
-        }
-    };
-}
-
-function agentAuth(prefix: AgentPrefix): LiveRtcBrowserAgentAuth {
-    const auth = prefix === 'A' ? agentAAuth : prefix === 'B' ? agentBAuth : agentCAuth;
-    if (!auth) {
-        throw new Error(`Missing auth for agent ${prefix}.`);
-    }
-    return auth;
-}
-
-function actorFor(prefix: AgentPrefix, suffix: string): string {
-    return (
-        firstEnvValue(
-            `VITE_RALLAR_AGENT_${prefix}_ACTOR`,
-            `VITE_RALLAR_${prefix}_ACTOR`
-        ) ?? `agent-${prefix.toLowerCase()}-${suffix}`
-    );
-}
-
-interface OpenAgentTrioInput {
-    readonly runId: string;
-    readonly groupId: string;
-    readonly suffix: string;
-    readonly label: string;
-}
-
-type LiveRtcAgentTrio = readonly [
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent
-];
-
-async function openAgentTrio(
-    browser: Browser,
-    input: OpenAgentTrioInput
-): Promise<LiveRtcAgentTrio> {
-    const handles: LiveRtcControlClient.Agent[] = [];
-    try {
-        for (const prefix of ['A', 'B', 'C'] as const) {
-            const agentName = `${input.label}-${prefix.toLowerCase()}-${input.suffix}`;
-            handles.push(
-                await openLiveRtcBrowserAgent(browser, {
-                    config: {
-                        spaBaseUrl: SPA_BASE_URL,
-                        controlWsUrl: CONTROL_WS_URL,
-                        apiBaseUrl: apiBaseUrl ?? '',
-                        register: booleanEnv('VITE_RALLAR_REGISTER')
-                    },
-                    prefix,
-                    auth: agentAuth(prefix),
-                    runId: input.runId,
-                    agentId: agentName,
-                    actor: actorFor(prefix, input.suffix),
-                    connection: agentName,
-                    groupId: input.groupId
-                })
-            );
-        }
-        const [a, b, c] = handles;
-        if (!a || !b || !c) {
-            throw new Error('Three live RTC browser agents were not opened.');
-        }
-        return [a, b, c];
-    }
-    catch (error) {
-        await closeLiveRtcBrowserAgentContexts(handles);
-        throw toError(error);
-    }
-}
 
 interface VerifyGroupStateReadbackInput {
     readonly control: LiveRtcControlClient;

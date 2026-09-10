@@ -499,12 +499,36 @@ minimum before reporting `open`, so authority invalidation cannot upgrade an
 under-minimum result. It does not repeat the operation or add a retry, poll,
 timeout, compatibility path, or retained legacy behavior.
 
+The required repeated browser proof then exposed a validation-harness collision,
+not another RTC defect. A separate worktree reused the fixed API, SPA, and control
+ports while this branch was running; it terminated and replaced the control
+server, producing `SIGTERM` and `ECONNREFUSED` failures during otherwise healthy
+matrices. Those overlapping runs are invalid as RTC evidence. The permanent
+harness boundary uses the already documented
+`RALLAR_BLACK_BOX_CONTROL_BASE_URL`: the full-stack Playwright configuration
+derives the control process port and health URL from it, and every matching
+full-stack HTTP/WebSocket consumer reads the same value. The live RTC matrix
+deletes its duplicate environment, authentication, and agent-trio setup and
+uses the existing shared live-RTC environment owner. This adds no environment
+variable, product retry, timeout increase, library, migration, compatibility
+path, or legacy setup path.
+
+TDD first proved that the control-server configuration owner was absent, then
+covered its default, override, process-port, health-URL, reuse, and WebSocket
+projection. With control isolated on port `5280`, API on `18157`, and SPA on
+`5277`, the uncommitted candidate passed three consecutive default matrices,
+the complete all-scenarios matrix, and all five lifecycle acceptance cases
+without retry. These runs validate the harness diagnosis but remain diagnostic
+until the harness correction is committed and pushed. Rerun the same isolated
+sets from the exact commit, then run the full ALM lane, branch review, touched-
+file closure, and final branch gates before declaring PR #557 ready.
+
 ### Current execution horizon
 
-| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, a green fresh/pinned state-write comparison, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
+| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; isolate full-stack browser services through their existing configuration owners; complete deterministic regressions, a green fresh/pinned state-write comparison, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
