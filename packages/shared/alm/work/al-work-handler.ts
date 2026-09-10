@@ -31,8 +31,7 @@ export interface ALWorkHandlerDependencies {
     /**
      * How long one probe's answer stands before storage is read again. An owner whose probe is a pure
      * readiness read passes `AL_WORK_READINESS_MEMORY_MS`; an owner whose probe carries scan state of
-     * its own -- the inbound rotation, where "nothing here" means nothing at this scan position --
-     * passes 0, so every engine round reaches the probe.
+     * its own passes `AL_WORK_PROBE_EVERY_ROUND`.
      */
     readonly readinessMemoryMs: number;
     /** Reads eligible work; the port owns reservation. */
@@ -61,6 +60,13 @@ export interface ALWorkBatchDiagnostics {
  * instead of costing a storage read on every engine round.
  */
 export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
+
+/**
+ * The bound an owner passes when every engine round must reach its probe. An owner whose probe
+ * carries scan state of its own -- the inbound rotation, where "nothing here" means nothing at this
+ * scan position -- has no answer that can stand for any length of time.
+ */
+export const AL_WORK_PROBE_EVERY_ROUND = 0;
 
 /** The last probe's answer; `readyAtMs` undefined is the probe reporting no work at all. */
 interface ALWorkReadinessMemory {

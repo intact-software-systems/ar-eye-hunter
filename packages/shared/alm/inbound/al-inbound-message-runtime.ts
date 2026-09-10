@@ -6,7 +6,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import { ALWorkHandler } from '../work/al-work-handler.ts';
+import { AL_WORK_PROBE_EVERY_ROUND, ALWorkHandler } from '../work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
@@ -134,7 +134,7 @@ export class ALInboundMessageRuntime {
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
             readNextReadyAtMs: (port) => this.workSelector.readNextReadyAtMs(port),
             // The rotation advances one status per probe, so an answer of its own never stands.
-            readinessMemoryMs: 0,
+            readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
             runClaim: (claim) => this.runInboundClaim(claim),
             diagnostics: undefined
