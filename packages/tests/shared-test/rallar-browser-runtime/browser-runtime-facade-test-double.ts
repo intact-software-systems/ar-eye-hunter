@@ -1,5 +1,6 @@
 import {
     createBlackBoxOutboundDiagnosticsRelay,
+    createBlackBoxStorageResetDiagnosticsRelay,
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDiagnosticsDependency,
@@ -10,7 +11,8 @@ import {
     type BlackBoxBrowserRoomsDependency,
     type BlackBoxBrowserRtcDependency,
     type BlackBoxBrowserWsDependency,
-    type BlackBoxOutboundDiagnosticsRelay
+    type BlackBoxOutboundDiagnosticsRelay,
+    type BlackBoxStorageResetDiagnosticsRelay
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type {
     RallarMessageHandler,
@@ -329,6 +331,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let outboundDiagnosticsRelay = createBlackBoxOutboundDiagnosticsRelay();
+let storageResetRelay = createBlackBoxStorageResetDiagnosticsRelay();
 
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get faults(): ScriptedTransportFaultPort {
@@ -339,6 +342,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get outboundDiagnostics(): BlackBoxOutboundDiagnosticsRelay {
         return outboundDiagnosticsRelay;
+    },
+    get storageReset(): BlackBoxStorageResetDiagnosticsRelay {
+        return storageResetRelay;
     }
 };
 
@@ -384,6 +390,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
     outboundDiagnosticsRelay = createBlackBoxOutboundDiagnosticsRelay();
+    storageResetRelay = createBlackBoxStorageResetDiagnosticsRelay();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);

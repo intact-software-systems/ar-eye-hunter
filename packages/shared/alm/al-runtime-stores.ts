@@ -15,6 +15,11 @@ import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
 import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
+import {
+    AL_ADMISSION_SCHEMA_ID,
+    createPassThroughALStorageResetSink,
+    type ALStorageResetEvent
+} from './open-indexed-db-admission-database.ts';
 
 import {
     createALOutboundAdmissionStore,
@@ -39,6 +44,8 @@ export interface CreateInMemoryALOutboundRuntimeStoresInput<TPrepared> extends C
 export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRuntimeStoresInput {
     readonly dbName: string | undefined;
     readonly observer: IndexedDbOperationObserver;
+    readonly schemaId: string;
+    readonly onStorageReset: (event: ALStorageResetEvent) => void;
 }
 
 export interface CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared> extends CreateIndexedDbALRuntimeStoresInput {
@@ -59,6 +66,8 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly supersedenceTrackTtlMs?: number;
     readonly retention?: ALRuntimeStoreRetentionConfig;
     readonly observer?: IndexedDbOperationObserver;
+    readonly schemaId?: string;
+    readonly onStorageReset?: (event: ALStorageResetEvent) => void;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -118,7 +127,9 @@ export function createIndexedDbALInboundRuntimeStores(
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs: input.nowMs,
         newWriteToken: crypto.randomUUID.bind(crypto),
-        observer: input.observer
+        observer: input.observer,
+        schemaId: input.schemaId,
+        onStorageReset: input.onStorageReset
     });
     return {
         admissionStore: createALInboundAdmissionStore({
@@ -142,7 +153,9 @@ export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
             storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
             nowMs: input.nowMs,
             newWriteToken: crypto.randomUUID.bind(crypto),
-            observer: input.observer
+            observer: input.observer,
+            schemaId: input.schemaId,
+            onStorageReset: input.onStorageReset
         });
     return {
         admissionStore: createALOutboundAdmissionStore({
@@ -212,6 +225,8 @@ function toDefaultIndexedDbInput(
     return {
         ...toDefaultInMemoryInput(options),
         dbName: options.dbName,
-        observer: options.observer ?? createPassThroughIndexedDbOperationObserver()
+        observer: options.observer ?? createPassThroughIndexedDbOperationObserver(),
+        schemaId: options.schemaId ?? AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: options.onStorageReset ?? createPassThroughALStorageResetSink()
     };
 }

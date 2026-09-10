@@ -205,7 +205,7 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
     it('injects a scripted transport fault and reports the IndexedDB storage counters', async () => {
         await withBrowserRuntime(async (nativeRuntime) => {
             await nativeRuntime.connect(almConnectionConfig());
-            const { faults, storage, outboundDiagnostics } = facade.rallar.diagnostics;
+            const { faults, storage, outboundDiagnostics, storageReset } = facade.rallar.diagnostics;
 
             await nativeRuntime.injectFault({
                 faultId: 'drop-once',
@@ -218,7 +218,8 @@ describe('rallar-black-box browser-rallar ALM operations', () => {
             expect(facade.records.defaultWrites.at(-1)?.diagnosticsPorts).toEqual({
                 transportFaultPort: faults,
                 indexedDbOperationObserver: storage,
-                outboundDiagnostics: outboundDiagnostics.sink
+                outboundDiagnostics: outboundDiagnostics.sink,
+                onStorageReset: storageReset.sink
             });
             expect(faults.decideSend(
                 'ws',

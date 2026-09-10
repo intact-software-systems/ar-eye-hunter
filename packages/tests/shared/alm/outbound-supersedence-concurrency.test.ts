@@ -15,6 +15,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 
@@ -94,6 +95,8 @@ function createStore(storage: 'memory' | 'indexeddb') {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `supersedence-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,

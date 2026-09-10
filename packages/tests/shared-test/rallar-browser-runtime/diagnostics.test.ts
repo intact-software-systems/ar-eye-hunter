@@ -308,3 +308,28 @@ it('records an AL outbound admission diagnostics event into the agent event log'
         })
     ]));
 });
+
+it('records an AL storage reset diagnostics event into the agent event log', async () => {
+    // The recorder attaches at construction, independent of any connection.
+    await loadRuntime();
+
+    facade.rallar.diagnostics.storageReset.sink({
+        dbName: 'rallar-al-runtime',
+        previousSchemaId: 'rallar-alm-2026-08-f1',
+        schemaId: 'rallar-alm-2026-09-f2',
+        reason: 'schema-id-mismatch'
+    });
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.storage_reset',
+            data: {
+                dbName: 'rallar-al-runtime',
+                previousSchemaId: 'rallar-alm-2026-08-f1',
+                schemaId: 'rallar-alm-2026-09-f2',
+                reason: 'schema-id-mismatch'
+            }
+        })
+    ]));
+});

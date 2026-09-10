@@ -14,7 +14,11 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
+import {
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_WORK_STORE_NAME,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
@@ -190,6 +194,8 @@ describe('outbound IndexedDB durable queue replay', () => {
     it('retains an actual QueueBox reservation while a runtime send waits in the native queue', async () => {
         const dbName = `outbound-queue-owner-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'admission',
             nowMs: Date.now,
@@ -212,7 +218,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const msg = createOutboundMessage('queue-owned-send');
         expect((await runtime.enqueueIfAbsent(msg)).status).toBe('accepted');
-        const database = await openIndexedDbAdmissionDatabase(dbName, 'admission');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: dbName,
+            storeName: 'admission',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         onTestFinished(() => database.close());
         const queue = new IndexedDbQueueBox({
             connection: new IndexedDbConnection(async () => database),
@@ -442,6 +453,8 @@ function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `outbound-replay-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,

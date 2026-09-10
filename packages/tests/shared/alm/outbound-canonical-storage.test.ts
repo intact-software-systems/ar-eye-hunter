@@ -20,7 +20,11 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
+import {
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_WORK_STORE_NAME,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -45,6 +49,8 @@ describe('canonical outbound payload storage', () => {
         vi.setSystemTime(1_000);
         const dbName = `canonical-cleanup-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -72,6 +78,8 @@ describe('canonical outbound payload storage', () => {
             throw new Error('Expected canonical admission');
         }
         const restarted = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -111,6 +119,8 @@ describe('canonical outbound payload storage', () => {
         expect((await store.readSentMessage(message.id.msgId))?.msg).toEqual(message);
         vi.setSystemTime(2_000);
         const expiryQueue = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -129,6 +139,8 @@ describe('canonical outbound payload storage', () => {
         const backend = storage === 'memory'
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
             : new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: `canonical-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: Date.now,
@@ -408,7 +420,12 @@ async function readStoredRows(backend: ALAdmissionWorkBackend): Promise<readonly
 }
 
 async function readRawCanonicalWorkKeys(dbName: string): Promise<readonly string[]> {
-    const db = await openIndexedDbAdmissionDatabase(dbName, 'entries');
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName: dbName,
+        storeName: 'entries',
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     try {
         const transaction = db.transaction(AL_ADMISSION_WORK_STORE_NAME, 'readonly');
         const keys = await readIndexedDbTransaction(

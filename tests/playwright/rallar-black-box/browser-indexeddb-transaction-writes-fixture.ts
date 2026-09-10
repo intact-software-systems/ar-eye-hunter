@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import {
+    AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '../../../packages/shared/alm/open-indexed-db-admission-database.ts';
@@ -106,7 +107,12 @@ export async function runIndexedDbTransactionWriteBrowserProbe(
 }
 
 async function runAdmissionStorageProbe(dbName: string): Promise<IndexedDbAdmissionStorageProbe> {
-    const database = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
+    const database = await openIndexedDbAdmissionDatabase({
+        dbName: dbName,
+        storeName: ADMISSION_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     try {
         const initial = computeBrowserAdmissionWrite(0, createQueueEntry('current', 'current'), []);
         if (!await writeIndexedDbAdmissionMutations({ ...initial, db: database })) {
@@ -144,7 +150,12 @@ async function runAdmissionStorageProbe(dbName: string): Promise<IndexedDbAdmiss
 
 async function runAtomicAdmissionStorageProbe(dbName: string): Promise<IndexedDbAtomicAdmissionProbe> {
     const entry = createQueueEntry('atomic-work', 'retained-message');
-    const original = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
+    const original = await openIndexedDbAdmissionDatabase({
+        dbName: dbName,
+        storeName: ADMISSION_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     try {
         const computed = computeBrowserAdmissionWrite(0, entry, [computeIndexedDbQueuePut(undefined, entry)]);
         if (!await writeIndexedDbAdmissionMutations({ ...computed, db: original })) {
@@ -154,7 +165,12 @@ async function runAtomicAdmissionStorageProbe(dbName: string): Promise<IndexedDb
     finally {
         original.close();
     }
-    const reopened = await openIndexedDbAdmissionDatabase(dbName, ADMISSION_STORE_NAME);
+    const reopened = await openIndexedDbAdmissionDatabase({
+        dbName: dbName,
+        storeName: ADMISSION_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     const queue = new IndexedDbQueueBox({
         connection: new IndexedDbConnection(async () => reopened),
         storeName: AL_ADMISSION_WORK_STORE_NAME,

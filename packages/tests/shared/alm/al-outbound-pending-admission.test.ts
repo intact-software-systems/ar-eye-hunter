@@ -8,6 +8,7 @@ import {
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import '../../setup-browser-indexeddb.ts';
@@ -32,6 +33,8 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     const backend = kind === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -89,6 +92,8 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     const restartedBackend = kind === 'memory'
         ? backend
         : new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,

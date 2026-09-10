@@ -10,6 +10,7 @@ import {
 import {
     AL_ADMISSION_EXPIRY_INDEX_NAME,
     AL_ADMISSION_REVISION_KEY,
+    AL_ADMISSION_SCHEMA_KEY,
     decodeIndexedDbAdmissionRevision
 } from './open-indexed-db-admission-database.ts';
 
@@ -110,7 +111,7 @@ async function readIndexedDbAdmissionPrefix(
                     resolve(rows);
                     return;
                 }
-                if (key !== AL_ADMISSION_REVISION_KEY) {
+                if (!isIndexedDbAdmissionBookkeepingKey(key)) {
                     rows.push(decodeIndexedDbAdmissionStoredRow(cursor.value, key));
                 }
                 cursor.continue();
@@ -133,7 +134,7 @@ async function readIndexedDbAdmissionRange(
     const rows: IndexedDbAdmissionStoredRow[] = [];
     values.forEach((value, index) => {
         const key = requireStringKey(keys[index]);
-        if (key !== AL_ADMISSION_REVISION_KEY) {
+        if (!isIndexedDbAdmissionBookkeepingKey(key)) {
             rows.push(decodeIndexedDbAdmissionStoredRow(value, key));
         }
     });
@@ -145,4 +146,9 @@ function requireStringKey(key: IDBValidKey): string {
         throw new ALAdmissionCorruptionError(String(key), new TypeError('Admission row key must be a string'));
     }
     return key;
+}
+
+/** The revision and schema-identity rows are storage bookkeeping, never admission data. */
+function isIndexedDbAdmissionBookkeepingKey(key: string): boolean {
+    return key === AL_ADMISSION_REVISION_KEY || key === AL_ADMISSION_SCHEMA_KEY;
 }

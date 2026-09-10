@@ -122,6 +122,7 @@ export function configureBrowserALRuntimeStores(
     const scoped: BrowserALRuntimeOptions = {
         ...options,
         observer: diagnosticsPorts.indexedDbOperationObserver,
+        onStorageReset: diagnosticsPorts.onStorageReset,
         canonicalScope: `browser-session:${sessionId}`,
         outboundBackend: !isIndexedDbALRuntimeStoreSupported()
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)

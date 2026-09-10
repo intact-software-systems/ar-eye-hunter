@@ -17,6 +17,8 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import {
     AL_ADMISSION_EXPIRY_INDEX_NAME,
     AL_ADMISSION_REVISION_KEY,
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_SCHEMA_KEY,
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
@@ -26,6 +28,7 @@ import {
     writeIndexedDbAdmissionMutations
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
 import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -46,6 +49,8 @@ const backends: readonly BackendCase[] = [
         name: 'IndexedDB',
         create: () =>
             new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: `admission-decode-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: Date.now,
@@ -120,17 +125,31 @@ describe.each(backends)('$name admission reads', ({ create }) => {
 describe('admission storage envelopes', () => {
     it('rejects an existing store without the required revision metadata', async () => {
         const databaseName = `admission-missing-revision-${crypto.randomUUID()}`;
+        // The schema record matches so this open reads the store as-is instead of resetting it -
+        // this test is exercising the revision-row read, not the schema-identity reset.
         const existing = await openIndexedDbWithStores(databaseName, [{
             name: 'entries',
             keyPath: 'key',
             indexes: [{
                 name: AL_ADMISSION_EXPIRY_INDEX_NAME,
                 keyPath: 'expireAtTimestamp'
+            }],
+            initialRecords: [{
+                key: AL_ADMISSION_SCHEMA_KEY,
+                value: AL_ADMISSION_SCHEMA_ID,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
             }]
         }, toIndexedDbQueueStoreDefinition(AL_ADMISSION_WORK_STORE_NAME)]);
         existing.close();
 
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {
+                throw new Error('Unexpected AL storage reset');
+            }
+        });
         try {
             await expect(readIndexedDbAdmissionSnapshot(
                 database,
@@ -146,6 +165,8 @@ describe('admission storage envelopes', () => {
     it('persists a write token on every IndexedDB admission data row', async () => {
         const databaseName = `admission-write-token-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -153,7 +174,12 @@ describe('admission storage envelopes', () => {
             observer: createPassThroughIndexedDbOperationObserver()
         });
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             const snapshot = await readIndexedDbAdmissionSnapshot(
                 database,
@@ -170,7 +196,12 @@ describe('admission storage envelopes', () => {
 
     it('rejects a persisted data row without the required write token', async () => {
         const databaseName = `admission-missing-write-token-${crypto.randomUUID()}`;
-        const seeded = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const seeded = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             await putIndexedDbRows(seeded, 'entries', [{
                 key: 'version:missing-token',
@@ -183,6 +214,8 @@ describe('admission storage envelopes', () => {
         }
 
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -201,6 +234,8 @@ describe('admission storage envelopes', () => {
         const stores = [
             new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), clock),
             new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: `admission-clock-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: clock,
@@ -250,6 +285,8 @@ describe('admission storage envelopes', () => {
 
     it('keeps IndexedDB writes uncommitted while an asynchronous callback can still fail', async () => {
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `admission-async-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
@@ -268,6 +305,8 @@ describe('admission storage envelopes', () => {
 
     it('commits IndexedDB writes after an asynchronous callback succeeds', async () => {
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `admission-async-success-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
@@ -285,6 +324,8 @@ describe('admission storage envelopes', () => {
 
     it('validates expired IndexedDB payloads before cleanup', async () => {
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `admission-expired-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
@@ -302,6 +343,8 @@ describe('admission storage envelopes', () => {
         async (operation) => {
             const databaseName = `admission-expiry-race-${operation}-${crypto.randomUUID()}`;
             const backend = new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: databaseName,
                 storeName: 'entries',
                 nowMs: () => 10,
@@ -336,7 +379,12 @@ describe('admission storage envelopes', () => {
                 name: 'ALAdmissionBackendConflictError'
             });
             expect(refreshWritten).toBe(true);
-            const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+            const database = await openIndexedDbAdmissionDatabase({
+                dbName: databaseName,
+                storeName: 'entries',
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {}
+            });
             try {
                 const snapshot = await readIndexedDbAdmissionSnapshot(
                     database,
@@ -359,13 +407,20 @@ describe('admission storage envelopes', () => {
     it('rejects malformed IndexedDB envelopes on direct and listed reads', async () => {
         const databaseName = `admission-corrupt-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
@@ -389,7 +444,12 @@ describe('admission storage envelopes', () => {
 
     it('rejects malformed IndexedDB metadata when reading cleanup rows', async () => {
         const databaseName = `admission-custom-read-corrupt-${crypto.randomUUID()}`;
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
@@ -411,7 +471,12 @@ describe('admission storage envelopes', () => {
 
     it('rejects a malformed guarded-removal row instead of reporting a write conflict', async () => {
         const databaseName = `admission-guarded-remove-corrupt-${crypto.randomUUID()}`;
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
@@ -440,7 +505,12 @@ describe('admission storage envelopes', () => {
 
     it('rejects a revision row that does not match the current stored shape', async () => {
         const databaseName = `admission-invalid-revision-${crypto.randomUUID()}`;
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: AL_ADMISSION_REVISION_KEY,
@@ -468,6 +538,8 @@ describe('admission storage envelopes', () => {
     it('lists a matching key whose suffix starts with the maximum UTF-16 code unit', async () => {
         const databaseName = `admission-prefix-bound-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -485,6 +557,8 @@ describe('admission storage envelopes', () => {
     it('returns one row when requested prefixes overlap', async () => {
         const databaseName = `admission-overlapping-prefixes-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -492,7 +566,12 @@ describe('admission storage envelopes', () => {
             observer: createPassThroughIndexedDbOperationObserver()
         });
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
-        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
         try {
             const snapshot = await readIndexedDbAdmissionSnapshot(
                 database,

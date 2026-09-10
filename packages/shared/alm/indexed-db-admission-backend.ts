@@ -37,7 +37,8 @@ import {
 } from './indexed-db-admission-row.ts';
 import {
     AL_ADMISSION_WORK_STORE_NAME,
-    openIndexedDbAdmissionDatabase
+    openIndexedDbAdmissionDatabase,
+    type ALStorageResetEvent
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
 import {
@@ -53,6 +54,8 @@ export namespace IndexedDbAdmissionBackend {
         readonly nowMs: () => number;
         readonly newWriteToken: () => string;
         readonly observer: IndexedDbOperationObserver;
+        readonly schemaId: string;
+        readonly onStorageReset: (event: ALStorageResetEvent) => void;
     }
 }
 
@@ -69,7 +72,14 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         this.#nowMs = input.nowMs;
         this.#newWriteToken = input.newWriteToken;
         this.#observer = input.observer;
-        this.#connection = new IndexedDbConnection(() => openIndexedDbAdmissionDatabase(input.dbName, input.storeName));
+        this.#connection = new IndexedDbConnection(() =>
+            openIndexedDbAdmissionDatabase({
+                dbName: input.dbName,
+                storeName: input.storeName,
+                schemaId: input.schemaId,
+                onStorageReset: input.onStorageReset
+            })
+        );
         this.workQueue = new IndexedDbQueueBox({
             now: () => Temporal.Instant.fromEpochMilliseconds(this.#nowMs()),
             connection: this.#connection,

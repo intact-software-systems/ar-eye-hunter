@@ -196,6 +196,7 @@ class BlackBoxRallarConnectionRuntime {
             scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf
         });
         this.#installOutboundDiagnosticsRecorder();
+        this.#installStorageResetDiagnosticsRecorder();
         this.#lifecycle = createBlackBoxRallarLifecycleController<
             BlackBoxRallarConnectionConfig,
             LoginResponse | AuthSession,
@@ -302,6 +303,15 @@ class BlackBoxRallarConnectionRuntime {
             });
         });
     };
+    #installStorageResetDiagnosticsRecorder = (): void => {
+        this.#rallar.diagnostics.storageReset.setRecorder((event) => {
+            this.#runtimeDiagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.storage_reset',
+                data: { ...event }
+            });
+        });
+    };
     #configureRallarConnection = (
         config: BlackBoxRallarConnectionConfig
     ): Parameters<BlackBoxBrowserRallarRuntimeDependency['setDefaults']>[0] => {
@@ -314,7 +324,8 @@ class BlackBoxRallarConnectionRuntime {
                 diagnosticsPorts: {
                     transportFaultPort: this.#rallar.diagnostics.faults,
                     indexedDbOperationObserver: this.#rallar.diagnostics.storage,
-                    outboundDiagnostics: this.#rallar.diagnostics.outboundDiagnostics.sink
+                    outboundDiagnostics: this.#rallar.diagnostics.outboundDiagnostics.sink,
+                    onStorageReset: this.#rallar.diagnostics.storageReset.sink
                 }
             }
         );

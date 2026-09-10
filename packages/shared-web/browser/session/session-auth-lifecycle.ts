@@ -281,7 +281,9 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     private async cleanupEndedSession(session: AuthSession): Promise<Error | undefined> {
         const dataCleanupError = await captureError(() => this.input.closeDataScopes(session));
         try {
-            await deleteBrowserALRuntimeEntriesForSession(session.sessionId);
+            await deleteBrowserALRuntimeEntriesForSession(session.sessionId, {
+                onStorageReset: this.input.connectionRuntime.readDefaults()?.diagnosticsPorts?.onStorageReset
+            });
         }
         catch {
             // Browser-local AL cleanup is best-effort.

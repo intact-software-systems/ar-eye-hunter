@@ -27,6 +27,17 @@ interface IndexedDbStoreSchema<InitialRecord extends object> {
     readonly initialRecords: readonly InitialRecord[];
 }
 
+/** Thrown when an existing database's store, key path, auto-increment, or index set is not the required schema. */
+export class IndexedDbSchemaMismatchError extends Error {
+    readonly reason: string;
+
+    constructor(reason: string) {
+        super(reason);
+        this.name = 'IndexedDbSchemaMismatchError';
+        this.reason = reason;
+    }
+}
+
 export class IndexedDbConnection {
     private opening?: Promise<IDBDatabase>;
     private readonly openDatabase: () => Promise<IDBDatabase>;
@@ -117,7 +128,7 @@ function assertIndexedDbDatabaseSchema(
         db.objectStoreNames.length !== stores.length ||
         stores.some((store) => !db.objectStoreNames.contains(store.name))
     ) {
-        throw new Error('IndexedDB database stores do not match the required schema');
+        throw new IndexedDbSchemaMismatchError('IndexedDB database stores do not match the required schema');
     }
     for (const store of stores) {
         assertIndexedDbStoreSchema(db, store);
@@ -130,13 +141,13 @@ function assertIndexedDbStoreSchema(
 ): void {
     const objectStore = db.transaction(store.name).objectStore(store.name);
     if (!isEqualKeyPath(objectStore.keyPath, store.keyPath)) {
-        throw new Error(
+        throw new IndexedDbSchemaMismatchError(
             `IndexedDB store "${store.name}" has key path "${formatKeyPath(objectStore.keyPath)}"; ` +
                 `expected "${store.keyPath}"`
         );
     }
     if (objectStore.autoIncrement) {
-        throw new Error(
+        throw new IndexedDbSchemaMismatchError(
             `IndexedDB store "${store.name}" auto-increment does not match its required schema`
         );
     }
@@ -144,7 +155,9 @@ function assertIndexedDbStoreSchema(
         objectStore.indexNames.length !== store.indexes.length ||
         store.indexes.some((index) => !isMatchingIndex(objectStore, index))
     ) {
-        throw new Error(`IndexedDB indexes for "${store.name}" do not match their required schema`);
+        throw new IndexedDbSchemaMismatchError(
+            `IndexedDB indexes for "${store.name}" do not match their required schema`
+        );
     }
 }
 

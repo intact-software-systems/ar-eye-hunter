@@ -482,7 +482,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
             diagnosticsPorts: {
                 transportFaultPort: createPassThroughTransportFaultPort(),
                 indexedDbOperationObserver: observer,
-                outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink()
+                outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink(),
+                onStorageReset: () => {}
             }
         });
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);

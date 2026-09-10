@@ -24,6 +24,7 @@ import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-en
 import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -200,6 +201,8 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : storage === 'indexeddb'
         ? new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: namespace,
             storeName: 'admission',
             nowMs: Date.now,

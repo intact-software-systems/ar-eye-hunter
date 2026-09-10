@@ -21,7 +21,11 @@ import {
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
-import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
+import {
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_WORK_STORE_NAME,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundIdentityFact, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
@@ -199,7 +203,12 @@ async function admitForSession(sessionId: string, ttlMs: number) {
 }
 
 async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
-    const db = await openIndexedDbAdmissionDatabase(BROWSER_AL_RUNTIME_DB_NAME, BROWSER_AL_RUNTIME_STORE_NAME);
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName: BROWSER_AL_RUNTIME_DB_NAME,
+        storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     try {
         const tx = db.transaction(AL_ADMISSION_WORK_STORE_NAME, 'readonly');
         return await readIndexedDbTransaction(tx, async () => await readIndexedDbRequest(tx.objectStore(AL_ADMISSION_WORK_STORE_NAME).getAll()));

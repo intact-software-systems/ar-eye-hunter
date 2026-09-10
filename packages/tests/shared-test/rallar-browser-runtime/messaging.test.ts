@@ -80,7 +80,8 @@ it('applies scoped defaults and reports the connected room reference', async () 
         diagnosticsPorts: {
             transportFaultPort: facade.rallar.diagnostics.faults,
             indexedDbOperationObserver: facade.rallar.diagnostics.storage,
-            outboundDiagnostics: facade.rallar.diagnostics.outboundDiagnostics.sink
+            outboundDiagnostics: facade.rallar.diagnostics.outboundDiagnostics.sink,
+            onStorageReset: facade.rallar.diagnostics.storageReset.sink
         }
     });
     expect(facade.records.roomJoins).toContainEqual(['bb-group', {

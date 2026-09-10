@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +10,8 @@ describe('AL-owned IndexedDB operation counts', () => {
     it('counts admission reads, writes, and work operations through the backend', async () => {
         const observer = createCountingIndexedDbOperationObserver();
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `al-counts-${crypto.randomUUID()}`,
             storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
             nowMs: () => 1_000,

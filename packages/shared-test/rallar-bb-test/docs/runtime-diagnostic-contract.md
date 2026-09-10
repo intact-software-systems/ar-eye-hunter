@@ -126,6 +126,27 @@ This is the evidence a `deadline-expiry` conformance run uses to attribute a
 slow admission (the serialized IndexedDB chain a typed send commits through)
 to a phase instead of a single opaque send latency.
 
+## Storage Reset Diagnostics
+
+`rallar.browser.alm.storage_reset` carries one `ALStorageResetEvent` per
+delete-and-recreate reset of the browser ALM IndexedDB database, recorded the
+moment `openIndexedDbAdmissionDatabase` deletes and reopens a database whose
+stores or schema identity no longer match. The event's `data` is the event
+itself:
+
+- `dbName`: the IndexedDB database that was reset
+- `previousSchemaId`: the schema id read back before the reset, or `undefined`
+  when the store set itself did not match (so no schema id could be read)
+- `schemaId`: the current `AL_ADMISSION_SCHEMA_ID` the database now carries
+- `reason`: `schema-id-mismatch` when the stores matched but the stored
+  schema id differed, or `store-schema-mismatch` when the store set, key
+  path, auto-increment, or index set did not match
+
+This is the evidence an incompatible browser cutover (new indexes, new key
+layouts, new stored fields) leaves behind: it confirms the old database was
+discarded rather than left mismatched underneath a client that assumes the
+current shape.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

@@ -279,7 +279,8 @@ describe('Rallar facade default scope behavior', () => {
                 diagnosticsPorts: {
                     transportFaultPort: { decideSend: expect.any(Function) },
                     indexedDbOperationObserver: { observe: expect.any(Function) },
-                    outboundDiagnostics: expect.any(Function)
+                    outboundDiagnostics: expect.any(Function),
+                    onStorageReset: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),
                 scope: {
@@ -324,7 +325,8 @@ describe('Rallar facade default scope behavior', () => {
                 diagnosticsPorts: {
                     transportFaultPort,
                     indexedDbOperationObserver,
-                    outboundDiagnostics: expect.any(Function)
+                    outboundDiagnostics: expect.any(Function),
+                    onStorageReset: expect.any(Function)
                 }
             })
         );

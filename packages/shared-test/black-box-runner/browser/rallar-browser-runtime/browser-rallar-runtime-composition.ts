@@ -48,6 +48,7 @@ import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/ra
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
     ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeDiagnosticsSink
@@ -170,11 +171,32 @@ export function createBlackBoxOutboundDiagnosticsRelay(): BlackBoxOutboundDiagno
     };
 }
 
+/**
+ * The ALM database open call can fire a reset before the connection runtime that owns the agent
+ * event log exists, for the same reason `BlackBoxOutboundDiagnosticsRelay` exists — `setRecorder`
+ * lets that runtime attach its recorder once constructed.
+ */
+export interface BlackBoxStorageResetDiagnosticsRelay {
+    readonly sink: (event: ALStorageResetEvent) => void;
+    setRecorder(recorder: (event: ALStorageResetEvent) => void): void;
+}
+
+export function createBlackBoxStorageResetDiagnosticsRelay(): BlackBoxStorageResetDiagnosticsRelay {
+    let recorder: (event: ALStorageResetEvent) => void = () => {};
+    return {
+        sink: (event: ALStorageResetEvent) => recorder(event),
+        setRecorder: (next) => {
+            recorder = next;
+        }
+    };
+}
+
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
 export interface BlackBoxBrowserDiagnosticsDependency {
     readonly faults: ScriptedTransportFaultPort;
     readonly storage: CountingIndexedDbOperationObserver;
     readonly outboundDiagnostics: BlackBoxOutboundDiagnosticsRelay;
+    readonly storageReset: BlackBoxStorageResetDiagnosticsRelay;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -205,6 +227,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
     const outboundDiagnostics = createBlackBoxOutboundDiagnosticsRelay();
+    const storageReset = createBlackBoxStorageResetDiagnosticsRelay();
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,
@@ -259,7 +282,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, outboundDiagnostics }
+        diagnostics: { faults, storage, outboundDiagnostics, storageReset }
     });
 }
 
