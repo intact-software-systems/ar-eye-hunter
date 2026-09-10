@@ -174,6 +174,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     /** One transaction serves every request, so a readiness scan is one operation, not one per page. */
     async readWorkPages(inputs: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
+        if (inputs.length === 0) {
+            return [];
+        }
         this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
         const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
         const db = await this.#connection.open();
