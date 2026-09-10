@@ -345,6 +345,25 @@ field, polling, retry, timeout, compatibility path, or legacy implementation;
 it also resets the immutable browser-proof count until the corrected head has
 completed final review and validation.
 
+The corrected-head three-repeat default run made that refusal deterministic and
+exposed the server-side cause: all three attempts timed out on agent B's initial
+pair with `state: idle`. The group presence projection advanced
+`presenceRevision` when activation changed only `groupRevision`, even though
+the derived active-session content was identical. That immediately made the
+accepted layout look older than current presence. The authoritative correction
+belongs in the pure presence-summary computation: persist the new group
+revision while preserving the presence revision when the canonical presence
+content is unchanged, and continue advancing it for real connect, disconnect,
+expiry, or membership changes. A focused pure-core regression covers the
+lifecycle-only write. Do not weaken browser causality, add another refresh,
+replan an unchanged layout, or retain the old revision behavior.
+
+One retry-free default worktree smoke passed after that pure projection change,
+including the initial pair that failed all three prior attempts. This confirms
+the causal diagnosis but is not immutable evidence because it preceded the
+correction commit and final review. Commit, push, review, and rerun the required
+default repetitions and all-scenarios matrix from the resulting exact head.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |

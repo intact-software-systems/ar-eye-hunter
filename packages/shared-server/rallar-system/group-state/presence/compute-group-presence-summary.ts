@@ -61,14 +61,15 @@ export function computeGroupPresenceSummary(
     const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
     const groupRevision = read.group.value.snapshotVersion;
     const current = read.current?.value;
+    const currentContentMatches = current !== undefined && jsonEquals(
+        toComparableSummaryContent(summaryContent(current)),
+        toComparableSummaryContent(content)
+    );
     if (
         current &&
         (current.causalRevision.groupRevision > groupRevision ||
             (current.causalRevision.groupRevision === groupRevision &&
-                jsonEquals(
-                    toComparableSummaryContent(summaryContent(current)),
-                    toComparableSummaryContent(content)
-                )))
+                currentContentMatches))
     ) {
         return { outcome: 'no-op', evaluatedAtEpochMs: nowEpochMs, summary: current };
     }
@@ -78,7 +79,11 @@ export function computeGroupPresenceSummary(
         groupId: ref.groupId,
         causalRevision: {
             groupRevision,
-            presenceRevision: (current?.causalRevision.presenceRevision ?? 0) + 1
+            // Lifecycle and configuration writes advance the group revision;
+            // presence advances only when its canonical derived content changes.
+            presenceRevision: current !== undefined && currentContentMatches
+                ? current.causalRevision.presenceRevision
+                : (current?.causalRevision.presenceRevision ?? 0) + 1
         },
         ...content,
         computedAtEpochMs: nowEpochMs

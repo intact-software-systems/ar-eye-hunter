@@ -30,6 +30,33 @@ interface ExpiryCrossingPresence {
 }
 
 describe('group presence summary evaluation time', () => {
+    it('preserves the presence revision when only the group revision advances', () => {
+        const current = createExpiryCrossingRead();
+        const group = {
+            ...current.group.value,
+            snapshotVersion: current.group.value.snapshotVersion + 1
+        };
+        const read = {
+            ...current,
+            group: stored(groupStateGroupStorageKey(REF), group)
+        };
+
+        expect(computeGroupPresenceSummary({
+            ref: REF,
+            read,
+            nowEpochMs: 2_000
+        })).toMatchObject({
+            outcome: 'write',
+            summary: {
+                causalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 1
+                },
+                activeSessionIds: []
+            }
+        });
+    });
+
     it('validates an expiry-crossing no-op at the compute observation time', () => {
         const read = createExpiryCrossingRead();
         const computed = computeGroupPresenceSummary({
