@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import {
     EntityStatus,
     InMemoryQueueBox,
@@ -8,9 +6,15 @@ import {
     QueueBoxUtilities,
     type ALMessage
 } from '@shared/mod.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { describe, expect, it } from 'vitest';
 
-import { createDefaultOutboundTestRuntime } from '../outbound-runtime-test-fixture.ts';
+import { waitForSettledOutboundWork } from '../../wait-for-al-outbound-work.ts';
+import {
+    createDefaultOutboundTestRuntime,
+    createDefaultOutboundTestStores
+} from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
 const DEQUEUE_TYPE = 'WS_OUTBOX';
@@ -37,21 +41,17 @@ function createDequeuedMessage(resourceId: string): ALMessage {
     );
 }
 
-async function drainEngine(): Promise<void> {
-    for (let pass = 0; pass < 40; pass += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-}
-
 describe('AL outbound dequeue work', () => {
     it('claims a foreign outbox row as dequeue-message work and admits it through the planner', async () => {
         const outbox = new InMemoryQueueBox(
             undefined,
             () => Temporal.Instant.fromEpochMilliseconds(Date.now())
         );
+        const stores = createDefaultOutboundTestStores(outbox);
         const sent: OutboundTestPayload[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
+            stores,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) => ({
                 msg,
@@ -68,7 +68,7 @@ describe('AL outbound dequeue work', () => {
         await outbox.enqueueIfAbsent(queued);
 
         await runtime.ready();
-        await drainEngine();
+        await waitForSettledOutboundWork(stores.workQueue, stores.admissionStore.namespace, new Set([DEQUEUE_TYPE]));
 
         expect(sent.map((prepared) => prepared.msgId)).toEqual([message.id.msgId]);
         expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);

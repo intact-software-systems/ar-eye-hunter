@@ -2,7 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isNotReadyException, NotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
+import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
@@ -31,7 +31,7 @@ import {
     toALOutboundWorkType
 } from './al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
-import type { ALOutboundControlAdmission } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
@@ -232,7 +232,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly readyPromise: Promise<void>;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
-    private readonly controlAdmission: ALOutboundControlAdmission<TPrepared>;
     private readonly work: ALWorkHandler;
     private disposed = false;
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
@@ -250,7 +249,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             nowMs: () => dependencies.clock.nowMs(),
             random: dependencies.random
         });
-        this.controlAdmission = dependencies.admissionStore.createControlAdmission(workPort, dependencies.clock);
+        const controlAdmission = dependencies.admissionStore.createControlAdmission(workPort, dependencies.clock);
         this.dispatchAdmission = new ALOutboundDispatchAdmission({
             admissionStore: dependencies.admissionStore,
             workPort,
@@ -262,7 +261,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         });
         this.repairAdmission = new ALOutboundRepairAdmission({
             admissionStore: dependencies.admissionStore,
-            controlAdmission: this.controlAdmission,
+            controlAdmission,
             dispatchAdmission: this.dispatchAdmission,
             clock: dependencies.clock,
             planOutgoingMessage: dependencies.planOutgoingMessage,
@@ -351,15 +350,15 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<boolean> {
+    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         await this.ready();
         if (this.disposed) {
-            return false;
+            return { kind: 'not-handled' };
         }
 
         const admitted = await this.repairAdmission.acceptControlMessage(msg);
         this.work.committed();
-        return admitted.kind === 'committed';
+        return admitted;
     }
 
     private async commitDispatchPlan(
@@ -383,7 +382,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    /** Claims what the port offers plus the reservations no timeout can recover. */
+    /**
+     * Claims what the port offers plus the reservations no timeout can recover. The unleased sweep is an
+     * unreserved page read, so two workers may both sweep the same row; every such row is terminal-bound.
+     */
     private async selectOutboundWork(
         port: ALWorkQueuePort,
         pageSize: number
@@ -394,23 +396,39 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {
-        if (claim.entry.audit.expiryTs.epochMilliseconds <= this.readNowMs()) {
+        if (this.hasReachedDeadline(claim.entry)) {
             return { status: 'completed' };
         }
         try {
-            return await this.runDurableEffect(await this.readOutboundWork(claim.entry));
+            const work = await this.readExpirableOutboundWork(claim.entry);
+            return work === undefined ? { status: 'completed' } : await this.runDurableEffect(work);
         }
         catch (error) {
             // A planner that is still waiting for authority owes no attempt: reschedule, never charge it.
-            if (error instanceof NotReadyException && isNotReadyException(error)) {
+            if (error instanceof Error && isNotReadyException(error)) {
                 return { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
-            }
-            // A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected.
-            if (claim.entry.audit.expiryTs.epochMilliseconds <= this.readNowMs()) {
-                return { status: 'completed' };
             }
             throw error;
         }
+    }
+
+    /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
+    private async readExpirableOutboundWork(
+        entry: ResourceEntry
+    ): Promise<ALOutboundEffectSnapshot<TPrepared> | undefined> {
+        try {
+            return await this.readOutboundWork(entry);
+        }
+        catch (error) {
+            if (this.hasReachedDeadline(entry)) {
+                return undefined;
+            }
+            throw error;
+        }
+    }
+
+    private hasReachedDeadline(entry: ResourceEntry): boolean {
+        return entry.audit.expiryTs.epochMilliseconds <= this.readNowMs();
     }
 
     private async readOutboundWork(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
@@ -432,7 +450,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             case 'dequeue-message':
                 return await this.admitDequeuedMessage(effect);
             case 'admit-control':
-                return await this.controlAdmission.replay(effect.payload);
+                return await this.repairAdmission.replayControlAdmission(effect.payload);
             case 'send-prepared':
                 if (!effect.canonicalMessage) {
                     throw new NonRetryableException('Prepared work has no canonical message');

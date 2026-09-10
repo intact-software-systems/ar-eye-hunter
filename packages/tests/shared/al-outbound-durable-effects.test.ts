@@ -573,7 +573,7 @@ describe('AL outbound durable effect lifecycle', () => {
             )
         );
 
-        expect(handled).toBe(false);
+        expect(handled).toEqual({ kind: 'not-handled' });
         expect(sent).toEqual([]);
         expect(await readRetainedWorkKinds(stores)).toEqual(['send-prepared']);
     });
@@ -610,7 +610,7 @@ describe('AL outbound durable effect lifecycle', () => {
             )
         );
 
-        expect(accepted).toBe(false);
+        expect(accepted).toEqual({ kind: 'pending-control' });
         expect(write).toHaveBeenCalledTimes(1);
         expect(await readRetainedWorkKinds(stores)).toEqual(['admit-control']);
         runtime.dispose();

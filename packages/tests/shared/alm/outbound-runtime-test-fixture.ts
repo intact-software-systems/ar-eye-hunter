@@ -23,6 +23,7 @@ import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import type {
     ALOutboundEffectSnapshot,
+    ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import {
@@ -257,11 +258,12 @@ export function createOutboundCanonicalEntry<TPrepared>(
 
 export async function computeOutboundTestAdmission<TPrepared>(
     store: ALOutboundAdmissionStore<TPrepared>,
-    message: ALMessage
+    message: ALMessage,
+    planner: ALOutboundPlanner<TPrepared> = (msg) => ({ msg, persist: true, preparedMessages: [] })
 ) {
     const read = await store.readOutgoingMessage({
         msg: message,
-        planner: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+        planner,
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });

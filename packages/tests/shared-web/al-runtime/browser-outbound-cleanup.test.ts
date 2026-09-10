@@ -1,10 +1,10 @@
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
+import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     decodeALOutboundTransportMessage,
     toALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
-import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 // @vitest-environment happy-dom
 
 import '../../setup-browser-indexeddb.ts';
@@ -33,7 +33,7 @@ import {
     it,
     vi
 } from 'vitest';
-import { createOutboundTestRuntimeFor, createOutboundMessage } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { createOutboundMessage, createOutboundTestRuntimeFor } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
 interface RawWorkRow {
     readonly keyString: string;

@@ -1,7 +1,7 @@
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createOutboundWorkPort
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';

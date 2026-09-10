@@ -301,43 +301,52 @@ export type ALOutboundNotYetInSyncRetryScheduleResult =
     | Readonly<{ status: 'pending'; retryAtMs: number; }>
     | Readonly<{ status: 'exhausted'; }>
     | Readonly<{ status: 'conflict'; }>;
+/**
+ * Every member is a function property rather than a method so `TPrepared` stays invariant: a store
+ * built for one prepared contract must not satisfy a consumer that expects another.
+ */
 export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     readonly namespace: string;
     readonly canonicalScope: string;
 
-    readOutgoingMessage(
+    readonly readOutgoingMessage: (
         input: ALOutboundOutgoingReadInput<TPrepared>
-    ): Promise<ALOutboundMessageReadDto<TPrepared>>;
+    ) => Promise<ALOutboundMessageReadDto<TPrepared>>;
 
-    readRepairMessage(
+    readonly readRepairMessage: (
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
-    ): Promise<ALOutboundRepairReadDto<TPrepared>>;
+    ) => Promise<ALOutboundRepairReadDto<TPrepared>>;
 
-    isMessageSuperseded(msg: ALMessage): Promise<boolean>;
+    readonly isMessageSuperseded: (msg: ALMessage) => Promise<boolean>;
 
-    readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined>;
+    readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
-    readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined>;
+    readonly readSentMessageByOrdering: (
+        trackKey: string,
+        seq: number
+    ) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
-    readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
+    readonly readReceiptState: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
-    readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
+    readonly readPendingAck: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     /** Decodes one claimed work row of this scope, including the canonical message its payload references. */
-    readWorkSnapshot(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>>;
+    readonly readWorkSnapshot: (entry: ResourceEntry) => Promise<ALOutboundEffectSnapshot<TPrepared>>;
 
-    commitBundle(bundle: ALOutboundCommitBundle<TPrepared>): Promise<'committed' | 'conflict' | 'expired'>;
+    readonly commitBundle: (
+        bundle: ALOutboundCommitBundle<TPrepared>
+    ) => Promise<'committed' | 'conflict' | 'expired'>;
 
-    retainPendingAdmission(
+    readonly retainPendingAdmission: (
         input: RetainALOutboundPendingAdmissionInput<TPrepared>
-    ): Promise<'pending' | 'conflict' | 'expired'>;
+    ) => Promise<'pending' | 'conflict' | 'expired'>;
 
     /** The control-admission owner of this scope; the port carries the control it must replay. */
-    createControlAdmission(
+    readonly createControlAdmission: (
         port: ALWorkQueuePort,
         clock: ALOutboundMessageRuntime.Clock
-    ): ALOutboundControlAdmission<TPrepared>;
+    ) => ALOutboundControlAdmission<TPrepared>;
 }
 
 export function createALOutboundAdmissionStore<TPrepared>(

@@ -17,6 +17,7 @@ import {
     type ALOutboundAdmissionStore,
     type ALOutboundDurableEffect
 } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import type { ALOutboundRetryTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     decodeALOutboundWorkEntry,
@@ -31,13 +32,14 @@ import {
     it,
     vi
 } from 'vitest';
-import { computeOutboundTestAdmission } from './outbound-runtime-test-fixture.ts';
+import { computeOutboundTestAdmission, createOutboundTestRuntimeFor } from './outbound-runtime-test-fixture.ts';
 
 interface OutboundObligationInput {
     readonly targets: NonNullable<ALMessage['targets']>;
     readonly expectedPeerIds: readonly string[];
     readonly ackedPeerIds: readonly string[];
     readonly ordering: ALMessage['ordering'];
+    readonly retryTracking: ALOutboundRetryTrackingPlan | undefined;
 }
 
 describe('outbound control admission identity', () => {
@@ -267,7 +269,8 @@ describe('outbound control admission identity', () => {
             targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
             expectedPeerIds,
             ackedPeerIds: expectedPeerIds.slice(0, -1),
-            ordering: undefined
+            ordering: undefined,
+            retryTracking: undefined
         });
         const values = [
             ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
@@ -314,8 +317,33 @@ describe('outbound control admission identity', () => {
         expect(retained.map((payload) => payload.kind)).toEqual(['admit-control']);
 
         // The replay finds the new owner and terminalizes the work instead of retrying forever.
-        expect(await control.replay(toPendingControl(retained[0]!))).toEqual({ status: 'completed' });
+        expect(await control.replay(toPendingControl(retained[0]!))).toEqual({
+            outcome: { status: 'completed' },
+            committed: false
+        });
         expect(state.data.has('outbound-control:control:acks:message')).toBe(false);
+    });
+
+    it('schedules the not-yet-in-sync retry when the runtime replays a conflicted control admission', async () => {
+        const { backend, admissionStore, workQueue } = createFixture();
+        await seedDirectObligation(admissionStore, { enabled: true, maxAttempts: 2, retryDelayMs: 5_000 });
+        const runtime = createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
+            stores: { admissionStore, workQueue },
+            decodePreparedMessage: decodeALOutboundTransportMessage,
+            // The admitted policy carries the retry budget; the planner only re-plans the stored message.
+            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const })
+        });
+        await runtime.ready();
+        vi.spyOn(backend, 'write').mockImplementationOnce(() => {
+            throw new ALAdmissionBackendConflictError('simulated outbound control conflict');
+        });
+
+        expect(await runtime.acceptControlMessage(notYetInSyncNack())).toEqual({ kind: 'pending-control' });
+        await runtime.drainWork();
+
+        // The replayed admission owes the same retry the direct path writes; without it the nack is lost.
+        await expect.poll(async () => (await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind)).toContain('nack-retry');
     });
 
     it('commits an accepted repair and the work it forwards in one transaction', async () => {
@@ -439,13 +467,15 @@ function recordALOutboundCommits(
 }
 
 async function seedDirectObligation(
-    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    retryTracking?: ALOutboundRetryTrackingPlan
 ): Promise<void> {
     await seedObligation(admissionStore, {
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         expectedPeerIds: ['receiver'],
         ackedPeerIds: [],
-        ordering: undefined
+        ordering: undefined,
+        retryTracking
     });
 }
 
@@ -456,7 +486,8 @@ async function seedMulticastObligation(
         targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
         expectedPeerIds: ['receiver', 'other-receiver'],
         ackedPeerIds: [],
-        ordering: undefined
+        ordering: undefined,
+        retryTracking: undefined
     });
 }
 
@@ -467,7 +498,8 @@ async function seedOrderedObligation(
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         expectedPeerIds: ['receiver'],
         ackedPeerIds: [],
-        ordering: { orderingKey: 'stream', epoch: 7, seq: 10 }
+        ordering: { orderingKey: 'stream', epoch: 7, seq: 10 },
+        retryTracking: undefined
     });
 }
 
@@ -483,7 +515,11 @@ async function seedObligation(
         constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: input.ordering
     };
-    const admission = await computeOutboundTestAdmission(admissionStore, msg);
+    const admission = await computeOutboundTestAdmission(
+        admissionStore,
+        msg,
+        (planned) => ({ msg: planned, persist: true, preparedMessages: [], retryTracking: input.retryTracking })
+    );
     await admissionStore.commitBundle({
         ...admission,
         mutations: [
@@ -530,6 +566,20 @@ function orderedRepairControl(orderingKey: string, missingSeqs: readonly number[
             orderingKey,
             expectedSeq: 2,
             missingSeqs
+        }
+    );
+}
+
+function notYetInSyncNack(): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1 },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            msgId: 'message',
+            reason: 'not-yet-in-sync',
+            observedAtEpochMs: 1,
+            serverSnapshotVersion: 3
         }
     );
 }

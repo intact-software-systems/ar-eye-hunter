@@ -7,6 +7,7 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
@@ -22,7 +23,8 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import type {
     ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult
+    ALOutboundControlAdmissionResult,
+    ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -79,6 +81,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
             await this.scheduleNotYetInSyncRetryIfRequired(msg);
         }
         return admitted;
+    }
+
+    /** A retained control admission owes the same post-commit retry schedule the direct path writes. */
+    async replayControlAdmission(payload: ALOutboundPendingControl): Promise<ALWorkOutcome> {
+        const replayed = await this.dependencies.controlAdmission.replay(payload);
+        if (replayed.committed) {
+            await this.scheduleNotYetInSyncRetryIfRequired(payload.msg);
+        }
+        return replayed.outcome;
     }
 
     private async hasCurrentRepairAuthority(control: ALParsedControlMessage): Promise<boolean> {

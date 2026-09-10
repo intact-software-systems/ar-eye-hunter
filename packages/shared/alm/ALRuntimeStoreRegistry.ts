@@ -19,7 +19,7 @@ export function configureALRuntimeStoreFactories<TPrepared>(
     factories: ALRuntimeStoreFactories<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALRuntimeStoreFactories<TPrepared> {
-    manager.set(toALRuntimeStoreFactoryToken(id), factories);
+    manager.set(toALRuntimeStoreFactoryToken<TPrepared>(id), factories);
     return factories;
 }
 
