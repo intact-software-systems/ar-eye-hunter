@@ -364,12 +364,35 @@ the causal diagnosis but is not immutable evidence because it preceded the
 correction commit and final review. Commit, push, review, and rerun the required
 default repetitions and all-scenarios matrix from the resulting exact head.
 
+The first state-write comparison of committed correction `46c7e2a35` was not
+accepted. A fresh-development-database pair failed only the uncontended p99
+threshold (`116.98 -> 123.81 ms`). The required pinned A-B-B-A follow-up then
+completed all four nine-run positions with 75,600 accepted commands, zero
+exhaustion, zero atomic-completion failures, and complete receipt/outbox
+evidence, but its pooled comparison also failed. One candidate position had a
+transient uncontended host spike (`p99 502.72 ms`) while both surrounding base
+positions stayed near `105-115 ms`; the pooled result nevertheless also showed
+candidate-side shared throughput and transaction-duration regressions. The
+four 476 MiB sources exceeded Node's default 4 GiB heap in the pooler; rerunning
+the unchanged pooler with a bounded 16 GiB heap succeeded on the 96 GiB host.
+The failed result remains diagnostic evidence and cannot approve the branch.
+
+Static inspection found real avoidable candidate work: generic `jsonEquals`
+cloned, recursively key-sorted, and serialized both canonical presence-session
+collections whenever only `groupRevision` advanced. Keep the revision rule,
+but compare the already canonical scalar, ID, and session arrays directly while
+excluding only the two documented lease fields. Return an already-ahead summary
+before deriving new content. Characterization tests must prove that lease-only
+changes preserve `presenceRevision` while a meaningful session-field change
+advances it. A fresh pinned comparison from the resulting committed candidate
+is mandatory; do not reuse, suppress, or add a reason to the failed result.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                    |
-| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
+| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, a green fresh/pinned state-write comparison, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current

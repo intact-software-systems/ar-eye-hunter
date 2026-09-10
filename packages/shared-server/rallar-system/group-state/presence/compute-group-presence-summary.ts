@@ -6,7 +6,7 @@ import type {
     GroupPresenceSummary,
     GroupRef
 } from '@shared/api/group-types.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { arrayEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
@@ -54,22 +54,31 @@ interface ValidateGroupPresenceSummaryInput {
     readonly computed: GroupPresenceSummaryComputed;
 }
 
+interface GroupPresenceSummaryContent {
+    readonly activePrincipalIds: readonly string[];
+    readonly activeSessionIds: readonly string[];
+    readonly activeSessions: readonly GroupPresenceSession[];
+    readonly activePrincipalCount: number;
+    readonly activeSessionCount: number;
+}
+
 export function computeGroupPresenceSummary(
     input: ComputeGroupPresenceSummaryInput
 ): GroupPresenceSummaryComputed {
     const { ref, read, nowEpochMs } = input;
-    const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
     const groupRevision = read.group.value.snapshotVersion;
     const current = read.current?.value;
-    const currentContentMatches = current !== undefined && jsonEquals(
-        toComparableSummaryContent(summaryContent(current)),
-        toComparableSummaryContent(content)
-    );
+    if (current && current.causalRevision.groupRevision > groupRevision) {
+        return { outcome: 'no-op', evaluatedAtEpochMs: nowEpochMs, summary: current };
+    }
+
+    const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
+    const currentContentMatches = current !== undefined &&
+        groupPresenceSummaryContentEquals(current, content);
     if (
         current &&
-        (current.causalRevision.groupRevision > groupRevision ||
-            (current.causalRevision.groupRevision === groupRevision &&
-                currentContentMatches))
+        current.causalRevision.groupRevision === groupRevision &&
+        currentContentMatches
     ) {
         return { outcome: 'no-op', evaluatedAtEpochMs: nowEpochMs, summary: current };
     }
@@ -119,7 +128,7 @@ export function validateGroupPresenceSummary(
 function deriveGroupPresenceSummaryContent(
     read: GroupPresenceSummaryRead,
     nowEpochMs: number
-): ReturnType<typeof summaryContent> {
+): GroupPresenceSummaryContent {
     const groupActive = read.group.value.status === 'active' &&
         (read.group.value.expiresAtEpochMs === null || read.group.value.expiresAtEpochMs > nowEpochMs);
     const activeMemberIds = new Set(
@@ -162,36 +171,38 @@ function deriveGroupPresenceSummaryContent(
     };
 }
 
-function summaryContent(summary: GroupPresenceSummary): Readonly<{
-    activePrincipalIds: readonly string[];
-    activeSessionIds: readonly string[];
-    activeSessions: readonly GroupPresenceSession[];
-    activePrincipalCount: number;
-    activeSessionCount: number;
-}> {
-    return {
-        activePrincipalIds: summary.activePrincipalIds,
-        activeSessionIds: summary.activeSessionIds,
-        activeSessions: summary.activeSessions,
-        activePrincipalCount: summary.activePrincipalCount,
-        activeSessionCount: summary.activeSessionCount
-    };
-}
-
 /**
  * Under damped formation the session lease fields are liveness, not content:
  * a renewed lease over an identical session set must compare equal so a pure
  * renewal never advances presenceRevision.
  */
-function toComparableSummaryContent(
-    content: ReturnType<typeof summaryContent>
-): ReturnType<typeof summaryContent> {
-    return {
-        ...content,
-        activeSessions: content.activeSessions.map((session) => ({
-            ...session,
-            lastHeartbeatAtEpochMs: 0,
-            expiresAtEpochMs: 0
-        }))
-    };
+function groupPresenceSummaryContentEquals(
+    current: GroupPresenceSummary,
+    content: GroupPresenceSummaryContent
+): boolean {
+    return current.activePrincipalCount === content.activePrincipalCount &&
+        current.activeSessionCount === content.activeSessionCount &&
+        arrayEquals(current.activePrincipalIds, content.activePrincipalIds) &&
+        arrayEquals(current.activeSessionIds, content.activeSessionIds) &&
+        current.activeSessions.length === content.activeSessions.length &&
+        current.activeSessions.every((session, index) =>
+            groupPresenceSessionContentEquals(session, content.activeSessions[index]!)
+        );
+}
+
+function groupPresenceSessionContentEquals(
+    current: GroupPresenceSession,
+    content: GroupPresenceSession
+): boolean {
+    return current.applicationId === content.applicationId &&
+        current.workspaceId === content.workspaceId &&
+        current.groupId === content.groupId &&
+        current.sessionId === content.sessionId &&
+        current.principalId === content.principalId &&
+        current.generationId === content.generationId &&
+        current.generationVersion === content.generationVersion &&
+        current.connectedAtEpochMs === content.connectedAtEpochMs &&
+        current.status === content.status &&
+        current.disconnectedAtEpochMs === content.disconnectedAtEpochMs &&
+        current.disconnectReason === content.disconnectReason;
 }
