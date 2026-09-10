@@ -9,7 +9,9 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { newWorkEntry } from './al-work-test-entries.ts';
+import { newWorkEntry, readTestALWorkReadyAtMs } from './al-work-test-entries.ts';
+
+const AL_TEST_TYPES: ReadonlySet<string> = new Set(['AL_TEST']);
 
 describe('ALWorkHandler', () => {
     it('runs one batch per wake, releases each claim once, and never awaits delivery on committed()', async () => {
@@ -26,7 +28,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -57,7 +59,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -99,7 +101,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -137,7 +139,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -160,23 +162,17 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
-    it('starts a batch through the engine\'s isWork -> runnable path when peekNextReadyAt reports due work', async () => {
+    it('starts a batch through the engine\'s isWork -> runnable path when the probe reports due work', async () => {
         const released: string[] = [];
         const pending: ALWorkClaim[] = [];
         let dueAtMs: number | undefined;
         const port: ALWorkQueuePort = {
-            workTypes: new Set(['AL_TEST']),
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
             claim: async ({ maxCount }) => pending.splice(0, maxCount),
             finalizeExhausted: async () => [],
             release: async (claim, outcome) => {
                 released.push(`${claim.entry.key.contextId}:${outcome.status}`);
-            },
-            peekNextReadyAt: async () => {
-                const next = dueAtMs;
-                dueAtMs = undefined;
-                return next;
             },
             readEntry: async () => undefined
         };
@@ -188,7 +184,11 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: true,
             clock: { nowMs: () => Date.now() },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => {
+                const next = dueAtMs;
+                dueAtMs = undefined;
+                return next;
+            },
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -201,7 +201,7 @@ describe('ALWorkHandler', () => {
         expect(released).toEqual([]);
 
         // Work becomes due only after bootstrap; the isWork -> runnable path owned by the engine
-        // must discover it via peekNextReadyAt/wakeAt rather than the direct ready() bootstrap batch.
+        // must discover it through the probe and wakeAt rather than the ready() bootstrap batch.
         pending.push(toFakeALWorkClaim('engine-driven'));
         dueAtMs = Date.now() - 1;
 
@@ -213,21 +213,16 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
-    it('drives readiness from the injected probe, not from the port', async () => {
+    it('drives readiness from the injected probe alone', async () => {
         const released: string[] = [];
         const pending: ALWorkClaim[] = [];
-        let peekCallCount = 0;
         const port = fakePort({
             claims: [],
             onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`)
         });
         const probing: ALWorkQueuePort = {
             ...port,
-            claim: async ({ maxCount }) => pending.splice(0, maxCount),
-            peekNextReadyAt: async () => {
-                peekCallCount += 1;
-                return undefined;
-            }
+            claim: async ({ maxCount }) => pending.splice(0, maxCount)
         };
         let nowMs = 10_000;
         let probedReadyAtMs: number | undefined;
@@ -274,7 +269,6 @@ describe('ALWorkHandler', () => {
             await engine.executeOnce();
             return released;
         }).toEqual(['later:completed']);
-        expect(peekCallCount).toBe(0);
 
         handler.dispose();
     });
@@ -292,7 +286,6 @@ describe('ALWorkHandler', () => {
             signalFirstClaimEntered = resolve;
         });
         const port: ALWorkQueuePort = {
-            workTypes: new Set(['AL_TEST']),
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
             claim: async ({ maxCount }) => {
@@ -303,7 +296,6 @@ describe('ALWorkHandler', () => {
             release: async (claim, outcome) => {
                 released.push(`${claim.entry.key.contextId}:${outcome.status}`);
             },
-            peekNextReadyAt: async () => undefined,
             readEntry: async () => undefined
         };
         const engine = createEngine();
@@ -314,7 +306,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async (p, size) => ({
                 claims: await p.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -373,7 +365,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (probed) => probed.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async () => {
                 selectCallCount += 1;
                 return { claims: [], nextReadyAtMs: undefined };
@@ -396,7 +388,7 @@ describe('ALWorkHandler', () => {
         const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs));
         const port = createALWorkQueuePort({
             queue,
-            workTypes: new Set(['AL_TEST']),
+            workTypes: AL_TEST_TYPES,
             leaseMs: 5_000,
             nowMs: () => nowMs,
             random: () => 0.5
@@ -411,7 +403,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => nowMs },
             pageSize: 16,
-            readNextReadyAtMs: (claimed) => claimed.peekNextReadyAt(),
+            readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
             selectReady: async (claimed, size) => ({
                 claims: await claimed.claim({ maxCount: size, observedEntries: undefined }),
                 nextReadyAtMs: undefined
@@ -510,7 +502,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady: async () => {
                 throw new ALAdmissionCorruptionError('bootstrap-path', new TypeError('bad admission state'));
             },
@@ -537,7 +529,7 @@ describe('ALWorkHandler', () => {
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
             pageSize: 16,
-            readNextReadyAtMs: (port) => port.peekNextReadyAt(),
+            readNextReadyAtMs: async () => undefined,
             selectReady,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
@@ -581,7 +573,6 @@ function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
     const pending = input.claims.map((effectId) => toFakeALWorkClaim(effectId));
     let exhausted = (input.finalizeExhausted ?? []).map((effectId) => toFakeALWorkClaim(effectId));
     return {
-        workTypes: new Set(['AL_TEST']),
         retainIfAbsent: async (entry) => entry,
         readPage: async () => ({ entries: [], nextCursor: null }),
         claim: async ({ maxCount }) => pending.splice(0, maxCount),
@@ -593,7 +584,6 @@ function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
         release: async (claim, outcome) => {
             input.onRelease(claim, outcome);
         },
-        peekNextReadyAt: async () => undefined,
         readEntry: async () => undefined
     };
 }
