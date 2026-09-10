@@ -800,7 +800,7 @@ async function runDeliveryCase(
             ? undefined
             : firstHopReceivers.map((receiver) => input.sessions[receiver.prefix])
     });
-    const durations = await Promise.all(
+    const deliveryResults = await Promise.allSettled(
         receivers.map((receiver) =>
             input.run.control.waitForMessage({
                 runId: input.run.runId,
@@ -814,6 +814,18 @@ async function runDeliveryCase(
             })
         )
     );
+    const failedDelivery = deliveryResults.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    if (failedDelivery) {
+        throw failedDelivery.reason;
+    }
+    const durations = deliveryResults.map((result) => {
+        if (result.status === 'rejected') {
+            throw result.reason;
+        }
+        return result.value;
+    });
     const receiverAgentIds = receivers.map((receiver) => receiver.agentId);
     return {
         commandId,

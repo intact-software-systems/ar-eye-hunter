@@ -32,6 +32,7 @@ import {
 } from './live-rtc-evidence-json.ts';
 import type {
     LiveRtcAttemptFailureDiagnostic,
+    LiveRtcDiagnosticFailure,
     LiveRtcDiagnosticsCheckpoint,
     LiveRtcFailedControlResult,
     LiveRtcFailureAgentHealth,
@@ -202,6 +203,23 @@ interface FirstMessageFailureCase {
     readonly possibleReceiverAgentIds: readonly string[];
 }
 
+interface ToMessageFailureDiagnosticInput {
+    readonly waitForMessage: LiveRtcControlClient.WaitForMessageInput;
+    readonly healthByAgentId: Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>;
+    readonly runCapture: LiveRtcControlClient.RunCapture;
+    readonly capturedAtEpochMs: number;
+}
+
+const MESSAGE_DELIVERY_FAILURE: LiveRtcDiagnosticFailure = {
+    name: 'message-delivery-failed',
+    message: 'RTC message delivery observation failed.'
+};
+
+const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
+    name: 'health-capture-failed',
+    message: 'RTC health diagnostic capture failed.'
+};
+
 export class LiveRtcControlClient {
     readonly #request: APIRequestContext;
     readonly #baseUrl: string;
@@ -209,6 +227,7 @@ export class LiveRtcControlClient {
     readonly #monotonicNow: () => number;
     readonly #epochNow: () => number;
     readonly #messageFailures: LiveRtcMessageFailureDiagnostic[] = [];
+    readonly #messageFailureCaptures = new Set<Promise<void>>();
     readonly #messageFailureReceiverAgentIds = new Set<string>();
     #firstMessageFailureCase: FirstMessageFailureCase | undefined;
 
@@ -340,8 +359,10 @@ export class LiveRtcControlClient {
                 .toBe(true);
         }
         catch (cause) {
+            const capture = this.#recordMessageFailure(input);
+            this.#messageFailureCaptures.add(capture);
             try {
-                await this.#recordMessageFailure(input, toError(cause));
+                await capture;
             }
             catch (diagnosticCause) {
                 console.error(
@@ -349,19 +370,21 @@ export class LiveRtcControlClient {
                     toError(diagnosticCause)
                 );
             }
+            finally {
+                this.#messageFailureCaptures.delete(capture);
+            }
             throw cause;
         }
         return this.#monotonicNow() - input.startedAtMs;
     }
 
     async #recordMessageFailure(
-        input: LiveRtcControlClient.WaitForMessageInput,
-        failure: Error
+        input: LiveRtcControlClient.WaitForMessageInput
     ): Promise<void> {
         if (!this.#acceptsMessageFailure(input)) {
             return;
         }
-        const diagnostic = await this.#captureMessageFailure(input, failure);
+        const diagnostic = await this.#captureMessageFailure(input);
         this.#messageFailures.push(diagnostic);
         await this.#writeDiagnosticsArtifact(
             `live-rtc-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}.json`,
@@ -402,79 +425,54 @@ export class LiveRtcControlClient {
     }
 
     async #captureMessageFailure(
-        input: LiveRtcControlClient.WaitForMessageInput,
-        failure: Error
+        input: LiveRtcControlClient.WaitForMessageInput
     ): Promise<LiveRtcMessageFailureDiagnostic> {
+        const healthByAgentId = await this.#captureMessageFailureHealth(input);
+        const runCapture = await this.#captureRun(input.runId);
+        return toMessageFailureDiagnostic({
+            waitForMessage: input,
+            healthByAgentId,
+            runCapture,
+            capturedAtEpochMs: this.#epochNow()
+        });
+    }
+
+    async #captureMessageFailureHealth(
+        input: LiveRtcControlClient.WaitForMessageInput
+    ): Promise<Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>> {
         const agentIds = [...new Set([input.senderAgentId, input.agentId])];
         const healthEntries = await Promise.all(
-            agentIds.map(async (agentId) => {
-                try {
-                    const health = await this.executeResult({
-                        runId: input.runId,
-                        agentId,
-                        commandId: `health-message-failure-${safeFileName(input.matrixId)}-${
-                            safeFileName(input.agentId)
-                        }-${
-                            safeFileName(
-                                agentId
-                            )
-                        }`,
-                        command: { kind: 'health', includeRtcDiagnostics: true },
-                        timeoutMs: 15_000
-                    });
-                    return [
-                        agentId,
-                        health.ok
-                            ? summarizeMessageFailureAgentHealth(
-                                buildLiveRtcAgentDiagnostics(agentId, this.resultValue(health))
-                            )
-                            : unavailableMessageFailureAgentHealth(true, false, null)
-                    ] as const;
-                }
-                catch (cause) {
-                    return [
-                        agentId,
-                        unavailableMessageFailureAgentHealth(
-                            false,
-                            null,
-                            toError(cause)
-                        )
-                    ] as const;
-                }
-            })
+            agentIds.map((agentId) => this.#captureMessageFailureAgentHealth(input, agentId))
         );
-        const runCapture = await this.#captureRun(input.runId);
-        const run = runCapture.run;
-        return {
-            kind: 'message-delivery-failure',
-            runId: input.runId,
-            senderAgentId: input.senderAgentId,
-            receiverAgentId: input.agentId,
-            transport: input.transport,
-            matrixId: input.matrixId,
-            deliveryMode: input.deliveryMode,
-            capturedAtEpochMs: this.#epochNow(),
-            failure: { name: failure.name, message: failure.message },
-            healthByAgentId: Object.fromEntries(healthEntries),
-            runCaptureSucceeded: runCapture.succeeded,
-            sendResult: summarizeLiveRtcSendResult(
-                (run?.results ?? []).find(
-                    (result) =>
-                        result.agentId === input.senderAgentId &&
-                        result.commandId === `send-${input.matrixId}`
-                )
-            ) ?? null,
-            recentResults: (run?.results ?? [])
-                .slice(-MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS)
-                .map((result): LiveRtcMessageFailureResultSummary => ({
-                    agentId: result.agentId ?? null,
-                    commandId: result.commandId,
-                    ok: result.ok
-                })),
-            recentEvents: (run?.events ?? [])
-                .slice(-MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS)
-                .map(summarizeMessageFailureEvent)
-        };
+        return Object.fromEntries(healthEntries);
+    }
+
+    async #captureMessageFailureAgentHealth(
+        input: LiveRtcControlClient.WaitForMessageInput,
+        agentId: string
+    ): Promise<readonly [string, LiveRtcMessageFailureAgentHealth]> {
+        try {
+            const health = await this.executeResult({
+                runId: input.runId,
+                agentId,
+                commandId: `health-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}-${
+                    safeFileName(agentId)
+                }`,
+                command: { kind: 'health', includeRtcDiagnostics: true },
+                timeoutMs: 15_000
+            });
+            return [
+                agentId,
+                health.ok
+                    ? summarizeMessageFailureAgentHealth(
+                        buildLiveRtcAgentDiagnostics(agentId, this.resultValue(health))
+                    )
+                    : unavailableMessageFailureAgentHealth(true, false)
+            ];
+        }
+        catch {
+            return [agentId, unavailableMessageFailureAgentHealth(false, null)];
+        }
     }
 
     waitForPeerReadiness(
@@ -594,6 +592,7 @@ export class LiveRtcControlClient {
     async captureAttemptFailure(
         input: LiveRtcControlClient.CaptureAttemptFailureInput
     ): Promise<LiveRtcAttemptFailureDiagnostic> {
+        await Promise.allSettled(this.#messageFailureCaptures);
         try {
             const run = await this.fetchRun(input.runId);
             return {
@@ -1003,14 +1002,47 @@ function unavailableLiveRtcFailureAgentHealth(
 
 function unavailableMessageFailureAgentHealth(
     captureSucceeded: boolean,
-    commandSucceeded: boolean | null,
-    captureFailure: Error | null
+    commandSucceeded: boolean | null
 ): LiveRtcMessageFailureAgentHealth {
     return {
         ...unavailableLiveRtcFailureAgentHealth(captureSucceeded, commandSucceeded),
-        captureFailure: captureFailure
-            ? { name: captureFailure.name, message: captureFailure.message }
-            : null
+        captureFailure: captureSucceeded ? null : HEALTH_CAPTURE_FAILURE
+    };
+}
+
+function toMessageFailureDiagnostic(
+    input: ToMessageFailureDiagnosticInput
+): LiveRtcMessageFailureDiagnostic {
+    const run = input.runCapture.run;
+    return {
+        kind: 'message-delivery-failure',
+        runId: input.waitForMessage.runId,
+        senderAgentId: input.waitForMessage.senderAgentId,
+        receiverAgentId: input.waitForMessage.agentId,
+        transport: input.waitForMessage.transport,
+        matrixId: input.waitForMessage.matrixId,
+        deliveryMode: input.waitForMessage.deliveryMode,
+        capturedAtEpochMs: input.capturedAtEpochMs,
+        failure: MESSAGE_DELIVERY_FAILURE,
+        healthByAgentId: input.healthByAgentId,
+        runCaptureSucceeded: input.runCapture.succeeded,
+        sendResult: summarizeLiveRtcSendResult(
+            (run?.results ?? []).find(
+                (result) =>
+                    result.agentId === input.waitForMessage.senderAgentId &&
+                    result.commandId === `send-${input.waitForMessage.matrixId}`
+            )
+        ) ?? null,
+        recentResults: (run?.results ?? [])
+            .slice(-MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS)
+            .map((result): LiveRtcMessageFailureResultSummary => ({
+                agentId: result.agentId ?? null,
+                commandId: result.commandId,
+                ok: result.ok
+            })),
+        recentEvents: (run?.events ?? [])
+            .slice(-MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS)
+            .map(summarizeMessageFailureEvent)
     };
 }
 

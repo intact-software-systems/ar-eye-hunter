@@ -247,7 +247,7 @@ export interface LiveRtcMessageFailureDiagnostic {
     readonly matrixId: string;
     readonly deliveryMode: string;
     readonly capturedAtEpochMs: number;
-    readonly failure: Readonly<{ name: string; message: string; }>;
+    readonly failure: LiveRtcDiagnosticFailure;
     readonly healthByAgentId: Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>;
     readonly runCaptureSucceeded: boolean;
     readonly sendResult: LiveRtcSendResultSummary | null;
@@ -255,8 +255,13 @@ export interface LiveRtcMessageFailureDiagnostic {
     readonly recentEvents: readonly LiveRtcMessageFailureEventSummary[];
 }
 
+export interface LiveRtcDiagnosticFailure {
+    readonly name: string;
+    readonly message: string;
+}
+
 export interface LiveRtcMessageFailureAgentHealth extends LiveRtcFailureAgentHealth {
-    readonly captureFailure: Readonly<{ name: string; message: string; }> | null;
+    readonly captureFailure: LiveRtcDiagnosticFailure | null;
 }
 
 export interface LiveRtcMessageFailureResultSummary {
