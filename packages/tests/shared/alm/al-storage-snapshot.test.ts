@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -393,10 +392,14 @@ function readWrittenSnapshotKeys(): readonly string[] {
     return Object.keys(written).toSorted();
 }
 
+/**
+ * The commit only labels an artifact a caller explicitly asked for; the test path never shells out,
+ * so a run in a worktree or a detached checkout costs nothing and cannot fail on git.
+ */
 function readCommit(): string {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot(), encoding: 'utf8' }).trim();
+    return process.env['RALLAR_ALM_SNAPSHOT_COMMIT'] ?? 'unrecorded';
 }
 
 function repositoryRoot(): string {
-    return process.cwd();
+    return path.resolve(import.meta.dirname, '../../../..');
 }

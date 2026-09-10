@@ -9,6 +9,7 @@ import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
@@ -439,9 +440,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 if (this.hasExpiredWork(bundle.canonicalEntry, effects)) {
                     return 'expired';
                 }
-                await this.assertCurrentCommitFence(tx, bundle, effects);
-                await this.mutations.assertCurrentObservations(tx, mutations);
-                await this.mutations.assertMessageIdentities(tx, bundle.mutations);
+                await this.assertCurrentCommitFence(tx, candidate);
                 if (
                     this.hasExpiredWork(bundle.canonicalEntry, effects) ||
                     await writeALOutboundCanonicalFacts(tx, canonicalWrites, this.nowMs) === 'expired'
@@ -475,12 +474,16 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs);
     }
 
-    /** The sender fence, the pending-admission row and every observed effect row, re-read inside the write. */
+    /**
+     * Every fence the commit owes, re-read inside the write: the sender version, the pending-admission
+     * row, every observed effect row, the shared supersedence observation, and message identity. One
+     * function owns the throw, so every fence leaves the write the same way.
+     */
     private async assertCurrentCommitFence(
         tx: ALAdmissionWorkWriteContext,
-        bundle: ALOutboundCommitBundle<TPrepared>,
-        effects: readonly ALOutboundEffectCandidate<TPrepared>[]
+        candidate: ALOutboundCommitCandidate<TPrepared>
     ): Promise<void> {
+        const { bundle, effects, mutations } = candidate;
         const current = await this.reads.readClientRecordWithin(tx, bundle.senderId);
         if (current?.version !== bundle.expectedVersion) {
             throw new ALAdmissionBackendConflictError('Outbound sender version changed');
@@ -494,6 +497,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const issues = await this.effectStore.validateObservedWork(tx, effects);
         if (issues.length > 0) {
             throw new ALAdmissionBackendConflictError(issues.map((issue) => issue.message).join('; '));
+        }
+        const fenced = await this.mutations.readCurrentObservationConflict(tx, mutations) ??
+            await this.mutations.readMessageIdentityConflict(tx, bundle.mutations);
+        if (fenced !== undefined) {
+            throw fenced.kind === 'conflict'
+                ? new ALAdmissionBackendConflictError(fenced.message)
+                : new ALAdmissionCorruptionError(fenced.key, new TypeError(fenced.message));
         }
     }
 

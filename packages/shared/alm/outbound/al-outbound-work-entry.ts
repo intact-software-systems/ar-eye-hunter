@@ -199,8 +199,18 @@ export function toALOutboundDequeueWork<TPrepared>(
                 entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
         ),
         expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-        leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALOutboundWorkReadyAt(entry) : undefined
+        leaseUntilMs: entry.status === EntityStatus.RESERVED ? readALOutboundDequeueLease(entry) : undefined
     };
+}
+
+/** The unleased sweep claims such a row so the attempt rejects it; a bare TypeError would retry it. */
+function readALOutboundDequeueLease(entry: ResourceEntry): number {
+    try {
+        return resolveALOutboundWorkReadyAt(entry);
+    }
+    catch (error) {
+        throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
+    }
 }
 
 function readALOutboundQueuedMessage(

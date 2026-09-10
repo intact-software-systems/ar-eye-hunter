@@ -188,4 +188,22 @@ describe('AL outbound dequeue work', () => {
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace))
             .toBeUndefined();
     });
+
+    it('rejects a reserved foreign row that carries no lease start', async () => {
+        const outbox = createOutboxQueue();
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const })
+        });
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('unleased'), DEQUEUE_TYPE);
+        // A reservation with no lease start can never time out, so the sweep claims it as observed.
+        await outbox.enqueue({ ...queued, status: EntityStatus.RESERVED });
+
+        await runtime.ready();
+
+        await expect.poll(async () => (await outbox.getItem(queued.key))?.status)
+            .toBe(EntityStatus.NON_RETRYABLE);
+    });
 });

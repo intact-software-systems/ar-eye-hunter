@@ -7,6 +7,7 @@ import type {
     ALControlAdmissionRead
 } from './compute-al-outbound-control-admission.ts';
 
+/** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(
     candidate: ALControlAdmissionCandidate
 ): readonly ALMessageRejection[] {

@@ -1,6 +1,5 @@
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { jsonEquals } from '../../../repository/state-utils.ts';
-import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import {
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
@@ -11,7 +10,6 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
-import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALLatestSupersedenceValue,
@@ -107,6 +105,11 @@ export interface CreateALOutboundAdmissionMutationsInput {
     readonly supersedenceTrackTtlMs: number;
 }
 
+/** What a re-read inside the write found: a losable conflict, or a persisted identity that is corrupt. */
+export type ALOutboundCommitFenceIssue =
+    | Readonly<{ kind: 'conflict'; message: string; }>
+    | Readonly<{ kind: 'corruption'; key: string; message: string; }>;
+
 /** Owns the outbound mutation vocabulary: the state write each mutation names, its guards, and its apply. */
 export class ALOutboundAdmissionMutations {
     private readonly namespace: string;
@@ -128,10 +131,11 @@ export class ALOutboundAdmissionMutations {
         return mutations.map((mutation) => this.computeStateWrite(mutation, nowMs));
     }
 
-    async assertCurrentObservations(
+    /** The first moved supersedence observation, or undefined: the commit fence owns the throw. */
+    async readCurrentObservationConflict(
         transaction: ALAdmissionWorkWriteContext,
         writes: readonly ALOutboundStateWrite[]
-    ): Promise<void> {
+    ): Promise<ALOutboundCommitFenceIssue | undefined> {
         for (const write of writes) {
             if (write.supersedenceGuard === undefined) {
                 continue;
@@ -141,21 +145,23 @@ export class ALOutboundAdmissionMutations {
                 (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
             );
             if (!jsonEquals(current, write.supersedenceGuard.expected)) {
-                throw new ALAdmissionBackendConflictError('Outbound shared supersedence observation changed');
+                return { kind: 'conflict', message: 'Outbound shared supersedence observation changed' };
             }
         }
+        return undefined;
     }
 
-    async assertMessageIdentities(
+    /** The first message id another sender or scope already owns, or undefined. */
+    async readMessageIdentityConflict(
         transaction: ALAdmissionWorkWriteContext,
         mutations: readonly ALOutboundAdmissionMutation[]
-    ): Promise<void> {
+    ): Promise<ALOutboundCommitFenceIssue | undefined> {
         for (const mutation of mutations) {
             if (mutation.kind === 'set-msg-owner') {
                 const key = toALOutboundMessageOwnerKey(this.namespace, mutation.msgId);
                 const owner = await transaction.read(key, decodeALAdmissionString);
                 if (owner !== undefined && owner !== mutation.senderId) {
-                    throw new ALAdmissionCorruptionError(key, new TypeError('Message id belongs to another sender'));
+                    return { kind: 'corruption', key, message: 'Message id belongs to another sender' };
                 }
             }
             if (mutation.kind === 'set-sent-message') {
@@ -168,13 +174,11 @@ export class ALOutboundAdmissionMutations {
                     mutation.reference.scope !== this.canonicalScope ||
                     (sent !== undefined && !jsonEquals(sent.reference, mutation.reference))
                 ) {
-                    throw new ALAdmissionCorruptionError(
-                        key,
-                        new TypeError('Message id has conflicting canonical identity')
-                    );
+                    return { kind: 'corruption', key, message: 'Message id has conflicting canonical identity' };
                 }
             }
         }
+        return undefined;
     }
 
     async writeStateWrites(

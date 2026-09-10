@@ -152,12 +152,7 @@ describe('multicast QoS integration', () => {
             { ttlMs: 30_000 }
         );
         const entry = shared.QueueBoxUtilities.toResourceEntryFromMsg(message, shared.EnqueuedType.RTC_OUTBOX);
-        // toResourceEntryFromMsg's createdTs falls back through Temporal.Now (local wall clock)
-        // reinterpreted as UTC; a due nextTs sidesteps that gap instead of relying on it for readiness.
-        await manager.outbox.enqueue({
-            ...entry,
-            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
-        });
+        await manager.outbox.enqueue(entry);
         const failure = vi.spyOn(resilience, 'failure');
         const success = vi.spyOn(resilience, 'success');
         for (let cycle = 0; cycle < 25; cycle += 1) {
