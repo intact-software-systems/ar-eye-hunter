@@ -15,6 +15,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import {
     createALInboundAdmissionStore,
+    type ALInboundAdmissionMutation,
     type ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -128,6 +129,54 @@ describe('inbound canonical message ownership', () => {
         });
     });
 
+    it('expires a delivered message\'s canonical row with the effect that names it', async () => {
+        const nowMs = 1_800_000_000_000;
+        const retention = normalizeALRuntimeStoreRetention();
+        const fixture = createRetentionFixture(retention, nowMs);
+        const message = newInboundMessage('delivered', undefined, 'hello');
+
+        const bundle = await admitMessage(fixture.admissionStore, message, nowMs);
+
+        const canonical = readCanonicalMutation(bundle);
+        const latestEffectAtMs = Math.max(...bundle.durableEffects.map((effect) => effect.expireAtTimestamp));
+        expect(canonical.expireAtTimestamp).toBe(latestEffectAtMs);
+        expect(canonical.value.retainUntilMs).toBe(latestEffectAtMs);
+        expect(canonical.expireAtTimestamp).toBeLessThan(nowMs + retention.msgOwnerTtlMs);
+    });
+
+    it('keeps a buffered message\'s canonical row alive for its slot rather than the owner floor', async () => {
+        const nowMs = 1_800_000_000_000;
+        const retention = normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 10 * 60_000 });
+        const fixture = createRetentionFixture(retention, nowMs);
+        const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
+
+        const bundle = await admitMessage(fixture.admissionStore, gapped, nowMs);
+
+        const canonical = readCanonicalMutation(bundle);
+        const slot = bundle.mutations.find((mutation) => mutation.kind === 'set-buffered');
+        expect(slot?.expireAtTimestamp).toBe(nowMs + retention.bufferedMessageTtlMs);
+        expect(canonical.expireAtTimestamp).toBeGreaterThanOrEqual(slot!.expireAtTimestamp);
+        expect(canonical.expireAtTimestamp).toBeLessThan(nowMs + retention.msgOwnerTtlMs);
+    });
+
+    it('writes no canonical row for an admitted message that owns no effect and no slot', async () => {
+        const nowMs = 1_800_000_000_000;
+        const fixture = createRetentionFixture(normalizeALRuntimeStoreRetention(), nowMs);
+        const bystander = newBystanderMessage('bystander');
+
+        const bundle = await admitMessage(fixture.admissionStore, bystander, nowMs);
+
+        expect(bundle.durableEffects).toEqual([]);
+        expect(bundle.mutations.map((mutation) => mutation.kind)).toContain('set-msg-owner');
+        expect(bundle.mutations.map((mutation) => mutation.kind)).not.toContain('set-inbound-message');
+        expect(
+            await fixture.admissionStore.readInboundMessage({
+                senderId: bystander.id.senderId,
+                msgId: bystander.id.msgId
+            })
+        ).toBeUndefined();
+    });
+
     it('marks a delivery whose canonical message row is missing as NON_RETRYABLE', async () => {
         const fixture = createCanonicalRuntime();
         const message = newInboundMessage('missing-owner', undefined, 'hello');
@@ -161,6 +210,50 @@ describe('inbound canonical message ownership', () => {
         expect(fixture.delivered).toEqual([]);
     });
 });
+
+interface RetentionFixture {
+    readonly state: ALAdmissionMemoryState;
+    readonly admissionStore: ReturnType<typeof createALInboundAdmissionStore>;
+}
+
+function createRetentionFixture(
+    retention: ReturnType<typeof normalizeALRuntimeStoreRetention>,
+    nowMs: number
+): RetentionFixture {
+    const state = createInMemoryALAdmissionState(new InMemoryQueueBox());
+    return {
+        state,
+        admissionStore: createALInboundAdmissionStore({
+            namespace: NAMESPACE,
+            backend: new InMemoryAdmissionBackend(state, () => nowMs),
+            orderingTrackTtlMs: retention.repositoryTtlMs,
+            supersedenceTrackTtlMs: retention.repositoryTtlMs,
+            retention,
+            nowMs: () => nowMs
+        })
+    };
+}
+
+function readCanonicalMutation(
+    bundle: ALInboundCommitBundle
+): Extract<ALInboundAdmissionMutation, { kind: 'set-inbound-message'; }> {
+    const canonical = bundle.mutations.find((mutation) => mutation.kind === 'set-inbound-message');
+    if (canonical?.kind !== 'set-inbound-message') {
+        throw new Error('Expected the bundle to write one canonical inbound message row');
+    }
+    return canonical;
+}
+
+/** A message this peer neither delivers nor forwards: provenance and dedup only. */
+function newBystanderMessage(resourceId: string): ALMessage {
+    return newALUnicastMessage(
+        'sender',
+        { topicId: 'chat', resourceId, contextId: 'room' },
+        'relay',
+        'chat',
+        { text: resourceId }
+    );
+}
 
 function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const state = createInMemoryALAdmissionState(new InMemoryQueueBox());

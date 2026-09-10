@@ -84,18 +84,10 @@ export function prepareALInboundCommitBundle(
     });
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
     const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
-    // The canonical message must outlive every effect and buffered slot that only names it.
-    const ownerExpireAtTimestamp = Math.max(
-        read.nowMs + read.retention.msgOwnerTtlMs,
+    const ownedWorkExpiries = [
         ...durableEffects.map((effect) => effect.expireAtTimestamp),
-        ...mutations.flatMap((mutation) =>
-            mutation.kind === 'set-msg-owner' || mutation.kind === 'set-buffered' ||
-                mutation.kind === 'set-control-pending' ||
-                mutation.kind === 'set-control-owners'
-                ? [mutation.expireAtTimestamp]
-                : []
-        )
-    );
+        ...mutations.flatMap((mutation) => isOwnedWorkMutation(mutation) ? [mutation.expireAtTimestamp] : [])
+    ];
     return {
         admissionExpiresAtMs: read.kind === 'incoming'
             ? resolveALMessageExpireAtMs(msg) ?? read.nowMs + read.retention.durableEffectTtlMs
@@ -103,10 +95,14 @@ export function prepareALInboundCommitBundle(
         senderId: msg.id.senderId,
         observations: read.observations,
         mutations: [
-            ...toCanonicalMessageMutations(mutations, msg, ownerExpireAtTimestamp),
+            ...toCanonicalMessageMutations(mutations, msg, ownedWorkExpiries),
+            // Provenance keeps its own dedup lifetime, extended only to outlive the work it owns.
             ...mutations.map((mutation) =>
                 mutation.kind === 'set-msg-owner'
-                    ? { ...mutation, expireAtTimestamp: ownerExpireAtTimestamp }
+                    ? {
+                        ...mutation,
+                        expireAtTimestamp: Math.max(mutation.expireAtTimestamp, ...ownedWorkExpiries)
+                    }
                     : mutation
             )
         ],
@@ -114,15 +110,30 @@ export function prepareALInboundCommitBundle(
     };
 }
 
-/** Admission retains the message once; provenance ownership decides when that row is written. */
+/** The rows whose lifetime the canonical message must cover, exactly as the bundle validator reads them. */
+function isOwnedWorkMutation(
+    mutation: ALInboundAdmissionMutation
+): mutation is Extract<
+    ALInboundAdmissionMutation,
+    { kind: 'set-buffered' | 'set-control-acks' | 'set-control-pending' | 'set-control-owners'; }
+> {
+    return mutation.kind === 'set-buffered' || mutation.kind === 'set-control-acks' ||
+        mutation.kind === 'set-control-pending' || mutation.kind === 'set-control-owners';
+}
+
+/**
+ * The message is retained for exactly as long as the work that names it, never for a provenance
+ * lifetime of its own: a bundle that owns no effect and no slot writes no canonical row at all.
+ */
 function toCanonicalMessageMutations(
     mutations: readonly ALInboundAdmissionMutation[],
     msg: ALMessage,
-    expireAtTimestamp: number
+    ownedWorkExpiries: readonly number[]
 ): readonly ALInboundAdmissionMutation[] {
-    if (!mutations.some((mutation) => mutation.kind === 'set-msg-owner')) {
+    if (ownedWorkExpiries.length === 0 || !mutations.some((mutation) => mutation.kind === 'set-msg-owner')) {
         return [];
     }
+    const expireAtTimestamp = Math.max(...ownedWorkExpiries);
     return [{
         kind: 'set-inbound-message',
         value: { msgId: msg.id.msgId, senderId: msg.id.senderId, msg, retainUntilMs: expireAtTimestamp },

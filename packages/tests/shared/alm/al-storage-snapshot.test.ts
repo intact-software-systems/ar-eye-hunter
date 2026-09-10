@@ -8,13 +8,28 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import {
+    planALMessageHandling,
+    type ALMessageHandlingPlan,
+    type ALMessagePlanningObservations
+} from '@shared/al-contracts/al-policy.ts';
+import {
+    createDefaultIndexedDbALInboundRuntimeStores,
+    createDefaultIndexedDbALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
+import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createOutboundTestRuntimeFor, enqueueOutboundOrThrow } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -42,10 +57,25 @@ const EXPECTED_BYTES_BY_TOPIC = {
 const EXPECTED_TOTAL_BYTES = 3_728_380;
 const BYTES_TOLERANCE = 0.02;
 
+/**
+ * The inbound leg of the same workload on its own store set. Every admitted message keeps its
+ * canonical envelope and its settled delivery work; the canonical row now dies with that work
+ * rather than at a provenance lifetime of its own, so a change to either must move these figures.
+ */
+const EXPECTED_INBOUND_BYTES_BY_TOPIC = {
+    AL_ADMISSION: 1_764_355,
+    AL_INBOUND: 61_512
+} as const;
+const EXPECTED_INBOUND_TOTAL_BYTES = 1_825_867;
+
 const SNAPSHOT_PATH = 'tmp/perf/alm-storage-snapshot.json';
 const DB_NAME = 'rallar-alm-storage-snapshot';
+const INBOUND_DB_NAME = 'rallar-alm-storage-snapshot-inbound';
+const SELF_PEER_ID = 'self';
+const INBOUND_SETTLE_ATTEMPT_LIMIT = 500;
 const ADMISSION_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 const NAMESPACE = 'snapshot';
+const INBOUND_NAMESPACE = `${NAMESPACE}-inbound`;
 /** Admission metadata rows carry no queue key, so the report groups them under their own name. */
 const ADMISSION_TOPIC_ID = 'AL_ADMISSION';
 
@@ -55,10 +85,14 @@ interface StoredSnapshotRow {
     readonly bytes: number;
 }
 
-interface ALStorageSnapshot {
-    readonly workload: typeof WORKLOAD;
+interface ALStorageLeg {
     readonly rowsByStatus: Readonly<Record<string, number>>;
     readonly bytesByTopic: Readonly<Record<string, number>>;
+}
+
+interface ALStorageSnapshot extends ALStorageLeg {
+    readonly workload: typeof WORKLOAD;
+    readonly inbound: ALStorageLeg;
     readonly measuredAt: string;
 }
 
@@ -95,12 +129,14 @@ describe('ALM browser storage snapshot', () => {
             }
         }
         await runtime.drainWork();
+        await admitInboundWorkload();
 
         const snapshot = await readALStorageSnapshot();
         writeALStorageSnapshot(snapshot);
 
         expect(readWrittenSnapshotKeys()).toEqual([
             'bytesByTopic',
+            'inbound',
             'measuredAt',
             'rowsByStatus',
             'workload'
@@ -118,19 +154,123 @@ describe('ALM browser storage snapshot', () => {
             'AL_OUTBOUND_MESSAGE'
         ]);
         for (const [topicId, expected] of Object.entries(EXPECTED_BYTES_BY_TOPIC)) {
-            expectBytesWithinBand(snapshot.bytesByTopic[topicId], expected);
+            expectBytesWithinBand(snapshot.bytesByTopic[topicId], expected, `outbound ${topicId}`);
         }
         expectBytesWithinBand(
             Object.values(snapshot.bytesByTopic).reduce((total, bytes) => total + bytes, 0),
-            EXPECTED_TOTAL_BYTES
+            EXPECTED_TOTAL_BYTES,
+            'outbound total'
+        );
+
+        // The inbound leg admitted the same workload: one canonical envelope and one settled
+        // delivery row per message, with no supersedence track to retain predecessors.
+        expect(snapshot.inbound.rowsByStatus).toEqual({ COMPLETED: messageCount });
+        expect(Object.keys(snapshot.inbound.bytesByTopic).toSorted()).toEqual([
+            ADMISSION_TOPIC_ID,
+            'AL_INBOUND'
+        ]);
+        for (const [topicId, expected] of Object.entries(EXPECTED_INBOUND_BYTES_BY_TOPIC)) {
+            expectBytesWithinBand(snapshot.inbound.bytesByTopic[topicId], expected, `inbound ${topicId}`);
+        }
+        expectBytesWithinBand(
+            Object.values(snapshot.inbound.bytesByTopic).reduce((total, bytes) => total + bytes, 0),
+            EXPECTED_INBOUND_TOTAL_BYTES,
+            'inbound total'
         );
     }, 120_000);
 });
 
 /** A footprint regression has to move these figures deliberately, not drift into them. */
-function expectBytesWithinBand(actual: number | undefined, expected: number): void {
-    expect(actual ?? 0).toBeGreaterThanOrEqual(Math.floor(expected * (1 - BYTES_TOLERANCE)));
-    expect(actual ?? 0).toBeLessThanOrEqual(Math.ceil(expected * (1 + BYTES_TOLERANCE)));
+function expectBytesWithinBand(actual: number | undefined, expected: number, topic: string): void {
+    const measured = actual ?? 0;
+    const band = `${topic}: measured ${measured} bytes against ${expected} +/- ${BYTES_TOLERANCE * 100}%`;
+    expect(measured, band).toBeGreaterThanOrEqual(Math.floor(expected * (1 - BYTES_TOLERANCE)));
+    expect(measured, band).toBeLessThanOrEqual(Math.ceil(expected * (1 + BYTES_TOLERANCE)));
+}
+
+/** The same updates seen from the other side: each recipient peer is the sender, this peer the target. */
+function createInboundUpdate(
+    input: Readonly<{ payloadBytes: number; update: number; peerId: string; }>
+): ALMessage {
+    return newALUnicastMessage(
+        input.peerId,
+        { topicId: 'snapshot', resourceId: `size-${input.payloadBytes}`, contextId: 'conversation-1' },
+        SELF_PEER_ID,
+        'snapshot.update.v1',
+        toPayloadResource(input.payloadBytes, input.update),
+        { ttlMs: 300_000 }
+    );
+}
+
+async function admitInboundWorkload(): Promise<void> {
+    const stores = createDefaultIndexedDbALInboundRuntimeStores({
+        dbName: INBOUND_DB_NAME,
+        namespace: INBOUND_NAMESPACE
+    });
+    const runtime = new ALInboundMessageRuntime({
+        ...createDefaultALInboundRuntimeResources({
+            selfPeerId: SELF_PEER_ID,
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
+            stores
+        }),
+        planIncomingMessage: (msg, source, observations) => planInboundMessage(msg, source, observations),
+        dispatchInboxEntry: async (entry) => {
+            decodePersistedALMessage(entry.resource);
+        },
+        sendControlMessage: async () => {}
+    });
+    try {
+        await runtime.ready();
+        for (const payloadBytes of WORKLOAD.payloadBytes) {
+            for (let update = 0; update < WORKLOAD.updateCount; update += 1) {
+                for (const peerId of WORKLOAD.recipientPeerIds) {
+                    await runtime.admitIncomingMessage(
+                        createInboundUpdate({ payloadBytes, update, peerId }),
+                        { kind: 'ws-client', peerId }
+                    );
+                }
+            }
+        }
+        await settleInboundWork(stores.workQueue, stores.admissionStore.namespace);
+    }
+    finally {
+        runtime.dispose();
+    }
+}
+
+function planInboundMessage(
+    msg: ALMessage,
+    source: ALInboundMessageRuntime.Source,
+    observations: ALMessagePlanningObservations
+): ALMessageHandlingPlan {
+    return planALMessageHandling(msg, {
+        ...observations,
+        selfPeerId: SELF_PEER_ID,
+        fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId
+    });
+}
+
+/** The inbound worker owns its own engine, so the snapshot waits for its rows to reach a terminal status. */
+async function settleInboundWork(
+    workQueue: QueueBoxResourceEntryRepository,
+    namespace: string
+): Promise<void> {
+    const typeId = toALInboundWorkType(namespace);
+    for (let attempt = 0; attempt < INBOUND_SETTLE_ATTEMPT_LIMIT; attempt += 1) {
+        if (!await hasPendingInboundWork(workQueue, typeId)) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(await hasPendingInboundWork(workQueue, typeId)).toBe(false);
+}
+
+async function hasPendingInboundWork(
+    workQueue: QueueBoxResourceEntryRepository,
+    typeId: string
+): Promise<boolean> {
+    const entries = await Promise.all((await workQueue.getAllKeys()).map((key) => workQueue.getItem(key)));
+    return entries.some((entry) => entry !== undefined && entry.typeId === typeId && NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
 }
 
 function toSupersedenceKey(msg: ALMessage): string {
@@ -162,18 +302,40 @@ async function readALStorageSnapshot(): Promise<ALStorageSnapshot> {
         onStorageReset: () => {}
     });
     try {
-        const work = await readStoredRows(db, AL_ADMISSION_WORK_STORE_NAME);
-        const admission = await readStoredRows(db, ADMISSION_STORE_NAME);
         return {
             workload: WORKLOAD,
-            rowsByStatus: countRowsByStatus(work),
-            bytesByTopic: { ...sumBytesByTopic(work), [ADMISSION_TOPIC_ID]: sumBytes(admission) },
+            ...await readALStorageLeg(db),
+            inbound: await readInboundALStorageLeg(),
             measuredAt: readCommit()
         };
     }
     finally {
         db.close();
     }
+}
+
+async function readInboundALStorageLeg(): Promise<ALStorageLeg> {
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName: INBOUND_DB_NAME,
+        storeName: ADMISSION_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
+    try {
+        return await readALStorageLeg(db);
+    }
+    finally {
+        db.close();
+    }
+}
+
+async function readALStorageLeg(db: IDBDatabase): Promise<ALStorageLeg> {
+    const work = await readStoredRows(db, AL_ADMISSION_WORK_STORE_NAME);
+    const admission = await readStoredRows(db, ADMISSION_STORE_NAME);
+    return {
+        rowsByStatus: countRowsByStatus(work),
+        bytesByTopic: { ...sumBytesByTopic(work), [ADMISSION_TOPIC_ID]: sumBytes(admission) }
+    };
 }
 
 function readStoredRows(db: IDBDatabase, storeName: string): Promise<readonly StoredSnapshotRow[]> {
