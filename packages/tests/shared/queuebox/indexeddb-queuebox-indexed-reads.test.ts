@@ -4,6 +4,11 @@ import 'fake-indexeddb/auto';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { IndexedDbConnection, openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
+import {
+    encodeStoredResourceEntry,
+    type StoredResourceEntry
+} from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import * as indexedDbQueueBoxStoreModule from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import {
@@ -30,6 +35,9 @@ const SEEDED_STATUSES = [
     EntityStatus.COMPLETED
 ] as const;
 const SEEDED_ENTRIES_PER_TYPE = 100;
+// The sweep's own page size and per-run page budget; both are internal to the store module.
+const CLEANUP_SWEEP_PAGE_SIZE = 256;
+const CLEANUP_MAX_PAGES_PER_RUN = 8;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -45,6 +53,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
         const maxToReserve = 5;
 
         const getAllSpy = vi.spyOn(IDBIndex.prototype, 'getAll');
+        const storeGetAllSpy = vi.spyOn(IDBObjectStore.prototype, 'getAll');
         const reserved = await queue.reserveEntries({
             typeIds: new Set([SEEDED_TYPES[0]]),
             statusIds: new Set([EntityStatus.NEW]),
@@ -59,6 +68,8 @@ describe('IndexedDbQueueBox indexed reads', () => {
         for (const call of getAllSpy.mock.calls) {
             expect(call[1]).toBeLessThanOrEqual(maxToReserve);
         }
+        // Any whole-store read would bypass the index range entirely.
+        expect(storeGetAllSpy).not.toHaveBeenCalled();
     });
 
     it('cleanupAsync removes only expired rows and completed rows past retention', async () => {
@@ -114,6 +125,117 @@ describe('IndexedDbQueueBox indexed reads', () => {
         expect((await queue.getItem(activeRetry.key))?.status).toBe(EntityStatus.RETRY);
     });
 
+    it('deletes a row that is both expired and terminal without rejecting the write', async () => {
+        const now = Temporal.Now.instant();
+        const typeId = 'cleanup.duplicate.v1';
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-indexed-reads-duplicate-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const expiredCompleted = createEntry(typeId, 'expired-completed', {
+            status: EntityStatus.COMPLETED,
+            endTs: now.subtract({ minutes: 10 }),
+            expiryTs: now.subtract({ seconds: 1 })
+        });
+        await queue.enqueue(expiredCompleted);
+
+        // The row is on both sweep lists; a second mutation for its key would reject the write.
+        await expect(queue.cleanupAsync()).resolves.toBe(true);
+
+        expect(await queue.getItem(expiredCompleted.key)).toBeUndefined();
+    });
+
+    it('pages past retained terminal rows so an unretained row still reaches the deletion budget', async () => {
+        const now = Temporal.Now.instant();
+        const retainedTopicId = 'retention.retained.v1';
+        const sweptTypeId = 'retention.swept.v1';
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-indexed-reads-starvation-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver(),
+            completedRetention: { typeIds: [], topicIds: [retainedTopicId] }
+        });
+        const retained = createCompletedEntries(retainedTopicId, 300, {});
+        const swept = createCompletedEntries(sweptTypeId, 10, {
+            endTs: now.subtract({ minutes: 10 })
+        });
+        for (const entry of [...retained, ...swept]) {
+            await queue.enqueue(entry);
+        }
+
+        await expect(queue.cleanupAsync()).resolves.toBe(true);
+
+        const survivingKeys = await queue.getAllKeys();
+        expect(survivingKeys).toHaveLength(retained.length);
+        expect(survivingKeys.every((key) => key.topicId === retainedTopicId)).toBe(true);
+    });
+
+    it('bounds one cleanup run by its page budget', async () => {
+        const now = Temporal.Now.instant();
+        const retainedTopicId = 'page-budget.retained.v1';
+        const sweptTypeId = 'page-budget.swept.v1';
+        const storeName = IndexedDbQueueBox.DEFAULT_STORE_NAME;
+        const connection = new IndexedDbConnection(async () =>
+            await openIndexedDbWithStores(
+                `indexeddb-indexed-reads-page-budget-${crypto.randomUUID()}`,
+                [indexedDbQueueBoxStoreModule.toIndexedDbQueueStoreDefinition(storeName)]
+            )
+        );
+        const queue = new IndexedDbQueueBox({
+            connection,
+            storeName,
+            observer: createPassThroughIndexedDbOperationObserver(),
+            completedRetention: { typeIds: [], topicIds: [retainedTopicId] }
+        });
+        // One row past the pages a single run may read, so only a ninth page would reach the sweepable row.
+        const retained = createCompletedEntries(
+            retainedTopicId,
+            CLEANUP_SWEEP_PAGE_SIZE * CLEANUP_MAX_PAGES_PER_RUN + 1,
+            {}
+        );
+        const swept = createCompletedEntries(sweptTypeId, 1, { endTs: now.subtract({ minutes: 10 }) });
+        await writeRawQueueEntries(
+            await connection.open(),
+            storeName,
+            [...retained, ...swept].map((entry) => encodeStoredResourceEntry(entry, 0))
+        );
+
+        const getAllSpy = vi.spyOn(IDBIndex.prototype, 'getAll');
+        await expect(queue.cleanupAsync()).resolves.toBe(false);
+
+        expect(await queue.getItem(swept[0].key)).toBeDefined();
+        expect(getAllSpy.mock.calls.length).toBeLessThanOrEqual(CLEANUP_MAX_PAGES_PER_RUN + 1);
+    });
+
+    it('reserves a timed-out row that sorts after a live reservation', async () => {
+        const now = Temporal.Now.instant();
+        const typeId = 'timeout.lookahead.v1';
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-indexed-reads-timeout-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const live = createEntry(typeId, 'a-live', {
+            status: EntityStatus.RESERVED,
+            startTs: now,
+            attempts: 1
+        });
+        const timedOut = createEntry(typeId, 'z-timed-out', {
+            status: EntityStatus.RESERVED,
+            startTs: now.subtract({ seconds: 30 }),
+            attempts: 1
+        });
+        await queue.enqueue(live);
+        await queue.enqueue(timedOut);
+
+        const reclaimed = await queue.reserveTimeoutEntries({
+            typeIds: new Set([typeId]),
+            reservationInput: 1,
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 1 })
+        });
+
+        expect(reclaimed.size).toBe(1);
+        expect(firstValue(reclaimed).key.resourceId).toBe('z-timed-out');
+    });
+
     it('isAnyEntryToLock returns true when one RETRY row is due and false when none is', async () => {
         const typeId = 'probe.type.v1';
         const queue = new IndexedDbQueueBox({
@@ -144,6 +266,23 @@ describe('IndexedDbQueueBox indexed reads', () => {
         ).resolves.toBe(false);
     });
 
+    it('isAnyEntryToLock returns false for a RETRY row that is not yet due', async () => {
+        const typeId = 'probe.not-due.v1';
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-indexed-reads-not-due-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        await queue.enqueue(createEntry(typeId, 'pending-retry', {
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            nextTs: Temporal.Now.instant().add({ minutes: 5 })
+        }));
+
+        await expect(
+            queue.isAnyEntryToLock(new Set([typeId]), createWorkAdvertisementOptions())
+        ).resolves.toBe(false);
+    });
+
     it('deletes the whole-store reader from the store module', () => {
         expect('readAllStoredQueueEntries' in indexedDbQueueBoxStoreModule).toBe(false);
     });
@@ -164,6 +303,39 @@ async function seedMixedTypeAndStatusEntries(queue: IndexedDbQueueBox): Promise<
         }
     }
     await Promise.all(entries.map((entry) => queue.enqueue(entry)));
+}
+
+/**
+ * Completed rows for retention sweeps. Leaving endTs unset stamps endEpochMs 0, which is where the
+ * ALM retention topics sit: at the very front of the terminal index range.
+ */
+function createCompletedEntries(
+    typeId: string,
+    count: number,
+    options: { endTs?: Temporal.Instant; }
+): ResourceEntry[] {
+    return Array.from({ length: count }, (_unused, index) =>
+        createEntry(typeId, `${typeId}-${String(index).padStart(5, '0')}`, {
+            status: EntityStatus.COMPLETED,
+            endTs: options.endTs
+        }));
+}
+
+async function writeRawQueueEntries(
+    database: IDBDatabase,
+    storeName: string,
+    stored: readonly StoredResourceEntry[]
+): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(storeName, 'readwrite');
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB raw queue write aborted'));
+        transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB raw queue write failed'));
+        const store = transaction.objectStore(storeName);
+        for (const row of stored) {
+            store.put(row);
+        }
+    });
 }
 
 function createEntry(

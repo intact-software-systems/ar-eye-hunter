@@ -1996,6 +1996,21 @@ moved or changed test.
         "requiredConstraint": "A reservation for one type must read through a bounded index range; it must never fall back to an unbounded whole-store scan.",
         "failureRationale": "An unbounded or over-large getAll call defeats the purpose of the indexed rewrite: it would silently degrade back into the whole-store scan this task replaced, reintroducing the cost the index exists to avoid."
       }
+    },
+    {
+      "id": "resource-inbox-terminal-sweep-page-budget",
+      "domain": "IndexedDB queue box terminal-sweep page budget",
+      "owner": "Rallar shared maintainers",
+      "summary": "One opportunistic cleanup run reads a fixed number of terminal-index pages, so a queue crowded with retained rows keeps the sweep bounded instead of paging forever. Executable assertion: \u201cbounds one cleanup run by its page budget\u201d.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget",
+      "coverageRelation": "The test seeds one row more than the run's page budget can reach, runs cleanupAsync through the public API, and counts the IDBIndex.getAll calls that run issued; the surviving row proves the run stopped early and the call count proves how much reading it did before stopping.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "IDBIndex.prototype.getAll",
+        "observableEffect": "One cleanup run issues at most one expiry read plus eight terminal-sweep page reads, whatever the store holds.",
+        "requiredConstraint": "Paging past retained rows must stay bounded per run: an opportunistic sweep may not read the whole terminal range in one pass.",
+        "failureRationale": "Without the page cap a store holding a large retained backlog would make every cleanup pass walk the entire terminal index, turning an opportunistic background sweep into an unbounded read on the browser's main storage path."
+      }
     }
   ],
   "entries": [
@@ -4572,6 +4587,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The call count and each call's bounded count argument are the only observable proof that reserveEntries reads through the bounded by-type-status-key index instead of falling back to a whole-store scan; the reserved-entry assertions above it prove correctness but not boundedness.",
       "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound"
+    },
+    {
+      "id": "test-structure-coupling-0d8fac5ef56252fe",
+      "path": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-reservation-bounded-indexed-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "Absence at the object-store read port is the only witness that no whole-store scan happened at all; the bounded index-call assertions beside it constrain the index reads but say nothing about a second, unindexed read alongside them.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound"
+    },
+    {
+      "id": "test-structure-coupling-493125af62d6381d",
+      "path": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-terminal-sweep-page-budget",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The surviving unretained row proves the run stopped before reaching it, but only the index-read count separates a run that stopped on its page budget from one that stopped for any other reason, such as a mis-sized page or an exhausted range.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget"
     }
   ]
 }

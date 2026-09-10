@@ -42,26 +42,46 @@ interface ReadExpiredStoredQueueEntriesInput {
     readonly maxToRead: number;
 }
 
-interface ReadCompletedStoredQueueEntriesBeforeInput {
+interface ReadCompletedStoredQueueEntriesAtOrBeforeInput {
     readonly db: IDBDatabase;
     readonly storeName: string;
     readonly status: EntityStatus;
-    readonly endBeforeEpochMs: number;
+    readonly endAtOrBeforeEpochMs: number;
     readonly maxToRead: number;
+    readonly after?: StoredResourceEntry;
 }
 
-interface ReadCompletedStoredQueueEntriesAcrossStatusesInput {
+interface ReadDeletableCompletedStoredQueueEntriesInput {
     readonly db: IDBDatabase;
     readonly storeName: string;
     readonly statusIds: Iterable<EntityStatus>;
-    readonly endBeforeEpochMs: number;
-    readonly maxToRead: number;
+    readonly endAtOrBeforeEpochMs: number;
+    readonly maxToDelete: number;
+    readonly maxPages: number;
+    readonly isDeletable: (stored: StoredResourceEntry) => boolean;
+}
+
+interface ReadDeletableCompletedStoredQueueEntriesForStatusInput {
+    readonly db: IDBDatabase;
+    readonly storeName: string;
+    readonly status: EntityStatus;
+    readonly endAtOrBeforeEpochMs: number;
+    readonly maxToDelete: number;
+    readonly maxPages: number;
+    readonly isDeletable: (stored: StoredResourceEntry) => boolean;
+}
+
+interface DeletableCompletedStoredQueueEntryScan {
+    readonly deletable: readonly StoredResourceEntry[];
+    readonly pagesRead: number;
 }
 
 export const INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME = 'by-type-status-next-key';
 const INDEXED_DB_QUEUE_WORK_INDEX_NAME = 'by-type-status-key';
-export const INDEXED_DB_QUEUE_EXPIRY_INDEX_NAME = 'by-expiry';
-export const INDEXED_DB_QUEUE_STATUS_END_INDEX_NAME = 'by-status-end';
+const INDEXED_DB_QUEUE_EXPIRY_INDEX_NAME = 'by-expiry';
+const INDEXED_DB_QUEUE_STATUS_END_INDEX_NAME = 'by-status-end';
+/** Rows read per terminal-sweep page; the caller budgets how many pages and deletions one run gets. */
+const INDEXED_DB_QUEUE_COMPLETED_SWEEP_PAGE_SIZE = 256;
 
 export function toIndexedDbQueueStoreDefinition(name: string): IndexedDbStoreDefinition<object> {
     return {
@@ -85,7 +105,7 @@ export function toIndexedDbQueueStoreDefinition(name: string): IndexedDbStoreDef
             },
             {
                 name: INDEXED_DB_QUEUE_STATUS_END_INDEX_NAME,
-                keyPath: ['status', 'endEpochMs'],
+                keyPath: ['status', 'endEpochMs', 'keyString'],
                 unique: false
             }
         ]
@@ -208,13 +228,20 @@ export async function readExpiredStoredQueueEntries(
     return values.map(decodeStoredResourceEntryValue);
 }
 
-/** Internal primitive: `readCompletedStoredQueueEntriesAcrossStatuses` is the cleanup-read surface. */
-async function readCompletedStoredQueueEntriesBefore(
-    input: ReadCompletedStoredQueueEntriesBeforeInput
+/** One page of terminal rows ordered by end timestamp then key, resuming after the cursor row. */
+async function readCompletedStoredQueueEntriesAtOrBefore(
+    input: ReadCompletedStoredQueueEntriesAtOrBeforeInput
 ): Promise<readonly StoredResourceEntry[]> {
-    const { db, storeName, status, endBeforeEpochMs, maxToRead } = input;
+    const { db, storeName, status, endAtOrBeforeEpochMs, maxToRead, after } = input;
+    const lower = after === undefined
+        ? [status, Number.MIN_SAFE_INTEGER, '']
+        : [status, after.endEpochMs!, after.keyString];
+    const range = IDBKeyRange.bound(
+        lower,
+        [status, endAtOrBeforeEpochMs, []],
+        after !== undefined
+    );
     const transaction = db.transaction(storeName, 'readonly');
-    const range = IDBKeyRange.bound([status, Number.MIN_SAFE_INTEGER], [status, endBeforeEpochMs]);
     const values = await readIndexedDbTransaction(
         transaction,
         async () =>
@@ -228,28 +255,62 @@ async function readCompletedStoredQueueEntriesBefore(
     return values.map(decodeStoredResourceEntryValue);
 }
 
-/** Shares one shrinking maxToRead budget across every completed status the caller sweeps. */
-export async function readCompletedStoredQueueEntriesAcrossStatuses(
-    input: ReadCompletedStoredQueueEntriesAcrossStatusesInput
-): Promise<readonly StoredResourceEntry[]> {
-    const { db, storeName, statusIds, endBeforeEpochMs, maxToRead } = input;
-    const candidates: StoredResourceEntry[] = [];
-    let remainingBudget = maxToRead;
-    for (const status of statusIds) {
-        if (remainingBudget <= 0) {
+async function readDeletableCompletedStoredQueueEntriesForStatus(
+    input: ReadDeletableCompletedStoredQueueEntriesForStatusInput
+): Promise<DeletableCompletedStoredQueueEntryScan> {
+    const deletable: StoredResourceEntry[] = [];
+    let after: StoredResourceEntry | undefined = undefined;
+    let pagesRead = 0;
+    while (deletable.length < input.maxToDelete && pagesRead < input.maxPages) {
+        const page = await readCompletedStoredQueueEntriesAtOrBefore({
+            db: input.db,
+            storeName: input.storeName,
+            status: input.status,
+            endAtOrBeforeEpochMs: input.endAtOrBeforeEpochMs,
+            maxToRead: INDEXED_DB_QUEUE_COMPLETED_SWEEP_PAGE_SIZE,
+            after
+        });
+        pagesRead += 1;
+        for (const stored of page) {
+            if (deletable.length < input.maxToDelete && input.isDeletable(stored)) {
+                deletable.push(stored);
+            }
+        }
+        if (page.length < INDEXED_DB_QUEUE_COMPLETED_SWEEP_PAGE_SIZE) {
             break;
         }
-        const rows = await readCompletedStoredQueueEntriesBefore({
-            db,
-            storeName,
-            status,
-            endBeforeEpochMs,
-            maxToRead: remainingBudget
-        });
-        candidates.push(...rows);
-        remainingBudget -= rows.length;
+        after = page[page.length - 1];
     }
-    return candidates;
+    return { deletable, pagesRead };
+}
+
+/**
+ * Rows the caller keeps never consume the deletion budget, so a terminal status crowded with
+ * retained rows cannot starve the sweep: paging continues past them until maxToDelete deletable
+ * rows are collected, the range is exhausted, or the run's page budget is spent.
+ */
+export async function readDeletableCompletedStoredQueueEntries(
+    input: ReadDeletableCompletedStoredQueueEntriesInput
+): Promise<readonly StoredResourceEntry[]> {
+    const deletable: StoredResourceEntry[] = [];
+    let remainingPages = input.maxPages;
+    for (const status of input.statusIds) {
+        if (deletable.length >= input.maxToDelete || remainingPages <= 0) {
+            break;
+        }
+        const scan = await readDeletableCompletedStoredQueueEntriesForStatus({
+            db: input.db,
+            storeName: input.storeName,
+            status,
+            endAtOrBeforeEpochMs: input.endAtOrBeforeEpochMs,
+            maxToDelete: input.maxToDelete - deletable.length,
+            maxPages: remainingPages,
+            isDeletable: input.isDeletable
+        });
+        deletable.push(...scan.deletable);
+        remainingPages -= scan.pagesRead;
+    }
+    return deletable;
 }
 
 export async function readFairnessStoredQueueEntries(

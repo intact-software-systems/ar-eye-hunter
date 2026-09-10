@@ -56,12 +56,13 @@ export function encodeStoredResourceEntry(
     entry: ResourceEntry,
     revision: number
 ): StoredResourceEntry {
+    const expiryTs = toInstant(entry.audit.expiryTs);
+    const endTs = toOptionalInstant(entry.dequeueAudit.endTs);
+    const nextTs = toOptionalInstant(entry.dequeueAudit.nextTs);
     const stored: StoredResourceEntry = {
         keyString: toKeyAsString(entry.key),
         revision,
-        fairnessDueEpochMs: entry.dequeueAudit.nextTs
-            ? Number(entry.dequeueAudit.nextTs.epochMilliseconds)
-            : undefined,
+        fairnessDueEpochMs: nextTs === undefined ? undefined : Number(nextTs.epochMilliseconds),
         key: { ...entry.key },
         resource: entry.resource,
         typeId: entry.typeId,
@@ -69,19 +70,17 @@ export function encodeStoredResourceEntry(
             date: toPlainTime(entry.audit.date).toString(),
             createdBy: entry.audit.createdBy,
             createdTs: toPlainDateTime(entry.audit.createdTs).toString(),
-            expiryTs: toInstant(entry.audit.expiryTs).toString()
+            expiryTs: expiryTs.toString()
         },
-        expiryEpochMs: Number(entry.audit.expiryTs.epochMilliseconds),
+        expiryEpochMs: Number(expiryTs.epochMilliseconds),
         status: entry.status,
         dequeueAudit: {
             startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
-            endTs: toOptionalInstant(entry.dequeueAudit.endTs)?.toString(),
-            nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString({
-                fractionalSecondDigits: 9
-            }),
+            endTs: endTs?.toString(),
+            nextTs: nextTs?.toString({ fractionalSecondDigits: 9 }),
             attempts: entry.dequeueAudit.attempts
         },
-        endEpochMs: toExpectedEndEpochMs(entry.status, entry.dequeueAudit.endTs)
+        endEpochMs: toExpectedEndEpochMs(entry.status, endTs)
     };
     validateStoredResourceEntry(stored);
     return stored;

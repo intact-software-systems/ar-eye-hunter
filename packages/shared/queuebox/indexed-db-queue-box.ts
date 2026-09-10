@@ -25,7 +25,7 @@ import {
 } from './indexed-db-queue-box-entry.ts';
 import {
     INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
-    readCompletedStoredQueueEntriesAcrossStatuses,
+    readDeletableCompletedStoredQueueEntries,
     readExpiredStoredQueueEntries,
     readFairnessStoredQueueEntries,
     readStoredQueueEntries,
@@ -66,7 +66,8 @@ import {
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
-    toKeyAsString
+    toKeyAsString,
+    type ResourceEntryKeyString
 } from './ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 import { writeComputedIndexedDbQueueMutations } from './write-computed-indexed-db-queue-mutations.ts';
@@ -76,6 +77,8 @@ export { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-confl
 /** Per-run cap on rows an opportunistic cleanupAsync() pass deletes for each reason. */
 const INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE = 256;
 const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE = 256;
+/** Retained rows spend pages without spending deletions, so one run also gets a page budget. */
+const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES = 8;
 /** Per-type row budget for advertisement probes and poison-skipping recovery scans. */
 const INDEXED_DB_QUEUE_PROBE_MAX_TO_READ = 64;
 
@@ -176,30 +179,23 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             async () => {
                 const db = await this.#connection.open();
                 const now = this.#now();
-                const nowEpochMs = Number(now.epochMilliseconds);
-                const expired = await readExpiredStoredQueueEntries({
-                    db,
-                    storeName: this.#storeName,
-                    nowEpochMs,
-                    maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
-                });
-                const completedCandidates = await readCompletedStoredQueueEntriesAcrossStatuses({
+                const expired = await this.#readExpiredEntries(db, now);
+                const completed = await readDeletableCompletedStoredQueueEntries({
                     db,
                     storeName: this.#storeName,
                     statusIds: COMPLETED_STATUSES,
-                    endBeforeEpochMs: nowEpochMs,
-                    maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE
+                    endAtOrBeforeEpochMs: Number(now.epochMilliseconds),
+                    maxToDelete: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE,
+                    maxPages: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES,
+                    isDeletable: (stored) => !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
                 });
-                // A completed row can also already be expired; skip it here so it is not deleted twice.
-                const completed = completedCandidates.filter(
-                    (stored) =>
-                        !isStoredQueueEntryExpired(stored, now) &&
-                        !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
+                // A row can be expired and terminal at once; a duplicate key rejects the whole write.
+                const toDelete = new Map<ResourceEntryKeyString, StoredResourceEntry>(
+                    [...expired, ...completed].map((stored) => [stored.keyString, stored])
                 );
-                const toDelete = [...expired, ...completed];
                 const removedEntries = await this.#write(db, {
-                    mutations: toDelete.map(computeIndexedDbQueueDelete),
-                    result: toDelete.length
+                    mutations: [...toDelete.values()].map(computeIndexedDbQueueDelete),
+                    result: toDelete.size
                 });
                 if (removedEntries > 0) {
                     console.log('Removed entries: ', removedEntries);
@@ -340,7 +336,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 storeName: this.#storeName,
                 typeIds,
                 statusIds: [EntityStatus.RESERVED],
-                maxToReadPerCombination: maxToReserve
+                // Look ahead like the probe: a live RESERVED row sorting first must not hide older timed-out rows.
+                maxToReadPerCombination: Math.max(maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ)
             })
             : [...(await readStoredQueueEntries(
                 db,
@@ -538,80 +535,83 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
-            toResourceInboxWorkAdvertisementOptions(workInput);
+        const options = toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
         const now = this.#now();
-        const nowEpochMs = Number(now.epochMilliseconds);
-        // maxToScan = typeIds.size reads exactly the earliest due RETRY row per type, no cursor
-        // continuation: the same probe readFairnessDueStoredQueueEntries used to provide alone.
-        const fairnessDueByType = await readFairnessStoredQueueEntries({
+        const anyEntryToLock = await hasIndexedDbEntryToLock({
+            newAndRetryCandidates: [
+                ...await this.#readNewProbeEntries(db, typeIds),
+                ...await this.#readDueRetryProbeEntries(db, typeIds, now)
+            ],
+            reservedCandidates: await this.#readReservedProbeEntries(db, typeIds),
+            options,
+            typeIds,
+            now
+        });
+
+        void this.cleanupAsync().catch((e) => {
+            console.error('Failed to cleanup entries', e);
+        });
+
+        return anyEntryToLock;
+    }
+
+    async #readNewProbeEntries(
+        db: IDBDatabase,
+        typeIds: ReadonlySet<string>
+    ): Promise<readonly StoredResourceEntry[]> {
+        return await readStoredQueueEntriesByTypesAndStatuses({
+            db,
+            storeName: this.#storeName,
+            typeIds,
+            statusIds: [EntityStatus.NEW],
+            maxToReadPerCombination: 1
+        });
+    }
+
+    async #readDueRetryProbeEntries(
+        db: IDBDatabase,
+        typeIds: ReadonlySet<string>,
+        now: Temporal.Instant
+    ): Promise<readonly StoredResourceEntry[]> {
+        // maxToScan = typeIds.size reads exactly the earliest due RETRY row per type, with no
+        // cursor continuation: the fairness range's upper bound is the probe's due check.
+        const dueByType = await readFairnessStoredQueueEntries({
             db,
             storeName: this.#storeName,
             indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
             typeIds: [...typeIds],
-            overdueBeforeEpochMs: nowEpochMs,
+            overdueBeforeEpochMs: Number(now.epochMilliseconds),
             maxToScan: typeIds.size
         });
-        const newAndRetryCandidates: StoredResourceEntry[] = [
-            ...await readStoredQueueEntriesByTypesAndStatuses({
-                db,
-                storeName: this.#storeName,
-                typeIds,
-                statusIds: [EntityStatus.NEW],
-                maxToReadPerCombination: 1
-            }),
-            ...[...fairnessDueByType.values()].flat()
-        ];
-        const reservedCandidates = await readStoredQueueEntriesByTypesAndStatuses({
+        return [...dueByType.values()].flat();
+    }
+
+    async #readReservedProbeEntries(
+        db: IDBDatabase,
+        typeIds: ReadonlySet<string>
+    ): Promise<readonly StoredResourceEntry[]> {
+        return await readStoredQueueEntriesByTypesAndStatuses({
             db,
             storeName: this.#storeName,
             typeIds,
             statusIds: [EntityStatus.RESERVED],
             maxToReadPerCombination: INDEXED_DB_QUEUE_PROBE_MAX_TO_READ
         });
-        const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkTimeout,
-            async () =>
-                reservedCandidates.some((stored) =>
-                    stored.dequeueAudit.attempts < maxAttempts &&
-                    isStoredQueueEntryTimedOut({
-                        stored,
-                        typeIds,
-                        duration: TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
-                        now
-                    })
-                ),
-            false
-        );
+    }
 
-        const newAndRetryEntryToLock = newAndRetryCandidates.some((stored) =>
-            isStoredQueueEntryReservable({
-                stored,
-                typeIds,
-                statusIds: NEW_AND_RETRY_STATUSES,
-                now,
-                maxAttempts
-            })
-        );
-        const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkFinalization,
-            async () =>
-                hasIndexedDbFinalizationWork({
-                    entries: reservedCandidates,
-                    typeIds,
-                    now,
-                    maxAttempts,
-                    finalizationStaleAfterMs
-                }),
-            false
-        );
-
-        void this.cleanupAsync().catch((e) => {
-            console.error('Failed to cleanup entries', e);
+    /** The millisecond-truncated expiry index can front-run the precise instant by up to 1 ms. */
+    async #readExpiredEntries(
+        db: IDBDatabase,
+        now: Temporal.Instant
+    ): Promise<readonly StoredResourceEntry[]> {
+        const candidates = await readExpiredStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            nowEpochMs: Number(now.epochMilliseconds),
+            maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
         });
-
-        return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
+        return candidates.filter((stored) => isStoredQueueEntryExpired(stored, now));
     }
 
     async #write<Result>(
@@ -707,13 +707,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async deleteExpired(): Promise<number> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
         const db = await this.#connection.open();
-        const now = this.#now();
-        const expired = await readExpiredStoredQueueEntries({
-            db,
-            storeName: this.#storeName,
-            nowEpochMs: Number(now.epochMilliseconds),
-            maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
-        });
+        const expired = await this.#readExpiredEntries(db, this.#now());
         return await this.#write(db, {
             mutations: expired.map(computeIndexedDbQueueDelete),
             result: expired.length
@@ -739,6 +733,55 @@ function selectRetryExhaustionDueTimestamp(
         return undefined;
     }
     return startTs;
+}
+
+interface IndexedDbEntryToLockInput {
+    readonly newAndRetryCandidates: readonly StoredResourceEntry[];
+    readonly reservedCandidates: readonly StoredResourceEntry[];
+    readonly options: ResourceInboxWorkAdvertisementOptions;
+    readonly typeIds: ReadonlySet<string>;
+    readonly now: Temporal.Instant;
+}
+
+async function hasIndexedDbEntryToLock(input: IndexedDbEntryToLockInput): Promise<boolean> {
+    const { newAndRetryCandidates, reservedCandidates, options, typeIds, now } = input;
+    const { maxAttempts, finalizationStaleAfterMs } = options;
+    const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+        options.checkTimeout,
+        async () =>
+            reservedCandidates.some((stored) =>
+                stored.dequeueAudit.attempts < maxAttempts &&
+                isStoredQueueEntryTimedOut({
+                    stored,
+                    typeIds,
+                    duration: TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    now
+                })
+            ),
+        false
+    );
+    const newAndRetryEntryToLock = newAndRetryCandidates.some((stored) =>
+        isStoredQueueEntryReservable({
+            stored,
+            typeIds,
+            statusIds: NEW_AND_RETRY_STATUSES,
+            now,
+            maxAttempts
+        })
+    );
+    const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+        options.checkFinalization,
+        async () =>
+            hasIndexedDbFinalizationWork({
+                entries: reservedCandidates,
+                typeIds,
+                now,
+                maxAttempts,
+                finalizationStaleAfterMs
+            }),
+        false
+    );
+    return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
 }
 
 interface IndexedDbFinalizationWorkInput {
