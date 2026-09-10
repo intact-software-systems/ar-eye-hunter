@@ -1,4 +1,7 @@
-import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type {
+    RallarRtcFacade,
+    RallarRtcRoomTransportStatus
+} from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarRoomFormation,
@@ -27,7 +30,7 @@ export const BLACK_BOX_RALLAR_FORMATION_TOPICS = {
 
 export interface BlackBoxRallarFormationControllerDependencies {
     formation(roomRef: GroupRef): RallarRoomFormation;
-    readonly rtc: Pick<RallarRtcFacade, 'roomStatus' | 'onStatus'>;
+    readonly rtc: Pick<RallarRtcFacade, 'roomStatus' | 'waitForRoom' | 'onStatus'>;
     emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
     readonly emitError: BlackBoxRallarRuntimeDiagnostics['emitError'];
     now(): number;
@@ -53,43 +56,36 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         return { receipt, formation: this.#requireSummary(request.roomRef) };
     };
 
-    /**
-     * The browser's own readiness fence (settled question Q3). It observes and never dials: the
-     * room reads `open` the moment every desired peer is ready, and the non-empty desired set is
-     * what keeps a layout with no peers at all from satisfying it on the first tick. Both wake
-     * sources are load-bearing, because the RTC status stream never fires on the arrival of the
-     * accepted layout that supplies the desired set.
-     */
-    readiness = (room: BlackBoxRallarFormationRoomInput): Promise<BlackBoxRallarFormationReadinessDiagnostics> => {
-        const settled = this.#settleReadiness(room);
-        if (settled !== undefined) {
-            return Promise.resolve(settled);
+    /** Observes the product room-readiness owner without opening a lane itself. */
+    readiness = async (
+        room: BlackBoxRallarFormationRoomInput
+    ): Promise<BlackBoxRallarFormationReadinessDiagnostics> => {
+        const status = await this.#dependencies.rtc.waitForRoom(room.roomRef, {
+            connect: false,
+            timeoutMs: room.timeoutMs
+        });
+        const formationStatus = this.#dependencies.formation(room.roomRef).status();
+        const summary = formationStatus === undefined
+            ? undefined
+            : this.#toSummary(room.roomRef, formationStatus, status.rtc);
+        if (
+            summary === undefined ||
+            summary.room.state !== 'open' ||
+            summary.room.desiredPeerIds.length === 0
+        ) {
+            throw this.#notReady(room);
         }
 
-        return new Promise((resolve, reject) => {
-            const subscriptions: RallarUnsubscribe[] = [];
-            const stop = (): void => {
-                clearTimeout(timer);
-                for (const unsubscribe of subscriptions) {
-                    unsubscribe();
-                }
-            };
-            const settle = (): void => {
-                const ready = this.#settleReadiness(room);
-                if (ready !== undefined) {
-                    stop();
-                    resolve(ready);
-                }
-            };
-            const timer = setTimeout(() => {
-                stop();
-                reject(this.#notReady(room));
-            }, room.timeoutMs);
-
-            subscriptions.push(this.#dependencies.rtc.onStatus(() => settle()));
-            subscriptions.push(this.#dependencies.formation(room.roomRef).onChange(() => settle()));
-            settle();
-        });
+        const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
+            readyAtEpochMs: this.#dependencies.now(),
+            formation: summary
+        };
+        this.#emit(
+            BLACK_BOX_RALLAR_FORMATION_TOPICS.ready,
+            room.roomRef,
+            diagnostics
+        );
+        return diagnostics;
     };
 
     summary = (roomRef: GroupRef): BlackBoxRallarFormationSummary | undefined => {
@@ -101,7 +97,11 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const handle = this.#dependencies.formation(roomRef);
         const subscriptions = [
             handle.onChange((status) =>
-                this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.changed, roomRef, this.#toSummary(roomRef, status))
+                this.#emit(
+                    BLACK_BOX_RALLAR_FORMATION_TOPICS.changed,
+                    roomRef,
+                    this.#toSummary(roomRef, status)
+                )
             ),
             handle.onLayout((event) =>
                 this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.layout, roomRef, {
@@ -136,10 +136,16 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const options = request.reason === undefined ? {} : { reason: request.reason };
         switch (input.command) {
             case 'connect':
-                return handle.connect(input.layout === undefined ? options : { ...options, layout: input.layout });
+                return handle.connect(
+                    input.layout === undefined
+                        ? options
+                        : { ...options, layout: input.layout }
+                );
             case 'reconfigure':
                 return handle.reconfigure(
-                    input.landing === undefined ? options : { ...options, landing: input.landing }
+                    input.landing === undefined
+                        ? options
+                        : { ...options, landing: input.landing }
                 );
             case 'plan':
                 return handle.plan(options);
@@ -156,35 +162,24 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         }
     };
 
-    #settleReadiness = (
-        room: BlackBoxRallarFormationRoomInput
-    ): BlackBoxRallarFormationReadinessDiagnostics | undefined => {
-        const summary = this.summary(room.roomRef);
-        if (summary === undefined || summary.room.state !== 'open' || summary.room.desiredPeerIds.length === 0) {
-            return undefined;
-        }
-
-        const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
-            readyAtEpochMs: this.#dependencies.now(),
-            formation: summary
-        };
-        this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.ready, room.roomRef, diagnostics);
-        return diagnostics;
-    };
-
     #notReady = (room: BlackBoxRallarFormationRoomInput): Error => {
         const summary = this.summary(room.roomRef);
         const observed = summary === undefined ? 'no room held' : 'state ' + summary.room.state;
         return new Error(
             'RALLAR_BLACK_BOX_FORMATION_NOT_READY: the room did not open within ' +
-                room.timeoutMs + ' ms (' + observed + ').'
+                room.timeoutMs +
+                ' ms (' +
+                observed +
+                ').'
         );
     };
 
     #requireSummary = (roomRef: GroupRef): BlackBoxRallarFormationSummary => {
         const summary = this.summary(roomRef);
         if (summary === undefined) {
-            throw new Error('RALLAR_BLACK_BOX_FORMATION_ROOM_NOT_HELD: ' + roomRef.groupId);
+            throw new Error(
+                'RALLAR_BLACK_BOX_FORMATION_ROOM_NOT_HELD: ' + roomRef.groupId
+            );
         }
         return summary;
     };
@@ -194,7 +189,13 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
      * required-with-`undefined`, and a spread would carry explicit `undefined` keys into the block
      * that a recipe's `exists` operator then reads as present.
      */
-    #toSummary = (roomRef: GroupRef, status: RallarRoomFormationStatus): BlackBoxRallarFormationSummary => {
+    #toSummary = (
+        roomRef: GroupRef,
+        status: RallarRoomFormationStatus,
+        room: RallarRtcRoomTransportStatus = this.#dependencies.rtc.roomStatus(
+            roomRef
+        ).rtc
+    ): BlackBoxRallarFormationSummary => {
         return {
             roomRef,
             stage: status.stage,
@@ -209,15 +210,20 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             memberPolicy: status.memberPolicy,
             ...(status.accepted !== undefined ? { accepted: status.accepted } : {}),
             ...(status.planned !== undefined ? { planned: status.planned } : {}),
-            ...(status.condition !== undefined ? { condition: status.condition } : {}),
-            ...(status.coverageRate !== undefined ? { coverageRate: status.coverageRate } : {}),
-            room: this.#toRoomStatus(roomRef)
+            ...(status.condition !== undefined
+                ? { condition: status.condition }
+                : {}),
+            ...(status.coverageRate !== undefined
+                ? { coverageRate: status.coverageRate }
+                : {}),
+            room: this.#toRoomStatus(room)
         };
     };
 
     /** The room block a pin may assert on; the peers array, lane id and read-time clock are dropped. */
-    #toRoomStatus = (roomRef: GroupRef): BlackBoxRallarFormationRoomStatus => {
-        const room = this.#dependencies.rtc.roomStatus(roomRef).rtc;
+    #toRoomStatus = (
+        room: RallarRtcRoomTransportStatus
+    ): BlackBoxRallarFormationRoomStatus => {
         return {
             state: room.state,
             ...(room.acceptedLayoutIdentity !== undefined

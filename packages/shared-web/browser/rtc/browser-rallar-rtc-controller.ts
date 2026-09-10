@@ -1,6 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
 import { BrowserRtcLifecycleRuntime } from '@shared-web/browser/rtc/browser-rtc-lifecycle-runtime.ts';
@@ -26,7 +27,13 @@ export namespace BrowserRallarRtcController {
         readMiddleware(): ApiMiddleware | undefined;
         readSession(): AuthSession | undefined;
         readWsStatus(): RallarWsStatus;
-        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
+        resolveRoomTransportTarget(
+            room: string | GroupRef
+        ): BrowserRoomTransportTarget;
+        subscribeRoomTransportTarget(
+            room: string | GroupRef,
+            listener: () => void | Promise<void>
+        ): RallarUnsubscribe;
         resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
         toRoomId(room: string | GroupRef | undefined): string | undefined;
         resolveRtcWaitTimeoutMs(timeoutMs?: number): number | undefined;
@@ -66,11 +73,15 @@ function createBrowserRtcRuntimes(
         resolveConnectOnWait: input.resolveRtcConnectOnWait
     });
     const rooms = new BrowserRtcRoomRuntime({
+        isConnected: () => input.readMiddleware() !== undefined,
         readWsStatus: input.readWsStatus,
         readRtcStatus: (options) => status.read(options),
+        subscribeRtcStatus: (laneId, listener) => lifecycle.onStatus(listener, { laneId, emitCurrent: false }),
         resolveRoomTransportTarget: input.resolveRoomTransportTarget,
+        subscribeRoomTransportTarget: input.subscribeRoomTransportTarget,
         resolveRoomRef: input.resolveRoomRef,
         toRoomId: input.toRoomId,
+        resolveWaitTimeoutMs: input.resolveRtcWaitTimeoutMs,
         waitForRoomLane: async (room, laneId, options) => await wait.waitForRoomLane(room, laneId, options)
     });
     const diagnostics = new BrowserRtcDiagnosticsRuntime({
@@ -104,11 +115,7 @@ function createBrowserRtcOperations(
                 options
             ),
         waitForRoomLane: async (room, laneId, options = {}) =>
-            await runtimes.wait.waitForRoomLane(
-                room,
-                laneId,
-                options
-            ),
+            await runtimes.wait.waitForRoomLane(room, laneId, options),
         peer: (peerId, options) => runtimes.status.peer(peerId, options),
         knownPeerIds: () => runtimes.status.knownPeerIds(),
         activePeerIds: () => runtimes.status.activePeerIds(),

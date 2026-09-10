@@ -3,14 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
@@ -30,7 +23,9 @@ describe('live RTC control client', () => {
     beforeEach(async () => {
         nowMs = 100;
         readyPeerIds = ['session-b', 'session-c'];
-        diagnosticsRoot = mkdtempSync(path.join(tmpdir(), 'live-rtc-control-client-'));
+        diagnosticsRoot = mkdtempSync(
+            path.join(tmpdir(), 'live-rtc-control-client-')
+        );
         results = [];
         events = [];
         server = createServer(async (incoming, response) => {
@@ -39,8 +34,15 @@ describe('live RTC control client', () => {
                 for await (const chunk of incoming) {
                     chunks.push(Buffer.from(chunk));
                 }
-                const command = normalizeJson(JSON.parse(Buffer.concat(chunks).toString()));
-                if (!command || typeof command !== 'object' || !('commandId' in command) || typeof command.commandId !== 'string') {
+                const command = normalizeJson(
+                    JSON.parse(Buffer.concat(chunks).toString())
+                );
+                if (
+                    !command ||
+                    typeof command !== 'object' ||
+                    !('commandId' in command) ||
+                    typeof command.commandId !== 'string'
+                ) {
                     response.writeHead(400).end();
                     return;
                 }
@@ -69,7 +71,9 @@ describe('live RTC control client', () => {
                 response.writeHead(202).end('{}');
                 return;
             }
-            response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results, events }));
+            response
+                .writeHead(200, { 'content-type': 'application/json' })
+                .end(JSON.stringify({ results, events }));
         });
         await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
         const address = server.address();
@@ -89,7 +93,7 @@ describe('live RTC control client', () => {
 
     afterEach(async () => {
         await api.dispose();
-        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
         refreshRoom.mockReset();
@@ -108,16 +112,18 @@ describe('live RTC control client', () => {
             nowMs = 350;
         });
 
-        const readiness = control.waitForPeerReadiness({
-            runId: 'run-readiness',
-            agent,
-            expectedPeerIds: ['session-b', 'session-c'],
-            suffix: 'delivery',
-            startedAtMs: 100
-        }).then((durationMs) => {
-            completed = true;
-            return durationMs;
-        });
+        const readiness = control
+            .waitForPeerReadiness({
+                runId: 'run-readiness',
+                agent,
+                expectedPeerIds: ['session-b', 'session-c'],
+                suffix: 'delivery',
+                startedAtMs: 100
+            })
+            .then((durationMs) => {
+                completed = true;
+                return durationMs;
+            });
         try {
             await vi.waitFor(() => expect(refreshStarted).toBe(true));
             expect(completed).toBe(false);
@@ -135,18 +141,57 @@ describe('live RTC control client', () => {
         refreshRoom.mockImplementation(async () => {
             refreshCount += 1;
             nowMs += 100;
-            readyPeerIds = refreshCount === 1
-                ? ['session-b']
-                : ['session-b', 'session-c'];
+            readyPeerIds = refreshCount === 1 ? ['session-b'] : ['session-b', 'session-c'];
         });
 
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-refresh-retry',
-            agent,
-            expectedPeerIds: ['session-b', 'session-c'],
-            suffix: 'delayed-topology',
-            startedAtMs: 100
-        })).resolves.toBe(200);
+        await expect(
+            control.waitForPeerReadiness({
+                runId: 'run-refresh-retry',
+                agent,
+                expectedPeerIds: ['session-b', 'session-c'],
+                suffix: 'delayed-topology',
+                startedAtMs: 100
+            })
+        ).resolves.toBe(200);
+    });
+
+    it('captures bounded failed command facts without retaining payloads or credentials', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast',
+            ok: false,
+            result: {
+                value: {
+                    credential: 'must-not-be-retained',
+                    status: 'sent',
+                    message: {
+                        status: 'no-route',
+                        reason: 'Skipping RTC outbound message without overlay context',
+                        message: { payload: { resource: 'must-not-be-retained' } },
+                        entries: []
+                    }
+                }
+            }
+        });
+
+        expect(
+            await control.captureAttemptFailure({ runId: 'run-failed-send' })
+        ).toEqual({
+            kind: 'control-result-failures',
+            runCaptureSucceeded: true,
+            failedResults: [
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-broadcast',
+                    ok: false,
+                    runtimeStatus: 'sent',
+                    admissionStatus: 'no-route',
+                    reason: 'Skipping RTC outbound message without overlay context',
+                    entryCount: 0,
+                    entryStatuses: []
+                }
+            ]
+        });
     });
 
     it('rejects readiness when authoritative room refresh fails', async () => {
@@ -154,13 +199,15 @@ describe('live RTC control client', () => {
             throw new Error('room refresh unavailable');
         });
 
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-readiness',
-            agent,
-            expectedPeerIds: ['session-b'],
-            suffix: 'delivery',
-            startedAtMs: 100
-        })).rejects.toThrow('room refresh unavailable');
+        await expect(
+            control.waitForPeerReadiness({
+                runId: 'run-readiness',
+                agent,
+                expectedPeerIds: ['session-b'],
+                suffix: 'delivery',
+                startedAtMs: 100
+            })
+        ).rejects.toThrow('room refresh unavailable');
     });
 
     it('does not report readiness after room refresh exhausts the shared deadline', async () => {
@@ -169,17 +216,22 @@ describe('live RTC control client', () => {
             nowMs = 60_101;
         });
 
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-readiness',
-            agent,
-            expectedPeerIds: ['session-b'],
-            suffix: 'delivery',
-            startedAtMs: 100
-        })).rejects.toThrow('readiness deadline');
+        await expect(
+            control.waitForPeerReadiness({
+                runId: 'run-readiness',
+                agent,
+                expectedPeerIds: ['session-b'],
+                suffix: 'delivery',
+                startedAtMs: 100
+            })
+        ).rejects.toThrow('readiness deadline');
         expect(
             JSON.parse(
                 readFileSync(
-                    path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-delivery.json'),
+                    path.join(
+                        diagnosticsRoot,
+                        'live-rtc-readiness-failure-agent-a-delivery.json'
+                    ),
                     'utf8'
                 )
             )
@@ -234,19 +286,24 @@ describe('live RTC control client', () => {
                 }
             }
         });
-        await expect(control.waitForMessage({
-            runId: 'run-message-timeout',
-            senderAgentId: 'agent-a',
-            agentId: 'agent-b',
-            transport: 'messages.rtc',
-            matrixId: 'direct-timeout',
-            deliveryMode: 'direct',
-            startedAtMs: 100,
-            timeoutMs: 10
-        })).rejects.toThrow('direct-timeout');
+        await expect(
+            control.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'direct-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('direct-timeout');
 
         const artifactBody = readFileSync(
-            path.join(diagnosticsRoot, 'live-rtc-message-failure-direct-timeout-agent-b.json'),
+            path.join(
+                diagnosticsRoot,
+                'live-rtc-message-failure-direct-timeout-agent-b.json'
+            ),
             'utf8'
         );
         expect(artifactBody).not.toContain('must-not-be-retained');
@@ -261,11 +318,15 @@ describe('live RTC control client', () => {
                 'agent-b': { ok: true }
             }
         });
-        expect(artifact.recentResults).toEqual(expect.arrayContaining([{
-            agentId: 'agent-a',
-            commandId: 'send-direct-timeout',
-            ok: true
-        }]));
+        expect(artifact.recentResults).toEqual(
+            expect.arrayContaining([
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-direct-timeout',
+                    ok: true
+                }
+            ])
+        );
         expect(artifact.sendResult).toEqual({
             agentId: 'agent-a',
             commandId: 'send-direct-timeout',
@@ -277,24 +338,40 @@ describe('live RTC control client', () => {
             entryCount: 1,
             entryStatuses: ['NEW']
         });
-        expect(artifact.recentEvents).toEqual([{
-            agentId: 'agent-b',
-            kind: 'message',
-            transport: 'messages.rtc',
-            topic: 'direct-topic',
-            matrixId: 'an-earlier-message',
-            deliveryMode: 'direct'
-        }]);
+        expect(artifact.recentEvents).toEqual([
+            {
+                agentId: 'agent-b',
+                kind: 'message',
+                transport: 'messages.rtc',
+                topic: 'direct-topic',
+                matrixId: 'an-earlier-message',
+                deliveryMode: 'direct'
+            }
+        ]);
     });
 
     it('reads the sent message identity from the RTC send-result envelope, not the command ID', () => {
-        expect(control.requireSentMessageId({
-            commandId: 'nack-probe-command',
-            ok: true,
-            result: { value: { message: { transport: 'rtc', status: 'sent', message: { id: { msgId: 'wire-message' } } } } }
-        })).toBe('wire-message');
-        expect(() => control.requireSentMessageId({ commandId: 'nack-probe-command', ok: true }))
-            .toThrow('message ID');
+        expect(
+            control.requireSentMessageId({
+                commandId: 'nack-probe-command',
+                ok: true,
+                result: {
+                    value: {
+                        message: {
+                            transport: 'rtc',
+                            status: 'sent',
+                            message: { id: { msgId: 'wire-message' } }
+                        }
+                    }
+                }
+            })
+        ).toBe('wire-message');
+        expect(() =>
+            control.requireSentMessageId({
+                commandId: 'nack-probe-command',
+                ok: true
+            })
+        ).toThrow('message ID');
     });
 
     it('attaches received-NACK proof with the message and peer identities', async () => {
@@ -413,25 +490,29 @@ describe('live RTC control client', () => {
                 typedFrameCount: 1,
                 nackFrameCount: 1,
                 malformedNackFrameCount: 0,
-                nackFrames: [{
-                    hasMessageId: true,
-                    messageIdMatchesProbe: false,
-                    reason: 'not-yet-in-sync',
-                    hasFromPeerId: true,
-                    fromPeerIdMatchesTarget: true,
-                    hasToPeerId: true,
-                    toPeerIdMatchesSender: true,
-                    matchesProbe: false
-                }]
+                nackFrames: [
+                    {
+                        hasMessageId: true,
+                        messageIdMatchesProbe: false,
+                        reason: 'not-yet-in-sync',
+                        hasFromPeerId: true,
+                        fromPeerIdMatchesTarget: true,
+                        hasToPeerId: true,
+                        toPeerIdMatchesSender: true,
+                        matchesProbe: false
+                    }
+                ]
             },
-            recentEvents: [{
-                agentRole: 'target',
-                kind: 'message',
-                transport: 'messages.rtc',
-                topicPresent: true,
-                matrixIdPresent: true,
-                deliveryMode: 'missing'
-            }]
+            recentEvents: [
+                {
+                    agentRole: 'target',
+                    kind: 'message',
+                    transport: 'messages.rtc',
+                    topicPresent: true,
+                    matrixIdPresent: true,
+                    deliveryMode: 'missing'
+                }
+            ]
         });
         expect(diagnostic.sendResult?.entryCount).toBe(25);
         expect(diagnostic.sendResult?.entryStatuses).toHaveLength(20);

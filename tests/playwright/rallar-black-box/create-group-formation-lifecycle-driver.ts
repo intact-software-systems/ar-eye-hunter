@@ -1,8 +1,10 @@
 import { expect } from '@playwright/test';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 type AgentPrefix = 'A' | 'B' | 'C';
@@ -15,6 +17,7 @@ interface CreateGroupFormationLifecycleDriverConfig {
     readonly workspaceId: string;
     readonly messagesRtcTypeId: string;
     readonly messagesRtcTopicId: string;
+    readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
 
 interface RunGroupFormationLifecycleInput {
@@ -52,7 +55,9 @@ interface ReconnectFormationAgentInput {
 }
 
 export interface GroupFormationLifecycleDriver {
-    setupGroupMembership(input: SetupGroupMembershipInput): Promise<readonly string[]>;
+    setupGroupMembership(
+        input: SetupGroupMembershipInput
+    ): Promise<readonly string[]>;
     run(
         input: RunGroupFormationLifecycleInput
     ): Promise<GroupFormationLifecycleRun>;
@@ -189,6 +194,16 @@ interface WaitForFormationReadinessInput {
     readonly startedAtMs: number;
 }
 
+interface WaitForCanonicalFormationReadinessInput {
+    readonly control: LiveRtcControlPort;
+    readonly runId: string;
+    readonly agent: LiveRtcControlClient.FormationAgent;
+    readonly roomRef: GroupRef;
+    readonly expectedPeerIds: readonly string[];
+    readonly suffix: string;
+    readonly startedAtMs: number;
+}
+
 export function createGroupFormationLifecycleDriver(
     config: CreateGroupFormationLifecycleDriverConfig
 ): GroupFormationLifecycleDriver {
@@ -212,32 +227,43 @@ async function reconnectFormationAgent(
         groupId: input.groupId,
         suffix: input.suffix
     });
-    const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all([
-        input.control.waitForPeerReadiness({
-            runId: input.runId,
-            agent: input.survivingAgents[0],
-            expectedPeerIds: [connection.sessionId],
-            suffix: input.suffix,
-            startedAtMs
-        }),
-        input.control.waitForPeerReadiness({
-            runId: input.runId,
-            agent: input.survivingAgents[1],
-            expectedPeerIds: [connection.sessionId],
-            suffix: input.suffix,
-            startedAtMs
-        }),
-        input.control.waitForPeerReadiness({
-            runId: input.runId,
-            agent: input.reconnectingAgent,
-            expectedPeerIds: input.survivingSessionIds,
-            suffix: `${input.suffix}-settled`,
-            startedAtMs
-        })
-    ]);
+    const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
+        [
+            waitForCanonicalFormationReadiness(config, {
+                control: input.control,
+                runId: input.runId,
+                agent: input.survivingAgents[0],
+                roomRef: toGroupRef(config, input.groupId),
+                expectedPeerIds: [input.survivingSessionIds[1], connection.sessionId],
+                suffix: input.suffix,
+                startedAtMs
+            }),
+            waitForCanonicalFormationReadiness(config, {
+                control: input.control,
+                runId: input.runId,
+                agent: input.survivingAgents[1],
+                roomRef: toGroupRef(config, input.groupId),
+                expectedPeerIds: [input.survivingSessionIds[0], connection.sessionId],
+                suffix: input.suffix,
+                startedAtMs
+            }),
+            waitForCanonicalFormationReadiness(config, {
+                control: input.control,
+                runId: input.runId,
+                agent: input.reconnectingAgent,
+                roomRef: toGroupRef(config, input.groupId),
+                expectedPeerIds: input.survivingSessionIds,
+                suffix: `${input.suffix}-settled`,
+                startedAtMs
+            })
+        ]
+    );
     return {
         ...connection,
-        receiverReadinessDurationMs: Math.max(firstReceiverDurationMs, secondReceiverDurationMs)
+        receiverReadinessDurationMs: Math.max(
+            firstReceiverDurationMs,
+            secondReceiverDurationMs
+        )
     };
 }
 
@@ -276,7 +302,9 @@ async function runGroupFormationLifecycle(
 
 async function connectGroupLifecycle(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: ConnectGroupLifecycleInput & Readonly<{ readinessStartedAtMs: number; }>
+    input:
+        & ConnectGroupLifecycleInput
+        & Readonly<{ readinessStartedAtMs: number; }>
 ): Promise<ConnectedGroupLifecycle> {
     const owner = input.run.agents[0];
     const topologyCommandId = await configureMeshTopology(config, {
@@ -308,7 +336,7 @@ async function connectGroupLifecycle(
         ...input.run,
         owner
     });
-    const readinessDurations = await waitForFormationReadiness({
+    const readinessDurations = await waitForFormationReadiness(config, {
         run: input.run,
         sessions: input.sessions,
         suffix: `${input.lifecycleSuffix}-activated`,
@@ -350,7 +378,10 @@ async function connectFormationAgents(
         owner,
         expectedSessionIds: [connectA.sessionId, connectB.sessionId]
     });
-    const initialPairCommandIds = await connectInitialPair(config, input, [connectA, connectB]);
+    const initialPairCommandIds = await connectInitialPair(config, input, [
+        connectA,
+        connectB
+    ]);
     const readinessStartedAtMs = performance.now();
     const connectC = await connectFormationAgent(config, {
         ...input,
@@ -359,7 +390,11 @@ async function connectFormationAgents(
     const presenceC = await waitForActiveSessions(config, {
         ...input,
         owner,
-        expectedSessionIds: [connectA.sessionId, connectB.sessionId, connectC.sessionId]
+        expectedSessionIds: [
+            connectA.sessionId,
+            connectB.sessionId,
+            connectC.sessionId
+        ]
     });
 
     return {
@@ -393,28 +428,36 @@ async function connectInitialPair(
         expectedLayout: plannedLayout.identity
     });
     const startedAtMs = performance.now();
-    await Promise.all(agents.map(async (agent, index) =>
-        await input.control.waitForPeerReadiness({
-            runId: input.runId,
-            agent,
-            expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
-            suffix,
-            startedAtMs
-        })
-    ));
+    await Promise.all(
+        agents.map(
+            async (agent, index) =>
+                await input.control.waitForPeerReadiness({
+                    runId: input.runId,
+                    agent,
+                    expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
+                    suffix,
+                    startedAtMs
+                })
+        )
+    );
     const activateCommandId = await activateGroup(config, {
         ...lifecycle,
         transport: input.transport
     });
-    await Promise.all(agents.map(async (agent, index) =>
-        await input.control.waitForPeerReadiness({
-            runId: input.runId,
-            agent,
-            expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
-            suffix: `${suffix}-activated`,
-            startedAtMs
-        })
-    ));
+    await Promise.all(
+        agents.map(
+            async (agent, index) =>
+                await waitForCanonicalFormationReadiness(config, {
+                    control: input.control,
+                    runId: input.runId,
+                    agent,
+                    roomRef: toGroupRef(config, input.groupId),
+                    expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
+                    suffix: `${suffix}-activated`,
+                    startedAtMs
+                })
+        )
+    );
     return [
         topologyCommandId,
         ...stageReceipt.commandIds,
@@ -441,11 +484,7 @@ async function connectFormationAgent(
             roomId: input.groupId,
             applicationId: config.applicationId,
             workspaceId: config.workspaceId,
-            roomRef: {
-                applicationId: config.applicationId,
-                workspaceId: config.workspaceId,
-                groupId: input.groupId
-            },
+            roomRef: toGroupRef(config, input.groupId),
             transport: input.transport,
             rallar: {
                 apiBaseUrl: config.apiBaseUrl,
@@ -622,38 +661,51 @@ async function waitForPlannedLayout(
     let attempt = 0;
     const commandIds: string[] = [];
     let plannedLayout: GroupLayoutIdentity | undefined;
-    await expect.poll(async () => {
-        const commandId = `topology-planned-${input.suffix}-${attempt++}`;
-        commandIds.push(commandId);
-        const result = await input.control.executeResult({
-            ...input,
-            agentId: input.owner.agentId,
-            commandId,
-            command: topologyReadCommand(config, input.groupId),
-            timeoutMs: 15_000
-        }).catch(() => undefined);
-        if (!result?.ok) {
-            return false;
-        }
-        const candidate = readActivePublishedLayout(input.control.resultValue(result));
-        if (
-            candidate === undefined ||
-            candidate.identity.groupRevision < input.minimumGroupRevision ||
-            !input.expectedSessionIds.every((sessionId) => candidate.sessionIds.includes(sessionId))
-        ) {
-            return false;
-        }
-        plannedLayout = candidate.identity;
-        return true;
-    }, {
-        message:
-            `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${input.minimumGroupRevision} with ${
-                input.expectedSessionIds.join(', ')
-            }`,
-        timeout: 30_000
-    }).toBe(true);
+    await expect
+        .poll(
+            async () => {
+                const commandId = `topology-planned-${input.suffix}-${attempt++}`;
+                commandIds.push(commandId);
+                const result = await input.control
+                    .executeResult({
+                        ...input,
+                        agentId: input.owner.agentId,
+                        commandId,
+                        command: topologyReadCommand(config, input.groupId),
+                        timeoutMs: 15_000
+                    })
+                    .catch(() => undefined);
+                if (!result?.ok) {
+                    return false;
+                }
+                const candidate = readActivePublishedLayout(
+                    input.control.resultValue(result)
+                );
+                if (
+                    candidate === undefined ||
+                    candidate.identity.groupRevision < input.minimumGroupRevision ||
+                    !input.expectedSessionIds.every((sessionId) => candidate.sessionIds.includes(sessionId))
+                ) {
+                    return false;
+                }
+                plannedLayout = candidate.identity;
+                return true;
+            },
+            {
+                message:
+                    `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${input.minimumGroupRevision} with ${
+                        input.expectedSessionIds.join(
+                            ', '
+                        )
+                    }`,
+                timeout: 30_000
+            }
+        )
+        .toBe(true);
     if (!plannedLayout) {
-        throw new Error(`Planned layout did not resolve for formation epoch ${input.expectedFormationEpoch}.`);
+        throw new Error(
+            `Planned layout did not resolve for formation epoch ${input.expectedFormationEpoch}.`
+        );
     }
     return { commandIds, identity: plannedLayout };
 }
@@ -665,48 +717,92 @@ async function waitForActiveSessions(
     let attempt = 0;
     const commandIds: string[] = [];
     const expectedSessionIds = [...input.expectedSessionIds].sort((left, right) => left.localeCompare(right));
-    await expect.poll(async () => {
-        const commandId = `group-presence-${input.suffix}-${expectedSessionIds.length}-${attempt++}`;
-        commandIds.push(commandId);
-        const result = await input.control.executeResult({
-            ...input,
-            agentId: input.owner.agentId,
-            commandId,
-            command: groupReadCommand(config, input.groupId),
-            timeoutMs: 15_000
-        }).catch(() => undefined);
-        if (!result?.ok) {
-            return [];
-        }
-        return readActiveSessionIds(input.control.resultValue(result));
-    }, {
-        message: `Expected exactly the active sessions ${expectedSessionIds.join(', ')} for ${input.groupId}`,
-        timeout: 30_000
-    }).toEqual(expectedSessionIds);
+    await expect
+        .poll(
+            async () => {
+                const commandId = `group-presence-${input.suffix}-${expectedSessionIds.length}-${attempt++}`;
+                commandIds.push(commandId);
+                const result = await input.control
+                    .executeResult({
+                        ...input,
+                        agentId: input.owner.agentId,
+                        commandId,
+                        command: groupReadCommand(config, input.groupId),
+                        timeoutMs: 15_000
+                    })
+                    .catch(() => undefined);
+                if (!result?.ok) {
+                    return [];
+                }
+                return readActiveSessionIds(input.control.resultValue(result));
+            },
+            {
+                message: `Expected exactly the active sessions ${expectedSessionIds.join(', ')} for ${input.groupId}`,
+                timeout: 30_000
+            }
+        )
+        .toEqual(expectedSessionIds);
     return commandIds;
 }
 
 async function waitForFormationReadiness(
+    config: CreateGroupFormationLifecycleDriverConfig,
     input: WaitForFormationReadinessInput
 ): Promise<Readonly<Partial<Record<AgentPrefix, number>>>> {
-    const durations = await Promise.all(input.run.agents.map(async (agent) => ({
-        prefix: agent.prefix,
-        durationMs: await input.run.control.waitForPeerReadiness({
-            runId: input.run.runId,
-            agent,
-            expectedPeerIds: input.run.agents
-                .filter((candidate) => candidate.agentId !== agent.agentId)
-                .map((candidate) => input.sessions[candidate.prefix]),
-            suffix: input.suffix,
-            startedAtMs: input.startedAtMs
-        })
-    })));
-    const measuredDurations = input.run.readinessScope === 'owner'
-        ? durations.slice(0, 1)
-        : durations;
+    const durations = await Promise.all(
+        input.run.agents.map(async (agent) => ({
+            prefix: agent.prefix,
+            durationMs: await waitForCanonicalFormationReadiness(config, {
+                control: input.run.control,
+                runId: input.run.runId,
+                agent,
+                roomRef: toGroupRef(config, input.run.groupId),
+                expectedPeerIds: input.run.agents
+                    .filter((candidate) => candidate.agentId !== agent.agentId)
+                    .map((candidate) => input.sessions[candidate.prefix]),
+                suffix: input.suffix,
+                startedAtMs: input.startedAtMs
+            })
+        }))
+    );
+    const measuredDurations = input.run.readinessScope === 'owner' ? durations.slice(0, 1) : durations;
     return Object.fromEntries(
         measuredDurations.map(({ prefix, durationMs }) => [prefix, durationMs])
     );
+}
+
+async function waitForCanonicalFormationReadiness(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: WaitForCanonicalFormationReadinessInput
+): Promise<number> {
+    const readiness = await config.formation.readiness({
+        control: input.control,
+        runId: input.runId,
+        agent: input.agent,
+        roomRef: input.roomRef,
+        suffix: input.suffix
+    });
+    const room = readiness.formation.room;
+    const expectedPeerIds = [...new Set(input.expectedPeerIds)].sort();
+
+    expect(
+        room.state,
+        `Expected ${input.agent.agentId} to hold an open room transport for ${input.suffix}`
+    ).toBe('open');
+    expect(
+        room.acceptedLayoutIdentity,
+        `Expected ${input.agent.agentId} to hold an accepted layout for ${input.suffix}`
+    ).toBeDefined();
+    expect(
+        [...new Set(room.desiredPeerIds)].sort(),
+        `Expected ${input.agent.agentId} to target the exact peers for ${input.suffix}`
+    ).toEqual(expectedPeerIds);
+    expect(
+        [...new Set(room.readyPeerIds)].sort(),
+        `Expected ${input.agent.agentId} to have the exact ready peers for ${input.suffix}`
+    ).toEqual(expectedPeerIds);
+
+    return performance.now() - input.startedAtMs;
 }
 
 function topologyReadCommand(
@@ -749,9 +845,22 @@ function groupRequestPath(
     suffix?: string
 ): string {
     const groupPath = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-        pathSegment(config.workspaceId)
+        pathSegment(
+            config.workspaceId
+        )
     }/groups/${pathSegment(groupId)}`;
     return suffix ? `${groupPath}/${suffix}` : groupPath;
+}
+
+function toGroupRef(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    groupId: string
+): GroupRef {
+    return {
+        applicationId: config.applicationId,
+        workspaceId: config.workspaceId,
+        groupId
+    };
 }
 
 function readActivePublishedLayout(
@@ -788,20 +897,26 @@ function readLifecycleStageReceipt(
     const formationEpoch = numberValue(group.formationEpoch);
     const groupRevision = numberValue(causalRevision.groupRevision);
     if (formationEpoch === undefined || groupRevision === undefined) {
-        throw new Error(`Lifecycle command ${commandId} did not return its formation epoch and group revision.`);
+        throw new Error(
+            `Lifecycle command ${commandId} did not return its formation epoch and group revision.`
+        );
     }
     return { formationEpoch, groupRevision };
 }
 
-function readActiveSessionIds(value: Readonly<Record<string, RtcBaselineJson>>): readonly string[] {
+function readActiveSessionIds(
+    value: Readonly<Record<string, RtcBaselineJson>>
+): readonly string[] {
     const body = jsonRecord(value.body);
     if (!Array.isArray(body.activeSessions)) {
         return [];
     }
-    return body.activeSessions.flatMap((session) => {
-        const sessionId = jsonRecord(session).sessionId;
-        return typeof sessionId === 'string' ? [sessionId] : [];
-    }).sort((left, right) => left.localeCompare(right));
+    return body.activeSessions
+        .flatMap((session) => {
+            const sessionId = jsonRecord(session).sessionId;
+            return typeof sessionId === 'string' ? [sessionId] : [];
+        })
+        .sort((left, right) => left.localeCompare(right));
 }
 
 function readFormationEntryLifecycleState(
@@ -812,16 +927,22 @@ function readFormationEntryLifecycleState(
     if (lifecycleState === 'forming' || lifecycleState === 'active') {
         return lifecycleState;
     }
-    throw new Error(`Expected forming or active group lifecycle state; received ${String(lifecycleState)}`);
+    throw new Error(
+        `Expected forming or active group lifecycle state; received ${String(lifecycleState)}`
+    );
 }
 
-function jsonRecord(value: RtcBaselineJson | undefined): Readonly<Record<string, RtcBaselineJson>> {
+function jsonRecord(
+    value: RtcBaselineJson | undefined
+): Readonly<Record<string, RtcBaselineJson>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
         ? value
         : {};
 }
 
-function stringArrayValue(value: RtcBaselineJson | undefined): readonly string[] {
+function stringArrayValue(
+    value: RtcBaselineJson | undefined
+): readonly string[] {
     return Array.isArray(value)
         ? value.filter((entry): entry is string => typeof entry === 'string')
         : [];
@@ -867,7 +988,9 @@ async function setupGroupMembership(
                 kind: 'http.request',
                 request: {
                     path: `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
-                        encodeURIComponent(config.workspaceId)
+                        encodeURIComponent(
+                            config.workspaceId
+                        )
                     }/groups/${groupSegment}/members/{auth.clientId}/requests/${encodeURIComponent(requestId)}`,
                     method: 'PUT',
                     body: {
@@ -894,7 +1017,9 @@ function toGroupCreationCommand(
         kind: 'http.request',
         request: {
             path: `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
-                encodeURIComponent(config.workspaceId)
+                encodeURIComponent(
+                    config.workspaceId
+                )
             }/groups/requests/${encodeURIComponent(`rtc-b06-create-${input.suffix}`)}`,
             method: 'POST',
             body: {

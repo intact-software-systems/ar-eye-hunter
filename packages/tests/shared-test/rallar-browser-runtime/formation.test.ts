@@ -5,7 +5,10 @@ import type {
 import { decodeBlackBoxRallarFormationCommandInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
 import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarStateListener, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type {
+    RallarStateListener,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarRoomConnectOptions,
     RallarRoomFormation,
@@ -21,7 +24,10 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import {
+    loadRuntime,
+    resetFacade
+} from './browser-rallar-runtime-test-harness.ts';
 
 const PLANNED: GroupLayoutIdentity = {
     groupRevision: 4,
@@ -43,7 +49,9 @@ it.each([
         expected: { command: 'reconfigure', landing: 'hold' }
     }
 ])('decodes $value.command', ({ value, expected }) => {
-    expect(decodeBlackBoxRallarFormationCommandInput(value).right).toEqual(expected);
+    expect(decodeBlackBoxRallarFormationCommandInput(value).right).toEqual(
+        expected
+    );
 });
 
 // The eight the shipped handle exposes; a ninth name is not a formation command.
@@ -57,7 +65,9 @@ it.each([
     'reset',
     'start'
 ])('accepts the %s command', (command) => {
-    expect(decodeBlackBoxRallarFormationCommandInput({ command }).left).toBeUndefined();
+    expect(
+        decodeBlackBoxRallarFormationCommandInput({ command }).left
+    ).toBeUndefined();
 });
 
 it.each([
@@ -140,6 +150,11 @@ function createFormationHarness(input: HarnessInput) {
         lastChangedAtEpochMs: 1,
         reason: 'fixture'
     };
+    const waitForRoom = vi.fn(async () => ({
+        roomRef,
+        ws: { connected: true } as never,
+        rtc: room
+    }));
 
     const record = (name: string) => (options?: FormationCommandOptions): Promise<GroupSnapshot> => {
         calls.push([name, options]);
@@ -177,7 +192,12 @@ function createFormationHarness(input: HarnessInput) {
     const controller = new BlackBoxRallarFormationController({
         formation: () => formation,
         rtc: {
-            roomStatus: () => ({ roomRef, ws: { connected: true } as never, rtc: room }),
+            roomStatus: () => ({
+                roomRef,
+                ws: { connected: true } as never,
+                rtc: room
+            }),
+            waitForRoom,
             onStatus: (listener: (status: never) => void) => subscribe(statusListeners, () => listener({} as never))
         } as never,
         emit: (event) => {
@@ -192,6 +212,7 @@ function createFormationHarness(input: HarnessInput) {
         calls,
         emitted,
         formation,
+        waitForRoom,
         emitChange(next: Partial<RallarRoomFormationStatus>) {
             status = { ...status, ...next };
             for (const listener of [...changeListeners]) {
@@ -208,15 +229,15 @@ function createFormationHarness(input: HarnessInput) {
             for (const listener of [...statusListeners]) {
                 listener();
             }
-        },
-        setRoomWithoutNotifying(next: Partial<RallarRtcRoomTransportStatus>) {
-            room = { ...room, ...next };
         }
     };
 }
 
 it('issues the command and reports the receipt beside the summary', async () => {
-    const harness = createFormationHarness({ stage: 'planned', formationEpoch: 1 });
+    const harness = createFormationHarness({
+        stage: 'planned',
+        formationEpoch: 1
+    });
 
     const diagnostics = await harness.controller.command({
         roomRef,
@@ -225,12 +246,21 @@ it('issues the command and reports the receipt beside the summary', async () => 
     });
 
     expect(harness.calls).toEqual([['plan', {}]]);
-    expect(diagnostics.formation).toMatchObject({ stage: 'planned', formationEpoch: 1, dialing: 'none' });
-    expect(diagnostics.receipt.causalRevision).toEqual(diagnostics.formation.causalRevision);
+    expect(diagnostics.formation).toMatchObject({
+        stage: 'planned',
+        formationEpoch: 1,
+        dialing: 'none'
+    });
+    expect(diagnostics.receipt.causalRevision).toEqual(
+        diagnostics.formation.causalRevision
+    );
 });
 
 it('omits the absent fields from the summary instead of carrying undefined keys', async () => {
-    const harness = createFormationHarness({ stage: 'planned', formationEpoch: 1 });
+    const harness = createFormationHarness({
+        stage: 'planned',
+        formationEpoch: 1
+    });
 
     const { formation: summary } = await harness.controller.command({
         roomRef,
@@ -240,11 +270,16 @@ it('omits the absent fields from the summary instead of carrying undefined keys'
 
     expect(Object.keys(summary)).not.toContain('accepted');
     expect(Object.keys(summary)).not.toContain('coverageRate');
-    expect(JSON.parse(JSON.stringify(summary)) as BlackBoxRallarFormationSummary).toEqual(summary);
+    expect(
+        JSON.parse(JSON.stringify(summary)) as BlackBoxRallarFormationSummary
+    ).toEqual(summary);
 });
 
 it('passes the named layout to connect and the landing to reconfigure', async () => {
-    const harness = createFormationHarness({ stage: 'planned', formationEpoch: 1 });
+    const harness = createFormationHarness({
+        stage: 'planned',
+        formationEpoch: 1
+    });
 
     await harness.controller.command({
         roomRef,
@@ -264,67 +299,100 @@ it('passes the named layout to connect and the landing to reconfigure', async ()
     ]);
 });
 
-it('captures the summary in the tick the room readiness resolves and emits the ready diagnostic', async () => {
+it('delegates observation-only readiness to the canonical room wait and emits the ready diagnostic', async () => {
     const harness = createFormationHarness({
         stage: 'active',
         formationEpoch: 3,
-        desiredPeerIds: ['b', 'c']
+        desiredPeerIds: ['b', 'c'],
+        readyPeerIds: ['b', 'c'],
+        state: 'open'
     });
-    const readiness = harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
-    harness.setRoom({ state: 'open', readyPeerIds: ['b', 'c'] });
-
-    const result = await readiness;
+    const result = await harness.controller.readiness({
+        roomRef,
+        timeoutMs: 5_000
+    });
 
     expect(result.formation.room.readyPeerIds).toEqual(['b', 'c']);
-    expect(harness.emitted.map((event) => event.topic)).toContain('rallar.browser.formation.ready');
+    expect(harness.waitForRoom).toHaveBeenCalledWith(roomRef, {
+        connect: false,
+        timeoutMs: 5_000
+    });
+    expect(harness.emitted.map((event) => event.topic)).toContain(
+        'rallar.browser.formation.ready'
+    );
 });
 
-// R1: `open` is also returned for a layout with no desired peers, so the barrier would resolve on
-// its first tick for a reopened member that has not hydrated yet. The non-empty desired set is
-// what makes it a fence rather than a coincidence.
-it('does not treat an open room with no desired peers as ready', async () => {
+it('returns the room status captured by the canonical wait when the live view changes afterward', async () => {
+    const harness = createFormationHarness({
+        stage: 'active',
+        formationEpoch: 3,
+        desiredPeerIds: ['b'],
+        readyPeerIds: ['b'],
+        state: 'open'
+    });
+    const readyRoom = harness.controller.summary(roomRef)?.room;
+    if (!readyRoom) {
+        throw new Error('Expected the fixture to expose its ready room.');
+    }
+    harness.waitForRoom.mockImplementationOnce(async () => {
+        harness.setRoom({
+            state: 'idle',
+            desiredPeerIds: [],
+            readyPeerIds: []
+        });
+        return {
+            roomRef,
+            ws: { connected: true } as never,
+            rtc: {
+                desired: true,
+                mode: 'eager',
+                ...readyRoom,
+                knownPeerIds: [],
+                peers: [],
+                laneId: 'lane-1',
+                lastChangedAtEpochMs: 1,
+                reason: 'fixture'
+            }
+        };
+    });
+
+    await expect(
+        harness.controller.readiness({ roomRef, timeoutMs: 5_000 })
+    ).resolves.toMatchObject({
+        formation: {
+            room: {
+                state: 'open',
+                desiredPeerIds: ['b'],
+                readyPeerIds: ['b']
+            }
+        }
+    });
+});
+
+it('rejects an edgeless room returned by the canonical readiness owner', async () => {
     const harness = createFormationHarness({
         stage: 'active',
         formationEpoch: 3,
         state: 'open'
     });
-    let settled = false;
-    const readiness = harness.controller.readiness({ roomRef, timeoutMs: 50 }).then(
-        () => {
-            settled = true;
-        },
-        () => {
-            settled = true;
-        }
-    );
 
-    expect(settled).toBe(false);
-
-    harness.setRoom({ desiredPeerIds: ['b'], readyPeerIds: ['b'] });
-    await readiness;
-
-    expect(harness.emitted.filter((event) => event.topic === 'rallar.browser.formation.ready')).toHaveLength(1);
-});
-
-// R2: the RTC status stream never fires on the arrival of the accepted layout, so a barrier that
-// woke only on it would sleep through the transition it exists to observe.
-it('wakes on a formation change as well as a room status change', async () => {
-    const harness = createFormationHarness({
-        stage: 'connecting',
-        formationEpoch: 2,
-        desiredPeerIds: ['b'],
-        readyPeerIds: ['b']
+    await expect(
+        harness.controller.readiness({ roomRef, timeoutMs: 50 })
+    ).rejects.toThrow('RALLAR_BLACK_BOX_FORMATION_NOT_READY');
+    expect(harness.waitForRoom).toHaveBeenCalledWith(roomRef, {
+        connect: false,
+        timeoutMs: 50
     });
-    const readiness = harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
-
-    harness.setRoomWithoutNotifying({ state: 'open' });
-    harness.emitChange({ stage: 'active' });
-
-    await expect(readiness).resolves.toMatchObject({ formation: { stage: 'active' } });
+    expect(harness.emitted).not.toContainEqual(
+        expect.objectContaining({ topic: 'rallar.browser.formation.ready' })
+    );
 });
 
 it('forwards changes, layout events and room status as diagnostics', () => {
-    const harness = createFormationHarness({ stage: 'planned', formationEpoch: 1 });
+    const harness = createFormationHarness({
+        stage: 'planned',
+        formationEpoch: 1
+    });
     const unsubscribe = harness.controller.installDiagnostics(roomRef);
 
     harness.emitChange({ stage: 'connecting' });

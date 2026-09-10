@@ -64,6 +64,7 @@ export type {
 export interface BrowserRoomTransportTarget {
     readonly transportState?: GroupTransportState;
     readonly acceptedLayoutIdentity?: GroupLayoutIdentity;
+    readonly acceptedLayoutCoversCurrentPresence: boolean;
     readonly peerIds: readonly string[];
 }
 
@@ -82,15 +83,20 @@ export function resolveBrowserRoomTransportTarget(
         !isGroupActive(input.snapshot) ||
         !isSessionInGroup(input.snapshot, input.sessionId)
     ) {
-        return { peerIds: [] };
+        return { acceptedLayoutCoversCurrentPresence: false, peerIds: [] };
     }
 
     const acceptedOverlay = input.acceptedOverlay;
     const hasAcceptedLayout = isAcceptedRoomLayoutOverlay(acceptedOverlay, input.snapshot.group);
+    const acceptedLayoutIdentity = hasAcceptedLayout
+        ? toOverlayLayoutIdentity(acceptedOverlay)
+        : undefined;
     const activeSessionIds = new Set(input.snapshot.activeSessions.map((session) => session.sessionId));
     return {
         transportState: input.snapshot.group.transportState,
-        ...(hasAcceptedLayout ? { acceptedLayoutIdentity: toOverlayLayoutIdentity(acceptedOverlay) } : {}),
+        ...(acceptedLayoutIdentity === undefined ? {} : { acceptedLayoutIdentity }),
+        acceptedLayoutCoversCurrentPresence: acceptedLayoutIdentity?.presenceRevision ===
+            input.snapshot.causalRevision.presenceRevision,
         peerIds: hasAcceptedLayout
             ? [
                 ...new Set(

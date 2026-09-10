@@ -24,9 +24,9 @@ function browserWindow(): BlackBoxRallarRuntimeInstallationTarget {
 }
 
 async function loadBrowserRallarRuntime(): Promise<void> {
-    runtimeImportPromise ??= import(
-        '@shared-test/black-box-runner/browser/rallar-browser-runtime.ts'
-    ).then(() => undefined);
+    runtimeImportPromise ??= import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts').then(
+        () => undefined
+    );
     await runtimeImportPromise;
 }
 
@@ -38,7 +38,9 @@ async function resolveBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
 
     const runtime = targetWindow.__blackBoxRallar;
     if (!runtime) {
-        throw new Error('browser-rallar provider did not expose window.__blackBoxRallar.');
+        throw new Error(
+            'browser-rallar provider did not expose window.__blackBoxRallar.'
+        );
     }
 
     return runtime;
@@ -49,7 +51,9 @@ async function resolveBrowserRallarDirectorRuntime(): Promise<
 > {
     const runtime = await resolveBrowserRallarRuntime();
     if (!runtime.director) {
-        throw new Error('browser-rallar provider did not expose director runtime commands.');
+        throw new Error(
+            'browser-rallar provider did not expose director runtime commands.'
+        );
     }
     return runtime.director;
 }
@@ -57,20 +61,27 @@ async function resolveBrowserRallarDirectorRuntime(): Promise<
 async function resolveBrowserRallarFormationRuntime(): Promise<BlackBoxRallarRuntime['formation']> {
     const runtime = await resolveBrowserRallarRuntime();
     if (!runtime.formation) {
-        throw new Error('browser-rallar provider did not expose formation runtime commands.');
+        throw new Error(
+            'browser-rallar provider did not expose formation runtime commands.'
+        );
     }
     return runtime.formation;
 }
 
 /** The decode the boundary owes the controller; issues become one thrown error the adapter records. */
-function requireDecoded<T>(
-    decoding: { left?: readonly BlackBoxRallarFormationInputIssue[]; right?: T; }
-): T {
+function requireDecoded<T>(decoding: {
+    left?: readonly BlackBoxRallarFormationInputIssue[];
+    right?: T;
+}): T {
     if (decoding.right !== undefined) {
         return decoding.right;
     }
-    const issues = (decoding.left ?? []).map((issue) => `${issue.path}: ${issue.message}`).join('; ');
-    throw new Error(`browser-rallar formation command input is not valid. ${issues}`);
+    const issues = (decoding.left ?? [])
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join('; ');
+    throw new Error(
+        `browser-rallar formation command input is not valid. ${issues}`
+    );
 }
 
 /** The command payload the decoder owns, lifted out of the wire command's room and base fields. */
@@ -101,10 +112,14 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
             if (!runtime.authenticate) {
                 throw new Error('browser-rallar provider did not expose authenticate.');
             }
-            return await runtime.authenticate(decodeBlackBoxRallarConnectionConfig(config));
+            return await runtime.authenticate(
+                decodeBlackBoxRallarConnectionConfig(config)
+            );
         },
         async connect(config) {
-            return await (await resolveBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config));
+            return await (
+                await resolveBrowserRallarRuntime()
+            ).connect(decodeBlackBoxRallarConnectionConfig(config));
         },
         async send(input) {
             return await (await resolveBrowserRallarRuntime()).send(input);
@@ -128,59 +143,85 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
             await (await resolveBrowserRallarRuntime()).injectFault(input);
         },
         async readStorageCounters(input) {
-            return await (await resolveBrowserRallarRuntime()).readStorageCounters(input);
+            return await (
+                await resolveBrowserRallarRuntime()
+            ).readStorageCounters(input);
         },
         async refreshRoom(options) {
             return await (await resolveBrowserRallarRuntime()).refreshRoom(options);
         },
+        async waitForRoom(options) {
+            return await (await resolveBrowserRallarRuntime()).waitForRoom(options);
+        },
         director: {
             async appoint(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).appoint(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).appoint(input);
             },
             async resign(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).resign(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).resign(input);
             },
             async status(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).status(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).status(input);
             },
             async relayStart(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).relayStart(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).relayStart(input);
             },
             async intent(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).intent(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).intent(input);
             },
             async syncRequest(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).syncRequest(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).syncRequest(input);
             },
             async relayStop(input) {
-                return await (await resolveBrowserRallarDirectorRuntime()).relayStop(input);
+                return await (
+                    await resolveBrowserRallarDirectorRuntime()
+                ).relayStop(input);
             }
         },
         formation: {
             async command(input) {
                 const room = requireDecoded(decodeBlackBoxRallarFormationRoom(input));
-                const commandInput = requireDecoded(decodeBlackBoxRallarFormationCommandInput(
-                    toFormationCommandInput(input)
-                ));
+                const commandInput = requireDecoded(
+                    decodeBlackBoxRallarFormationCommandInput(
+                        toFormationCommandInput(input)
+                    )
+                );
                 const reason = readOptionalReason(input);
-                return await (await resolveBrowserRallarFormationRuntime()).command({
+                return await (
+                    await resolveBrowserRallarFormationRuntime()
+                ).command({
                     ...room,
                     input: commandInput,
                     ...(reason === undefined ? {} : { reason })
                 });
             },
             async readiness(input) {
-                return await (await resolveBrowserRallarFormationRuntime()).readiness(
-                    requireDecoded(decodeBlackBoxRallarFormationRoom(input))
-                );
+                return await (
+                    await resolveBrowserRallarFormationRuntime()
+                ).readiness(requireDecoded(decodeBlackBoxRallarFormationRoom(input)));
             }
         },
         async close() {
             return await (await resolveBrowserRallarRuntime()).close();
         },
         async health(input?: unknown) {
-            return await (await resolveBrowserRallarRuntime()).health({
-                includeRtcDiagnostics: isBlackBoxCommandRecord(input) && input.includeRtcDiagnostics === true
+            return await (
+                await resolveBrowserRallarRuntime()
+            ).health({
+                includeRtcDiagnostics: isBlackBoxCommandRecord(input) &&
+                    input.includeRtcDiagnostics === true
             });
         }
     };
@@ -205,12 +246,18 @@ export function installSpaBrowserRallarEventBridge(
 export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketFactory {
     return (url, protocols) => {
         if (typeof WebSocket === 'undefined') {
-            throw new Error('WebSocket is not available for browser-rallar WebSocket commands.');
+            throw new Error(
+                'WebSocket is not available for browser-rallar WebSocket commands.'
+            );
         }
 
         const socket = new WebSocket(
             url,
-            typeof protocols === 'string' ? protocols : protocols ? [...protocols] : undefined
+            typeof protocols === 'string'
+                ? protocols
+                : protocols
+                ? [...protocols]
+                : undefined
         );
         return {
             get readyState() {
@@ -227,16 +274,26 @@ export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketF
             },
             send(data) {
                 if (ArrayBuffer.isView(data)) {
-                    socket.send(new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice());
+                    socket.send(
+                        new Uint8Array(
+                            data.buffer,
+                            data.byteOffset,
+                            data.byteLength
+                        ).slice()
+                    );
                     return;
                 }
                 if (
-                    typeof data === 'string' || data instanceof ArrayBuffer || data instanceof Blob
+                    typeof data === 'string' ||
+                    data instanceof ArrayBuffer ||
+                    data instanceof Blob
                 ) {
                     socket.send(data);
                     return;
                 }
-                throw new TypeError('Browser WebSocket data must be text, Blob, or binary bytes.');
+                throw new TypeError(
+                    'Browser WebSocket data must be text, Blob, or binary bytes.'
+                );
             },
             close: (code, reason) => socket.close(code, reason),
             addEventListener: (type, listener) => socket.addEventListener(type, listener),

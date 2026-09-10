@@ -8,11 +8,17 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import {
+    readFullStackControlBaseUrl,
+    toFullStackControlWebSocketUrl
+} from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
-export const FULL_STACK_CONTROL_BASE_URL = 'http://127.0.0.1:5180';
-export const FULL_STACK_CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
+export const FULL_STACK_CONTROL_BASE_URL = readFullStackControlBaseUrl();
+export const FULL_STACK_CONTROL_WS_URL = toFullStackControlWebSocketUrl(
+    FULL_STACK_CONTROL_BASE_URL
+);
 export const FULL_STACK_SPA_ORIGIN = normalizeBaseUrl(
     envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176'
 );

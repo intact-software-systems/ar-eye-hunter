@@ -38,12 +38,12 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // Maintainer approved necessary ALM growth; the reviewed cutover measures
-        // 198.994140625 KiB. Keep an explicit 200 KiB ceiling.
+        // Maintainer approved the canonical room-readiness owner; the reviewed
+        // cutover measures 200.32421875 KiB. Keep the smallest whole-KiB ceiling.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 200
+        brotliBudgetKiB: 201
     },
     {
         label: 'browser/rallar-core.ts',
@@ -80,7 +80,7 @@ const budgetedEntries: readonly BundleBoundary[] = [
         label: 'browser/rallar-messages.ts',
         entry: 'packages/shared-web/browser/rallar-messages.ts',
         output: 'rallar-browser-messages.boundary.min.js',
-        brotliBudgetKiB: 12
+        brotliBudgetKiB: 3
     }
 ];
 

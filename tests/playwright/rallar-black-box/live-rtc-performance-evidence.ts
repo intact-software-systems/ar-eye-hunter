@@ -223,8 +223,26 @@ export interface LiveRtcPerformanceRawEvidence {
     timings: readonly LiveRtcPerformanceTiming[];
     diagnostics: readonly LiveRtcDiagnosticsCheckpoint[];
     failureDiagnostics: readonly LiveRtcNackFailureDiagnostic[];
+    attemptFailure: LiveRtcAttemptFailureDiagnostic | null;
     retention: LiveRtcRetentionEvidence | null;
     assertions: LiveRtcPerformanceAssertions;
+}
+
+export interface LiveRtcAttemptFailureDiagnostic {
+    readonly kind: 'control-result-failures';
+    readonly runCaptureSucceeded: boolean;
+    readonly failedResults: readonly LiveRtcFailedControlResult[];
+}
+
+export interface LiveRtcFailedControlResult {
+    readonly agentId: string | null;
+    readonly commandId: string;
+    readonly ok: false;
+    readonly runtimeStatus: string | null;
+    readonly admissionStatus: string | null;
+    readonly reason: string | null;
+    readonly entryCount: number;
+    readonly entryStatuses: readonly string[];
 }
 
 export interface BuildLiveRtcExternalAttemptInput {

@@ -103,10 +103,13 @@ export async function adoptOverlayTopology(
     const result = role === 'planned'
         ? adoptPlannedOverlay(input, overlay)
         : adoptAcceptedOverlay(input, overlay);
-    await waitForOverlayRoleChangesIdle(role);
     if (result.changed) {
+        // Cache writes publish asynchronously. Invalidate RTC ownership before
+        // room observers can act on the new target, or a direct room wait can
+        // be denied against the previous dial policy.
         await input.webRtcGroupManager.notifyOverlayTopologyChanged();
     }
+    await waitForOverlayRoleChangesIdle(role);
 
     return {
         role,

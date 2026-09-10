@@ -69,8 +69,9 @@ observation stream, and B06 E3-memory observation tooling are merged. Five
 distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
 #402 landed directly, and the four observations formerly published by PRs
 #405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
-superseded PRs and branches were closed. Nine B06 observations have failed with
-`acceptedMetrics: false` and are archived on `main`. The first five, their
+superseded PRs and branches were closed. Ten B06 observations have failed with
+`acceptedMetrics: false` and are archived on `main`; an eleventh verified failed
+observation is pending unchanged in PR #556. The first five, their
 focused corrections in PRs #499 and #510, and the Branch Release quiescence
 correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
 PR #519; its focused publication-wake identity correction merged in PR #520.
@@ -235,16 +236,332 @@ non-expiring send budget; bounded-rejection and deadline-expiry absence windows
 remain unchanged. The exact CI-shaped local lane again passed all three carriers
 without retries after both corrections. This changes no product timeout or
 retry. No compatibility surface or legacy callback remains.
-Keep subsequent corrections and local proof in PR #554 until this exact slice
-is complete; do not create another hypothesis PR or spend a full CI cycle after
-each local observation.
+PR #554 merged as `44de5ae450211f0d5901afe884d8c160aa1a2f91` after its
+branch gates passed. Publish run 34430533353 observed that moving-main snapshot
+and passed its source, tooling, finalization, archive-integrity, and publication
+jobs. The default warmup passed, but the first retained default attempt failed
+its `messages.rtc` broadcast with `RALLAR_BB_RTC_NO_ROUTE`: the browser had all
+expected peers in `rtcStatus.readyPeerIds` while its current formation still
+lacked the accepted overlay used by multicast routing. PR #556 contains the
+verified failed ZIP/index row with `acceptedMetrics: false` and no repeat.
+
+PR #557 is the next single correction-and-proof PR. Run 34430533353 exposed an
+ownership error, not a need for another benchmark-local readiness condition:
+`BrowserRtcWaitRuntime.waitForRoomLane()` resolved the room transport target
+once, so an invocation that began before accepted-layout arrival could return
+an empty peer result. Higher test layers then reconstructed room readiness from
+health JSON, duplicating shared-web product truth while still leaving timing
+gaps.
+
+The permanent correction keeps one readiness owner. `BrowserRtcRoomRuntime`
+owns the composite room-transport boundary: authoritative room membership plus
+accepted layout determine the desired peers, and RTC lane state determines
+whether the requested minimum is ready. It waits event-first for accepted
+room-transport authority before delegating lane opening and waiting to
+`BrowserRtcWaitRuntime`; an inactive RTC controller still returns immediately.
+The shared-web state composition supplies a narrow internal subscription for
+changes to the exact room transport target. No public facade, persisted shape,
+protocol, compatibility layer, migration, polling loop, lock, retry, timeout
+increase, library, or legacy path is added.
+
+Black-box code owns policy, not readiness truth. Its `rtc.connect` path chooses
+peer-only readiness for transports that only require a data channel and
+canonical room readiness for `messages.rtc`, then delegates the latter to
+`rallar.rtc.waitForRoom(...)`. The formation observation controller delegates
+to the same product operation with `connect: false` and retains its
+observation-only contract. Playwright keeps only B06-specific exact-topology
+assertions after the canonical barrier; it does not rebuild an `open`/accepted
+layout/ready-peer algorithm from health JSON. QueueBox and multicast delivery
+semantics remain unchanged: making an early no-route send durable would be a
+separate product decision, not a readiness fix.
+
+The original correction starts with two concrete TDD slices on this PR:
+
+1. Add a deterministic shared-web regression that starts the public room wait
+   before accepted-layout arrival, prove the current premature return, then add
+   the event-driven target subscription and composite room-runtime wait. Cover
+   inactive RTC, zero-peer accepted layouts, requested minimums, abort, and
+   timeout without retaining the old path.
+2. Add black-box regressions that prove `messages.rtc` selects canonical room
+   readiness while peer-only transports retain connection readiness. Replace
+   duplicate formation and Playwright readiness logic, preserve exact B06 peer
+   identity assertions, and run the focused package/build tests plus the
+   retry-free default and all-scenarios live matrices before review.
+
+The same PR retains bounded failure evidence: the Playwright finalizer records
+at most twenty sanitized failed control results, and external acceptance keeps
+those facts only after the staged attempt passes its existing identity/schema
+checks. Malformed, absent, or non-RTC failed-producer output still fails closed
+on the process exit. Earlier branch-local proof—three retry-free default
+matrices in one reused server session followed by one retry-free 24-case
+all-scenarios matrix—validates the diagnosis but must be rerun after the
+ownership correction. Keep implementation, review, validation, and proof in
+this one PR; do not split another hypothesis or test-only branch from it.
+
+The first post-correction local default matrix then exposed a second ownership
+detail before any proof count began. Agent A's canonical wait returned the
+still-valid accepted layout for the earlier two-member formation while the
+authoritative server had already completed the three-member lifecycle. The
+benchmark's exact-topology assertion correctly rejected its one-peer target.
+A local cache cannot infer an unseen remote revision, so the permanent boundary
+has two complementary parts: the black-box lifecycle operation performs one
+exact-room refresh after its out-of-band HTTP mutations, and shared-web treats
+an accepted layout as settled only when its presence revision covers the
+current authoritative room snapshot. It then waits event-first for the matching
+accepted publication and RTC lanes. This is one bounded synchronization read,
+not a health poll, retry loop, timeout increase, or second readiness algorithm;
+Playwright still only supplies and checks the B06-specific exact peer set.
+
+The next retry-free default attempt passed that stale-layout barrier and then
+failed a realtime broadcast after the stable accepted-layout cache crossed its
+60-second TTL. The sender still held both open lanes, but the room authority
+read returned no accepted target and filtered both explicit peers, producing
+`RALLAR_BB_RTC_NO_PEERS`. Accepted layouts are durable connection-lifecycle
+facts: authoritative group identity changes explicitly reconcile or remove
+them, and reconnect creates fresh browser repositories. They must therefore
+remain readable for that lifecycle rather than expiring on elapsed wall time.
+Remove only the browser accepted-layout TTL, retain the planned-layout and
+state-snapshot TTLs, and prove the distinction with a fake-clock regression.
+This avoids periodic refresh traffic and keeps long-lived sends on the same
+constant-time local authority read.
+
+The first default matrix after both evidence-driven follow-ups passed locally
+in 5.0 minutes without a retry. It is smoke evidence only because it ran before
+the implementation candidate was committed. The immutable proof count starts
+again after the final reviewed candidate is pushed. The black-box browser
+runtime contract now requires canonical room readiness outright; no optional
+method, capability fallback, old overload, or legacy test-double path remains.
+
+Independent review of the committed candidate then reproduced one final
+projection defect: a zero-deadline or already-aborted authority wait discarded
+its terminal outcome. When the retained older layout still had an open lane,
+the subsequent cached status read could therefore report `open` even though
+that accepted layout did not cover current room presence. The correction keeps
+the authority-wait outcome inside `BrowserRtcRoomRuntime`, uses the same causal
+predicate for direct status and wait completion, and reports the timeout or
+abort without opening a lane. Deterministic regressions cover both exits with a
+stale accepted layout and a previously ready peer. This adds no public result
+field, polling, retry, timeout, compatibility path, or legacy implementation;
+it also resets the immutable browser-proof count until the corrected head has
+completed final review and validation.
+
+The corrected-head three-repeat default run made that refusal deterministic and
+exposed the server-side cause: all three attempts timed out on agent B's initial
+pair with `state: idle`. The group presence projection advanced
+`presenceRevision` when activation changed only `groupRevision`, even though
+the derived active-session content was identical. That immediately made the
+accepted layout look older than current presence. The authoritative correction
+belongs in the pure presence-summary computation: persist the new group
+revision while preserving the presence revision when the canonical presence
+content is unchanged, and continue advancing it for real connect, disconnect,
+expiry, or membership changes. A focused pure-core regression covers the
+lifecycle-only write. Do not weaken browser causality, add another refresh,
+replan an unchanged layout, or retain the old revision behavior.
+
+One retry-free default worktree smoke passed after that pure projection change,
+including the initial pair that failed all three prior attempts. This confirms
+the causal diagnosis but is not immutable evidence because it preceded the
+correction commit and final review. Commit, push, review, and rerun the required
+default repetitions and all-scenarios matrix from the resulting exact head.
+
+The first state-write comparison of committed correction `46c7e2a35` was not
+accepted. A fresh-development-database pair failed only the uncontended p99
+threshold (`116.98 -> 123.81 ms`). The required pinned A-B-B-A follow-up then
+completed all four nine-run positions with 75,600 accepted commands, zero
+exhaustion, zero atomic-completion failures, and complete receipt/outbox
+evidence, but its pooled comparison also failed. One candidate position had a
+transient uncontended host spike (`p99 502.72 ms`) while both surrounding base
+positions stayed near `105-115 ms`; the pooled result nevertheless also showed
+candidate-side shared throughput and transaction-duration regressions. The
+four 476 MiB sources exceeded Node's default 4 GiB heap in the pooler; rerunning
+the unchanged pooler with a bounded 16 GiB heap succeeded on the 96 GiB host.
+The failed result remains diagnostic evidence and cannot approve the branch.
+
+Static inspection found real avoidable candidate work: generic `jsonEquals`
+cloned, recursively key-sorted, and serialized both canonical presence-session
+collections whenever only `groupRevision` advanced. Keep the revision rule,
+but compare the already canonical scalar, ID, and session arrays directly while
+excluding only the two documented lease fields. Return an already-ahead summary
+before deriving new content. Characterization tests must prove that lease-only
+changes preserve `presenceRevision` while a meaningful session-field change
+advances it. A fresh pinned comparison from the resulting committed candidate
+is mandatory; do not reuse, suppress, or add a reason to the failed result.
+
+The fresh pinned A-B-B-A comparison passed for optimized runtime commit
+`a01fa0b6d976c8e5e3e0d00b24ba8f69950a9c4c`. Its four independently recreated
+positions again accepted 75,600 commands with zero exhaustion, zero atomic-
+completion failures, and complete receipt/outbox evidence. Both candidate
+positions reproduced uncontended and shared performance close to or better than
+the two base positions; the unchanged pooled comparator accepted all latency,
+throughput, SQL/row/byte, transaction-duration, and correctness gates. The
+pooler still required the bounded 16 GiB Node heap for its four 476 MiB sources.
+This plan-only result recording does not change the benchmarked runtime code;
+all remaining functional and live-browser proof runs from the resulting exact
+branch head.
+
+The exact `e074605ec6ae8ea2fec6960b3d497c457f2fb63b` branch head then passed
+three consecutive default browser matrices without retry. Its all-scenarios
+matrix exposed one remaining composition defect during replacement-C
+readiness. The A and B readiness commands reported roughly 56 seconds of
+remaining budget but returned after only 594 and 737 milliseconds; B's lanes
+to C opened about 300 milliseconds later. The low-level
+`BrowserRtcWaitRuntime.waitForRoomLane({ connect: false })` had correctly
+reported that a desired peer did not exist yet, but the room owner had treated
+that instantaneous lane result as a terminal room result. This was not a lost
+signaling answer and does not justify a signaling retry or timeout increase.
+
+The correction remains in `BrowserRtcRoomRuntime`: non-connecting room waits
+observe both room-authority changes and existing RTC lifecycle/status events,
+re-read the composite desired/ready state after subscribing, and settle only
+when the current accepted layout and requested ready-peer threshold agree.
+Connecting waits still delegate lane creation and waiting to
+`BrowserRtcWaitRuntime`; the low-level non-connecting lane contract remains an
+instantaneous existing-lane operation. A deterministic regression first
+reproduced the premature `idle` result, then passed with the composite
+subscription. The uncommitted candidate also passed the complete 24-test room
+runtime file, all 71 shared-web RTC tests, the retry-free all-scenarios browser
+matrix, and all five lifecycle acceptance scenarios. The two lifecycle cases
+previously suppressed for returning-member readiness are now active tests; no
+obsolete `fixme` path remains. These runs are diagnostic until the correction
+is committed and pushed, after which exact-head default repetitions,
+all-scenarios proof, branch review, and final gates must run again.
+
+Committed head `2bd33dc67d3045df58b6644718c297a9ccda1a75` then passed the
+default browser matrix three consecutive times in 3.6 minutes and the complete
+all-scenarios matrix once in 2.0 minutes, all without a retry. Independent
+review nevertheless found a terminal-result race: timeout or abort could win
+the event wait, but subscription cleanup could expose a newly current layout or
+ready lane before the final status projection. The returned reason remained
+terminal while the state incorrectly became `open`. Three deterministic
+cleanup-boundary regressions now keep non-connecting timeout, non-connecting
+abort, and connecting authority timeout terminal even when readiness changes
+during cleanup.
+
+The exact-head ALM conformance gate then exposed a separate positive-threshold
+gap. A `minReadyPeers: 1` room wait could settle on an accepted zero-peer layout
+before the second participant joined. Both the connecting authority barrier
+and the non-connecting composite observer now require a target large enough to
+satisfy an explicit positive minimum; ordinary zero-peer room status remains
+immediate when no positive minimum was requested. Deterministic tests cover a
+peer joining an already accepted solo room for both `connect: true` and
+`connect: false`. No old zero-peer branch or overload remains.
+
+A focused real-browser ALM retry initially still failed and resolved the final
+ordering defect. Accepted-overlay cache writes publish observers
+asynchronously. Both direct topology adoption and group-snapshot promotion had
+waited for those browser observers before invalidating or updating
+`WebRtcGroupManager`, so a room wait could observe the new target and ask for
+its lane against the previous outbound-dial policy. The policy rejected that
+single request; the manager created the peer milliseconds later, after the
+caller had already returned `failed`. Red tests reproduced both observer-first
+orders. The correction applies synchronous cache state to RTC ownership before
+draining the associated observer queue for adoption, promotion, removal, and
+membership loss. It keeps the existing group manager, dial policy, connection
+budget, QueueBox, retry policy, and perfect-negotiation initiator rule.
+
+The first browser attempt after only direct-adoption ordering changed remained
+red and identified group-snapshot promotion as the active path; it is retained
+as diagnostic evidence. After both ordering boundaries were corrected, the
+same single bounded-rejection RTC ALM scenario passed in 41.8 seconds (44.7
+seconds including harness startup) without a retry. Full ALM, exact-head B06
+matrices, touched-file closure, final review, and branch gates remain mandatory
+before PR #557 is ready.
+
+Committed head `187f32dd776be547e9e10ba467d4e7680b8e5c8d` then passed the
+complete local ALM smoke lane across WS, RTC, and RTC-with-WS-fallback in one
+2.9-minute run without retries. It also passed three default B06 matrices, the
+all-scenarios matrix, and all five lifecycle acceptance cases. The corresponding
+branch gate still failed: hosted non-expiring ALM admission crossed the existing
+ten-second command budget, and the durable topology replay proof expected
+revision `11/7` after observing both hydration and publication at `11/6`. The
+local all-carrier pass means the hosted ALM result remains unresolved timing
+evidence, not authority to add a retry or enlarge a timeout; the next exact-head
+gate must clear it or reproduce it with fresh artifacts.
+
+The topology failure is deterministic test drift. Group-only lifecycle and
+configuration writes now preserve presence revision when canonical active-session
+content is unchanged, while topology publication still follows the changed group
+revision. The proof helper retained an obsolete unconditional `presence + 1`
+projection even though its contract says it correlates the exact causal revision
+returned by the mutation. A red unit regression now expects that exact mutation
+tuple for both publication waits and replacement checkpoints; the correction
+deletes the derived-revision helper rather than preserving a second path. This is
+proof-tooling alignment only and does not alter topology publication, replay, or
+presence behavior.
+
+Independent review of exact head `ea46d8ec112ec2f10e4c31d6b183ebee2b24113c`
+found one remaining completion race. A connecting wait could satisfy two peers,
+then project status after the accepted topology shrank to one peer; the status
+resolver reported `open` because every newly desired peer was ready even though
+the caller had requested `minReadyPeers: 2`. A deterministic red regression
+reproduced the two-to-one shrink. The final projection now requires the requested
+minimum before reporting `open`, so authority invalidation cannot upgrade an
+under-minimum result. It does not repeat the operation or add a retry, poll,
+timeout, compatibility path, or retained legacy behavior.
+
+The required repeated browser proof then exposed a validation-harness collision,
+not another RTC defect. A separate worktree reused the fixed API, SPA, and control
+ports while this branch was running; it terminated and replaced the control
+server, producing `SIGTERM` and `ECONNREFUSED` failures during otherwise healthy
+matrices. Those overlapping runs are invalid as RTC evidence. The permanent
+harness boundary uses the already documented
+`RALLAR_BLACK_BOX_CONTROL_BASE_URL`: the full-stack Playwright configuration
+derives the control process port and health URL from it, and every matching
+full-stack HTTP/WebSocket consumer reads the same value. The live RTC matrix
+deletes its duplicate environment, authentication, and agent-trio setup and
+uses the existing shared live-RTC environment owner. This adds no environment
+variable, product retry, timeout increase, library, migration, compatibility
+path, or legacy setup path.
+
+TDD first proved that the control-server configuration owner was absent, then
+covered its default, override, process-port, health-URL, reuse, and WebSocket
+projection. With control isolated on port `5280`, API on `18157`, and SPA on
+`5277`, the uncommitted candidate passed three consecutive default matrices,
+the complete all-scenarios matrix, and all five lifecycle acceptance cases
+without retry. These runs validate the harness diagnosis but remain diagnostic
+until the harness correction is committed and pushed.
+
+Exact implementation head `220f598e3bd5ee4f6187cd4e9b57f65020c293c0`
+then passed three consecutive default matrices in 3.6 minutes, the complete
+all-scenarios matrix in 1.8 minutes, all five lifecycle acceptance cases in 3.9
+minutes, and the ALM conformance families over WS, RTC, and RTC-with-WS-fallback
+in 2.9 minutes. Every set ran once without Playwright retry on the isolated
+ports, and none reproduced the control-server replacement, connection refusal,
+or RTC readiness/delivery failures. This plan-only evidence recording does not
+change the tested runtime or harness tree. Touched-file closure, final branch
+review, deterministic repository gates, and final CI remain mandatory before
+declaring PR #557 ready.
+
+Exact plan-recording head `df50c97890192dfff4236605c490a035f4a49b5e`
+then passed the hosted medium-scale, durable-topology-replay, and CodeQL gates,
+but formation-large run `34502548953` exposed an observation race in the
+unchanged `api-v1-rtc-topology-convergence` recipe. Its primary socket retained
+the two earlier `session-connected` events at group revision 2, and the recipe's
+generic “any two group-state events” wait consumed those instead of the
+concurrent role and configuration mutations at revisions 3 and 4. The tertiary
+socket happened to consume the intended pair, proving this was buffered-frame
+selection rather than missing publication. The runner already owns the needed
+boundary: `decodeJsonPaths` can inspect the JSON document in
+`payload.resource` while retaining the original frame for later evidence
+parsing. A red recipe-semantics regression now requires both waits to select the
+two mutation request IDs through that boundary. The recipe correction adds
+those exact selectors, with no product change, retry, poll, delay, or timeout
+increase. The focused regression passes 14/14 tests, the formerly failing live
+three-server recipe passes 37/37 interactions, and the complete local
+`api-v1-black-box-cluster` profile passes 11/11 recipes. Touched-file closure
+also makes the shared recipe fixture return the canonical `ScenarioRecipe`,
+validates its JSON-object boundary, and replaces every ad-hoc `unknown` recipe
+cast in the touched semantics owner; all seven dependent recipe-test files pass
+67/67 tests and the full 1,172-file TypeScript test project has zero errors.
+Replacement exact-head CI remains mandatory before PR #557 is ready.
 
 ### Current execution horizon
 
-| Order | Slice                                                                | Completion evidence                                                                                                                                                                                                                                                                                                                                                  |
-| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Archive run 34361576057                                               | PR #553 merges the verified failed ZIP/index row unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 2     | Complete and merge correction/proof PR #554                           | Keep bounded NACK diagnostics, the evidenced RTC recovery corrections, lifecycle-owned room refresh, durable admission-fact observation, all local stress repetitions, branch review, and final CI in this one PR. The exact candidate passes focused tests, type/build/style/structure checks, the retry-free RTC ALM conformance lane, five retry-free delivery-only runs, three retry-free complete RTC smoke runs, and one final Branch Release Gate. Do not split further hypothesis or test-only PRs from this slice. |
+| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; isolate full-stack browser services through their existing configuration owners; complete deterministic regressions, a green fresh/pinned state-write comparison, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
+
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
 moving `main`. The workflow must archive one verified primary with
@@ -4038,8 +4355,8 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains nine failed B06 primaries archived on `main`, one
-verified failed primary pending in PR #553, and no accepted metrics.
+Current evidence contains ten failed B06 primaries archived on `main`, one
+verified failed primary pending in PR #556, and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
@@ -4194,10 +4511,19 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Dispatch run 34361576057 from moving `main`; verify its failed primary,
       preserve it unchanged in observation PR #553, and do not accept metrics
       or run a repeat.
-- [ ] Merge PR #554's bounded, payload-free NACK failure diagnostics,
+- [x] Merge PR #554's bounded, payload-free NACK failure diagnostics,
       lifecycle-owned RTC authority recovery, and durable admission-fact
       observation after focused tests, exact default E3,
       type/build/style/structure, and branch review gates pass.
+- [x] Dispatch run 34430533353 from the then-current moving `main`; verify its
+      failed primary, preserve it unchanged in observation PR #556, and do not
+      accept metrics or run a repeat.
+- [ ] Merge PR #556's verified failed ZIP/index row unchanged.
+- [ ] Merge the single canonical room-readiness/proof PR #557 after shared-web
+      owns event-driven room readiness, black-box transport policy delegates to
+      that owner, exact B06 topology assertions remain at the benchmark edge,
+      and deterministic regressions, repeated default/all-scenarios E3 proof,
+      touched-file closure, branch review, and final gates pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.

@@ -10,7 +10,7 @@ const MINUTE_MS = 60_000;
 export function initialiseBrowserCacheRepositories(): void {
     configureOverlayRepositories({
         plannedOverlays: { ttlMs: MINUTE_MS },
-        acceptedOverlays: { ttlMs: MINUTE_MS }
+        acceptedOverlays: { ttlMs: undefined }
     });
     rebindOverlaySlotSubscriptions();
     configureRttRepository({ ttlMs: 30_000 });

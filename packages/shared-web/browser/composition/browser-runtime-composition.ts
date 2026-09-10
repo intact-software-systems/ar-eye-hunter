@@ -14,16 +14,24 @@ import {
     type RallarStateEventsPort
 } from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     createRoomLayoutSlots,
     type RallarRoomLayoutSlotsPort
 } from '@shared-web/browser/rooms/formation/room-layout-slots.ts';
-import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
+import {
+    createRoomEvents,
+    type RallarRoomEventsPort
+} from '@shared-web/browser/rooms/room-events.ts';
 import {
     resolveBrowserRoomTransportTarget,
     type BrowserRoomTransportTarget
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
-import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
+import {
+    createRoomStateStore,
+    type RallarRoomStateStorePort
+} from '@shared-web/browser/rooms/room-state-store.ts';
+import { subscribeRoomTransportTarget } from '@shared-web/browser/rooms/room-transport-target-observation.ts';
 import {
     createRallarLifecycleCoordinator,
     type RallarLifecycleCoordinator
@@ -57,7 +65,13 @@ export interface BrowserStateComposition {
     readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
-    readonly resolveRoomTransportTarget: (room: string | GroupRef) => BrowserRoomTransportTarget;
+    readonly resolveRoomTransportTarget: (
+        room: string | GroupRef
+    ) => BrowserRoomTransportTarget;
+    readonly subscribeRoomTransportTarget: (
+        room: string | GroupRef,
+        listener: () => void | Promise<void>
+    ) => RallarUnsubscribe;
 }
 
 export interface BrowserStateEventComposition {
@@ -161,9 +175,20 @@ export function createBrowserStateComposition(
             return resolveBrowserRoomTransportTarget({
                 sessionId: readSession()?.sessionId,
                 snapshot,
-                acceptedOverlay: snapshot ? roomLayoutSlots.readAccepted(snapshot.group) : undefined
+                acceptedOverlay: snapshot
+                    ? roomLayoutSlots.readAccepted(snapshot.group)
+                    : undefined
             });
-        }
+        },
+        subscribeRoomTransportTarget: (room, listener) =>
+            subscribeRoomTransportTarget(
+                {
+                    room,
+                    stateStore: roomStateStore,
+                    slots: roomLayoutSlots
+                },
+                listener
+            )
     };
 }
 

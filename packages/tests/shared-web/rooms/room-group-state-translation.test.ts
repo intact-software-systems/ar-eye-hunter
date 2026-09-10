@@ -141,6 +141,7 @@ describe('room state projection translation', () => {
         })).toEqual({
             transportState: 'halted',
             acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+            acceptedLayoutCoversCurrentPresence: true,
             peerIds: ['accepted-peer']
         });
     });
@@ -158,6 +159,7 @@ describe('room state projection translation', () => {
             acceptedOverlay: undefined
         })).toEqual({
             transportState: 'flowing',
+            acceptedLayoutCoversCurrentPresence: false,
             peerIds: []
         });
     });
@@ -184,6 +186,7 @@ describe('room state projection translation', () => {
         })).toEqual({
             transportState: 'flowing',
             acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+            acceptedLayoutCoversCurrentPresence: true,
             peerIds: ['remaining-peer']
         });
     });
