@@ -467,6 +467,28 @@ seconds including harness startup) without a retry. Full ALM, exact-head B06
 matrices, touched-file closure, final review, and branch gates remain mandatory
 before PR #557 is ready.
 
+Committed head `187f32dd776be547e9e10ba467d4e7680b8e5c8d` then passed the
+complete local ALM smoke lane across WS, RTC, and RTC-with-WS-fallback in one
+2.9-minute run without retries. It also passed three default B06 matrices, the
+all-scenarios matrix, and all five lifecycle acceptance cases. The corresponding
+branch gate still failed: hosted non-expiring ALM admission crossed the existing
+ten-second command budget, and the durable topology replay proof expected
+revision `11/7` after observing both hydration and publication at `11/6`. The
+local all-carrier pass means the hosted ALM result remains unresolved timing
+evidence, not authority to add a retry or enlarge a timeout; the next exact-head
+gate must clear it or reproduce it with fresh artifacts.
+
+The topology failure is deterministic test drift. Group-only lifecycle and
+configuration writes now preserve presence revision when canonical active-session
+content is unchanged, while topology publication still follows the changed group
+revision. The proof helper retained an obsolete unconditional `presence + 1`
+projection even though its contract says it correlates the exact causal revision
+returned by the mutation. A red unit regression now expects that exact mutation
+tuple for both publication waits and replacement checkpoints; the correction
+deletes the derived-revision helper rather than preserving a second path. This is
+proof-tooling alignment only and does not alter topology publication, replay, or
+presence behavior.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

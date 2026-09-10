@@ -89,7 +89,7 @@ export function exactPublicationExpectation(
     mutationRevision: ProofCausalRevision
 ): ProofTopologyExpectation {
     return {
-        causalRevision: toTopologyRevisionAfterMutation(mutationRevision),
+        causalRevision: mutationRevision,
         causalMatch: 'exact',
         deliveryKind: 'publication'
     };
@@ -129,10 +129,9 @@ export function assertCheckpointMatchesMutation(
     checkpoint: ProofTopologyCheckpoint,
     mutationRevision: ProofCausalRevision
 ): void {
-    const expected = toTopologyRevisionAfterMutation(mutationRevision);
     if (
-        checkpoint.causalRevision.groupRevision !== expected.groupRevision ||
-        checkpoint.causalRevision.presenceRevision !== expected.presenceRevision
+        checkpoint.causalRevision.groupRevision !== mutationRevision.groupRevision ||
+        checkpoint.causalRevision.presenceRevision !== mutationRevision.presenceRevision
     ) {
         throw new Error(
             'Current topology did not match the final mutation before replacement C started.'
@@ -197,17 +196,5 @@ function readReplayMetricSnapshot(metrics: ProofJsonObject): ProofReplayMetricSn
         notificationWakes: requireSafeInteger(wakes.notification, 'notification wake count'),
         localCommitWakes: requireSafeInteger(wakes['local-commit'], 'local commit wake count'),
         replayedEntryCount: requireSafeInteger(metrics.replayedEntryCount, 'replayed entry count')
-    };
-}
-
-function toTopologyRevisionAfterMutation(
-    mutationRevision: ProofCausalRevision
-): ProofCausalRevision {
-    return {
-        groupRevision: mutationRevision.groupRevision,
-        presenceRevision: requireSafeInteger(
-            mutationRevision.presenceRevision + 1,
-            'post-mutation topology presence revision'
-        )
     };
 }
