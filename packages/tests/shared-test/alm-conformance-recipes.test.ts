@@ -51,7 +51,7 @@ function conformanceInput(
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 5_000
+        deadlineMs: 15_000
     };
 }
 
@@ -178,9 +178,9 @@ describe('alm-conformance recipe family', () => {
     });
 
     it('rejects a deadline shorter than the longest observation window', () => {
-        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_499 }))
-            .toThrow(new RangeError('createAlmConformanceRecipes requires deadlineMs of at least 3500.'));
-        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 3_500 })).not.toThrow();
+        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 8_499 }))
+            .toThrow(new RangeError('createAlmConformanceRecipes requires deadlineMs of at least 8500.'));
+        expect(() => createAlmConformanceRecipes({ ...conformanceInput('ws'), deadlineMs: 8_500 })).not.toThrow();
     });
 
     it('tags every ws scenario as smoke and keeps ordering-resync full-only', () => {

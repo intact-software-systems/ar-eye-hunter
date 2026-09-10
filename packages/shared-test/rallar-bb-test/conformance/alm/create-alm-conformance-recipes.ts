@@ -104,7 +104,12 @@ const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 const MINIMUM_RECEIVE_WINDOW_MS = 2_500;
-const MINIMUM_DEADLINE_MS = MINIMUM_RECEIVE_WINDOW_MS + RESPONSE_MARGIN_MS;
+// Must clear the slowest observed outbound-admission latency (up to 5s on a loaded CI runner) with
+// margin, and still leave most of the receiver's `deadlineMs - RESPONSE_MARGIN_MS` absence window
+// after expiry, so the absence proves the ttl expired rather than racing the deadline itself.
+const EXPIRY_TTL_MS = 7_500;
+/** The deadline must outlive the expiry ttl by the response margin, or the absence window proves nothing. */
+const MINIMUM_DEADLINE_MS = Math.max(MINIMUM_RECEIVE_WINDOW_MS, EXPIRY_TTL_MS) + RESPONSE_MARGIN_MS;
 
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
@@ -112,10 +117,6 @@ const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 const OVERSIZED_PAYLOAD_BYTES = 70_000;
 const OVERSIZED_PAYLOAD_FILLER = 'x'.repeat(OVERSIZED_PAYLOAD_BYTES);
 const OVERSIZED_REJECTION_REASON = 'Payload exceeds';
-// Must clear the slowest observed outbound-admission latency (up to 5s on a loaded CI runner) with
-// margin, and still leave most of the receiver's `deadlineMs - RESPONSE_MARGIN_MS` absence window
-// after expiry, so the absence proves the ttl expired rather than racing the deadline itself.
-const EXPIRY_TTL_MS = 7_500;
 const FAULT_REMAINING = 100;
 const RESYNC_GAP_SEQ = 300;
 
