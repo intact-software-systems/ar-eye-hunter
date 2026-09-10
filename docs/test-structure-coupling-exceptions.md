@@ -1720,6 +1720,44 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-outbound-control-conflict-single-write",
+      "domain": "ALM outbound control admission conflict retention",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control admission that loses its conditional write spends one backend attempt and retains replayable admit-control work instead of retrying inside the owner. Executable assertion: \u201canswers pending-control for a backend conflict without an inner retry\u201d.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#answers pending-control for a backend conflict without an inner retry",
+      "coverageRelation": "The test drives the real control owner over an in-memory admission backend whose write raises the typed conflict, then decodes the work row the owner retained through its queue port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALAdmissionWorkBackend.write called by ALOutboundControlAdmission.admit",
+        "observableEffect": "Each write submits one conditional control-history commit to the authoritative admission backend.",
+        "requiredConstraint": "One admit call spends exactly one backend write; a lost conditional write becomes retained admit-control work rather than an inner retry.",
+        "failureRationale": "The pending-control answer and the retained row are produced identically by an owner that silently retried its write first, so only the count excludes a hidden inner retry that would re-apply an accepted control under a stale fence."
+      }
+    },
+    {
+      "id": "alm-outbound-held-claim-quiescence",
+      "domain": "ALM outbound held-claim test fixture",
+      "owner": "Rallar shared maintainers",
+      "summary": "The held-claim fixture restores real queue reservations only once no owner batch is still asking for work, so a disposed runtime cannot strand rows in a reservation nobody releases. Executable assertion: \u201clets only one runtime claim the same committed send effect\u201d.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect",
+      "coverageRelation": "The named test holds every claim while a first runtime commits send work, disposes that runtime, releases the hold, and proves a second runtime claims and sends the row exactly once; the fixture wait is the precondition that the release never lands inside a batch."
+    },
+    {
+      "id": "alm-outbound-runtime-control-conflict-retention",
+      "domain": "ALM outbound runtime control admission recovery",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control message accepted through the runtime whose admission loses its conditional write spends one backend attempt and leaves replayable admit-control work for the outbound worker. Executable assertion: \u201cretains a control admission conflict as replayable work without an inner retry\u201d.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#retains a control admission conflict as replayable work without an inner retry",
+      "coverageRelation": "The test admits a real message through the outbound runtime, fails the next backend write with the typed conflict, and reads the pending-control answer together with the runtime's own retained work kinds.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALAdmissionWorkBackend.write reached through ALOutboundMessageRuntime.acceptControlMessage",
+        "observableEffect": "Each write submits one conditional control-history commit for the accepted control message.",
+        "requiredConstraint": "One acceptControlMessage call spends exactly one backend write; the conflict is handed to retained queue work rather than retried in place.",
+        "failureRationale": "A runtime that retried the write internally would still answer pending-control and still leave the retained row, so the state readback alone cannot exclude the duplicate commit attempt the one-attempt retry contract forbids."
+      }
+    },
+    {
       "id": "queuebox-mixed-outcome-adaptive-feedback",
       "domain": "QueueBox readiness and adaptive processing feedback",
       "owner": "Rallar shared maintainers",
@@ -1946,6 +1984,39 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-d58f46e97b581e00",
+      "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-control-conflict-single-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single write invocation is what forbids an inner optimistic retry; the pending-control answer and the retained work row both hold either way.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#answers pending-control for a backend conflict without an inner retry"
+    },
+    {
+      "id": "test-structure-coupling-3cf15c4dbe54dee4",
+      "path": "packages/tests/shared/al-outbound-durable-effects.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-runtime-control-conflict-retention",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "One backend write per accepted control is the property under test at the runtime boundary; the retained admit-control row is the recovery it hands off, not evidence that no second commit was attempted.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#retains a control admission conflict as replayable work without an inner retry"
+    },
+    {
+      "id": "test-structure-coupling-11102ca02776726f",
+      "path": "packages/tests/shared/alm/outbound-runtime-test-fixture.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-held-claim-quiescence",
+      "disposition": "temporary-ratchet",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The spied claim count is the polled condition of a bounded wait rather than a product property: it is the only observable of \u201cno batch is still asking for work\u201d available to a fixture that receives stores and not a runtime, and the assertion is that wait's budget, failing loudly instead of restoring real claims inside a batch.",
+      "removalCondition": "Remove once the outbound owner exposes batch quiescence to a fixture, so holdOutboundClaims awaits an owner-side idle signal instead of polling the queue spy's call count.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect"
+    },
     {
       "id": "test-structure-coupling-1c06d83399d28d75",
       "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
