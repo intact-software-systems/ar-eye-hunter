@@ -133,12 +133,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const input = await phases.withReadPhase(async () => await this.readDispatch(dispatch));
+        const input = await phases.withReadPhase(() => this.readDispatch(dispatch));
         if (this.disposed) {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const pending = await phases.withReadPhase(async () => await this.readPendingDispatch(input));
+        const pending = await phases.withReadPhase(() => this.readPendingDispatch(input));
         if (pending) {
             return pending;
         }
@@ -146,7 +146,14 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const computed = computeALOutboundDispatch(input);
         const issues = validateALOutboundDispatch(input.read, computed).left;
         if (issues) {
-            return this.toValidationResult(dispatch.intent, input.read.msg, issues);
+            const reason = issues.map((issue) => issue.message).join('; ');
+            if (dispatch.intent !== 'enqueue') {
+                throw new NonRetryableException(reason);
+            }
+            return {
+                computed: { msg: input.read.msg, status: 'failed', reason, entries: [] },
+                committed: false
+            };
         }
         this.logDispatchDecision(computed, input.read.plan);
         const bundle = computed.bundle;
@@ -157,7 +164,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const status = await phases.withCommitPhase(async () => await this.admissionStore.commitBundle(bundle));
+        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
         if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
             return await this.retainPendingDispatch(input, computed);
         }
@@ -165,21 +172,6 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
         }
         return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
-    }
-
-    private toValidationResult(
-        intent: ALOutboundComputeIntent,
-        msg: ALMessage,
-        issues: readonly Readonly<{ message: string; }>[]
-    ): ALOutboundDispatchAdmission.Result<TPrepared> {
-        const reason = issues.map((issue) => issue.message).join('; ');
-        if (intent !== 'enqueue') {
-            throw new NonRetryableException(reason);
-        }
-        return {
-            computed: { msg, status: 'failed', reason, entries: [] },
-            committed: false
-        };
     }
 
     private async retainPendingDispatch(
