@@ -655,7 +655,7 @@ function failedLiveSendResult(message: ALMessage): WsServerLiveSendResult {
         recipientCount: 1,
         sentCount: 0,
         failedCount: 1,
-        failures: [recipient]
+        failures: [{ ...recipient, reason: 'connection closed before the frame left' }]
     };
 }
 
