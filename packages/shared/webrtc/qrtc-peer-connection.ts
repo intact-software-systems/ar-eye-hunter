@@ -183,6 +183,9 @@ export class QRtcPeerConnection {
         this.diagnostics.resetCount++;
         this.closePeerConnectionIfPresent();
         this.status = this.toInitialStatus();
+        // The callbacks belong to the session that just ended; a `connect()` this reset re-opens
+        // installs its own, and one that never comes must not still reach the previous owner.
+        this.stateCallbacks = {};
 
         return this.status;
     }

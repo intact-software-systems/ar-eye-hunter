@@ -386,6 +386,39 @@ describe('QRtcPeerConnection', () => {
         expect(native.onconnectionstatechange).toBeNull();
     });
 
+    it('stops reporting to the session reset closed, even for a hop still in flight', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        let failSend: (error: Error) => void = () => {};
+        const pendingSend = new Promise<void>((_resolve, reject) => {
+            failSend = reject;
+        });
+        let sendCalls = 0;
+        const signaler: QRtcSignalingSender = {
+            send: () => {
+                sendCalls += 1;
+                return pendingSend;
+            }
+        };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+        const native = runtime.createdConnections[0];
+        if (!native) {
+            throw new Error('Expected a native connection after connect');
+        }
+        const negotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await vi.waitFor(() => expect(sendCalls).toBe(1));
+
+        peer.reset();
+        failSend(new Error('signaling closed with the session'));
+        await negotiation;
+
+        // The hop did fail -- the counter proves it -- but the callbacks belonged to a closed session.
+        expect(peer.readDiagnostics().outboundSignalingErrorCount).toBe(1);
+        expect(failures).toEqual([]);
+    });
+
     it('coalesces repeated disconnected events into one reconnect timer', async () => {
         vi.useFakeTimers();
         const { peer, native } = createPeerFixture(true);
