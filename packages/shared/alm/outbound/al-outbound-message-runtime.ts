@@ -27,7 +27,8 @@ import {
     readALOutboundWorkReadyAt,
     readUnleasedALOutboundWorkClaims,
     toALOutboundDequeueWork,
-    toALOutboundWorkType
+    toALOutboundWorkType,
+    type ALOutboundDequeueDeferral
 } from './al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
@@ -284,7 +285,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             ownsQueueEngine: dependencies.ownsQueueEngine,
             clock: dependencies.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs()),
+            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readDequeueDeferral()),
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
             diagnostics: (event) =>
@@ -412,6 +413,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const unleased = await readUnleasedALOutboundWorkClaims(port, pageSize, this.readNowMs());
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
         return { claims: [...unleased, ...claims], nextReadyAtMs: undefined };
+    }
+
+    /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */
+    private readDequeueDeferral(): ALOutboundDequeueDeferral {
+        const { types, resilience } = this.dependencies.dequeue;
+        return {
+            types,
+            readyAtMs: resilience.isNotAllowedThroughToDequeue()
+                ? this.readNowMs() + resilience.toCircuitOpenBackoffMs()
+                : undefined
+        };
     }
 
     private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {

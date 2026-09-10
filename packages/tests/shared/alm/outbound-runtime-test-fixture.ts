@@ -152,12 +152,16 @@ export function createOutboundWorkPort(
     });
 }
 
-/** The readiness the outbound owner advertises: undefined once its work is drained. */
+/** The readiness the outbound owner advertises with no circuit gating: undefined once work is drained. */
 export async function peekOutboundWorkReadyAt(
     workQueue: QueueBoxResourceEntryRepository,
     namespace: string
 ): Promise<number | undefined> {
-    return await readALOutboundWorkReadyAt(createOutboundWorkPort(workQueue, namespace), Date.now());
+    return await readALOutboundWorkReadyAt(
+        createOutboundWorkPort(workQueue, namespace),
+        Date.now(),
+        { types: new Set<string>(), readyAtMs: undefined }
+    );
 }
 
 /** Claims and decodes work the way the owner's batch does. */

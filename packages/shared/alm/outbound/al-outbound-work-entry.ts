@@ -112,29 +112,53 @@ export function decodeALOutboundWorkEntry<TPrepared>(
     }
 }
 
+/** The foreign dequeue rows a tripped circuit gates, and the time it next allows one through. */
+export interface ALOutboundDequeueDeferral {
+    readonly types: ReadonlySet<string>;
+    /** Epoch ms the breaker next admits a dequeue; undefined while it admits one now. */
+    readonly readyAtMs: number | undefined;
+}
+
 /**
- * Retained and recovered work is due now, retried work at its own `nextTs`, and an expired row is
- * never advertised. A page that still owes a cursor answers `nowMs`: one status never hides the next.
+ * Retained and recovered work is due now, retried work at its own `nextTs`, gated dequeue work no
+ * earlier than the breaker allows, and an expired row is never advertised. A page that still owes a
+ * cursor and holds a due row answers `nowMs`: one status never hides the next. A cursor-owing page
+ * whose visible rows are all expired or gated answers from those rows alone, so a full page of
+ * expired rows advertises nothing and leaves the remainder to the queue's own expiry cleanup.
  */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,
-    nowMs: number
+    nowMs: number,
+    deferral: ALOutboundDequeueDeferral
 ): Promise<number | undefined> {
     let readyAtMs: number | undefined;
     for (const status of AL_OUTBOUND_SCAN_STATUSES) {
         const page = await port.readPage({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE, cursor: null });
-        if (page.nextCursor !== null) {
-            return nowMs;
-        }
+        let hasDueEntry = false;
         for (const entry of page.entries) {
             if (entry.audit.expiryTs.epochMilliseconds <= nowMs) {
                 continue;
             }
-            const candidateAtMs = isUnleasedALOutboundReservation(entry) ? nowMs : resolveALOutboundWorkReadyAt(entry);
+            const candidateAtMs = computeALOutboundEntryReadyAt(entry, nowMs, deferral);
+            hasDueEntry ||= candidateAtMs <= nowMs;
             readyAtMs = Math.min(readyAtMs ?? candidateAtMs, candidateAtMs);
+        }
+        if (hasDueEntry && page.nextCursor !== null) {
+            return nowMs;
         }
     }
     return readyAtMs;
+}
+
+function computeALOutboundEntryReadyAt(
+    entry: ResourceEntry,
+    nowMs: number,
+    deferral: ALOutboundDequeueDeferral
+): number {
+    const readyAtMs = isUnleasedALOutboundReservation(entry) ? nowMs : resolveALOutboundWorkReadyAt(entry);
+    return deferral.readyAtMs !== undefined && deferral.types.has(entry.typeId)
+        ? Math.max(readyAtMs, deferral.readyAtMs)
+        : readyAtMs;
 }
 
 /**

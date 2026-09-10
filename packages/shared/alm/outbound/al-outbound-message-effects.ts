@@ -1,4 +1,5 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
@@ -67,12 +68,32 @@ export class ALOutboundMessageEffects<TPrepared> {
         return { status: 'completed' };
     }
 
+    /**
+     * The breaker's whole accounting for the dequeue path: the work handler turns a rejection and a
+     * thrown store error alike into an outcome, so an attempt that never returns still owes a charge.
+     */
     async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkOutcome> {
-        const runtime = this.dependencies.runtime;
-        const { resilience } = runtime.dequeue;
+        const { resilience } = this.dependencies.runtime.dequeue;
         if (resilience.isNotAllowedThroughToDequeue()) {
             return { status: 'not-ready', readyAtMs: this.readNowMs() + resilience.toCircuitOpenBackoffMs() };
         }
+        try {
+            const outcome = await this.readDequeuedAdmissionOutcome(effect);
+            outcome.status === 'retry' ? resilience.failure() : resilience.success();
+            return outcome;
+        }
+        catch (error) {
+            if (!(error instanceof Error && isNotReadyException(error))) {
+                resilience.failure();
+            }
+            throw error;
+        }
+    }
+
+    private async readDequeuedAdmissionOutcome(
+        effect: ALOutboundEffectSnapshot<TPrepared>
+    ): Promise<ALWorkOutcome> {
+        const runtime = this.dependencies.runtime;
         const msg = effect.canonicalMessage;
         if (!msg) {
             throw new NonRetryableException('Dequeued work has no message');
@@ -97,14 +118,9 @@ export class ALOutboundMessageEffects<TPrepared> {
         if (computed.status === 'expired' || computed.status === 'superseded' || computed.status === 'skipped') {
             return { status: 'completed' };
         }
-        if (computed.status === 'failed') {
-            throw new NonRetryableException(computed.reason);
-        }
         if (computed.status === 'no-route') {
-            resilience.failure();
             return { status: 'retry' };
         }
-        resilience.success();
         await runtime.afterDequeueAdmission?.(msg, effect.entry);
         return { status: 'completed' };
     }
