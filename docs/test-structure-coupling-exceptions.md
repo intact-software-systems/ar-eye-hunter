@@ -1981,6 +1981,21 @@ moved or changed test.
         "requiredConstraint": "The result must be sent before the page is torn down, and a single command must never request more than one reload.",
         "failureRationale": "A reload raised before the result loses the only answer the control server will ever get for that command, and a repeated reload turns one command into a page-reload loop."
       }
+    },
+    {
+      "id": "resource-inbox-reservation-bounded-indexed-read",
+      "domain": "IndexedDB queue box bounded reservation reads",
+      "owner": "Rallar shared maintainers",
+      "summary": "A per-type reservation read is a bounded index query, never a whole-store scan. Executable assertion: “reserveEntries for one type never returns another type and stays within the requested bound”.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound",
+      "coverageRelation": "The test reserves one type through the public reserveEntries API and inspects the IDBIndex.getAll calls that read produced; the spy is the only way to observe whether the read touched a bounded index range instead of the whole object store.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "IDBIndex.prototype.getAll",
+        "observableEffect": "Every getAll call the reservation read issues carries an explicit count no larger than the caller's maxToReserve.",
+        "requiredConstraint": "A reservation for one type must read through a bounded index range; it must never fall back to an unbounded whole-store scan.",
+        "failureRationale": "An unbounded or over-large getAll call defeats the purpose of the indexed rewrite: it would silently degrade back into the whole-store scan this task replaced, reintroducing the cost the index exists to avoid."
+      }
     }
   ],
   "entries": [
@@ -4546,6 +4561,17 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Waiting for exactly one reload both anchors the ordering snapshot the port records and rejects a second reload; observing the persisted record alone would pass for an agent that reloaded twice.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#sends the agent.reload result before reloading and persists the resume record"
+    },
+    {
+      "id": "test-structure-coupling-368712d4f142c268",
+      "path": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-reservation-bounded-indexed-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The call count and each call's bounded count argument are the only observable proof that reserveEntries reads through the bounded by-type-status-key index instead of falling back to a whole-store scan; the reserved-entry assertions above it prove correctness but not boundedness.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound"
     }
   ]
 }
