@@ -103,8 +103,8 @@ export function toRtcRoomSnapshotHandlingPlan(
     fromPeerId: string | undefined
 ): ALMessageHandlingPlan {
     if (
-        admission.kind === 'authorized' || admission.kind === 'not-room' || plan.dropReason?.includes('expired') ||
-        plan.dropReason === 'duplicate'
+        admission.kind === 'authorized' || admission.kind === 'not-room' ||
+        plan.dropReasonCode === 'expired' || plan.dropReasonCode === 'duplicate'
     ) {
         return plan;
     }
@@ -112,6 +112,7 @@ export function toRtcRoomSnapshotHandlingPlan(
     return {
         ...plan,
         dropReason: pending ? 'not-yet-in-sync' : 'unauthorized',
+        dropReasonCode: pending ? 'not-yet-in-sync' : 'unauthorized',
         localDelivery: { enabled: false, persist: false, deferred: false },
         forwarding: { enabled: false, persist: false, nextHopPeerIds: [] },
         ack: { enabled: false, algo: 'none', deferred: false },

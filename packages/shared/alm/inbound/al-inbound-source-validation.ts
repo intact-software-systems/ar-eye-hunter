@@ -16,10 +16,10 @@ export const AL_INBOUND_PROVENANCE_LIMITS = {
 } as const;
 
 export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.Source {
-    const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'roomRecipientPeerIds']);
+    const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'groupRecipientPeerIds']);
     if (
         source.kind === 'trusted-server' && source.peerId === undefined &&
-        source.roomRecipientPeerIds === undefined
+        source.groupRecipientPeerIds === undefined
     ) {
         return { kind: 'trusted-server' };
     }
@@ -27,24 +27,24 @@ export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.S
         return {
             kind: 'ws-client',
             peerId: decodeALAdmissionString(source.peerId),
-            ...(source.roomRecipientPeerIds === undefined
+            ...(source.groupRecipientPeerIds === undefined
                 ? {}
-                : { roomRecipientPeerIds: decodeFrozenRoomAudience(source.roomRecipientPeerIds) })
+                : { groupRecipientPeerIds: decodeFrozenGroupAudience(source.groupRecipientPeerIds) })
         };
     }
-    if (source.kind === 'rtc-peer' && source.roomRecipientPeerIds === undefined) {
+    if (source.kind === 'rtc-peer' && source.groupRecipientPeerIds === undefined) {
         return { kind: source.kind, peerId: decodeALAdmissionString(source.peerId) };
     }
     throw new TypeError('Persisted AL ingress source is invalid');
 }
 
-function decodeFrozenRoomAudience(value: unknown): readonly string[] {
+function decodeFrozenGroupAudience(value: unknown): readonly string[] {
     if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
-        throw new TypeError('Stored frozen room audience must be a plain array');
+        throw new TypeError('Stored frozen group audience must be a plain array');
     }
     const keys = Reflect.ownKeys(value);
     if (keys.length !== value.length + 1) {
-        throw new TypeError('Stored frozen room audience must contain dense data entries');
+        throw new TypeError('Stored frozen group audience must contain dense data entries');
     }
     const encoder = new TextEncoder();
     const audience: string[] = [];
@@ -52,12 +52,12 @@ function decodeFrozenRoomAudience(value: unknown): readonly string[] {
     for (let index = 0; index < value.length; index++) {
         const descriptor = Object.getOwnPropertyDescriptor(value, index);
         if (!descriptor?.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
-            throw new TypeError('Stored frozen room audience must contain dense data entries');
+            throw new TypeError('Stored frozen group audience must contain dense data entries');
         }
         const peerId = decodeALAdmissionString(descriptor.value);
         bytes += encoder.encode(JSON.stringify(peerId)).length + (index === 0 ? 0 : 1);
         if (bytes > AL_INBOUND_PROVENANCE_LIMITS.frozenAudienceBytes) {
-            throw new TypeError('Stored frozen room audience exceeds the provenance byte limit');
+            throw new TypeError('Stored frozen group audience exceeds the provenance byte limit');
         }
         audience.push(peerId);
     }

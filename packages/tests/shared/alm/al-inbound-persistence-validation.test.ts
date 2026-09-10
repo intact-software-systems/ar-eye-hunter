@@ -198,8 +198,8 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        { kind: 'trusted-server', roomRecipientPeerIds: ['receiver'] },
-        { kind: 'rtc-peer', peerId: message.id.senderId, roomRecipientPeerIds: ['receiver'] }
+        { kind: 'trusted-server', groupRecipientPeerIds: ['receiver'] },
+        { kind: 'rtc-peer', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'] }
     ])('rejects room recipient metadata on persisted $kind provenance', async (source) => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
@@ -215,9 +215,9 @@ describe('inbound admission persisted values', () => {
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('retains a frozen room audience larger than the wire collection limit', async () => {
+    it('retains a frozen group audience larger than the wire collection limit', async () => {
         const { store } = createFixture();
-        const roomRecipientPeerIds = Array.from({ length: 1_500 }, (_, index) => `room-peer-${index}`);
+        const groupRecipientPeerIds = Array.from({ length: 1_500 }, (_, index) => `room-peer-${index}`);
         const expireAtTimestamp = Date.now() + 60_000;
         expect(
             await store.commitBundle({
@@ -229,7 +229,7 @@ describe('inbound admission persisted values', () => {
                     value: {
                         msgId: message.id.msgId,
                         senderId: message.id.senderId,
-                        source: { kind: 'ws-client', peerId: message.id.senderId, roomRecipientPeerIds },
+                        source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds },
                         supersedenceKey: null
                     },
                     expireAtTimestamp
@@ -239,7 +239,7 @@ describe('inbound admission persisted values', () => {
         ).toBe('committed');
 
         await expect(store.readStoredPlanningState({ msg: message, nowMs: Date.now() })).resolves.toMatchObject({
-            source: { kind: 'ws-client', peerId: message.id.senderId, roomRecipientPeerIds }
+            source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds }
         });
     });
 

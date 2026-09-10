@@ -151,7 +151,7 @@ export class RallarServerWsRouter {
         if (this.isMiddlewareOwnedMessage(message)) {
             return;
         }
-        const admittedPeerIds = source?.kind === 'ws-client' ? source.roomRecipientPeerIds : undefined;
+        const admittedPeerIds = source?.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
         const admitted = await this.readAuthorizedIngress(message, admittedPeerIds);
         if (admitted.left) {
             this.reject(message, admitted.left);
@@ -192,13 +192,13 @@ export class RallarServerWsRouter {
             authorized: true,
             ...(admitted.right!.audience === undefined
                 ? {}
-                : { roomRecipientPeerIds: admitted.right!.audience.sessions.map((session) => session.sessionId) })
+                : { groupRecipientPeerIds: admitted.right!.audience.sessions.map((session) => session.sessionId) })
         };
     }
 
     private async readAuthorizedIngress(
         message: ALMessage,
-        roomRecipientPeerIds?: readonly string[]
+        groupRecipientPeerIds?: readonly string[]
     ): Promise<Either<RallarServerWsRouter.Rejection, RallarServerWsRouter.AuthorizedIngress>> {
         const decoded = this.decodeIngress(message);
         if (decoded.left) {
@@ -223,12 +223,12 @@ export class RallarServerWsRouter {
         if (topic.left) {
             return Either.ofLeft(topic.left);
         }
-        const audience = authorization.audience === undefined || roomRecipientPeerIds === undefined
+        const audience = authorization.audience === undefined || groupRecipientPeerIds === undefined
             ? authorization.audience
             : {
                 ...authorization.audience,
                 sessions: authorization.audience.sessions.filter((session) =>
-                    roomRecipientPeerIds.includes(session.sessionId)
+                    groupRecipientPeerIds.includes(session.sessionId)
                 )
             };
         return Either.ofRight({ ingress, message: topic.right!, context, audience });

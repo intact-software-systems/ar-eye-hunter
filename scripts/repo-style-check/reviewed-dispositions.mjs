@@ -243,26 +243,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // AL admission owns raw persisted values until a caller-supplied decoder
-    // validates them. These exact owners either hold the opaque storage value,
-    // validate a record before decoding every field, or preserve deliberately
-    // corrupt test input. The checker cannot prove that local data flow without
-    // weakening detection for unknown values that really reach domain logic.
-    Object.freeze({
-        path: 'packages/shared/alm/al-admission-backend.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/al-admission-resource-entry-validation.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeResourceEntryRecord'
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/indexed-db-admission-backend.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
     Object.freeze({
         path: 'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
         rule: 'boundary.unknown',
@@ -549,16 +529,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'computeALMessageEnvelopeSize'
     }),
     Object.freeze({
-        path: 'packages/shared/alm/outbound/al-outbound-work-entry.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/validate-al-outbound-dispatch.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validateALOutboundPlannedMessage'
-    }),
-    Object.freeze({
         path: 'packages/shared/api/state-snapshot-page.ts',
         rule: 'boundary.unknown',
         symbol: 'decodeStateSnapshotPage'
@@ -615,13 +585,7 @@ export const reviewedDispositions = Object.freeze([
     }),
     // These exact ingress owners decode socket/envelope values before admission
     // or any domain mutation. The snapshot discriminator returns only a boolean;
-    // its parsed value never leaves the nested payload boundary. The scanner
-    // assigns the three methods to their module owner, not the class name.
-    Object.freeze({
-        path: 'packages/shared/alm/inbound/al-inbound-message-runtime.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
+    // its parsed value never leaves the nested payload boundary.
     Object.freeze({
         path: 'packages/shared/services/ws-queue-box-client-service.ts',
         rule: 'boundary.unknown',
@@ -637,71 +601,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'isStateSnapshotPageResource'
     }),
-    // Each ALM owner below keeps one policy, consistency, or lifecycle boundary
-    // visible. Concrete stores delegate canonical facts and effects; runtime
-    // shells delegate computation and repair. Full-file and navigation review
-    // found that further metric-only splits would obscure original observations,
-    // atomic decisions, work ownership, and settlement. Caps are exact reviewed
-    // magnitudes, not permission to grow or retain a standards violation.
+    // QoS normalization resolves every aspect of one requested policy against
+    // capabilities, authorization and live conditions in a single visible pass.
+    // The cap is the exact reviewed magnitude, not permission to grow.
     Object.freeze({
         path: 'packages/shared/al-contracts/normalize-al-qos-policy.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 79
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/inbound/al-inbound-admission-store.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 54
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/inbound/al-inbound-work-handler.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 51
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/inbound/compute-al-inbound-admission.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 65
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 50
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/inbound/validate-al-inbound-commit-bundle.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 51
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/al-outbound-admission-effect-store.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 68
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/al-outbound-admission-store.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 124
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/al-outbound-message-runtime.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 55
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/al-outbound-repair-admission.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 60
     }),
     // The transport shells preserve visible decode/identity/authority/admission
     // sequencing. Queue reservation/release, auth intent/replay, and topology
@@ -736,21 +643,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 56
-    }),
-    // This persisted scalar guard rejects non-booleans immediately. Algorithm
-    // fields in its containing decoder use strict literal checks independently.
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/al-outbound-admission-validation.ts',
-        rule: 'boundary.unknown',
-        symbol: 'requireEnabled'
-    }),
-    // The named default resource factory is already the composition root. It
-    // resolves optional resources once before constructing the runtime; another
-    // default wrapper would not expose a new responsibility.
-    Object.freeze({
-        path: 'packages/shared/alm/outbound/create-default-al-outbound-message-runtime.ts',
-        rule: 'factory.defaults',
-        symbol: undefined
     }),
     // One native channel lifecycle binds receive callbacks, pressure, queued
     // settlement, cancellation and reset. Pure queue policy has its own owner.
@@ -808,35 +700,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/shared/state-snapshot-test-fixture.ts',
         rule: 'boundary.unknown',
         symbol: 'assembleStateSnapshotMessages'
-    }),
-    // The inbound and outbound directories already separate the two admission
-    // lifecycles. Their READMEs trace ingress/registration, read/compute/validate,
-    // guarded writes, and settlement in five direct landmarks. The shared AL
-    // prefix names that capability; another nesting level would scatter these
-    // adjacent owners without exposing an independent responsibility.
-    Object.freeze({
-        path: 'packages/shared/alm/inbound',
-        rule: 'layout.directory-density',
-        symbol: 'inbound',
-        maximumMagnitude: 22
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/inbound',
-        rule: 'layout.feature-prefix-cluster',
-        symbol: 'prefix:al',
-        maximumMagnitude: 19
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound',
-        rule: 'layout.directory-density',
-        symbol: 'outbound',
-        maximumMagnitude: 23
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/outbound',
-        rule: 'layout.feature-prefix-cluster',
-        symbol: 'prefix:al',
-        maximumMagnitude: 22
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-connection-service.ts',

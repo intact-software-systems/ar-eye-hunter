@@ -215,13 +215,38 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
 
 export type ALCongestionRuntimeAction = 'none' | 'drop-low' | 'defer' | 'reject';
 
+/** Why handling stopped. Consumers branch on this code; `dropReason` is the human-readable detail. */
+export type ALMessageDropReasonCode =
+    | 'unmet-requirements'
+    | 'duplicate'
+    | 'superseded'
+    | 'ordering-rejected'
+    | 'expired'
+    | 'resync-required'
+    | 'overloaded'
+    | 'not-yet-in-sync'
+    | 'unauthorized';
+
+export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = Object.freeze([
+    'unmet-requirements',
+    'duplicate',
+    'superseded',
+    'ordering-rejected',
+    'expired',
+    'resync-required',
+    'overloaded',
+    'not-yet-in-sync',
+    'unauthorized'
+]);
+
 export interface ALMessageHandlingPlan {
     readonly requested: ALQosPolicyRequest;
     readonly effective: ALQosEffectivePolicy;
     readonly notes: readonly ALQosNormalizationNote[];
     readonly unmetRequirements: readonly string[];
     readonly dedupKey: string;
-    readonly dropReason?: string;
+    readonly dropReason: string | undefined;
+    readonly dropReasonCode: ALMessageDropReasonCode | undefined;
     readonly localDelivery: {
         readonly enabled: boolean;
         readonly persist: boolean;
@@ -283,14 +308,19 @@ interface ALMessageDeliveryDecision {
     readonly forwarding: ALMessageHandlingPlan['forwarding'];
 }
 
+interface ALMessageDrop {
+    readonly reason: string;
+    readonly code: ALMessageDropReasonCode;
+}
+
 interface ALMessageDeliveryPolicy {
     readonly decision: ALMessageHandlingDecision;
-    readonly dropReason: string | undefined;
+    readonly drop: ALMessageDrop | undefined;
 }
 
 interface ALMessageRejection {
     readonly orderingRuntime: ALOrderingObservation;
-    readonly dropReason: string | undefined;
+    readonly drop: ALMessageDrop | undefined;
 }
 
 const LOW_PRIORITY_OVERLOAD_THRESHOLD = 0;
@@ -315,19 +345,20 @@ export function planALMessageHandling(
 ): ALMessageHandlingPlan {
     const decision = computeMessageHandlingDecision(msg, context, input);
     const { result, dedupKey, orderingRuntime, supersedenceRuntime, congestion } = decision;
-    const dropReason = resolveMessageDropReason(msg, context, decision);
-    const delivery = computeMessageDelivery(msg, context, { decision, dropReason });
+    const drop = resolveMessageDrop(msg, context, decision);
+    const delivery = computeMessageDelivery(msg, context, { decision, drop });
     return {
         requested: result.requested,
         effective: result.effective,
         notes: result.notes,
         unmetRequirements: result.unmetRequirements,
         dedupKey,
-        dropReason,
+        dropReason: drop?.reason,
+        dropReasonCode: drop?.code,
         ...delivery,
         ack: planAck(result.effective, context, delivery),
-        nack: planNack(result.effective, context, { orderingRuntime, dropReason }),
-        repair: dropReason
+        nack: planNack(result.effective, context, { orderingRuntime, drop }),
+        repair: drop
             ? { enabled: false, algo: 'none' }
             : planRepair(result.effective, delivery.forwarding.enabled, msg.targets),
         supersedence: {
@@ -412,35 +443,47 @@ function computeMessageHandlingDecision(
     };
 }
 
-function resolveMessageDropReason(
+function resolveMessageDrop(
     msg: ALMessage,
     context: ALMessagePlanningContext,
     decision: ALMessageHandlingDecision
-): string | undefined {
+): ALMessageDrop | undefined {
     const { result, dedupKey, supersedenceRuntime, orderingRuntime, congestion } = decision;
     if (result.unmetRequirements.length > 0) {
-        return `Unmet requirements: ${result.unmetRequirements.join(', ')}`;
+        return {
+            code: 'unmet-requirements',
+            reason: `Unmet requirements: ${result.unmetRequirements.join(', ')}`
+        };
     }
     if (context.dedupSeen) {
-        return `Duplicate message for dedup key ${dedupKey}`;
+        return { code: 'duplicate', reason: `Duplicate message for dedup key ${dedupKey}` };
     }
     if (supersedenceRuntime.status === 'superseded') {
-        return `Message superseded by ${supersedenceRuntime.latestMsgId ?? 'a newer message'}`;
+        return {
+            code: 'superseded',
+            reason: `Message superseded by ${supersedenceRuntime.latestMsgId ?? 'a newer message'}`
+        };
     }
     if (orderingRuntime.status === 'duplicate' || orderingRuntime.status === 'stale') {
-        return `Ordering runtime rejected message as ${orderingRuntime.status}`;
+        return {
+            code: 'ordering-rejected',
+            reason: `Ordering runtime rejected message as ${orderingRuntime.status}`
+        };
     }
     if (isExpired(msg, result.effective, context.nowMs)) {
-        return 'Message expired or is too stale';
+        return { code: 'expired', reason: 'Message expired or is too stale' };
     }
     if (orderingRuntime.status === 'resync-required') {
-        return 'resync-required';
+        return { code: 'resync-required', reason: 'resync-required' };
     }
     if (congestion.action === 'reject') {
-        return 'Node overloaded and congestion policy rejects handling';
+        return { code: 'overloaded', reason: 'Node overloaded and congestion policy rejects handling' };
     }
     if (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD) {
-        return 'Node overloaded and congestion policy drops low-priority message';
+        return {
+            code: 'overloaded',
+            reason: 'Node overloaded and congestion policy drops low-priority message'
+        };
     }
     return undefined;
 }
@@ -450,21 +493,22 @@ function computeMessageDelivery(
     context: ALMessagePlanningContext,
     policy: ALMessageDeliveryPolicy
 ): ALMessageDeliveryDecision {
-    const { decision, dropReason } = policy;
+    const dropped = policy.drop !== undefined;
+    const decision = policy.decision;
     const isRecipient = isLogicalRecipient(msg.targets, context.selfPeerId, new Set(context.groupMemberPeerIds ?? []));
-    const deferred = !dropReason && isRecipient && decision.orderingRuntime.status === 'gap';
-    const nextHopPeerIds = dropReason ? [] : resolveNextHopPeerIds(msg, decision.result.effective, context);
+    const deferred = !dropped && isRecipient && decision.orderingRuntime.status === 'gap';
+    const nextHopPeerIds = dropped ? [] : resolveNextHopPeerIds(msg, decision.result.effective, context);
     return {
         localDelivery: {
-            enabled: !dropReason && !deferred && isRecipient,
-            persist: !dropReason && shouldPersistInbox(decision.result.effective),
+            enabled: !dropped && !deferred && isRecipient,
+            persist: !dropped && shouldPersistInbox(decision.result.effective),
             deferred,
             reason: deferred ? `Waiting for missing seqs ${decision.orderingRuntime.missingSeqs.join(', ')}` : undefined
         },
         forwarding: {
             enabled: nextHopPeerIds.length > 0,
             nextHopPeerIds,
-            persist: !dropReason && shouldPersistOutbox(decision.result.effective)
+            persist: !dropped && shouldPersistOutbox(decision.result.effective)
         }
     };
 }
@@ -503,7 +547,7 @@ function planNack(
     context: ALMessagePlanningContext,
     rejection: ALMessageRejection
 ): ALMessageHandlingPlan['nack'] {
-    const { orderingRuntime, dropReason } = rejection;
+    const { orderingRuntime, drop } = rejection;
     if (!context.fromPeerId) {
         return {
             enabled: false,
@@ -511,11 +555,11 @@ function planNack(
         };
     }
 
-    if (dropReason === 'resync-required') {
+    if (drop?.code === 'resync-required') {
         return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingSeqs: [] };
     }
 
-    if (!dropReason && orderingRuntime.status === 'gap' && effective.repair.algo !== 'none') {
+    if (!drop && orderingRuntime.status === 'gap' && effective.repair.algo !== 'none') {
         return {
             enabled: true,
             toPeerId: context.fromPeerId,
@@ -524,7 +568,7 @@ function planNack(
         };
     }
 
-    if (dropReason?.includes('expired')) {
+    if (drop?.code === 'expired') {
         return {
             enabled: true,
             toPeerId: context.fromPeerId,
@@ -533,7 +577,7 @@ function planNack(
         };
     }
 
-    if (dropReason?.includes('overloaded')) {
+    if (drop?.code === 'overloaded') {
         return {
             enabled: true,
             toPeerId: context.fromPeerId,

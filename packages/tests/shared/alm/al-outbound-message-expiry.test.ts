@@ -4,7 +4,6 @@ import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
@@ -214,16 +213,7 @@ describe('outbound message expiry', () => {
             clock,
             controlAdmission: store.createControlAdmission(workPort, clock),
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
-            planRepairMessage: undefined,
-            dispatchAdmission: new ALOutboundDispatchAdmission({
-                admissionStore: store,
-                workPort,
-                clock,
-                decodePreparedMessage: decodeOutboundTestPayload,
-                toOutboxEntry: (msg) => createOutboundCanonicalEntry(store, msg),
-                browserLocks: undefined,
-                diagnostics: undefined
-            })
+            planRepairMessage: undefined
         });
         vi.setSystemTime(1_050);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();

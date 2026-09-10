@@ -35,7 +35,7 @@ export interface ALInboundRuntimeStores {
 export namespace ALInboundMessageRuntime {
     export type Source =
         | { readonly kind: 'rtc-peer'; readonly peerId: string; }
-        | { readonly kind: 'ws-client'; readonly peerId: string; readonly roomRecipientPeerIds?: readonly string[]; }
+        | { readonly kind: 'ws-client'; readonly peerId: string; readonly groupRecipientPeerIds?: readonly string[]; }
         | { readonly kind: 'trusted-server'; };
 
     export type Acceptance =

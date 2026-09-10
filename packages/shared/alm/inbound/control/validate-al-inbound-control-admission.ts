@@ -1,33 +1,35 @@
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
-import { Either } from '../../../resilience/Either.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
 
+/** Every reason this acknowledgement may not be admitted; an absent obligation makes the rest moot. */
 export function validateALInboundControlAdmission(
     candidate: ALInboundControlAdmissionCandidate
-): Either<ALMessageRejection, ALInboundControlAdmissionCandidate> {
+): readonly ALMessageRejection[] {
     const { ack, pending, acks } = candidate.read;
-    if (!pending || !pending.expectedFromPeerIds.includes(ack.fromPeerId)) {
-        return rejectInboundControl('Inbound acknowledgement sender has no pending obligation');
+    if (!pending) {
+        return [rejectInboundControl('Inbound acknowledgement sender has no pending obligation')];
+    }
+    const issues: ALMessageRejection[] = [];
+    if (!pending.expectedFromPeerIds.includes(ack.fromPeerId)) {
+        issues.push(rejectInboundControl('Inbound acknowledgement sender has no pending obligation'));
     }
     if (
         pending.ackedFromPeerIds.includes(ack.fromPeerId) ||
         acks.some((prior) => prior.fromPeerId === ack.fromPeerId)
     ) {
-        return rejectInboundControl('Inbound acknowledgement was already admitted');
+        issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
     }
     if (
         candidate.acks.values.length > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
         !Number.isSafeInteger(candidate.controlExpireAtTimestamp) ||
         !Number.isSafeInteger(candidate.pendingExpireAtTimestamp)
     ) {
-        return rejectInboundControl('Inbound acknowledgement candidate exceeds persistence limits');
+        issues.push(rejectInboundControl('Inbound acknowledgement candidate exceeds persistence limits'));
     }
-    return Either.ofRight(candidate);
+    return issues;
 }
 
-function rejectInboundControl(
-    message: string
-): Either<ALMessageRejection, ALInboundControlAdmissionCandidate> {
-    return Either.ofLeft({ code: 'unauthorized', message });
+function rejectInboundControl(message: string): ALMessageRejection {
+    return { code: 'unauthorized', message };
 }

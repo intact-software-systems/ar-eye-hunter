@@ -269,7 +269,7 @@ export class ALOutboundAdmissionMutations {
             value: {
                 msgId: mutation.snapshot.msgId,
                 reference: mutation.reference,
-                supersedenceKey: mutation.snapshot.supersedenceKey,
+                supersedenceKey: mutation.snapshot.supersedenceKey ?? undefined,
                 unicastPeerId: mutation.snapshot.msg.targets?.mode === 'unicast'
                     ? mutation.snapshot.msg.targets.toPeerId
                     : null,

@@ -288,7 +288,7 @@ function toSentMessageMutation<TPrepared>(
             msgId: read.msg.id.msgId,
             msg: read.msg,
             outboxKey: canonicalEntry.key,
-            supersedenceKey: read.plan.supersedenceTracking?.key
+            supersedenceKey: read.plan.supersedenceTracking?.key ?? null
         } satisfies ALOutboundSentMessageSnapshot,
         expireAtTimestamp: resolveALMessageExpireAtMs(read.msg)
     };

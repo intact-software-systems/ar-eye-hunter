@@ -403,9 +403,9 @@ export class WsQueueBoxServerService {
         return await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
-            ...(authorization.roomRecipientPeerIds === undefined
+            ...(authorization.groupRecipientPeerIds === undefined
                 ? {}
-                : { roomRecipientPeerIds: [...authorization.roomRecipientPeerIds] })
+                : { groupRecipientPeerIds: [...authorization.groupRecipientPeerIds] })
         });
     }
 
@@ -457,7 +457,7 @@ export class WsQueueBoxServerService {
         observations: ALMessagePlanningObservations
     ): ALMessageHandlingPlan {
         const fromPeerId = source.kind === 'trusted-server' ? message.id.senderId : source.peerId;
-        const frozenRecipients = source.kind === 'ws-client' ? source.roomRecipientPeerIds : undefined;
+        const frozenRecipients = source.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
         const recipientPeerIds = this.targetResolution.resolveInboundRecipients(message)
             .map((recipient) => recipient.peerId)
             .filter((peerId) => frozenRecipients === undefined || frozenRecipients.includes(peerId));
@@ -603,7 +603,7 @@ export class WsQueueBoxServerService {
         const nextHopPeerIds = plan.forwarding.nextHopPeerIds
             .filter((peerId) =>
                 peerId !== fromPeerId &&
-                (authority.roomRecipientPeerIds === undefined || authority.roomRecipientPeerIds.includes(peerId))
+                (authority.groupRecipientPeerIds === undefined || authority.groupRecipientPeerIds.includes(peerId))
             );
 
         if (nextHopPeerIds.length === 0) {
@@ -646,15 +646,15 @@ export class WsQueueBoxServerService {
                 ? { kind: 'retry', retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS }
                 : { kind: 'rejected' };
         }
-        if (source.kind !== 'ws-client' || authority.roomRecipientPeerIds === undefined) {
+        if (source.kind !== 'ws-client' || authority.groupRecipientPeerIds === undefined) {
             return { kind: 'authorized', source };
         }
-        const captured = source.roomRecipientPeerIds;
+        const captured = source.groupRecipientPeerIds;
         return {
             kind: 'authorized',
             source: {
                 ...source,
-                roomRecipientPeerIds: authority.roomRecipientPeerIds.filter((peerId) =>
+                groupRecipientPeerIds: authority.groupRecipientPeerIds.filter((peerId) =>
                     captured === undefined || captured.includes(peerId)
                 )
             }

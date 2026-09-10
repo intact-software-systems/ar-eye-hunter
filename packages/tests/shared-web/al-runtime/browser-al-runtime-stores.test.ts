@@ -540,7 +540,9 @@ function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
     const msg = createOutboundUnicastMessage(msgId);
     return {
         msgId,
-        msg: { ...msg, id: { ...msg.id, msgId } }
+        msg: { ...msg, id: { ...msg.id, msgId } },
+        outboxKey: null,
+        supersedenceKey: null
     };
 }
 

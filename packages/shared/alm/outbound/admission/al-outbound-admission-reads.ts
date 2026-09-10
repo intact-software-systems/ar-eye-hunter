@@ -20,6 +20,15 @@ import {
     computeALSupersedenceObservation
 } from '../../compute-al-supersedence-observation.ts';
 import {
+    captureALOutboundCreationExpiry,
+    decodeALOutboundCanonicalMessage,
+    toALOutboundIdentityKey
+} from '../al-outbound-canonical-message.ts';
+import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
+import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
+import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
+import {
     toALOutboundControlHistoryKey,
     toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
@@ -43,15 +52,6 @@ import {
     decodeALOutboundSentMessage,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
-import {
-    captureALOutboundCreationExpiry,
-    decodeALOutboundCanonicalMessage,
-    toALOutboundIdentityKey
-} from '../al-outbound-canonical-message.ts';
-import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
-import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
-import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
-import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 
@@ -114,7 +114,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
                     msgId: stored.msgId,
                     msg: canonical,
                     outboxKey: stored.reference.key,
-                    supersedenceKey: stored.supersedenceKey
+                    supersedenceKey: stored.supersedenceKey ?? null
                 }
                 : undefined,
             ...await this.readControlTracking(msg.id.msgId),
@@ -314,7 +314,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         const msg = decodeALOutboundCanonicalMessage(stored.reference, canonical, identity);
-        return { msgId, msg, outboxKey: stored.reference.key, supersedenceKey: stored.supersedenceKey };
+        return { msgId, msg, outboxKey: stored.reference.key, supersedenceKey: stored.supersedenceKey ?? null };
     }
 }
 

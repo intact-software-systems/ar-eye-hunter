@@ -14,6 +14,8 @@ import {
     decodeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { computeALInboundControlAdmission } from '@shared/alm/inbound/control/compute-al-inbound-control-admission.ts';
+import { validateALInboundControlAdmission } from '@shared/alm/inbound/control/validate-al-inbound-control-admission.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
@@ -232,5 +234,48 @@ describe('inbound control admission', () => {
         expect(commits[0]!.storeKeys).toContainEqual(expect.stringContaining(':control:acks:'));
         expect((await readRetainedWork(admissionStore, workQueue)).map((work) => work.payload.kind).toSorted())
             .toEqual(['admit-control', 'send-control']);
+    });
+
+    // The global constraint requires validateXxx to report every issue, not only the first one.
+    it('reports every reason one acknowledgement candidate is inadmissible', () => {
+        const nowMs = 1_800_000_000_000;
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: {
+                ackedMsgId: message.id.msgId,
+                fromPeerId: 'stranger',
+                toPeerId: message.id.senderId,
+                status: 'delivered',
+                observedAtEpochMs: nowMs
+            },
+            controlOwners: { ambiguous: false, values: [{ peerId: 'stranger', senderId: message.id.senderId }] },
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'delivered',
+                localReady: true,
+                expectedFromPeerIds: ['receiver'],
+                ackedFromPeerIds: ['stranger']
+            },
+            acks: [],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const issues = validateALInboundControlAdmission({
+            ...candidate,
+            pendingExpireAtTimestamp: Number.NaN
+        });
+
+        expect(issues.map((issue) => issue.message)).toEqual([
+            'Inbound acknowledgement sender has no pending obligation',
+            'Inbound acknowledgement was already admitted',
+            'Inbound acknowledgement candidate exceeds persistence limits'
+        ]);
     });
 });

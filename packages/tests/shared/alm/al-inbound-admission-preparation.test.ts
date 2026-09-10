@@ -9,6 +9,8 @@ import {
     type ALMessagePlanningObservations
 } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/validate-al-inbound-commit-bundle.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
@@ -16,13 +18,11 @@ import type {
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
-import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import {
     readALInboundEffectFacts,
     type ALInboundEffectFacts,
     type ALInboundEffectPreparationDependencies
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
-import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/validate-al-inbound-commit-bundle.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
@@ -332,7 +332,7 @@ describe('inbound admission preparation boundary', () => {
         const source = {
             kind: 'ws-client' as const,
             peerId: 'sender',
-            roomRecipientPeerIds: ['receiver', 'peer-b']
+            groupRecipientPeerIds: ['receiver', 'peer-b']
         };
         const prepared = await readAdmission({ store: stores.admissionStore, message, source, nowMs: admittedAtMs });
         const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
@@ -340,7 +340,7 @@ describe('inbound admission preparation boundary', () => {
         if (!ownerMutation) {
             throw new Error('Admission must compute the message provenance before writing');
         }
-        Object.freeze(source.roomRecipientPeerIds);
+        Object.freeze(source.groupRecipientPeerIds);
         Object.freeze(ownerMutation.value.source);
         Object.freeze(ownerMutation.value);
         Object.freeze(ownerMutation);

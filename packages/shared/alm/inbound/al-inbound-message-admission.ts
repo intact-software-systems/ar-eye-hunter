@@ -7,15 +7,15 @@ import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
+import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
-import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
-import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export namespace ALInboundMessageAdmission {
@@ -180,7 +180,7 @@ function toAdmissionAcceptance(plan: ALMessageHandlingPlan): ALInboundMessageRun
     if (plan.orderingRuntime.status === 'resync-required') {
         return { kind: 'resync-required' };
     }
-    if (plan.dropReason?.startsWith('Duplicate message')) {
+    if (plan.dropReasonCode === 'duplicate') {
         return { kind: 'duplicate' };
     }
     return plan.dropReason ? { kind: 'not-admitted', reason: plan.dropReason } : { kind: 'admitted' };

@@ -613,7 +613,7 @@ describe('RallarServerWsRouter', () => {
             { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
         );
 
-        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', roomRecipientPeerIds: ['peer-2', 'departed-peer'] });
+        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', groupRecipientPeerIds: ['peer-2', 'departed-peer'] });
 
         expect(socket.sent.map((entry) => entry.connectionId)).toEqual(['conn-2']);
     });

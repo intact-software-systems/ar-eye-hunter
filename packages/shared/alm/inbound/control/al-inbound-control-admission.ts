@@ -70,13 +70,12 @@ export class ALInboundControlAdmission {
         if (read === undefined) {
             return { kind: 'not-handled' };
         }
-        const validated = validateALInboundControlAdmission(
-            computeALInboundControlAdmission(read, this.retention)
-        );
-        if (validated.left) {
-            return { kind: 'rejected', reason: validated.left.message };
+        const candidate = computeALInboundControlAdmission(read, this.retention);
+        const issues = validateALInboundControlAdmission(candidate);
+        if (issues.length > 0) {
+            return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
-        return await this.commitControlAdmission(msg, validated.right!, nowMs);
+        return await this.commitControlAdmission(msg, candidate, nowMs);
     }
 
     async replay(payload: ALInboundPendingControl): Promise<ALInboundControlReplayResult> {
