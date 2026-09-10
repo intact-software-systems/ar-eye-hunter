@@ -1542,7 +1542,7 @@ git commit -m "chore(alm): retire the ALM checker pins, close touched files, and
 
 ### Task 12: Whole-branch validation and the PR
 
-- [ ] **Step 1: Run the full local gates**
+- [x] **Step 1: Run the full local gates**
 
 ```bash
 npm run test:unit
@@ -1562,7 +1562,7 @@ Expected: every command exits 0. The medium-scale and Postgres integration lanes
 `npm run db:test:up` on a fresh database first; record "skipped" with the reason if Docker is not
 available and let the Release Gate run them.
 
-- [ ] **Step 2: Manual 5/5 navigation probe**
+- [x] **Step 2: Manual 5/5 navigation probe**
 
 From `WsQueueBoxServerService`'s construction of the outbound runtime, reach with Go to Definition
 and Find Usages: the concrete operation entry (`admitDequeuedMessage`), the policy
