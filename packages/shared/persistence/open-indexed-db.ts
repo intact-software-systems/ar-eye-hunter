@@ -34,7 +34,7 @@ export interface OpenedIndexedDb {
 }
 
 /** Thrown when an existing database's store, key path, auto-increment, or index set is not the required schema. */
-export class IndexedDbSchemaMismatchError extends Error {
+class IndexedDbSchemaMismatchError extends Error {
     constructor(reason: string) {
         super(reason);
         this.name = 'IndexedDbSchemaMismatchError';
