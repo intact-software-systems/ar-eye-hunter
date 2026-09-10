@@ -185,6 +185,7 @@ export function createALInboundWorkSelector(
         },
         restartScan: () => {
             scan = SCAN_START;
+            observed = undefined;
         }
     };
 }

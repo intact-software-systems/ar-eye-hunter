@@ -43,6 +43,19 @@ describe('ALInboundWorkSelector readiness', () => {
         expect(selection.claims).toHaveLength(1);
         expect(selection.nextReadyAtMs).toBe(NOW_MS);
     });
+
+    it('drops the page a probe cached when a commit restarts the scan', async () => {
+        const fixture = createSelectorFixture();
+
+        // The probe over an empty NEW page caches a rotation that still owes RETRY and RESERVED.
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
+        fixture.selector.restartScan();
+
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        expect(selection.claims).toHaveLength(1);
+    });
 });
 
 interface SelectorFixture {
