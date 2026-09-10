@@ -341,6 +341,40 @@ describe('QRtcPeerConnection', () => {
         expect(consoleError).not.toHaveBeenCalled();
     });
 
+    it('reports the answer hop a terminal admission lost, not only the inbound chain log', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        const terminal = new QRtcSignalingAdmissionError('expired', 'msg-9', 'Signaling admission returned expired');
+        const signaler: QRtcSignalingSender = {
+            send: async () => {
+                throw terminal;
+            }
+        };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        onTestFinished(() => {
+            peer.reset();
+        });
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+
+        await expect(peer.handleSignal(QRtcSignalingType.Offer, {
+            description: { type: 'offer', sdp: 'remote-offer' },
+            candidate: null
+        })).rejects.toBe(terminal);
+
+        // A lost answer strands the offerer in have-local-offer exactly as a lost offer does.
+        expect(failures).toEqual([{
+            peerSessionId: 'peer-1',
+            signalType: QRtcSignalingType.Answer,
+            admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-9' },
+            error: terminal
+        }]);
+        // The inbound chain still owns its own log and counter for the hop it could not complete.
+        expect(peer.readDiagnostics().inboundSignalingErrorCount).toBe(1);
+        expect(consoleError).toHaveBeenCalledWith('Signaling chain error', terminal);
+    });
+
     it('names a hop that failed before admission saw the signal', async () => {
         const runtime = installNativeRtcRuntime();
         onTestFinished(() => runtime.dispose());

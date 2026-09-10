@@ -703,6 +703,16 @@ describe('Rallar RTC recovery', () => {
                 error: new Error('Signaling admission returned expired')
             }
         );
+        // The answer hop reports through the same seam, so a stranded answerer is as visible.
+        lifecycleCallback?.onSignalingFailed?.(
+            peer,
+            {
+                peerSessionId: 'peer-1',
+                signalType: QRtcSignalingType.Answer,
+                admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-8' },
+                error: new Error('Signaling admission returned expired')
+            }
+        );
 
         expect(lifecycles.filter((event) => event.kind === 'signaling-failed')).toEqual([
             expect.objectContaining({
@@ -712,6 +722,16 @@ describe('Rallar RTC recovery', () => {
                     peerId: 'peer-1',
                     signalKind: 'offer',
                     admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-7' },
+                    reason: 'Signaling admission returned expired'
+                }
+            }),
+            expect.objectContaining({
+                kind: 'signaling-failed',
+                peerId: 'peer-1',
+                signaling: {
+                    peerId: 'peer-1',
+                    signalKind: 'answer',
+                    admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-8' },
                     reason: 'Signaling admission returned expired'
                 }
             })

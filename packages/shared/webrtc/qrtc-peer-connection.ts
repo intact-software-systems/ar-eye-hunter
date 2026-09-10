@@ -575,7 +575,22 @@ export class QRtcPeerConnection {
         await pc.setLocalDescription();
         this.status.makingOffer = false;
         this.status.ignoreOffer = false;
-        await this.sendSignal(QRtcSignalingType.Answer, { description: pc.localDescription, candidate: null });
+        await this.sendAnswer(pc);
+    }
+
+    /**
+     * The answer is the inbound chain's only outbound hop, and losing it strands the offerer in
+     * `have-local-offer` exactly as a lost offer does -- so it reports like one, and still rejects,
+     * because the inbound chain owns the log and the counter for what it could not complete.
+     */
+    private async sendAnswer(pc: RTCPeerConnection): Promise<void> {
+        try {
+            await this.sendSignal(QRtcSignalingType.Answer, { description: pc.localDescription, candidate: null });
+        }
+        catch (caught) {
+            this.notifySignalingFailure(QRtcSignalingType.Answer, toError(caught));
+            throw caught;
+        }
     }
 
     private async handleInboundIceCandidate(pc: RTCPeerConnection, message: QRtcDataExchanged): Promise<void> {
