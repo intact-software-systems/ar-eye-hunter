@@ -1,79 +1,62 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALNackPayload,
     ALRepairPayload
-} from '../../al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
-import type { ALReadyable } from '../../al-contracts/al-runtime.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import { PersistenceWriteExpiredError } from '../../persistence/persistence-write-deadline.ts';
-import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { jsonEquals } from '../../repository/state-utils.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import {
-    decodeALAdmissionClientRecord,
-    decodeALAdmissionString,
-    decodeALAdmissionSupersedenceValue
-} from '../al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
+} from '../../../al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
+import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
+import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
+import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
+import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
-} from '../al-runtime-state-stores.ts';
-import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
-import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
+} from '../../al-runtime-state-stores.ts';
+import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
+import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALLatestSupersedenceValue,
     ALReplacementSupersedenceValue,
     ALSupersedenceAcceptance
-} from '../compute-al-supersedence-observation.ts';
-import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
-import {
-    ALOutboundAdmissionEffectStore,
-    type ALOutboundEffectCandidate
-} from './al-outbound-admission-effect-store.ts';
-import {
-    toALOutboundMessageOwnerKey,
-    toALOutboundOrderingMessageKey,
-    toALOutboundPendingAckKey,
-    toALOutboundRepairAttemptKey,
-    toALOutboundSentMessageKey,
-    toALOutboundSupersedenceLatestKey,
-    toALOutboundSupersedenceReplacementKey,
-    toALOutboundVersionKey
-} from './al-outbound-admission-keys.ts';
-import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
-import {
-    decodeALOutboundSentMessage,
-    type ALOutboundCapturedPolicy,
-    type ALStoredOutboundMessage
-} from './al-outbound-admission-validation.ts';
+} from '../../compute-al-supersedence-observation.ts';
+import type { ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import {
     captureALOutboundCreationExpiry,
     type ALOutboundMessageReference
-} from './al-outbound-canonical-message.ts';
+} from '../al-outbound-canonical-message.ts';
 import {
     readALOutboundCanonicalWrites,
     writeALOutboundCanonicalFacts,
     type ALOutboundCanonicalFactWrite
-} from './al-outbound-canonical-storage.ts';
+} from '../al-outbound-canonical-storage.ts';
 import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairTrigger
-} from './al-outbound-message-runtime.ts';
+} from '../al-outbound-message-runtime.ts';
 import {
     retainALOutboundPendingAdmission,
     type ALOutboundPendingAdmission,
     type RetainALOutboundPendingAdmissionInput
-} from './al-outbound-pending-admission.ts';
-import type { ALOutboundComputeIntent } from './compute-al-outbound-dispatch.ts';
-import { ALOutboundControlAdmission } from './control/al-outbound-control-admission.ts';
-import { toALOutboundPendingAckExpireAtTimestamp } from './transition-al-outbound-pending-ack.ts';
+} from '../al-outbound-pending-admission.ts';
+import type { ALOutboundComputeIntent } from '../compute-al-outbound-dispatch.ts';
+import { ALOutboundControlAdmission } from '../control/al-outbound-control-admission.ts';
+import {
+    ALOutboundAdmissionEffectStore,
+    type ALOutboundEffectCandidate
+} from './al-outbound-admission-effect-store.ts';
+import { toALOutboundVersionKey } from './al-outbound-admission-keys.ts';
+import {
+    ALOutboundAdmissionMutations,
+    type ALOutboundAdmissionMutation,
+    type ALOutboundStateWrite
+} from './al-outbound-admission-mutations.ts';
+import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
+import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 
 export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
@@ -152,58 +135,6 @@ export interface ALOutboundRepairReadDto<TPrepared> {
     readonly plan?: ALOutboundDispatchPlan<TPrepared>;
 }
 
-export type ALOutboundAdmissionMutation =
-    | Readonly<
-        { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
-    >
-    | Readonly<{
-        kind: 'set-msg-owner';
-        msgId: string;
-        senderId: string;
-        expireAtTimestamp?: number;
-    }>
-    | Readonly<{
-        kind: 'set-sent-message';
-        reference: ALOutboundMessageReference;
-        policy: ALOutboundCapturedPolicy;
-        creationExpiry: string;
-        snapshot: ALOutboundSentMessageSnapshot;
-        expireAtTimestamp?: number;
-    }>
-    | Readonly<{
-        kind: 'delete-sent-message';
-        msgId: string;
-    }>
-    | Readonly<{
-        kind: 'set-pending-ack';
-        snapshot: ALOutboundPendingAckSnapshot;
-        expireAtTimestamp?: number;
-    }>
-    | Readonly<{
-        kind: 'delete-pending-ack';
-        msgId: string;
-    }>
-    | Readonly<{
-        kind: 'set-repair-attempt';
-        snapshot: ALOutboundRepairAttemptSnapshot;
-        expireAtTimestamp?: number;
-    }>
-    | Readonly<{
-        kind: 'delete-repair-attempt';
-        msgId: string;
-    }>
-    | Readonly<{
-        kind: 'set-supersedence-latest';
-        supersedenceKey: string;
-        expected: ALLatestSupersedenceValue | undefined;
-        value: ALLatestSupersedenceValue;
-    }>
-    | Readonly<{
-        kind: 'set-supersedence-replacement';
-        msgId: string;
-        value: ALReplacementSupersedenceValue;
-    }>;
-
 export interface ALOutboundRepairHint {
     readonly trigger: ALOutboundRepairTrigger;
     readonly requestedByPeerId?: string;
@@ -271,20 +202,6 @@ export interface ALOutboundCommitBundle<TPrepared> {
     readonly canonicalEntry?: ResourceEntry;
     readonly mutations: readonly ALOutboundAdmissionMutation[];
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
-}
-
-interface ALOutboundStateWrite {
-    readonly key: string;
-    readonly value:
-        | string
-        | ALStoredOutboundMessage
-        | ALOutboundPendingAckSnapshot
-        | ALOutboundRepairAttemptSnapshot
-        | ALLatestSupersedenceValue
-        | ALReplacementSupersedenceValue
-        | undefined;
-    readonly expireAtTimestamp: number | undefined;
-    readonly supersedenceGuard: { readonly expected: ALLatestSupersedenceValue | undefined; } | undefined;
 }
 
 export interface ALOutboundNotYetInSyncRetrySchedule {
@@ -364,6 +281,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     private readonly nowMs: () => number;
     private readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
     private readonly reads: ALOutboundAdmissionReads<TPrepared>;
+    private readonly mutations: ALOutboundAdmissionMutations;
     private readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 
     constructor(input: CreateALOutboundAdmissionStoreInput<TPrepared>) {
@@ -387,6 +305,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             namespace: input.namespace,
             canonicalScope: input.canonicalScope,
             backend: input.backend,
+            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
+        });
+        this.mutations = new ALOutboundAdmissionMutations({
+            namespace: input.namespace,
+            canonicalScope: input.canonicalScope,
+            retention: input.retention,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
         });
     }
@@ -476,7 +400,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                     ? Math.min(...effects.map((effect) => effect.entry.audit.expiryTs.epochMilliseconds))
                     : null),
             canonicalWrites: await this.readCanonicalWrites(bundle),
-            mutations: bundle.mutations.map((mutation) => this.computeMutation(mutation, nowMs)),
+            mutations: this.mutations.computeStateWrites(bundle.mutations, nowMs),
             versionExpireAt: nowMs + this.retention.versionTtlMs
         });
     }
@@ -510,8 +434,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 if (!await this.hasCurrentCommitFence(tx, bundle, effects)) {
                     return 'conflict';
                 }
-                await this.assertMutationObservations(tx, mutations);
-                await this.assertMessageIdentities(tx, bundle.mutations);
+                if (!await this.mutations.hasCurrentObservations(tx, mutations)) {
+                    return 'conflict';
+                }
+                await this.mutations.assertMessageIdentities(tx, bundle.mutations);
                 const eligibilityAtMs = this.nowMs();
                 if (
                     (bundle.canonicalEntry &&
@@ -524,10 +450,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                     return 'expired';
                 }
                 this.effectStore.writeEffects(tx, effects);
-                for (const mutation of mutations) {
-                    await this.applyMutation(tx, mutation);
-                }
-
+                await this.mutations.writeStateWrites(tx, mutations);
                 await tx.set(versionKey, version, versionExpireAt);
                 return 'committed';
             }, candidate.executionExpiresAtMs);
@@ -571,176 +494,5 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             nowMs: this.nowMs,
             decodePrepared: this.decodePrepared
         }, input);
-    }
-
-    private computeMutation(mutation: ALOutboundAdmissionMutation, nowMs: number): ALOutboundStateWrite {
-        switch (mutation.kind) {
-            case 'set-ordering-message':
-                return {
-                    key: toALOutboundOrderingMessageKey(this.namespace, mutation.trackKey, mutation.seq),
-                    value: mutation.msgId,
-                    expireAtTimestamp: mutation.expireAtTimestamp,
-                    supersedenceGuard: undefined
-                };
-            case 'set-msg-owner':
-                return {
-                    key: toALOutboundMessageOwnerKey(this.namespace, mutation.msgId),
-                    value: mutation.senderId,
-                    expireAtTimestamp: Math.max(
-                        mutation.expireAtTimestamp ?? 0,
-                        nowMs + this.retention.msgOwnerTtlMs,
-                        nowMs + this.retention.controlHistoryTtlMs
-                    ),
-                    supersedenceGuard: undefined
-                };
-            case 'set-sent-message':
-                return this.computeSentMessageMutation(mutation, nowMs);
-            case 'set-repair-attempt':
-                return {
-                    key: toALOutboundRepairAttemptKey(this.namespace, mutation.snapshot.msgId),
-                    value: mutation.snapshot,
-                    expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.repairAttemptTtlMs,
-                    supersedenceGuard: undefined
-                };
-            case 'set-pending-ack':
-                return {
-                    key: toALOutboundPendingAckKey(this.namespace, mutation.snapshot.msgId),
-                    value: mutation.snapshot,
-                    expireAtTimestamp: mutation.expireAtTimestamp ??
-                        toALOutboundPendingAckExpireAtTimestamp(mutation.snapshot),
-                    supersedenceGuard: undefined
-                };
-            case 'delete-sent-message':
-            case 'delete-pending-ack':
-            case 'delete-repair-attempt':
-                return {
-                    key: this.toDeletedMutationKey(mutation),
-                    value: undefined,
-                    expireAtTimestamp: undefined,
-                    supersedenceGuard: undefined
-                };
-            case 'set-supersedence-latest':
-            case 'set-supersedence-replacement':
-                return this.computeSupersedenceMutation(mutation);
-        }
-    }
-
-    private toDeletedMutationKey(
-        mutation: Extract<
-            ALOutboundAdmissionMutation,
-            { kind: 'delete-sent-message' | 'delete-pending-ack' | 'delete-repair-attempt'; }
-        >
-    ): string {
-        switch (mutation.kind) {
-            case 'delete-sent-message':
-                return toALOutboundSentMessageKey(this.namespace, mutation.msgId);
-            case 'delete-pending-ack':
-                return toALOutboundPendingAckKey(this.namespace, mutation.msgId);
-            case 'delete-repair-attempt':
-                return toALOutboundRepairAttemptKey(this.namespace, mutation.msgId);
-        }
-    }
-
-    private computeSentMessageMutation(
-        mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-sent-message'; }>,
-        nowMs: number
-    ): ALOutboundStateWrite {
-        return {
-            key: toALOutboundSentMessageKey(this.namespace, mutation.snapshot.msgId),
-            value: {
-                msgId: mutation.snapshot.msgId,
-                reference: mutation.reference,
-                supersedenceKey: mutation.snapshot.supersedenceKey,
-                unicastPeerId: mutation.snapshot.msg.targets?.mode === 'unicast'
-                    ? mutation.snapshot.msg.targets.toPeerId
-                    : null,
-                orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
-                orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
-                policy: mutation.policy,
-                creationExpiry: mutation.creationExpiry
-            },
-            expireAtTimestamp: Math.max(
-                mutation.expireAtTimestamp ?? 0,
-                nowMs + this.retention.sentMessageTtlMs,
-                nowMs + this.retention.controlHistoryTtlMs
-            ),
-            supersedenceGuard: undefined
-        };
-    }
-
-    private computeSupersedenceMutation(
-        mutation: Extract<
-            ALOutboundAdmissionMutation,
-            { kind: 'set-supersedence-latest' | 'set-supersedence-replacement'; }
-        >
-    ): ALOutboundStateWrite {
-        switch (mutation.kind) {
-            case 'set-supersedence-latest':
-                return {
-                    key: toALOutboundSupersedenceLatestKey(this.namespace, mutation.supersedenceKey),
-                    value: mutation.value,
-                    expireAtTimestamp: mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
-                    supersedenceGuard: { expected: mutation.expected }
-                };
-            case 'set-supersedence-replacement':
-                return {
-                    key: toALOutboundSupersedenceReplacementKey(this.namespace, mutation.msgId),
-                    value: mutation.value,
-                    expireAtTimestamp: mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
-                    supersedenceGuard: undefined
-                };
-        }
-    }
-
-    private async assertMessageIdentities(
-        tx: ALAdmissionWorkWriteContext,
-        mutations: readonly ALOutboundAdmissionMutation[]
-    ): Promise<void> {
-        for (const mutation of mutations) {
-            if (mutation.kind === 'set-msg-owner') {
-                const key = toALOutboundMessageOwnerKey(this.namespace, mutation.msgId);
-                const owner = await tx.read(key, decodeALAdmissionString);
-                if (owner !== undefined && owner !== mutation.senderId) {
-                    throw new ALAdmissionCorruptionError(key, new TypeError('Message id belongs to another sender'));
-                }
-            }
-            if (mutation.kind === 'set-sent-message') {
-                const key = toALOutboundSentMessageKey(this.namespace, mutation.snapshot.msgId);
-                const sent = await tx.read(key, (value) => decodeALOutboundSentMessage(value, mutation.snapshot.msgId));
-                if (
-                    mutation.reference.scope !== this.canonicalScope ||
-                    (sent !== undefined && !jsonEquals(sent.reference, mutation.reference))
-                ) {
-                    throw new ALAdmissionCorruptionError(
-                        key,
-                        new TypeError('Message id has conflicting canonical identity')
-                    );
-                }
-            }
-        }
-    }
-
-    private async assertMutationObservations(
-        tx: ALAdmissionWorkWriteContext,
-        writes: readonly ALOutboundStateWrite[]
-    ): Promise<void> {
-        for (const write of writes) {
-            if (write.supersedenceGuard === undefined) {
-                continue;
-            }
-            const current = await tx.read(write.key, (value) => decodeALAdmissionSupersedenceValue(value, 'latest'));
-            if (!jsonEquals(current, write.supersedenceGuard.expected)) {
-                throw new ALAdmissionBackendConflictError('Outbound shared supersedence observation changed');
-            }
-        }
-    }
-
-    private async applyMutation(tx: ALAdmissionWorkWriteContext, write: ALOutboundStateWrite): Promise<void> {
-        if (write.value === undefined) {
-            await tx.remove(write.key);
-        }
-        else {
-            await tx.set(write.key, write.value, write.expireAtTimestamp);
-        }
     }
 }

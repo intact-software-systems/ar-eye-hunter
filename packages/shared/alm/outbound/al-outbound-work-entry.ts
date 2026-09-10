@@ -16,7 +16,7 @@ import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
-} from './al-outbound-admission-store.ts';
+} from './admission/al-outbound-admission-store.ts';
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from './al-outbound-effect-validation.ts';
 
 export const AL_OUTBOUND_WORK_LEASE_MS = 10_000;

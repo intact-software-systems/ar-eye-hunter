@@ -12,7 +12,7 @@ import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-po
 import type {
     ALOutboundAdmissionEffectStore,
     ALOutboundEffectCandidate
-} from '../al-outbound-admission-effect-store.ts';
+} from '../admission/al-outbound-admission-effect-store.ts';
 import {
     toALOutboundControlHistoryKey,
     toALOutboundMessageOwnerKey,
@@ -20,14 +20,14 @@ import {
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundVersionKey
-} from '../al-outbound-admission-keys.ts';
-import type { ALOutboundAdmissionReads } from '../al-outbound-admission-reads.ts';
+} from '../admission/al-outbound-admission-keys.ts';
+import type { ALOutboundAdmissionReads } from '../admission/al-outbound-admission-reads.ts';
 import type {
     ALOutboundDurableEffectWrite,
     ALOutboundNotYetInSyncRetrySchedule,
     ALOutboundNotYetInSyncRetryScheduleResult
-} from '../al-outbound-admission-store.ts';
-import { decodeALOutboundNotYetInSyncRetry } from '../al-outbound-admission-validation.ts';
+} from '../admission/al-outbound-admission-store.ts';
+import { decodeALOutboundNotYetInSyncRetry } from '../admission/al-outbound-admission-validation.ts';
 import type { ALOutboundMessageRuntime } from '../al-outbound-message-runtime.ts';
 import { toALOutboundPendingControlId } from '../al-outbound-pending-admission.ts';
 import {

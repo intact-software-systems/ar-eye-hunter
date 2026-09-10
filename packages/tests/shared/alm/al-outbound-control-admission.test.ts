@@ -16,7 +16,7 @@ import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
     type ALOutboundDurableEffect
-} from '@shared/alm/outbound/al-outbound-admission-store.ts';
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRetryTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {

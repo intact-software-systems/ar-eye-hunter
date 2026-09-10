@@ -1,14 +1,14 @@
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
 
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { jsonEquals } from '../../repository/state-utils.ts';
-import { toError } from '../../resilience/to-error.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
-import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
+import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { jsonEquals } from '../../../repository/state-utils.ts';
+import { toError } from '../../../resilience/to-error.ts';
+import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
+import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALOutboundDurableEffectWrite,
     ALOutboundEffectSnapshot,
@@ -21,13 +21,13 @@ import {
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
     type ALOutboundMessageReference
-} from './al-outbound-canonical-message.ts';
-import { decodeALOutboundEffectPayload } from './al-outbound-effect-validation.ts';
+} from '../al-outbound-canonical-message.ts';
+import { decodeALOutboundEffectPayload } from '../al-outbound-effect-validation.ts';
 import {
     computeALOutboundWorkEntry,
     decodeALOutboundWorkEntry,
     toALOutboundWorkKey
-} from './al-outbound-work-entry.ts';
+} from '../al-outbound-work-entry.ts';
 
 export interface ALOutboundEffectIssue {
     readonly code: string;

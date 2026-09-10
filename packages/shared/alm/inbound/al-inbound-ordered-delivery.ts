@@ -8,12 +8,12 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
-import { computeALInboundBufferedRelease, type ALInboundBufferedRelease } from './compute-al-inbound-admission.ts';
+import { computeALInboundBufferedRelease, type ALInboundBufferedRelease } from './admission/compute-al-inbound-admission.ts';
 import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
-import { validateALInboundCommitBundle } from './validate-al-inbound-commit-bundle.ts';
+import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 
 export namespace ALInboundOrderedDelivery {
     export type Readiness =

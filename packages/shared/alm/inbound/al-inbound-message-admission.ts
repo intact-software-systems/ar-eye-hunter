@@ -13,9 +13,9 @@ import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
-import { computeALInboundAdmission } from './compute-al-inbound-admission.ts';
+import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
-import { validateALInboundCommitBundle } from './validate-al-inbound-commit-bundle.ts';
+import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export namespace ALInboundMessageAdmission {

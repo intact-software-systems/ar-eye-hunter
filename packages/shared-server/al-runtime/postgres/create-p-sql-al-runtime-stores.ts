@@ -11,7 +11,7 @@ import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-mess
 import {
     createALOutboundAdmissionStore,
     type ALOutboundPreparedMessageDecoder
-} from '@shared/alm/outbound/al-outbound-admission-store.ts';
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';

@@ -70,7 +70,7 @@ export * from './alm/inbound/al-inbound-admission-store.ts';
 export * from './alm/inbound/al-inbound-message-runtime.ts';
 export * from './alm/inbound/transition-al-pending-ack.ts';
 
-export * from './alm/outbound/al-outbound-admission-store.ts';
+export * from './alm/outbound/admission/al-outbound-admission-store.ts';
 export * from './alm/outbound/al-outbound-message-runtime.ts';
 export * from './alm/outbound/create-default-al-outbound-message-runtime.ts';
 export * from './services/inbox-queue-reader.ts';

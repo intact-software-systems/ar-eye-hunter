@@ -1,7 +1,7 @@
 import type { ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
-import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type {
     ALControlAdmissionCandidate,
     ALControlAdmissionRead

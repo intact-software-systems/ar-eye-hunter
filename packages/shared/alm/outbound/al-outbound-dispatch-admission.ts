@@ -7,8 +7,8 @@ import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPreparedMessageDecoder
-} from './al-outbound-admission-store.ts';
-import { captureALOutboundPolicy } from './al-outbound-admission-validation.ts';
+} from './admission/al-outbound-admission-store.ts';
+import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {

@@ -1,24 +1,24 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
-import type { ALSupersedenceInput } from '../../al-contracts/al-runtime.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../../al-contracts/al-control.ts';
+import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
-} from '../al-admission-value-validation.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
+} from '../../al-admission-value-validation.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundSentMessageSnapshot
-} from '../al-runtime-state-stores.ts';
+} from '../../al-runtime-state-stores.ts';
 import {
     acceptALSupersedenceObservation,
     computeALSupersedenceObservation
-} from '../compute-al-supersedence-observation.ts';
+} from '../../compute-al-supersedence-observation.ts';
 import {
     toALOutboundControlHistoryKey,
     toALOutboundOrderingMessageKey,
@@ -47,11 +47,11 @@ import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
     toALOutboundIdentityKey
-} from './al-outbound-canonical-message.ts';
-import { readALOutboundCanonicalMessage } from './al-outbound-canonical-storage.ts';
-import type { ALOutboundDispatchPlan } from './al-outbound-message-runtime.ts';
-import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
-import { validateALOutboundPlannedMessage } from './validate-al-outbound-dispatch.ts';
+} from '../al-outbound-canonical-message.ts';
+import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
+import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
+import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 

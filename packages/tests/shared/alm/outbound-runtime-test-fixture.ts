@@ -25,7 +25,7 @@ import type {
     ALOutboundEffectSnapshot,
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
-} from '@shared/alm/outbound/al-outbound-admission-store.ts';
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     readALOutboundWorkReadyAt,

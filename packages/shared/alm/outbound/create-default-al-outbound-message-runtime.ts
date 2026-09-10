@@ -6,7 +6,7 @@ import { CircuitBreakerPolicy } from '../../resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
-import type { ALOutboundPreparedMessageDecoder } from './al-outbound-admission-store.ts';
+import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
 import { ALOutboundMessageRuntime, type ALOutboundRuntimeStores } from './al-outbound-message-runtime.ts';
 
 const DEQUEUE_CIRCUIT_OPEN_MS = 10_000;

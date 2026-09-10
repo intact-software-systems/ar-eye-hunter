@@ -7,8 +7,8 @@ import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
-import type { ALOutboundPreparedMessageDecoder } from './al-outbound-admission-store.ts';
-import type { ALOutboundCapturedPolicy } from './al-outbound-admission-validation.ts';
+import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import {
     readALOutboundCanonicalWrites,

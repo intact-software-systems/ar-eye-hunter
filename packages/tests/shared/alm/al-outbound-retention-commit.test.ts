@@ -14,8 +14,8 @@ import {
     AL_ADMISSION_SCHEMA_KEY,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import { captureALOutboundPolicy } from '@shared/alm/outbound/al-outbound-admission-validation.ts';
+import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { captureALOutboundCreationExpiry, toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';

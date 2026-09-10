@@ -8,7 +8,7 @@ import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
-import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './al-outbound-admission-store.ts';
+import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 /** Checks the candidate against its captured read; never repairs or rewrites it. */

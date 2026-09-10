@@ -14,7 +14,7 @@ import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@sh
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { decodeALInboundWorkEntry, toALInboundWorkKey } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
+import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';

@@ -24,7 +24,7 @@ import {
 import {
     createALOutboundAdmissionStore,
     type ALOutboundPreparedMessageDecoder
-} from './outbound/al-outbound-admission-store.ts';
+} from './outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
 
 export interface CreateInMemoryALRuntimeStoresInput {

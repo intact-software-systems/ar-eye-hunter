@@ -56,7 +56,7 @@ import {
     type ALStoredInboundMessage
 } from './al-inbound-source-validation.ts';
 import type { ALInboundPendingControl } from './control/al-inbound-control-admission.ts';
-import { validateALInboundCommitBundle } from './validate-al-inbound-commit-bundle.ts';
+import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 
 export type PendingControlValue = Extract<ALControlPersistenceValue, Readonly<{ kind: 'pending'; }>>;
 export type AcksControlValue = Extract<ALControlPersistenceValue, Readonly<{ kind: 'acks'; }>>;

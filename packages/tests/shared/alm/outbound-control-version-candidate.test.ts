@@ -2,8 +2,8 @@ import { createTestALOutboundControlAdmission } from '@shared-test/shared/create
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import { decodeALOutboundSentMessage } from '@shared/alm/outbound/al-outbound-admission-validation.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { decodeALOutboundSentMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { computeALOutboundControlAdmission, type ALControlAdmissionRead } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 import { validateALOutboundControlAdmission } from '@shared/alm/outbound/validate-al-outbound-control-admission.ts';
 import {

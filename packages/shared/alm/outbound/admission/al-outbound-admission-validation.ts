@@ -3,16 +3,16 @@ import {
     requireOptionalPersistedALUniqueStringArray,
     requirePersistedALNonEmptyString,
     requirePersistedALSafeInteger
-} from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
-import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
+} from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot
-} from '../al-runtime-state-stores.ts';
-import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from './al-outbound-canonical-message.ts';
-import type { ALOutboundDispatchPlan } from './al-outbound-message-runtime.ts';
-import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+} from '../../al-runtime-state-stores.ts';
+import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
+import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 
 export interface ALStoredOutboundMessage {
     readonly msgId: string;

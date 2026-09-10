@@ -18,8 +18,8 @@ import type {
     ALOutboundDurableEffect,
     ALOutboundPreparedMessageDecoder,
     ALOutboundRepairHint
-} from './al-outbound-admission-store.ts';
-import { decodeALOutboundCapturedPolicy } from './al-outbound-admission-validation.ts';
+} from './admission/al-outbound-admission-store.ts';
+import { decodeALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
 import { decodeALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import {
     toALOutboundPendingAdmissionId,
