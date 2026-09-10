@@ -29,6 +29,14 @@ const SNAPSHOT_PATH = 'tmp/perf/alm-storage-snapshot.json';
 const DB_NAME = 'rallar-alm-storage-snapshot';
 const ADMISSION_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 const NAMESPACE = 'snapshot';
+/** Admission metadata rows carry no queue key, so the report groups them under their own name. */
+const ADMISSION_TOPIC_ID = 'AL_ADMISSION';
+
+interface StoredSnapshotRow {
+    readonly topicId: string;
+    readonly status: string;
+    readonly bytes: number;
+}
 
 interface ALStorageSnapshot {
     readonly workload: typeof WORKLOAD;
@@ -74,8 +82,7 @@ describe('ALM browser storage snapshot', () => {
         const snapshot = await readALStorageSnapshot();
         writeALStorageSnapshot(snapshot);
 
-        const written: unknown = JSON.parse(readFileSync(path.join(repositoryRoot(), SNAPSHOT_PATH), 'utf8'));
-        expect(Object.keys(written as object).toSorted()).toEqual([
+        expect(readWrittenSnapshotKeys()).toEqual([
             'bytesByTopic',
             'measuredAt',
             'rowsByStatus',
@@ -88,7 +95,7 @@ describe('ALM browser storage snapshot', () => {
             WORKLOAD.payloadBytes.length;
         expect(snapshot.rowsByStatus).toEqual({ COMPLETED: messageCount * 3 });
         expect(Object.keys(snapshot.bytesByTopic).toSorted()).toEqual([
-            'AL_ADMISSION',
+            ADMISSION_TOPIC_ID,
             'AL_OUTBOUND',
             'AL_OUTBOUND_IDENTITY',
             'AL_OUTBOUND_MESSAGE'
@@ -130,7 +137,7 @@ async function readALStorageSnapshot(): Promise<ALStorageSnapshot> {
         return {
             workload: WORKLOAD,
             rowsByStatus: countRowsByStatus(work),
-            bytesByTopic: { ...sumBytesByTopic(work), AL_ADMISSION: sumBytes(admission) },
+            bytesByTopic: { ...sumBytesByTopic(work), [ADMISSION_TOPIC_ID]: sumBytes(admission) },
             measuredAt: readCommit()
         };
     }
@@ -139,49 +146,59 @@ async function readALStorageSnapshot(): Promise<ALStorageSnapshot> {
     }
 }
 
-function readStoredRows(db: IDBDatabase, storeName: string): Promise<readonly Record<string, unknown>[]> {
+function readStoredRows(db: IDBDatabase, storeName: string): Promise<readonly StoredSnapshotRow[]> {
     return new Promise((resolve, reject) => {
         const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
-        request.onsuccess = () => resolve(request.result as readonly Record<string, unknown>[]);
+        request.onsuccess = () => resolve(request.result.map(decodeStoredSnapshotRow));
         request.onerror = () => reject(request.error ?? new Error(`Cannot read ${storeName}`));
     });
 }
 
-function countRowsByStatus(rows: readonly Record<string, unknown>[]): Record<string, number> {
+/**
+ * The stored row is whatever its owner wrote. Only its queue key, its status and its serialized size
+ * are reported, and every stored queue key is `topicId/resourceId/contextId`.
+ */
+function decodeStoredSnapshotRow(value: unknown): StoredSnapshotRow {
+    if (typeof value !== 'object' || value === null) {
+        throw new TypeError('Stored ALM row must be an object');
+    }
+    const keyString = 'keyString' in value && typeof value.keyString === 'string' ? value.keyString : '';
+    return {
+        topicId: keyString.split('/')[0] ?? ADMISSION_TOPIC_ID,
+        status: 'status' in value && typeof value.status === 'string' ? value.status : 'unknown',
+        bytes: new TextEncoder().encode(JSON.stringify(value)).byteLength
+    };
+}
+
+function countRowsByStatus(rows: readonly StoredSnapshotRow[]): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const row of rows) {
-        const status = typeof row['status'] === 'string' ? row['status'] : 'unknown';
-        counts[status] = (counts[status] ?? 0) + 1;
+        counts[row.status] = (counts[row.status] ?? 0) + 1;
     }
     return counts;
 }
 
-function sumBytesByTopic(rows: readonly Record<string, unknown>[]): Record<string, number> {
+function sumBytesByTopic(rows: readonly StoredSnapshotRow[]): Record<string, number> {
     const bytes: Record<string, number> = {};
     for (const row of rows) {
-        const topic = toTopicId(row['keyString']);
-        bytes[topic] = (bytes[topic] ?? 0) + toRowBytes(row);
+        bytes[row.topicId] = (bytes[row.topicId] ?? 0) + row.bytes;
     }
     return bytes;
 }
 
-function sumBytes(rows: readonly Record<string, unknown>[]): number {
-    return rows.reduce((total, row) => total + toRowBytes(row), 0);
-}
-
-/** Every stored queue key is `topicId/resourceId/contextId`; the topic is what the report groups by. */
-function toTopicId(keyString: unknown): string {
-    return typeof keyString === 'string' ? keyString.split('/')[0] ?? 'unknown' : 'unknown';
-}
-
-function toRowBytes(row: Record<string, unknown>): number {
-    return new TextEncoder().encode(JSON.stringify(row)).byteLength;
+function sumBytes(rows: readonly StoredSnapshotRow[]): number {
+    return rows.reduce((total, row) => total + row.bytes, 0);
 }
 
 function writeALStorageSnapshot(snapshot: ALStorageSnapshot): void {
     const target = path.join(repositoryRoot(), SNAPSHOT_PATH);
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, `${JSON.stringify(snapshot, undefined, 4)}\n`);
+}
+
+function readWrittenSnapshotKeys(): readonly string[] {
+    const written: object = JSON.parse(readFileSync(path.join(repositoryRoot(), SNAPSHOT_PATH), 'utf8'));
+    return Object.keys(written).toSorted();
 }
 
 function readCommit(): string {
