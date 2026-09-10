@@ -254,7 +254,10 @@ function toALInboundReplayOutcome(
     result: ALInboundMessageAdmission.ReplayResult,
     nowMs: number
 ): ALWorkOutcome {
-    return typeof result === 'string'
-        ? { status: result }
-        : { status: 'not-ready', readyAtMs: nowMs + result.retryAfterMs };
+    if (typeof result === 'string') {
+        return { status: result };
+    }
+    return result.kind === 'not-ready'
+        ? { status: 'not-ready', readyAtMs: nowMs + result.retryAfterMs }
+        : { status: 'non-retryable' };
 }

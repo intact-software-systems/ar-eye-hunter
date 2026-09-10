@@ -1,10 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control.ts';
+import { decodeALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
-import {
-    decodeALInboundMessageReference,
-    decodeALInboundSource
-} from './al-inbound-source-validation.ts';
+import { decodeALInboundSource } from './al-inbound-source-validation.ts';
 
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import {
@@ -21,6 +19,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import {
     EntityStatus,
     isKeysEqual,
+    type Key,
     type ResourceEntry
 } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
@@ -37,6 +36,7 @@ import type {
     ALInboundDurableEffectWrite,
     ALPersistedInboundEffect
 } from './al-inbound-admission-store.ts';
+import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
@@ -53,7 +53,7 @@ export function toALInboundWorkType(namespace: string): string {
     return `AL_INBOUND:${fnv1a64(namespace)}`;
 }
 
-export function toALInboundWorkKey(namespace: string, effectId: string) {
+export function toALInboundWorkKey(namespace: string, effectId: string): Key {
     return toAppQueueKey({
         topicId: 'AL_INBOUND',
         resourceId: encodeURIComponent(namespace),
@@ -166,7 +166,11 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             if (msg.payload.typeId.startsWith('al.control.') || isALControlTypeId(msg.payload.typeId)) {
                 throw new TypeError('Pending inbound admission cannot own a control message');
             }
-            return { kind: effect.kind, msg, source: decodeALInboundSource(effect.source) };
+            return {
+                kind: effect.kind,
+                msg: decodeALDeadlinedMessage(msg),
+                source: decodeALInboundSource(effect.source)
+            };
         }
         case 'dispatch-local': {
             decodeALAdmissionRecord(effect, ['kind', 'message']);

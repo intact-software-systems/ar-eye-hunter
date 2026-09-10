@@ -91,6 +91,7 @@ describe('PostgreSQL inbound admission', () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 5 * 60_000,
@@ -127,6 +128,7 @@ describe('PostgreSQL inbound admission', () => {
         const namespace = 'psql-test:inbound:admission';
         const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend,
             orderingTrackTtlMs: 5 * 60_000,

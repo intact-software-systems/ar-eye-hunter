@@ -212,6 +212,7 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
         : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace);
     return {
         admissionStore: createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend,
             orderingTrackTtlMs: 60_000,

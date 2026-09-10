@@ -11,6 +11,7 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
+import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
@@ -42,6 +43,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 observer: createPassThroughIndexedDbOperationObserver()
             });
             const store = createALInboundAdmissionStore({
+                nowMs: Date.now,
                 namespace: 'deadline',
                 backend,
                 orderingTrackTtlMs: 60_000,
@@ -95,7 +97,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
             try {
                 const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
                 if (replay) {
-                    expect(await admission.replay({ kind: 'admit-message', msg: message, source })).toBe('completed');
+                    expect(await admission.replay({ kind: 'admit-message', msg: decodeALDeadlinedMessage(message), source })).toBe('completed');
                 }
                 else {
                     const outcome = await admission.attempt(message, source, planner);

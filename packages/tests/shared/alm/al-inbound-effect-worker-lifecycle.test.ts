@@ -478,8 +478,16 @@ describe('inbound durable effect worker lifecycle', () => {
             }
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
+        const tracked = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'tracked', contextId: 'room' },
+            'receiver',
+            'chat',
+            {}
+        );
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked);
         const ack = newALAckControlMessage({ v: 2, msgId: 'inbound-ack', ts: 1, senderId: 'sender' }, {
-            ackedMsgId: 'untracked-message',
+            ackedMsgId: tracked.id.msgId,
             fromPeerId: 'sender',
             toPeerId: 'receiver',
             status: 'accepted',
@@ -488,7 +496,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
         const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
 
-        expect(acceptance.right).toEqual({ kind: 'control', handled: false });
+        expect(acceptance.right).toEqual({ kind: 'control', handled: true });
         await sendStarted.promise;
         releaseSend.resolve();
     });
@@ -843,6 +851,46 @@ function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: numbe
         value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message, retainUntilMs: expireAtTimestamp },
         expireAtTimestamp
     };
+}
+
+/** The provenance an inbound acknowledgement needs: this peer forwarded the message and owes an ack. */
+async function seedTrackedAcknowledgement(store: ALInboundAdmissionStore, message: ALMessage): Promise<void> {
+    const expireAtTimestamp = Date.now() + 60_000;
+    const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
+    const read = await readAdmission(store, message);
+    const committed = await store.commitBundle({
+        admissionExpiresAtMs: null,
+        senderId: message.id.senderId,
+        observations: read.observations,
+        mutations: [{
+            kind: 'set-msg-owner',
+            value: { msgId: message.id.msgId, senderId: message.id.senderId, source, supersedenceKey: null },
+            expireAtTimestamp
+        }, {
+            kind: 'set-control-pending',
+            msgId: message.id.msgId,
+            senderId: message.id.senderId,
+            value: {
+                kind: 'pending',
+                value: {
+                    toPeerId: 'upstream',
+                    status: 'subtree-complete',
+                    localReady: true,
+                    expectedFromPeerIds: ['sender'],
+                    ackedFromPeerIds: [],
+                    expireAtTimestamp
+                }
+            },
+            expireAtTimestamp
+        }, {
+            kind: 'set-control-owners',
+            msgId: message.id.msgId,
+            value: { ambiguous: false, values: [{ peerId: 'sender', senderId: message.id.senderId }] },
+            expireAtTimestamp
+        }],
+        durableEffects: []
+    });
+    expect(committed).toBe('committed');
 }
 
 async function readAdmission(store: ALInboundAdmissionStore, message: ALMessage) {

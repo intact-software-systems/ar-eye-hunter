@@ -1,7 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -33,7 +32,11 @@ export namespace ALInboundMessageAdmission {
         readonly workPort: ALWorkQueuePort;
     }
 
-    export type ReplayResult = 'completed' | 'retry' | { readonly kind: 'not-ready'; readonly retryAfterMs: number; };
+    export type ReplayResult =
+        | 'completed'
+        | 'retry'
+        | { readonly kind: 'not-ready'; readonly retryAfterMs: number; }
+        | { readonly kind: 'non-retryable'; readonly reason: string; };
 
     export type Attempt =
         | {
@@ -121,7 +124,7 @@ export class ALInboundMessageAdmission {
 
     async retainPending(pending: ALInboundPendingAdmission): Promise<ALInboundMessageRuntime.Acceptance> {
         const { admissionStore, clock } = this.dependencies;
-        const deadline = pending.msg.constraints!.expiresAtMs!;
+        const deadline = pending.msg.constraints.expiresAtMs;
         if (deadline <= clock.nowMs()) {
             return { kind: 'not-admitted', reason: 'expired' };
         }
@@ -152,7 +155,7 @@ export class ALInboundMessageAdmission {
     async replay(pending: ALInboundPendingAdmission): Promise<ALInboundMessageAdmission.ReplayResult> {
         const authority = await this.dependencies.readPendingAdmissionAuthority?.(pending.msg, pending.source) ??
             { kind: 'authorized', source: pending.source };
-        if (pending.msg.constraints!.expiresAtMs! <= this.dependencies.clock.nowMs()) {
+        if (pending.msg.constraints.expiresAtMs <= this.dependencies.clock.nowMs()) {
             return 'completed';
         }
         if (authority.kind !== 'authorized') {
@@ -166,11 +169,11 @@ export class ALInboundMessageAdmission {
             this.dependencies.effectPreparation.selfPeerId
         );
         if (validation.left) {
-            throw new NonRetryableException(validation.left.message);
+            return { kind: 'non-retryable', reason: validation.left.message };
         }
         const result = await this.attempt(pending.msg, authority.source, this.dependencies.planIncomingMessage);
         if (result.left) {
-            throw new NonRetryableException(result.left.message);
+            return { kind: 'non-retryable', reason: result.left.message };
         }
         return result.right!.kind === 'conflict' || this.shutdown.signal.aborted ? 'retry' : 'completed';
     }

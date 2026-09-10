@@ -942,6 +942,7 @@ function createInboundPersistenceFixture() {
             const backend = new InMemoryAdmissionBackend(state, Date.now);
             return {
                 admissionStore: createALInboundAdmissionStore({
+                    nowMs: Date.now,
                     namespace: 'al-inbound-runtime-test:retained',
                     backend,
                     orderingTrackTtlMs: 5 * 60_000,

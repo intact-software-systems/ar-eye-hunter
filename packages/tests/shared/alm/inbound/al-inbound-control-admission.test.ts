@@ -36,6 +36,7 @@ function createFixture() {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const admissionStore = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'inbound',
         backend,
         orderingTrackTtlMs: 60_000,

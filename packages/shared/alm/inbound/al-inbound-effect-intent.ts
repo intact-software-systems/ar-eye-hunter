@@ -7,7 +7,7 @@ import type {
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
-import { toALInboundMessageReference } from './al-inbound-source-validation.ts';
+import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 
 export interface ALInboundEffectIntent {
     readonly effectId: string;

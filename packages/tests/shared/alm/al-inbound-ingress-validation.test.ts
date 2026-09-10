@@ -184,6 +184,7 @@ function createFixture() {
     const controls: ALMessage[] = [];
     const state = createInMemoryALAdmissionState();
     const admissionStore = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'ingress-test',
         backend: new InMemoryAdmissionBackend(state, Date.now),
         orderingTrackTtlMs: 60_000,

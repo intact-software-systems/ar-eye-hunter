@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_ADMISSION_WORK_COMPLETED_RETENTION } from '@shared/alm/al-admission-work-backend.ts';
+import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message-deadline.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -332,13 +333,15 @@ async function retainPendingForSession(sessionId: string, ttlMs: number) {
     const stores = resolveBrowserWsClientALInboundRuntimeStores(sessionId);
     const store = stores.admissionStore;
     await store.ready();
-    const msg = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs });
+    const msg = decodeALDeadlinedMessage(
+        newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs })
+    );
     const work = computeALInboundWorkEntry({
         namespace: store.namespace,
         effectId: toALInboundPendingAdmissionId(msg),
         payload: { kind: 'admit-message', msg, source: { kind: 'trusted-server' } },
         observedAtMs: Date.now(),
-        expireAtTimestamp: msg.constraints!.expiresAtMs!
+        expireAtTimestamp: msg.constraints.expiresAtMs
     });
     await stores.workQueue.enqueueIfAbsent(work.entry);
     return { queue: stores.workQueue, resource: work.entry.resource, keyString: toKeyAsString(work.entry.key) };
@@ -353,13 +356,15 @@ async function retainPendingUnderNamespace(db: IDBDatabase, namespace: string, e
         now: () => Temporal.Instant.fromEpochMilliseconds(Date.now()),
         observer: createPassThroughIndexedDbOperationObserver()
     });
-    const msg = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, 'recipient', 'chat', {}, { ttlMs: 60_000 });
+    const msg = decodeALDeadlinedMessage(
+        newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, 'recipient', 'chat', {}, { ttlMs: 60_000 })
+    );
     const work = computeALInboundWorkEntry({
         namespace,
         effectId,
         payload: { kind: 'admit-message', msg, source: { kind: 'trusted-server' } },
         observedAtMs: Date.now(),
-        expireAtTimestamp: msg.constraints!.expiresAtMs!
+        expireAtTimestamp: msg.constraints.expiresAtMs
     });
     await workQueue.enqueueIfAbsent(work.entry);
     return toKeyAsString(work.entry.key);

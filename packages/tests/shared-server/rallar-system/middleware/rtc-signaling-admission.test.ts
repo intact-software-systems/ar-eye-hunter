@@ -64,6 +64,7 @@ describe('middleware pre-admission', () => {
                 webSocketServer: socket,
                 inboundStores: {
                     admissionStore: createALInboundAdmissionStore({
+                        nowMs: Date.now,
                         namespace: 'middleware-signaling',
                         backend: signalingBackend,
                         orderingTrackTtlMs: 60_000,

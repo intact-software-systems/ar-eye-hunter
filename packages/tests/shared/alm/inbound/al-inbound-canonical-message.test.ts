@@ -258,6 +258,7 @@ function newBystanderMessage(resourceId: string): ALMessage {
 function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const state = createInMemoryALAdmissionState(new InMemoryQueueBox());
     const admissionStore = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: NAMESPACE,
         backend: new InMemoryAdmissionBackend(state, () => Date.now()),
         orderingTrackTtlMs: 5 * 60_000,

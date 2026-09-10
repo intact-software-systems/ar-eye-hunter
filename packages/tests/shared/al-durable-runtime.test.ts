@@ -257,6 +257,7 @@ function createRetainedInboundStoreSet(
         runtimeStores: {
             workQueue: backend.workQueue,
             admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
                 namespace: 'durable-test:inbound:admission',
                 backend,
                 orderingTrackTtlMs: 5 * 60_000,

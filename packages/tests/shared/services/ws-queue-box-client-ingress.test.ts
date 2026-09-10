@@ -324,6 +324,7 @@ async function createClientIngressFixture(
         decodePrepared: decodeALOutboundTransportMessage
     });
     const admissionStore = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'ws-client-ingress',
         backend: new InMemoryAdmissionBackend(admission, Date.now),
         orderingTrackTtlMs: 300000,

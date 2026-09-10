@@ -6,6 +6,7 @@ import type {
     ALInboundAdmissionStore,
     ALPersistedInboundEffect
 } from './al-inbound-admission-store.ts';
+import type { ALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
 import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -14,7 +15,6 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundStoredPlanningObservations
 } from './al-inbound-planner-snapshot.ts';
-import type { ALInboundMessageReference } from './al-inbound-source-validation.ts';
 
 export namespace ALInboundAdmittedDelivery {
     export interface Dependencies extends

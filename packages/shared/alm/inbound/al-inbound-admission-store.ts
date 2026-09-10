@@ -34,6 +34,12 @@ import {
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
+import {
+    readALInboundStoredMessage,
+    toALInboundMessageKey,
+    type ALInboundMessageReference,
+    type ALStoredInboundMessage
+} from './al-inbound-canonical-message.ts';
 import { ALInboundDurableEffectStore } from './al-inbound-durable-effect-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
@@ -50,11 +56,7 @@ import type { ALInboundPlannerSnapshot } from './al-inbound-planner-snapshot.ts'
 import {
     decodeALInboundControlOwnerIndex,
     decodeALInboundMessageOwner,
-    readALInboundStoredMessage,
-    toALInboundMessageKey,
-    toALInboundMessageOwnerKey,
-    type ALInboundMessageReference,
-    type ALStoredInboundMessage
+    toALInboundMessageOwnerKey
 } from './al-inbound-source-validation.ts';
 import type { ALInboundPendingControl } from './control/al-inbound-control-admission.ts';
 
@@ -333,7 +335,7 @@ export interface ALInboundCommitBundle {
 }
 
 export interface CreateALInboundAdmissionStoreInput {
-    readonly nowMs?: () => number;
+    readonly nowMs: () => number;
     readonly namespace: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly orderingTrackTtlMs: number;
@@ -381,7 +383,7 @@ export function createALInboundAdmissionStore(
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
         retention: input.retention,
         backend: input.backend,
-        nowMs: input.nowMs ?? Date.now
+        nowMs: input.nowMs
     });
 }
 

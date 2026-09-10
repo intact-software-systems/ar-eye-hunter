@@ -22,7 +22,7 @@ import {
     toALInboundMessageKey,
     toALInboundMessageReference,
     type ALInboundMessageReference
-} from './al-inbound-source-validation.ts';
+} from './al-inbound-canonical-message.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export interface ALInboundDeliveryOwner {

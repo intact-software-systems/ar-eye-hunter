@@ -1,9 +1,11 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
 export interface ALInboundPendingAdmission {
     readonly kind: 'admit-message';
-    readonly msg: ALMessage;
+    /** Retained with the deadline its queue row was written for; the decoder rejects a row without one. */
+    readonly msg: ALDeadlinedMessage;
     readonly source: ALInboundMessageRuntime.Source;
 }
 

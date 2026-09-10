@@ -69,9 +69,13 @@ Every stored key is `topicId/resourceId/contextId`, and inbound work is
 `AL_INBOUND/<namespace>/<effectId>` so one session's rows are a bounded key range.
 An admitted message writes two provenance rows: the message owner row, keyed by
 namespace, message id and sender id, which retains the validated ingress source and
-supersedence key, and the canonical inbound message row, which retains the envelope
-until the `retainUntilMs` its own row states. Both must outlive the owned work the
-same bundle writes; a bundle whose provenance expires first is rejected.
+supersedence key ([`al-inbound-source-validation.ts`](./al-inbound-source-validation.ts)),
+and the canonical inbound message row
+([`al-inbound-canonical-message.ts`](./al-inbound-canonical-message.ts)), which retains the
+envelope until the `retainUntilMs` its own row states — the latest deadline of the effects
+and slots that bundle owns, so a bundle owning neither writes no canonical row. Both must
+outlive the owned work the same bundle writes; a bundle whose provenance expires first is
+rejected.
 
 ## Replay authority and deadlines
 
@@ -99,7 +103,7 @@ terminal bookkeeping can omit an execution deadline without authorizing another 
 
 The worker holds one 16-entry observation page. It reads through QueueBox's
 `readWorkPage` port and
-[`readALInboundWorkSelection`](./read-al-inbound-work-selection.ts) skips known
+[`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts) skips known
 ineligible ordered work before reservation. QueueBox compares the observations
 when claiming and owns reservation timeout, retry, exhaustion, and release.
 

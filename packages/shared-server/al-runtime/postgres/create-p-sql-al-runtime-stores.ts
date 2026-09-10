@@ -71,6 +71,7 @@ export function createPSqlALInboundRuntimeStores(
     const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace);
     return {
         admissionStore: createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,

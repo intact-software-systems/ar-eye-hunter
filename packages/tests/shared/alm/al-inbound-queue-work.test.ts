@@ -276,6 +276,7 @@ it('retains predecessor completion through the longest admitted deadline across 
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'retained-ordering-completion',
         backend,
         orderingTrackTtlMs: 100,
@@ -327,6 +328,7 @@ it('retains predecessor completion through the longest admitted deadline across 
 it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct lost ordering evidence %s', async (loss) => {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
     const store = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: `lost-progress-${loss}`,
         backend,
         orderingTrackTtlMs: 100,
@@ -387,6 +389,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     });
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
     const store = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: `buffered-owner-${durability}`,
         backend,
         orderingTrackTtlMs: 60_000,
@@ -464,6 +467,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         });
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace: `predecessor-${failure}`,
             backend,
             orderingTrackTtlMs: 60_000,
@@ -552,6 +556,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'ordered-restart',
         backend,
         orderingTrackTtlMs: 60_000,

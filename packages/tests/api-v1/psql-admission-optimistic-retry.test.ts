@@ -42,6 +42,7 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:inbound:apply-conflict';
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
@@ -72,6 +73,7 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:inbound:apply-error';
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,

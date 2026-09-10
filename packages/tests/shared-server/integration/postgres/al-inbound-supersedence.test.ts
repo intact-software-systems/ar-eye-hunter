@@ -131,11 +131,19 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
     const secondBackend = new PSqlAdmissionWorkBackend(second, namespace);
     return [
         {
-            admissionStore: createALInboundAdmissionStore({ ...configuration, backend: firstBackend }),
+            admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
+                ...configuration,
+                backend: firstBackend
+            }),
             workQueue: firstBackend.workQueue
         },
         {
-            admissionStore: createALInboundAdmissionStore({ ...configuration, backend: secondBackend }),
+            admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
+                ...configuration,
+                backend: secondBackend
+            }),
             workQueue: secondBackend.workQueue
         }
     ];

@@ -79,7 +79,10 @@ async function readALInboundWorkSelection(
         try {
             const readyAt = resolveALInboundWorkReadyAt(entry);
             if (readyAt > input.nowMs) {
-                readyAtMs = Math.min(readyAtMs ?? readyAt, readyAt, entry.audit.expiryTs.epochMilliseconds);
+                // A row that expires before it is ready can never be claimed, so it advertises nothing.
+                if (readyAt < entry.audit.expiryTs.epochMilliseconds) {
+                    readyAtMs = Math.min(readyAtMs ?? readyAt, readyAt);
+                }
                 continue;
             }
             const effect = decodeALInboundWorkEntry(entry, input.namespace);
