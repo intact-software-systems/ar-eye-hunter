@@ -1,8 +1,15 @@
 import '../../../setup-browser-indexeddb.ts';
 
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -16,6 +23,7 @@ import {
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { toALOutboundMessageOwnerKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
@@ -39,6 +47,7 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
 const ADMISSION_STORE_NAME = 'entries';
+const FENCE_NAMESPACE = 'fence';
 
 interface FenceFixture {
     readonly store: ALOutboundAdmissionStore<OutboundTestPayload>;
@@ -108,10 +117,34 @@ describe.each(['memory', 'indexeddb'] as const)('outbound admission fences over 
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
+
+    it('aborts a moved control owner without a write or a revision bump', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createTestALOutboundControlAdmission({
+            admissionStore: fixture.store,
+            workQueue: fixture.backend.workQueue,
+            nowMs: Date.now
+        });
+        const message = await seedControlObligation(fixture.store);
+        const write = fixture.backend.write.bind(fixture.backend);
+        let before = '';
+        vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+            // Another owner claims the message between the control read and its conditional write.
+            await write(async (transaction) => {
+                await transaction.set(toALOutboundMessageOwnerKey(FENCE_NAMESPACE, message.id.msgId), 'intruder');
+            });
+            before = await fixture.readAdmissionState();
+            return await write(operation);
+        });
+
+        expect(await control.admit(toDeliveredAck(message))).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
 });
 
 async function createFenceFixture(storage: 'memory' | 'indexeddb'): Promise<FenceFixture> {
-    const namespace = 'fence';
+    const namespace = FENCE_NAMESPACE;
     const fixture = storage === 'memory'
         ? createInMemoryFenceBackend()
         : createIndexedDbFenceBackend(`fence-${crypto.randomUUID()}`);
@@ -178,6 +211,39 @@ function toAdmissionStateFingerprint(revision: string, rows: readonly AdmissionS
     return JSON.stringify({
         revision,
         rows: rows.toSorted((left, right) => left.key.localeCompare(right.key))
+    });
+}
+
+/** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */
+async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTestPayload>): Promise<ALMessage> {
+    const message = createOutboundMessage('control-fence');
+    const admission = await computeOutboundTestAdmission(store, message);
+    const committed = await store.commitBundle({
+        ...admission,
+        mutations: [...admission.mutations, {
+            kind: 'set-pending-ack',
+            snapshot: {
+                msgId: message.id.msgId,
+                expectedPeerIds: ['peer-1'],
+                ackedPeerIds: [],
+                timeoutMs: 2_000,
+                maxAttempts: 3,
+                attempts: 0,
+                deadlineAtMs: Date.now() + 2_000
+            }
+        }]
+    });
+    expect(committed).toBe('committed');
+    return message;
+}
+
+function toDeliveredAck(message: ALMessage): ALMessage {
+    return newALAckControlMessage({ v: 2, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() }, {
+        fromPeerId: 'peer-1',
+        toPeerId: message.id.senderId,
+        ackedMsgId: message.id.msgId,
+        status: 'delivered',
+        observedAtEpochMs: Date.now()
     });
 }
 

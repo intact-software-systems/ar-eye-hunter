@@ -127,10 +127,10 @@ export class ALOutboundControlAdmission<TPrepared> {
         try {
             return await this.backend.write(async (tx) => {
                 if (!await this.hasCurrentControlFence(tx, computed.read)) {
-                    return false;
+                    throw new ALAdmissionBackendConflictError('AL control ownership moved before its commit');
                 }
                 if ((await this.effectStore.validateObservedWork(tx, effects)).length > 0) {
-                    return false;
+                    throw new ALAdmissionBackendConflictError('AL control work moved before its commit');
                 }
                 this.effectStore.writeEffects(tx, effects);
                 await this.applyControlAdmission(tx, computed);
@@ -200,10 +200,10 @@ export class ALOutboundControlAdmission<TPrepared> {
                 const versionKey = toALOutboundVersionKey(this.namespace, schedule.senderId);
                 const current = await this.reads.readClientRecordWithin(tx, schedule.senderId);
                 if (current?.version !== schedule.expectedVersion) {
-                    return { status: 'conflict' };
+                    throw new ALAdmissionBackendConflictError('AL retry sender version moved before its commit');
                 }
                 if ((await this.effectStore.validateObservedWork(tx, candidates)).length > 0) {
-                    return { status: 'conflict' };
+                    throw new ALAdmissionBackendConflictError('AL retry work moved before its commit');
                 }
                 if (expireAt <= this.clock.nowMs()) {
                     return { status: 'exhausted' };
