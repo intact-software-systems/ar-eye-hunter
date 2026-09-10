@@ -1,4 +1,6 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_ADMISSION_WORK_COMPLETED_RETENTION } from '@shared/alm/al-admission-work-backend.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -12,6 +14,7 @@ import '../../setup-browser-indexeddb.ts';
 import {
     deleteBrowserALRuntimeEntriesForSession,
     deleteExpiredBrowserALRuntimeEntries,
+    deleteExpiredBrowserALRuntimeEntriesForSession,
     initBrowserALRuntimeExpiryEviction
 } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { BROWSER_AL_RUNTIME_DB_NAME, BROWSER_AL_RUNTIME_STORE_NAME } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
@@ -20,6 +23,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { readBrowserALWorkCleanupRows } from '@shared-web/browser/al-runtime/browser-al-work-cleanup.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
@@ -27,7 +31,10 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundIdentityFact, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
+import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
@@ -109,6 +116,53 @@ describe('browser canonical outbound cleanup', () => {
         expect((await readRawWorkRows()).filter((row) => expired.keys.has(row.keyString))).toEqual([]);
     });
 
+    it('excludes a namespace whose resource id is only a string prefix of the owned one', async () => {
+        const db = await openIndexedDbAdmissionDatabase({
+            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
+        try {
+            const ownerNamespace = `rngown${Math.random().toString(36).slice(2, 8)}`;
+            const impostorNamespace = `${ownerNamespace}99`;
+            const ownerKey = await retainPendingUnderNamespace(db, ownerNamespace, 'x');
+            const impostorKey = await retainPendingUnderNamespace(db, impostorNamespace, 'y');
+
+            const rows = await readBrowserALWorkCleanupRows(db, {
+                namespacePrefixes: [ownerNamespace],
+                canonicalScopes: []
+            });
+
+            const foundKeys = new Set(rows.map((row) => row.keyString));
+            expect(foundKeys.has(ownerKey)).toBe(true);
+            expect(foundKeys.has(impostorKey)).toBe(false);
+        }
+        finally {
+            db.close();
+        }
+    });
+
+    it('sweeps another session\'s expired AL work rows too, because AL work-row expiry is store-wide', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2033-08-01T00:00:00Z'));
+        const targetSession = `expiry-scope-target-${crypto.randomUUID()}`;
+        const otherExpiredSession = `expiry-scope-other-expired-${crypto.randomUUID()}`;
+        const otherLiveSession = `expiry-scope-other-live-${crypto.randomUUID()}`;
+        const otherExpired = await admitForSession(otherExpiredSession, 10);
+        await vi.advanceTimersByTimeAsync(11);
+        const otherLive = await admitForSession(otherLiveSession, 60_000);
+
+        await deleteExpiredBrowserALRuntimeEntriesForSession(targetSession);
+
+        const remaining = await readRawWorkRows();
+        expect(remaining.filter((row) => otherExpired.keys.has(row.keyString))).toEqual([]);
+        expect(remaining.filter((row) => otherLive.keys.has(row.keyString))).toHaveLength(otherLive.keys.size);
+    });
+
+    // Everything below this point runs after `initBrowserALRuntimeExpiryEviction` has started a
+    // real, never-cancelled background sweep (see that test): a later test calling the 'expired'
+    // policy can race it for a write conflict. Keep 'expired'-policy assertions above this line.
     it('runs repeated timer eviction against the shared outbound work store', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2030-08-01T00:00:00Z'));
@@ -233,4 +287,25 @@ async function retainPendingForSession(sessionId: string, ttlMs: number) {
     });
     await stores.workQueue.enqueueIfAbsent(work.entry);
     return { queue: stores.workQueue, resource: work.entry.resource, keyString: toKeyAsString(work.entry.key) };
+}
+
+/** Retains a pending AL_INBOUND row under a caller-chosen namespace, bypassing session wiring. */
+async function retainPendingUnderNamespace(db: IDBDatabase, namespace: string, effectId: string): Promise<string> {
+    const workQueue = new IndexedDbQueueBox({
+        connection: new IndexedDbConnection(async () => db),
+        storeName: AL_ADMISSION_WORK_STORE_NAME,
+        completedRetention: AL_ADMISSION_WORK_COMPLETED_RETENTION,
+        now: () => Temporal.Instant.fromEpochMilliseconds(Date.now()),
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const msg = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, 'recipient', 'chat', {}, { ttlMs: 60_000 });
+    const work = computeALInboundWorkEntry({
+        namespace,
+        effectId,
+        payload: { kind: 'admit-message', msg, source: { kind: 'trusted-server' } },
+        observedAtMs: Date.now(),
+        expireAtTimestamp: msg.constraints!.expiresAtMs!
+    });
+    await workQueue.enqueueIfAbsent(work.entry);
+    return toKeyAsString(work.entry.key);
 }

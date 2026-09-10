@@ -100,6 +100,12 @@ export async function deleteExpiredBrowserALRuntimeEntries(
     });
 }
 
+/**
+ * Deletes this session's expired KV admission-metadata rows only. AL work-row expiry is a side
+ * effect of every call here, and it is store-wide (see `writeBrowserALWorkExpiryCleanup`): other
+ * sessions' expired AL work rows are removed too, while their live rows and their expired KV rows
+ * are untouched.
+ */
 export async function deleteExpiredBrowserALRuntimeEntriesForSession(
     sessionId: string,
     options: Omit<DeleteExpiredBrowserALRuntimeEntriesOptions, 'keyPrefixes'> = {}

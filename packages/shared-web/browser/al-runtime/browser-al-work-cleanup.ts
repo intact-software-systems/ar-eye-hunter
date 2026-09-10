@@ -32,6 +32,9 @@ export interface BrowserALWorkCleanupRangesInput {
  * One bounded range per owned AL_INBOUND/AL_OUTBOUND namespace and per owned canonical scope.
  * The namespace's own work-key builders compute each bound: `toAppQueueKey` hash-truncates any
  * part over its length limit, so a long browser namespace is not a literal prefix of its own key.
+ * Every stored key is `topicId/resourceId/contextId`; each range ends its resourceId with the `/`
+ * delimiter so a resourceId that is itself a string prefix of another owner's resourceId (e.g.
+ * `abc` vs `abc123`) can't pull that other owner's rows into this range too.
  */
 export function toBrowserALWorkCleanupRanges(
     input: BrowserALWorkCleanupRangesInput
@@ -42,14 +45,14 @@ export function toBrowserALWorkCleanupRanges(
         const outboundResourceId = toALOutboundWorkKey(namespace, '').resourceId;
         ranges.push(
             IDBKeyRange.bound(
-                `AL_INBOUND/${inboundResourceId}`,
-                `AL_INBOUND/${inboundResourceId}${KEY_RANGE_UPPER_SENTINEL}`
+                `AL_INBOUND/${inboundResourceId}/`,
+                `AL_INBOUND/${inboundResourceId}/${KEY_RANGE_UPPER_SENTINEL}`
             )
         );
         ranges.push(
             IDBKeyRange.bound(
-                `AL_OUTBOUND/${outboundResourceId}`,
-                `AL_OUTBOUND/${outboundResourceId}${KEY_RANGE_UPPER_SENTINEL}`
+                `AL_OUTBOUND/${outboundResourceId}/`,
+                `AL_OUTBOUND/${outboundResourceId}/${KEY_RANGE_UPPER_SENTINEL}`
             )
         );
     }
@@ -109,7 +112,12 @@ function readBrowserALWorkCleanupRange(
     });
 }
 
-/** Hands expired/retention-expired AL work rows to the QueueBox's own bounded sweep, store-wide. */
+/**
+ * Hands expired/retention-expired AL work rows to the QueueBox's own bounded sweep. `cleanupAsync`
+ * has no scoping parameter, so every call here sweeps every session's AL work rows sharing this
+ * store, never just one caller's session — only the plain KV admission-metadata rows are
+ * session-scoped (see `deleteExpiredBrowserALRuntimeEntriesForSession`).
+ */
 export async function writeBrowserALWorkExpiryCleanup(db: IDBDatabase, nowMs: number): Promise<boolean> {
     const queueBox = new IndexedDbQueueBox({
         connection: new IndexedDbConnection(async () => db),
