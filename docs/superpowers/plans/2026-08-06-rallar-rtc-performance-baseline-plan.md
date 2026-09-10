@@ -64,16 +64,19 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Updated:** 2026-09-10
 
-**Status:** Tasks 4A/4B, B04, native-browser B05 capture, the continuous B05
-observation stream, and B06 E3-memory observation tooling are merged. Five
-distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
-#402 landed directly, and the four observations formerly published by PRs
-#405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
-superseded PRs and branches were closed. Ten B06 observations have failed with
-`acceptedMetrics: false` and are archived on `main`; an eleventh verified failed
-observation is pending unchanged in PR #556. The first five, their
-focused corrections in PRs #499 and #510, and the Branch Release quiescence
-correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
+**Status:** `origin/main` is
+`aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`. PRs #556 and #557 are merged;
+PR #558 merged the 2026-09-10 B05 observation on that same main snapshot.
+The repository has 12 B05 rows, all `passed` with `acceptedMetrics: true`, and
+11 B06 rows, all `failed` with `acceptedMetrics: false`. Publish run
+34524003896 passed source, tooling, capture recovery, archive verification, and
+publication; its six default attempts passed, then its first all-scenarios
+warmup timed out waiting for agent B to receive sender A's `messages.rtc`
+broadcast. No repeat is required. PR #560 is mergeable with green checks and
+awaits human review to merge that verified failed ZIP/index row unchanged.
+
+**Historical reconciliation (superseded current status):** Earlier focused
+corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
 PR #519; its focused publication-wake identity correction merged in PR #520.
 Run 33997173287 then produced the seventh failed archive in PR #522. Its first
 default warmup exposed the same missing source-generation dimension in the
@@ -245,7 +248,8 @@ expected peers in `rtcStatus.readyPeerIds` while its current formation still
 lacked the accepted overlay used by multicast routing. PR #556 contains the
 verified failed ZIP/index row with `acceptedMetrics: false` and no repeat.
 
-PR #557 is the next single correction-and-proof PR. Run 34430533353 exposed an
+At that historical point, PR #557 was the next single correction-and-proof PR.
+Run 34430533353 exposed an
 ownership error, not a need for another benchmark-local readiness condition:
 `BrowserRtcWaitRuntime.waitForRoomLane()` resolved the room transport target
 once, so an invocation that began before accepted-layout arrival could return
@@ -553,23 +557,23 @@ also makes the shared recipe fixture return the canonical `ScenarioRecipe`,
 validates its JSON-object boundary, and replaces every ad-hoc `unknown` recipe
 cast in the touched semantics owner; all seven dependent recipe-test files pass
 67/67 tests and the full 1,172-file TypeScript test project has zero errors.
-Replacement exact-head CI remains mandatory before PR #557 is ready.
+**Historical note:** Replacement exact-head CI was mandatory before PR #557
+was ready.
 
 ### Current execution horizon
 
-| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; isolate full-stack browser services through their existing configuration owners; complete deterministic regressions, a green fresh/pinned state-write comparison, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
+| Order | Slice                                          | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Merge PR #560 unchanged after human review     | Merge the verified failed run-34524003896 ZIP/index row unchanged. Its 55,063-byte archive has SHA-256 `4411b6cf05decab2e3ac6746487aaa9940fb855a60cf75d93f1113cec9af0bdb`; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                   |
+| 2     | Complete and merge failure-evidence tooling PR | Retain one bounded, payload-free message-failure diagnostic in normal attempt evidence even when publish mode has no diagnostics output directory; preserve the optional sidecar and generic failed-result facts. Complete focused, type/style/structure, independent-review, local/browser, and branch gates. No RTC product/routing/retry/timeout change, migration, compatibility implementation, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
-moving `main`. The workflow must archive one verified primary with
-`acceptedMetrics: true`; when the controller requires a repeat, that repeat
-must also be valid and archived. If it fails, its archive itself contains the
-bounded facts needed for diagnosis. Task 12 then chooses the B05 observation
-window, revisits whether the candidate call path requires E4-pg, and reconciles
-the unlike-environment evidence before ranking at most one candidate—or `none`.
+moving `main`. Preserve and diagnose a failed primary; a valid primary plus any
+controller-required repeat unlocks Task 12, which then chooses the B05
+observation window, revisits whether the candidate call path requires E4-pg,
+and reconciles unlike-environment evidence before ranking at most one
+candidate—or `none`.
 
 If a later published B06 run fails, retain it as failed evidence and diagnose
 the first failed attempt from that run. Fix only the evidenced tooling or
@@ -4355,9 +4359,26 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains ten failed B06 primaries archived on `main`, one
-verified failed primary pending in PR #556, and no accepted metrics.
-The fourth archive is PR #498. Its first retained default attempt timed out
+Current evidence contains 11 failed B06 primaries archived on `main` and no
+accepted metrics. PRs #556 and #557 are merged. Publish run 34524003896
+observed `aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`: source, tooling, capture
+recovery, archive verification, and publication passed; six default attempts
+passed; then the first all-scenarios warmup timed out waiting for agent B to
+receive sender A's `messages.rtc` broadcast. No repeat is required. PR #560 is
+mergeable with green checks and awaits human review to merge that failed ZIP and
+index row unchanged (55,063 bytes; SHA-256
+`4411b6cf05decab2e3ac6746487aaa9940fb855a60cf75d93f1113cec9af0bdb`).
+
+The failure-evidence tooling correction retains one bounded, payload-free
+diagnostic in the normal attempt archive even when publish mode deliberately
+has no diagnostics output directory. The same constructed object still feeds
+the optional sidecar, while generic failed-control-result facts remain present.
+It adds no product behavior, routing, retry, timeout, migration, compatibility
+implementation, or legacy path. An exact-source local default plus
+all-scenarios run passed without retry, so the failed observation does not
+authorize an RTC behavior change.
+
+**Historical provenance:** The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
 before activation, refreshed the accepted room layout after activation, and
@@ -4518,12 +4539,19 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Dispatch run 34430533353 from the then-current moving `main`; verify its
       failed primary, preserve it unchanged in observation PR #556, and do not
       accept metrics or run a repeat.
-- [ ] Merge PR #556's verified failed ZIP/index row unchanged.
-- [ ] Merge the single canonical room-readiness/proof PR #557 after shared-web
-      owns event-driven room readiness, black-box transport policy delegates to
-      that owner, exact B06 topology assertions remain at the benchmark edge,
-      and deterministic regressions, repeated default/all-scenarios E3 proof,
-      touched-file closure, branch review, and final gates pass.
+- [x] Merge PR #556's verified failed ZIP/index row unchanged.
+- [x] Merge the single canonical room-readiness/proof PR #557 after its
+      event-driven room-readiness, black-box delegation, deterministic
+      regressions, local E3 proof, touched-file closure, branch review, and
+      final gates passed.
+- [x] Dispatch run 34524003896 from moving `main`; preserve its verified failed
+      primary with six passing default attempts and its first all-scenarios
+      warmup broadcast timeout. Do not accept metrics or run a repeat.
+- [ ] Merge PR #560's verified failed ZIP/index row unchanged after human review.
+- [ ] Complete and merge the bounded failure-evidence tooling correction after
+      focused, type/style/structure, independent-review, local/browser, and
+      branch gates. Preserve the sidecar and generic failed-result facts; add
+      no RTC product/routing/retry/timeout, migration, compatibility, or legacy path.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.
@@ -4982,7 +5010,24 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-**2026-09-06 reconciliation:** Task 4B, B04, B05, both observation producers,
+**2026-09-10 reconciliation:** `origin/main` is
+`aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`; PRs #556 and #557 are merged, and
+PR #558 records the current-main B05 observation. The repository has 12 B05
+rows, all passed with accepted metrics, and 11 B06 rows, all failed without
+accepted metrics. Run 34524003896 completed source, tooling, capture recovery,
+archive verification, and publication on that moving-main snapshot. Its six
+default attempts passed; its first all-scenarios warmup timed out waiting for
+agent B to receive sender A's `messages.rtc` broadcast, so later attempts did
+not run and no repeat is required. PR #560 is mergeable with green checks but
+awaits human review to merge the unchanged 55,063-byte archive (SHA-256
+`4411b6cf05decab2e3ac6746487aaa9940fb855a60cf75d93f1113cec9af0bdb`). The
+next two slices are that unchanged merge and the bounded failure-evidence
+tooling correction; then dispatch a fresh manual B06 publish from then-current
+moving `main`. Preserve a failure for diagnosis; only a valid primary and any
+required repeat unlock Task 12. B07 remains held and E4-pg remains conditional
+for Task 12.
+
+**2026-09-06 reconciliation (historical):** Task 4B, B04, B05, both observation producers,
 and B06 E3-memory tooling are merged. Five valid B05 observations are archived
 on `main`; the overlapping source PRs and branches were consolidated and
 closed. Nine B06 primaries are archived as failed evidence with no accepted
