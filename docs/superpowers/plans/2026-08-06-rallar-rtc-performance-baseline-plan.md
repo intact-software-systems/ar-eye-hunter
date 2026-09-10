@@ -245,7 +245,7 @@ expected peers in `rtcStatus.readyPeerIds` while its current formation still
 lacked the accepted overlay used by multicast routing. PR #556 contains the
 verified failed ZIP/index row with `acceptedMetrics: false` and no repeat.
 
-The next single correction-and-proof PR separates peer-only connection
+PR #557 is the next single correction-and-proof PR. It separates peer-only connection
 readiness from active-formation readiness. Post-activation and reconnect
 barriers require an open room, an accepted layout, and every expected peer in
 that layout's desired and ready sets before delivery starts; the pre-activation
@@ -261,10 +261,10 @@ split another hypothesis or test-only branch from it.
 
 ### Current execution horizon
 
-| Order | Slice                                                    | Completion evidence                                                                                                                                                                                                                                                                |
-| ----- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Archive run 34430533353                                  | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                |
-| 2     | Complete and merge the active-layout correction/proof PR | Keep the explicit active-formation barrier, bounded failed-control-result evidence, deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, retry, timeout increase, library, or legacy path. |
+| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                |
+| ----- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Archive run 34430533353                                   | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                |
+| 2     | Complete and merge active-layout correction/proof PR #557 | Keep the explicit active-formation barrier, bounded failed-control-result evidence, deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, retry, timeout increase, library, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
@@ -4223,7 +4223,7 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       failed primary, preserve it unchanged in observation PR #556, and do not
       accept metrics or run a repeat.
 - [ ] Merge PR #556's verified failed ZIP/index row unchanged.
-- [ ] Merge the single active-layout correction/proof PR after its deterministic
+- [ ] Merge the single active-layout correction/proof PR #557 after its deterministic
       regressions, repeated default/all-scenarios E3 proof, touched-file closure,
       branch review, and final gates pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
