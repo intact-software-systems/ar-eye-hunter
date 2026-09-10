@@ -759,11 +759,15 @@ describe('Rallar RTC room wait', () => {
         const acceptedOverlays = [createAcceptedOverlay(initialSnapshot)];
         mockGroupSnapshots(snapshots, acceptedOverlays);
         const deferredPeer = Promise.withResolvers<WebRtcConnectionService.PeerLaneOpenResult>();
+        const peerWaitStarted = Promise.withResolvers<void>();
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) =>
-                peerId === 'peer-a'
-                    ? await mockOpenRtcLane(peerId, laneId)
-                    : await deferredPeer.promise
+            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => {
+                if (peerId === 'peer-a') {
+                    return await mockOpenRtcLane(peerId, laneId);
+                }
+                peerWaitStarted.resolve();
+                return await deferredPeer.promise;
+            }
         );
         const facade = createRallarFacade();
         await facade.connect();
@@ -774,9 +778,7 @@ describe('Rallar RTC room wait', () => {
             minReadyPeers: 2,
             timeoutMs: 250
         });
-        await vi.waitFor(() => {
-            expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).toHaveBeenCalledTimes(2);
-        });
+        await peerWaitStarted.promise;
         snapshots[0] = shrunkenSnapshot;
         acceptedOverlays[0] = createAcceptedOverlay(shrunkenSnapshot);
         deferredPeer.resolve(await mockOpenRtcLane('peer-b', 'realtime'));
