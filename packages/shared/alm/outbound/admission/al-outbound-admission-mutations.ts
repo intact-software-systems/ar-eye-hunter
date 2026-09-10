@@ -11,6 +11,7 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
+import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALLatestSupersedenceValue,
@@ -127,11 +128,15 @@ export class ALOutboundAdmissionMutations {
         return mutations.map((mutation) => this.computeStateWrite(mutation, nowMs));
     }
 
-    /** False when a guarded shared supersedence row moved since the observation the writes carry. */
-    async hasCurrentObservations(
+    /**
+     * Throws so the backend aborts the transaction rather than committing an empty one, which would
+     * still bump the admission revision and invalidate every other in-flight optimistic write. The
+     * store's own catch turns this into the typed `'conflict'` result its callers read.
+     */
+    async assertCurrentObservations(
         transaction: ALAdmissionWorkWriteContext,
         writes: readonly ALOutboundStateWrite[]
-    ): Promise<boolean> {
+    ): Promise<void> {
         for (const write of writes) {
             if (write.supersedenceGuard === undefined) {
                 continue;
@@ -141,10 +146,9 @@ export class ALOutboundAdmissionMutations {
                 (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
             );
             if (!jsonEquals(current, write.supersedenceGuard.expected)) {
-                return false;
+                throw new ALAdmissionBackendConflictError('Outbound shared supersedence observation changed');
             }
         }
-        return true;
     }
 
     async assertMessageIdentities(

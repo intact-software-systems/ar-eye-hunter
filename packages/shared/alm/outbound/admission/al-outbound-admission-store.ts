@@ -434,9 +434,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 if (!await this.hasCurrentCommitFence(tx, bundle, effects)) {
                     return 'conflict';
                 }
-                if (!await this.mutations.hasCurrentObservations(tx, mutations)) {
-                    return 'conflict';
-                }
+                await this.mutations.assertCurrentObservations(tx, mutations);
                 await this.mutations.assertMessageIdentities(tx, bundle.mutations);
                 const eligibilityAtMs = this.nowMs();
                 if (

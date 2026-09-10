@@ -102,10 +102,7 @@ export function toRtcRoomSnapshotHandlingPlan(
     admission: RtcRoomSnapshotAdmission,
     fromPeerId: string | undefined
 ): ALMessageHandlingPlan {
-    if (
-        admission.kind === 'authorized' || admission.kind === 'not-room' ||
-        plan.dropReasonCode === 'expired' || plan.dropReasonCode === 'duplicate'
-    ) {
+    if (admission.kind === 'authorized' || admission.kind === 'not-room' || plan.dropReasonCode === 'expired') {
         return plan;
     }
     const pending = admission.kind === 'pending';
