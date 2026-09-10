@@ -532,6 +532,29 @@ change the tested runtime or harness tree. Touched-file closure, final branch
 review, deterministic repository gates, and final CI remain mandatory before
 declaring PR #557 ready.
 
+Exact plan-recording head `df50c97890192dfff4236605c490a035f4a49b5e`
+then passed the hosted medium-scale, durable-topology-replay, and CodeQL gates,
+but formation-large run `34502548953` exposed an observation race in the
+unchanged `api-v1-rtc-topology-convergence` recipe. Its primary socket retained
+the two earlier `session-connected` events at group revision 2, and the recipe's
+generic “any two group-state events” wait consumed those instead of the
+concurrent role and configuration mutations at revisions 3 and 4. The tertiary
+socket happened to consume the intended pair, proving this was buffered-frame
+selection rather than missing publication. The runner already owns the needed
+boundary: `decodeJsonPaths` can inspect the JSON document in
+`payload.resource` while retaining the original frame for later evidence
+parsing. A red recipe-semantics regression now requires both waits to select the
+two mutation request IDs through that boundary. The recipe correction adds
+those exact selectors, with no product change, retry, poll, delay, or timeout
+increase. The focused regression passes 14/14 tests, the formerly failing live
+three-server recipe passes 37/37 interactions, and the complete local
+`api-v1-black-box-cluster` profile passes 11/11 recipes. Touched-file closure
+also makes the shared recipe fixture return the canonical `ScenarioRecipe`,
+validates its JSON-object boundary, and replaces every ad-hoc `unknown` recipe
+cast in the touched semantics owner; all seven dependent recipe-test files pass
+67/67 tests and the full 1,172-file TypeScript test project has zero errors.
+Replacement exact-head CI remains mandatory before PR #557 is ready.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
