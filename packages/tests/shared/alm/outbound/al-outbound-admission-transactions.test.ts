@@ -1,5 +1,6 @@
 import '../../../setup-browser-indexeddb.ts';
 
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -19,6 +20,7 @@ import {
     type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     computeOutboundTestAdmission,
@@ -257,4 +259,22 @@ it('reads a control decision surface from one readonly transaction before its wr
     expect((await control.admit(ack)).kind).toBe('committed');
 
     expect(recorded.modes()).toEqual(COMMITTING_ADMISSION_TRANSACTIONS);
+});
+
+it('leaves an expired work row where a session read found it, for the queue sweep to remove', async () => {
+    const { backend } = await createAdmissionFixture('expired-work');
+    const expired = toResourceEntryWithKey(
+        { topicId: 'AL_OUTBOUND', resourceId: TRANSACTION_NAMESPACE, contextId: 'expired-slot' },
+        `AL_OUTBOUND:${TRANSACTION_NAMESPACE}`,
+        { effectId: 'expired-slot' },
+        Temporal.Instant.fromEpochMilliseconds(Date.now() - 1_000)
+    );
+    await backend.workQueue.enqueue(expired);
+
+    expect(await backend.readWithin((session) => session.readWork(expired.key))).toBeUndefined();
+
+    // The read answered its caller and wrote nothing: the row is still the slot a write would
+    // fence, and the queue's own sweep is what removes it.
+    expect(await backend.workQueue.cleanupAsync()).toEqual({ deleted: 1, saturated: false });
+    expect(await backend.workQueue.getItem(expired.key)).toBeUndefined();
 });
