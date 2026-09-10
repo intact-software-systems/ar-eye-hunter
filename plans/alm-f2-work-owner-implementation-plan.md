@@ -1637,7 +1637,7 @@ send as queue wait.
       control/repair reads with the same shape) issue every key read inside one transaction through the
       backend's read API; read → compute → validate → commit is unchanged; the pin from Step 2 goes GREEN at
       one transaction; the fences tests stay green over memory, IndexedDB, and PGlite.
-- [ ] **Step 4: Cut the readiness scan volume and name the dropped hop (ruling R79)** — the second
+- [x] **Step 4: Cut the readiness scan volume and name the dropped hop (ruling R79)** — the second
       observation run showed the breaker never tripped and the largest IndexedDB consumer is the owner's
       readiness and claim `work-page` scans (1 067 of 1 743 operations in one session, ~12 per second),
       which starve admission and the RTC offer alike. Make the outbound owner probe storage only when it
@@ -1650,6 +1650,16 @@ send as queue wait.
       stall (`handleNegotiationNeeded` swallows a throwing enqueue with no retry) if the change is bounded;
       otherwise record it. The drain-lane idea is dropped: queue waits behind drains were measured (max
       7 833 ms) but the scan volume is the larger lever.
+      Landed: the work owner remembers `{ readyAtMs, observedAtMs }` and re-reads only when its own
+      commit, its own batch, a retained claim's settlement, or the engine's 3 s idle ceiling says the
+      answer could have moved; how long an answer stands is the owner's decision, since the inbound
+      rotation advances one status per probe and must reach it every round. One probe is now one
+      readonly transaction and one `work-page` operation instead of six, through a repository
+      `readWorkPages` and a port `readPages` scan. Measured on IndexedDB: one probe 6 -> 1 operations
+      and 6 -> 1 readonly transactions; ten idle seconds of engine passes 600 -> 4 operations; the ten
+      passes that follow one typed send 30 -> 1. `rtc.status` carries the peer's signaling counts and
+      `commit-phases` carries `msgId` and `typeId`. The `sendSignal` stall was bounded and is fixed for
+      the three statuses that clear on their own; two residues are recorded in the Step 4 report.
 - [ ] **Step 5: Re-observe on the runner** — push, let the observation job run, read
       `alm-conformance-lane-<sha>`: the ws smoke cell green on all three scenarios, per-send admission wall
       clock on the runner recorded against the 1.9 s F1 baseline, RTC readiness back under the 30 s budget;
