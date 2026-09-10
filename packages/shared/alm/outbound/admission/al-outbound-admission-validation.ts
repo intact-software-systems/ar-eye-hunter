@@ -1,6 +1,7 @@
 import {
     requireOptionalPersistedALNonEmptyString,
     requireOptionalPersistedALUniqueStringArray,
+    requirePersistedALBoolean,
     requirePersistedALNonEmptyString,
     requirePersistedALSafeInteger
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
@@ -106,7 +107,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             'maxAttempts',
             'expectedPeerIds'
         ], ['mode']);
-        decodeEnabledFlag(ack.enabled);
+        requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
         requirePersistedALSafeInteger(ack.timeoutMs, 0, 'captured acknowledgement timeout');
         requirePersistedALSafeInteger(ack.maxAttempts, 0, 'captured acknowledgement attempts');
         if (!Array.isArray(ack.expectedPeerIds)) {
@@ -119,7 +120,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
     }
     if (policy.retryTracking !== null) {
         const retry = decodeALAdmissionRecord(policy.retryTracking, ['enabled', 'maxAttempts'], ['retryDelayMs']);
-        decodeEnabledFlag(retry.enabled);
+        requirePersistedALBoolean(retry.enabled, 'captured retry tracking flag');
         requirePersistedALSafeInteger(retry.maxAttempts, 0, 'captured retry attempts');
         if (retry.retryDelayMs !== undefined) {
             requirePersistedALSafeInteger(retry.retryDelayMs, 0, 'captured retry delay');
@@ -127,7 +128,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
     }
     if (policy.repairTracking !== null) {
         const repair = decodeALAdmissionRecord(policy.repairTracking, ['enabled', 'algo', 'maxAttempts']);
-        decodeEnabledFlag(repair.enabled);
+        requirePersistedALBoolean(repair.enabled, 'captured repair tracking flag');
         requirePersistedALSafeInteger(repair.maxAttempts, 0, 'captured repair attempts');
         if (repair.algo !== 'none' && repair.algo !== 'retransmit') {
             throw new TypeError('Captured repair algorithm is invalid');
@@ -138,7 +139,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             'key',
             'replacesMsgId'
         ]);
-        decodeEnabledFlag(supersedence.enabled);
+        requirePersistedALBoolean(supersedence.enabled, 'captured supersedence tracking flag');
         requireOptionalPersistedALNonEmptyString(supersedence.key, 'captured supersedence key');
         requireOptionalPersistedALNonEmptyString(supersedence.replacesMsgId, 'captured replaced message');
         if (supersedence.algo !== 'none' && supersedence.algo !== 'latest-wins') {
@@ -146,13 +147,6 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         }
     }
     return value as ALOutboundCapturedPolicy;
-}
-
-function decodeEnabledFlag(value: unknown): boolean {
-    if (typeof value !== 'boolean') {
-        throw new TypeError('Captured outbound policy enabled flag is invalid');
-    }
-    return value;
 }
 
 export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string): ALOutboundPendingAckSnapshot {

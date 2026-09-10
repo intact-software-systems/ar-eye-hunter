@@ -76,6 +76,15 @@ export function requireOptionalPersistedALNonEmptyString(
     }
 }
 
+export function requirePersistedALBoolean(
+    value: PersistedALValue | undefined,
+    label: string
+): void {
+    if (typeof value !== 'boolean') {
+        throw new TypeError(`Persisted AL ${label} is invalid`);
+    }
+}
+
 export function requirePersistedALSafeInteger(
     value: PersistedALValue | undefined,
     minimum: number,
