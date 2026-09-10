@@ -245,26 +245,65 @@ expected peers in `rtcStatus.readyPeerIds` while its current formation still
 lacked the accepted overlay used by multicast routing. PR #556 contains the
 verified failed ZIP/index row with `acceptedMetrics: false` and no repeat.
 
-PR #557 is the next single correction-and-proof PR. It separates peer-only connection
-readiness from active-formation readiness. Post-activation and reconnect
-barriers require an open room, an accepted layout, and every expected peer in
-that layout's desired and ready sets before delivery starts; the pre-activation
-initial-pair barrier remains peer-only. The same PR makes failed RTC-B06
-observations self-diagnosing: the Playwright finalizer records at most twenty
-sanitized failed control results, and external acceptance retains those facts
-only after the staged attempt passes its existing identity/schema checks.
-Malformed, absent, or non-RTC failed-producer output still fails closed on the
-process exit. Three retry-free default matrices passed in one reused local
-server session, followed by one retry-free 24-case all-scenarios matrix. Keep
-the remaining review, validation, and correction work in this one PR; do not
-split another hypothesis or test-only branch from it.
+PR #557 is the next single correction-and-proof PR. Run 34430533353 exposed an
+ownership error, not a need for another benchmark-local readiness condition:
+`BrowserRtcWaitRuntime.waitForRoomLane()` resolved the room transport target
+once, so an invocation that began before accepted-layout arrival could return
+an empty peer result. Higher test layers then reconstructed room readiness from
+health JSON, duplicating shared-web product truth while still leaving timing
+gaps.
+
+The permanent correction keeps one readiness owner. `BrowserRtcRoomRuntime`
+owns the composite room-transport boundary: authoritative room membership plus
+accepted layout determine the desired peers, and RTC lane state determines
+whether the requested minimum is ready. It waits event-first for accepted
+room-transport authority before delegating lane opening and waiting to
+`BrowserRtcWaitRuntime`; an inactive RTC controller still returns immediately.
+The shared-web state composition supplies a narrow internal subscription for
+changes to the exact room transport target. No public facade, persisted shape,
+protocol, compatibility layer, migration, polling loop, lock, retry, timeout
+increase, library, or legacy path is added.
+
+Black-box code owns policy, not readiness truth. Its `rtc.connect` path chooses
+peer-only readiness for transports that only require a data channel and
+canonical room readiness for `messages.rtc`, then delegates the latter to
+`rallar.rtc.waitForRoom(...)`. The formation observation controller delegates
+to the same product operation with `connect: false` and retains its
+observation-only contract. Playwright keeps only B06-specific exact-topology
+assertions after the canonical barrier; it does not rebuild an `open`/accepted
+layout/ready-peer algorithm from health JSON. QueueBox and multicast delivery
+semantics remain unchanged: making an early no-route send durable would be a
+separate product decision, not a readiness fix.
+
+Implement the correction in two concrete TDD slices on this PR:
+
+1. Add a deterministic shared-web regression that starts the public room wait
+   before accepted-layout arrival, prove the current premature return, then add
+   the event-driven target subscription and composite room-runtime wait. Cover
+   inactive RTC, zero-peer accepted layouts, requested minimums, abort, and
+   timeout without retaining the old path.
+2. Add black-box regressions that prove `messages.rtc` selects canonical room
+   readiness while peer-only transports retain connection readiness. Replace
+   duplicate formation and Playwright readiness logic, preserve exact B06 peer
+   identity assertions, and run the focused package/build tests plus the
+   retry-free default and all-scenarios live matrices before review.
+
+The same PR retains bounded failure evidence: the Playwright finalizer records
+at most twenty sanitized failed control results, and external acceptance keeps
+those facts only after the staged attempt passes its existing identity/schema
+checks. Malformed, absent, or non-RTC failed-producer output still fails closed
+on the process exit. Earlier branch-local proof—three retry-free default
+matrices in one reused server session followed by one retry-free 24-case
+all-scenarios matrix—validates the diagnosis but must be rerun after the
+ownership correction. Keep implementation, review, validation, and proof in
+this one PR; do not split another hypothesis or test-only branch from it.
 
 ### Current execution horizon
 
-| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                |
-| ----- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Archive run 34430533353                                   | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                |
-| 2     | Complete and merge active-layout correction/proof PR #557 | Keep the explicit active-formation barrier, bounded failed-control-result evidence, deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, retry, timeout increase, library, or legacy path. |
+| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Archive run 34430533353                                   | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                              |
+| 2     | Complete and merge active-layout correction/proof PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
@@ -4223,9 +4262,11 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       failed primary, preserve it unchanged in observation PR #556, and do not
       accept metrics or run a repeat.
 - [ ] Merge PR #556's verified failed ZIP/index row unchanged.
-- [ ] Merge the single active-layout correction/proof PR #557 after its deterministic
-      regressions, repeated default/all-scenarios E3 proof, touched-file closure,
-      branch review, and final gates pass.
+- [ ] Merge the single active-layout correction/proof PR #557 after shared-web
+      owns event-driven room readiness, black-box transport policy delegates to
+      that owner, exact B06 topology assertions remain at the benchmark edge,
+      and deterministic regressions, repeated default/all-scenarios E3 proof,
+      touched-file closure, branch review, and final gates pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.
