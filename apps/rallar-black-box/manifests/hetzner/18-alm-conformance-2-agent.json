@@ -102,6 +102,12 @@
             "timeoutMs": 45000
           },
           {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-bounded-rejection-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-ws-bounded-rejection-sender-send-1",
             "connection": "almConformanceSender",
@@ -244,6 +250,12 @@
             "timeoutMs": 45000
           },
           {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-deadline-expiry-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-ws-deadline-expiry-sender-fault-ws",
             "faultId": "drop-ws-alm.conformance.deadline-expiry",
@@ -363,6 +375,12 @@
               "topicId": "room.alm-conformance"
             },
             "timeoutMs": 45000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-delivery-baseline-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
           },
           {
             "kind": "messages.send",
@@ -497,6 +515,12 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-bounded-rejection-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
           },
           {
             "kind": "messages.send",
@@ -651,6 +675,12 @@
             }
           },
           {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-deadline-expiry-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-deadline-expiry-sender-fault-rtc",
             "faultId": "drop-rtc-alm.conformance.deadline-expiry",
@@ -780,6 +810,12 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-delivery-baseline-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
           },
           {
             "kind": "messages.send",
@@ -919,6 +955,12 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-ordering-resync-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
           },
           {
             "kind": "messages.send",
@@ -1075,6 +1117,12 @@
             }
           },
           {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-send-1",
             "connection": "almConformanceSender",
@@ -1227,6 +1275,12 @@
             }
           },
           {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-fault-rtc",
             "faultId": "drop-rtc-alm.conformance.deadline-expiry",
@@ -1370,6 +1424,12 @@
             }
           },
           {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
             "kind": "messages.send",
             "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-send-1",
             "connection": "almConformanceSender",
@@ -1507,6 +1567,12 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
           },
           {
             "kind": "messages.send",

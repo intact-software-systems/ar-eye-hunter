@@ -273,7 +273,7 @@ function toDeliveryBaselineSenderCommands(
         }),
         toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
         toReceiptsCommand({ ...sender, index: 1 }),
-        toStorageCountersCommand(sender),
+        toStorageCountersCommand(sender, 'storage-counters'),
         toStorageCountersAssertCommand(sender)
     ];
 }
@@ -346,6 +346,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             toEnsureGroupCommand(recipe),
             toEnsureMemberCommand(recipe),
             toConnectCommand(recipe),
+            ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
             toStatsCommand(recipe)
         ]
@@ -487,13 +488,24 @@ function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): RallarBlac
     };
 }
 
-function toStorageCountersCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+function toStorageCountersCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
     return {
         kind: 'storage.counters',
-        commandId: toCommandId(step, 'storage-counters'),
+        commandId: toCommandId(step, name),
         reset: false,
         timeoutMs: toBudgetMs(STORAGE_COUNTERS_TIMEOUT_MS, step.input.deadlineMs)
     };
+}
+
+/**
+ * Pre-send evidence. A sender whose send exhausts its budget stops the recipe before the
+ * post-receipts counters run, so this reading is the only IndexedDB operation count a timed-out
+ * scenario leaves behind, and the pair brackets the operations one typed send spends.
+ */
+function toConnectedStorageCountersCommands(
+    step: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected')] : [];
 }
 
 /** The spec's own acceptance criterion: an admitted ALM send leaves AL-owned IndexedDB work behind. */

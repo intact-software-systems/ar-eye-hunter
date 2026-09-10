@@ -184,6 +184,7 @@ describe('alm-conformance recipe family', () => {
             'alm-ws-delivery-baseline-sender-ensure-group',
             'alm-ws-delivery-baseline-sender-ensure-member',
             'alm-ws-delivery-baseline-sender-connect',
+            'alm-ws-delivery-baseline-sender-storage-counters-connected',
             'alm-ws-delivery-baseline-sender-send-1',
             'alm-ws-delivery-baseline-sender-observe-accepted-1',
             'alm-ws-delivery-baseline-sender-receipts-1',
