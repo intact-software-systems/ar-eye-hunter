@@ -1622,25 +1622,34 @@ send as queue wait.
 - Produces: no public surface change; the admission result values and the fence-abort invariant (R58/R69)
   are unchanged.
 
-- [ ] **Step 0: Repair the Postgres gate** — the claim's `leaseUntilMs` derives from the reserved row's
+- [x] **Step 0: Repair the Postgres gate** — the claim's `leaseUntilMs` derives from the reserved row's
       `dequeueAudit.startTs` (ceil to the millisecond, shared with `resolveALOutboundWorkReadyAt`) plus the
       lease, never from the JavaScript clock (`al-outbound-effect-claims.test.ts:60` failed by 1 ms); the
       ALM race test writes a JSON resource and cleans up `actionKey`, and `reserveTopologyWork` filters by the
       key it owns before parsing (`group-connect-trigger-sql.test.ts:276`).
-- [ ] **Step 1: Instrumentation** — a `storage.counters` step right after connect in every conformance
+- [x] **Step 1: Instrumentation** — a `storage.counters` step right after connect in every conformance
       scenario (manifests regenerated), the lock hold split into `read` and `commit` phases, and each commit's
       queue wait attributed to a send or a drain origin; diagnostics contract doc updated; pinned in the
       diagnostics tests.
-- [ ] **Step 2: Pin the current read cost** — an operation-count test records the IndexedDB transactions
+- [x] **Step 2: Pin the current read cost** — an operation-count test records the IndexedDB transactions
       and round trips one typed send's `readOutgoingMessage` performs (RED at the measured count).
-- [ ] **Step 3: One readonly transaction per decision-surface read** — `readOutgoingMessage` (and the
+- [x] **Step 3: One readonly transaction per decision-surface read** — `readOutgoingMessage` (and the
       control/repair reads with the same shape) issue every key read inside one transaction through the
       backend's read API; read → compute → validate → commit is unchanged; the pin from Step 2 goes GREEN at
       one transaction; the fences tests stay green over memory, IndexedDB, and PGlite.
-- [ ] **Step 4: Drain commits off the sender's critical path** — with the Step 1 events, measure the queue
-      wait attributed to drain commits after Step 3; if it still dominates a send's wall clock on the runner
-      (Step 5 artifact), give the drain its own commit lane behind the admission revision fence, recorded as a
-      ruling with the figures; otherwise record the measurement and leave the lock policy alone.
+- [ ] **Step 4: Cut the readiness scan volume and name the dropped hop (ruling R79)** — the second
+      observation run showed the breaker never tripped and the largest IndexedDB consumer is the owner's
+      readiness and claim `work-page` scans (1 067 of 1 743 operations in one session, ~12 per second),
+      which starve admission and the RTC offer alike. Make the outbound owner probe storage only when it
+      cannot know the answer in memory (a wake or a commit invalidates a cached `nextReadyAtMs`; an idle
+      owner re-probes on the engine's backed-off schedule, not at the initial interval), bound the reads
+      one probe performs, and pin the probe count per idle second and per batch over the IndexedDB
+      backend. Diagnostics: `QRtcPeerConnection.readDiagnostics()` counts (offers, answers, candidates in
+      and out, signaling errors) in `toRtcConnectionStatus` so a readiness timeout names the hop that
+      dropped the offer, and the message id and type on `commit-phases`. Fix the `sendSignal` one-way
+      stall (`handleNegotiationNeeded` swallows a throwing enqueue with no retry) if the change is bounded;
+      otherwise record it. The drain-lane idea is dropped: queue waits behind drains were measured (max
+      7 833 ms) but the scan volume is the larger lever.
 - [ ] **Step 5: Re-observe on the runner** — push, let the observation job run, read
       `alm-conformance-lane-<sha>`: the ws smoke cell green on all three scenarios, per-send admission wall
       clock on the runner recorded against the 1.9 s F1 baseline, RTC readiness back under the 30 s budget;
