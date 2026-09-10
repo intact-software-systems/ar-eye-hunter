@@ -489,6 +489,16 @@ deletes the derived-revision helper rather than preserving a second path. This i
 proof-tooling alignment only and does not alter topology publication, replay, or
 presence behavior.
 
+Independent review of exact head `ea46d8ec112ec2f10e4c31d6b183ebee2b24113c`
+found one remaining completion race. A connecting wait could satisfy two peers,
+then project status after the accepted topology shrank to one peer; the status
+resolver reported `open` because every newly desired peer was ready even though
+the caller had requested `minReadyPeers: 2`. A deterministic red regression
+reproduced the two-to-one shrink. The final projection now requires the requested
+minimum before reporting `open`, so authority invalidation cannot upgrade an
+under-minimum result. It does not repeat the operation or add a retry, poll,
+timeout, compatibility path, or retained legacy behavior.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

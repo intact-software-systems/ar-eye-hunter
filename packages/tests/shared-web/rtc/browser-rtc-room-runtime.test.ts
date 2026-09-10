@@ -744,6 +744,52 @@ describe('Rallar RTC room wait', () => {
         });
     });
 
+    it('does not report open below the requested minimum after the accepted topology shrinks', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const initialSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-a',
+            'peer-b'
+        ]);
+        const shrunkenSnapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-a'
+        ]);
+        const snapshots = [initialSnapshot];
+        const acceptedOverlays = [createAcceptedOverlay(initialSnapshot)];
+        mockGroupSnapshots(snapshots, acceptedOverlays);
+        const deferredPeer = Promise.withResolvers<WebRtcConnectionService.PeerLaneOpenResult>();
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) =>
+                peerId === 'peer-a'
+                    ? await mockOpenRtcLane(peerId, laneId)
+                    : await deferredPeer.promise
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            connect: true,
+            laneId: 'realtime',
+            minReadyPeers: 2,
+            timeoutMs: 250
+        });
+        await vi.waitFor(() => {
+            expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).toHaveBeenCalledTimes(2);
+        });
+        snapshots[0] = shrunkenSnapshot;
+        acceptedOverlays[0] = createAcceptedOverlay(shrunkenSnapshot);
+        deferredPeer.resolve(await mockOpenRtcLane('peer-b', 'realtime'));
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'connecting',
+                desiredPeerIds: ['peer-a'],
+                readyPeerIds: ['peer-a']
+            }
+        });
+    });
+
     it('keeps a non-connecting timeout terminal when RTC becomes ready during cleanup', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
