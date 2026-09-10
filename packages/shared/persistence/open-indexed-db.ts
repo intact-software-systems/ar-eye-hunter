@@ -27,6 +27,12 @@ interface IndexedDbStoreSchema<InitialRecord extends object> {
     readonly initialRecords: readonly InitialRecord[];
 }
 
+export interface OpenedIndexedDb {
+    readonly db: IDBDatabase;
+    /** Empty when the opened database is the required schema; every reason it is not otherwise. */
+    readonly schemaIssues: readonly string[];
+}
+
 /** Thrown when an existing database's store, key path, auto-increment, or index set is not the required schema. */
 export class IndexedDbSchemaMismatchError extends Error {
     constructor(reason: string) {
@@ -67,10 +73,15 @@ export class IndexedDbConnection {
     }
 }
 
-export async function openIndexedDbWithStores<InitialRecord extends object>(
+/**
+ * Opens the database and reports whether what it found is the required schema, without deciding
+ * what a mismatch means: a caller that resets its storage owns that decision, and the handle is
+ * open either way so it can close it on its own terms.
+ */
+export async function openIndexedDbWithValidatedStores<InitialRecord extends object>(
     dbName: string,
     definitions: readonly IndexedDbStoreDefinition<InitialRecord>[]
-): Promise<IDBDatabase> {
+): Promise<OpenedIndexedDb> {
     if (typeof indexedDB === 'undefined') {
         throw new Error('IndexedDB is not supported in this environment');
     }
@@ -79,16 +90,22 @@ export async function openIndexedDbWithStores<InitialRecord extends object>(
     if (validated.left) {
         throw validated.left;
     }
-    const database = await openIndexedDb(dbName, stores);
-    database.onversionchange = () => database.close();
-    try {
-        assertIndexedDbDatabaseSchema(database, stores);
-        return database;
+    const db = await openIndexedDb(dbName, stores);
+    db.onversionchange = () => db.close();
+    return { db, schemaIssues: validateIndexedDbDatabaseSchema(db, stores) };
+}
+
+/** The same open for a caller whose contract is that a schema mismatch is a defect, not an outcome. */
+export async function openIndexedDbWithStores<InitialRecord extends object>(
+    dbName: string,
+    definitions: readonly IndexedDbStoreDefinition<InitialRecord>[]
+): Promise<IDBDatabase> {
+    const opened = await openIndexedDbWithValidatedStores(dbName, definitions);
+    if (opened.schemaIssues.length === 0) {
+        return opened.db;
     }
-    catch (error) {
-        database.close();
-        throw error;
-    }
+    opened.db.close();
+    throw new IndexedDbSchemaMismatchError(opened.schemaIssues[0]);
 }
 
 function toIndexedDbStoreSchema<InitialRecord extends object>(
@@ -117,45 +134,42 @@ function validateIndexedDbStoreNames(
         : Either.ofRight(stores);
 }
 
-function assertIndexedDbDatabaseSchema(
+/** Every reason the opened database is not the required schema; empty means it is. */
+function validateIndexedDbDatabaseSchema(
     db: IDBDatabase,
     stores: readonly IndexedDbStoreSchema<object>[]
-): void {
+): readonly string[] {
     if (
         db.objectStoreNames.length !== stores.length ||
         stores.some((store) => !db.objectStoreNames.contains(store.name))
     ) {
-        throw new IndexedDbSchemaMismatchError('IndexedDB database stores do not match the required schema');
+        return ['IndexedDB database stores do not match the required schema'];
     }
-    for (const store of stores) {
-        assertIndexedDbStoreSchema(db, store);
-    }
+    return stores.flatMap((store) => validateIndexedDbStoreSchema(db, store));
 }
 
-function assertIndexedDbStoreSchema(
+function validateIndexedDbStoreSchema(
     db: IDBDatabase,
     store: IndexedDbStoreSchema<object>
-): void {
+): readonly string[] {
     const objectStore = db.transaction(store.name).objectStore(store.name);
+    const issues: string[] = [];
     if (!isEqualKeyPath(objectStore.keyPath, store.keyPath)) {
-        throw new IndexedDbSchemaMismatchError(
+        issues.push(
             `IndexedDB store "${store.name}" has key path "${formatKeyPath(objectStore.keyPath)}"; ` +
                 `expected "${store.keyPath}"`
         );
     }
     if (objectStore.autoIncrement) {
-        throw new IndexedDbSchemaMismatchError(
-            `IndexedDB store "${store.name}" auto-increment does not match its required schema`
-        );
+        issues.push(`IndexedDB store "${store.name}" auto-increment does not match its required schema`);
     }
     if (
         objectStore.indexNames.length !== store.indexes.length ||
         store.indexes.some((index) => !isMatchingIndex(objectStore, index))
     ) {
-        throw new IndexedDbSchemaMismatchError(
-            `IndexedDB indexes for "${store.name}" do not match their required schema`
-        );
+        issues.push(`IndexedDB indexes for "${store.name}" do not match their required schema`);
     }
+    return issues;
 }
 
 function formatKeyPath(keyPath: string | string[] | null): string {

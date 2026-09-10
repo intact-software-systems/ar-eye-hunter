@@ -77,11 +77,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: 10
     },
     {
-        // Measured 1.69921875 KiB; types erase and the runtime surface is rallar-core.ts's own.
+        // Measured 1.69921875 KiB; types erase and the runtime surface is rallar-core.ts's own. The
+        // budget starts tight so this entry can detect a regression rather than absorb one.
         label: 'browser/rallar-messages.ts',
         entry: 'packages/shared-web/browser/rallar-messages.ts',
         output: 'rallar-browser-messages.boundary.min.js',
-        brotliBudgetKiB: 12
+        brotliBudgetKiB: 3
     }
 ];
 

@@ -34,13 +34,19 @@ interface ReadExpiredStoredQueueEntriesInput {
     readonly maxToRead: number;
 }
 
+/** The resume position of a terminal-sweep page; `by-status-end` rows always carry both fields. */
+interface CompletedStoredQueueEntryCursor {
+    readonly endEpochMs: number;
+    readonly keyString: string;
+}
+
 interface ReadCompletedStoredQueueEntriesAtOrBeforeInput {
     readonly db: IDBDatabase;
     readonly storeName: string;
     readonly status: EntityStatus;
     readonly endAtOrBeforeEpochMs: number;
     readonly maxToRead: number;
-    readonly after?: StoredResourceEntry;
+    readonly after?: CompletedStoredQueueEntryCursor;
 }
 
 interface ReadDeletableCompletedStoredQueueEntriesInput {
@@ -210,7 +216,7 @@ async function readCompletedStoredQueueEntriesAtOrBefore(
     const { db, storeName, status, endAtOrBeforeEpochMs, maxToRead, after } = input;
     const lower = after === undefined
         ? [status, Number.MIN_SAFE_INTEGER, '']
-        : [status, after.endEpochMs!, after.keyString];
+        : [status, after.endEpochMs, after.keyString];
     const range = IDBKeyRange.bound(
         lower,
         [status, endAtOrBeforeEpochMs, []],
@@ -230,11 +236,19 @@ async function readCompletedStoredQueueEntriesAtOrBefore(
     return values.map(decodeStoredResourceEntryValue);
 }
 
+/** A row read back from `by-status-end` is indexed by its end timestamp, so a null one is corrupt. */
+function toCompletedStoredQueueEntryCursor(stored: StoredResourceEntry): CompletedStoredQueueEntryCursor {
+    if (stored.endEpochMs === null) {
+        throw new TypeError('IndexedDB terminal sweep row carries no end timestamp');
+    }
+    return { endEpochMs: stored.endEpochMs, keyString: stored.keyString };
+}
+
 async function readDeletableCompletedStoredQueueEntriesForStatus(
     input: ReadDeletableCompletedStoredQueueEntriesForStatusInput
 ): Promise<DeletableCompletedStoredQueueEntryScan> {
     const deletable: StoredResourceEntry[] = [];
-    let after: StoredResourceEntry | undefined = undefined;
+    let after: CompletedStoredQueueEntryCursor | undefined = undefined;
     let pagesRead = 0;
     while (deletable.length < input.maxToDelete && pagesRead < input.maxPages) {
         const page = await readCompletedStoredQueueEntriesAtOrBefore({
@@ -254,7 +268,7 @@ async function readDeletableCompletedStoredQueueEntriesForStatus(
         if (page.length < INDEXED_DB_QUEUE_COMPLETED_SWEEP_PAGE_SIZE) {
             break;
         }
-        after = page[page.length - 1];
+        after = toCompletedStoredQueueEntryCursor(page[page.length - 1]);
     }
     return { deletable, pagesRead };
 }

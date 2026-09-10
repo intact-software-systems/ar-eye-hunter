@@ -1,7 +1,6 @@
 import { readIndexedDbRequest } from '../persistence/indexed-db-request.ts';
 import {
-    IndexedDbSchemaMismatchError,
-    openIndexedDbWithStores,
+    openIndexedDbWithValidatedStores,
     type IndexedDbStoreDefinition
 } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
@@ -14,6 +13,7 @@ export const AL_ADMISSION_WORK_STORE_NAME = 'alm-work';
 
 export const AL_ADMISSION_REVISION_KEY = '__rallar_al_admission_revision__';
 export const AL_ADMISSION_SCHEMA_KEY = '__rallar_al_schema__';
+/** Bump on any persisted row-shape or index change: the store-schema check only counts indexes. */
 export const AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-f2';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
 
@@ -94,24 +94,18 @@ async function openOrReset(
     input: OpenIndexedDbAdmissionDatabaseInput,
     attempt: OpenOrResetAttempt
 ): Promise<OpenOrResetResult> {
-    let db: IDBDatabase;
-    try {
-        db = await openIndexedDbWithStores(
-            input.dbName,
-            toAdmissionStoreDefinitions(input.storeName, input.schemaId)
-        );
+    const opened = await openIndexedDbWithValidatedStores(
+        input.dbName,
+        toAdmissionStoreDefinitions(input.storeName, input.schemaId)
+    );
+    if (opened.schemaIssues.length === 0) {
+        return await toSchemaIdMismatchReset(input, attempt, opened.db);
     }
-    catch (error) {
-        if (attempt === 'after-reset' || !isIndexedDbSchemaMismatch(error)) {
-            throw error;
-        }
-        return await toStoreSchemaMismatchReset(input);
+    opened.db.close();
+    if (attempt === 'after-reset') {
+        throw new Error(`ALM storage ${input.dbName} schema mismatch: ${opened.schemaIssues[0]}`);
     }
-    return await toSchemaIdMismatchReset(input, attempt, db);
-}
-
-function isIndexedDbSchemaMismatch(error: unknown): error is IndexedDbSchemaMismatchError {
-    return error instanceof IndexedDbSchemaMismatchError;
+    return await toStoreSchemaMismatchReset(input);
 }
 
 async function toStoreSchemaMismatchReset(

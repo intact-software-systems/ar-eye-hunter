@@ -1,4 +1,7 @@
-import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
+import {
+    createPassThroughALStorageResetSink,
+    type ALStorageResetEvent
+} from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createPassThroughIndexedDbOperationObserver,
@@ -24,10 +27,6 @@ export interface RallarDiagnosticsPorts {
 }
 
 export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
-    return () => {};
-}
-
-export function createPassThroughALStorageResetSink(): (event: ALStorageResetEvent) => void {
     return () => {};
 }
 

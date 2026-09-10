@@ -72,9 +72,6 @@ export namespace BrowserSessionAuthLifecycle {
 export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     private readonly authStateListeners = new Set<RallarAuthChangeListener>();
     private readonly input: BrowserSessionAuthLifecycle.Input;
-    // Resolved fresh at the top of every connect(); cleanupEndedSession() reuses this instead of
-    // re-normalizing the sparse defaults a second time. Defaults pass-through until a connect() runs.
-    private diagnosticsPorts: RallarDiagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
@@ -92,15 +89,12 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             throw new Error('Cannot init middleware: no auth session.');
         }
         this.scheduleAuthExpiry(session);
-        this.diagnosticsPorts = toRallarDiagnosticsPorts(
-            this.input.connectionRuntime.readDefaults()?.diagnosticsPorts
-        );
 
         const middleware = await this.input.connectionLifecycle.connect({
             sessionId: session.sessionId,
             scope,
             operationOptions,
-            diagnosticsPorts: this.diagnosticsPorts,
+            diagnosticsPorts: this.readDiagnosticsPorts(),
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
             isSessionCurrent: () => readSession()?.sessionId === session.sessionId,
             onAuthInvalid: async (error) => await this.handleAuthInvalidError(error)
@@ -275,7 +269,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             ? await captureError(() => revokeAuthSession(session, this.input.newRequestId(), options.operationOptions))
             : undefined;
         const dataCleanupError = session
-            ? await this.cleanupEndedSession(session)
+            ? await this.cleanupEndedSession(session, this.readDiagnosticsPorts())
             : undefined;
         // Listeners learn the session ended only from emitAuthState, so a failing
         // state emit must not stand between them and that notification.
@@ -288,11 +282,19 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
     }
 
-    private async cleanupEndedSession(session: AuthSession): Promise<Error | undefined> {
+    /** Resolved where it is used, so a session that ends without a connect() still reports a reset. */
+    private readDiagnosticsPorts(): RallarDiagnosticsPorts {
+        return toRallarDiagnosticsPorts(this.input.connectionRuntime.readDefaults()?.diagnosticsPorts);
+    }
+
+    private async cleanupEndedSession(
+        session: AuthSession,
+        diagnosticsPorts: RallarDiagnosticsPorts
+    ): Promise<Error | undefined> {
         const dataCleanupError = await captureError(() => this.input.closeDataScopes(session));
         try {
             await deleteBrowserALRuntimeEntriesForSession(session.sessionId, {
-                onStorageReset: this.diagnosticsPorts.onStorageReset
+                onStorageReset: diagnosticsPorts.onStorageReset
             });
         }
         catch {
