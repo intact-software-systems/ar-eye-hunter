@@ -6,8 +6,11 @@ import {
 } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
+import type { LiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
-function createAgent(prefix: LiveRtcControlClient.FormationAgent['prefix']): LiveRtcControlClient.FormationAgent {
+function createAgent(
+    prefix: LiveRtcControlClient.FormationAgent['prefix']
+): LiveRtcControlClient.FormationAgent {
     return {
         prefix,
         agentId: `agent-${prefix.toLowerCase()}`,
@@ -17,8 +20,14 @@ function createAgent(prefix: LiveRtcControlClient.FormationAgent['prefix']): Liv
     };
 }
 
-function lifecycleOperation(command: LiveRtcControlClient.ExecuteInput): string | undefined {
-    return (command.command.kind === 'http.request' ? command.command.request.path : undefined)?.match(/\/lifecycle\/([^/]+)\//u)?.[1];
+function lifecycleOperation(
+    command: LiveRtcControlClient.ExecuteInput
+): string | undefined {
+    return (
+        command.command.kind === 'http.request'
+            ? command.command.request.path
+            : undefined
+    )?.match(/\/lifecycle\/([^/]+)\//u)?.[1];
 }
 
 function successfulResult(
@@ -45,6 +54,8 @@ function readResultValue(
 describe('group formation lifecycle driver', () => {
     it('waits for exact current membership and accepts a newer active publication', async () => {
         const commands: LiveRtcControlClient.ExecuteInput[] = [];
+        const peerReadinessAgents: string[] = [];
+        const canonicalRoomReadinessAgents: string[] = [];
         const topologyStates: Array<'removed' | 'active'> = ['removed', 'active'];
         const activeSessionIds = [
             ['stale-session', 'session-a'],
@@ -53,13 +64,22 @@ describe('group formation lifecycle driver', () => {
             ['session-a', 'session-b', 'session-c']
         ];
         const control: LiveRtcControlPort = {
-            executeOk: async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
+            executeOk: async (
+                input: LiveRtcControlClient.ExecuteInput
+            ): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
                 if (input.command.kind === 'rtc.connect') {
-                    return successfulResult(input, { sessionId: `session-${input.agentId.slice(-1)}` });
+                    return successfulResult(input, {
+                        sessionId: `session-${input.agentId.slice(-1)}`
+                    });
                 }
-                if (input.command.kind === 'http.request' && input.command.request.path?.endsWith('/groups/group')) {
-                    return successfulResult(input, { body: { group: { lifecycleState: 'forming' } } });
+                if (
+                    input.command.kind === 'http.request' &&
+                    input.command.request.path?.endsWith('/groups/group')
+                ) {
+                    return successfulResult(input, {
+                        body: { group: { lifecycleState: 'forming' } }
+                    });
                 }
                 if (lifecycleOperation(input) === 'plan') {
                     return successfulResult(input, {
@@ -71,13 +91,20 @@ describe('group formation lifecycle driver', () => {
                 }
                 return successfulResult(input, {});
             },
-            executeResult: async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
+            executeResult: async (
+                input: LiveRtcControlClient.ExecuteInput
+            ): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
-                if (input.command.kind === 'http.request' && input.command.request.path?.endsWith('/groups/group')) {
+                if (
+                    input.command.kind === 'http.request' &&
+                    input.command.request.path?.endsWith('/groups/group')
+                ) {
                     return successfulResult(input, {
                         body: {
                             causalRevision: { presenceRevision: 40 },
-                            activeSessions: (activeSessionIds.shift() ?? []).map((sessionId) => ({ sessionId }))
+                            activeSessions: (activeSessionIds.shift() ?? []).map(
+                                (sessionId) => ({ sessionId })
+                            )
                         }
                     });
                 }
@@ -106,15 +133,67 @@ describe('group formation lifecycle driver', () => {
             readyPeerIds: () => [],
             waitForMessage: async () => 1,
             waitForPeerAbsence: async () => undefined,
-            waitForPeerReadiness: async () => 1
+            waitForPeerReadiness: async (input) => {
+                peerReadinessAgents.push(input.agent.agentId);
+                return 1;
+            }
         };
-        const agents = [createAgent('A'), createAgent('B'), createAgent('C')] as const;
+        const formation: Pick<LiveRtcFormationOperations, 'readiness'> = {
+            readiness: async (input) => {
+                canonicalRoomReadinessAgents.push(input.agent.agentId);
+                const sessionIds = input.suffix.includes('initial-pair')
+                    ? ['session-a', 'session-b']
+                    : ['session-a', 'session-b', 'session-c'];
+                const desiredPeerIds = sessionIds.filter(
+                    (sessionId) => sessionId !== `session-${input.agent.agentId.slice(-1)}`
+                );
+                return {
+                    readyAtEpochMs: 1,
+                    formation: {
+                        roomRef: {
+                            applicationId: 'application',
+                            workspaceId: 'workspace',
+                            groupId: input.roomRef.groupId
+                        },
+                        stage: 'active',
+                        formationEpoch: 1,
+                        formationAttemptCount: 1,
+                        causalRevision: { groupRevision: 1, presenceRevision: 1 },
+                        transportState: 'flowing',
+                        dialing: 'accepted',
+                        memberPolicy: {
+                            maxConcurrentEdgeSetups: 4,
+                            transports: 'rtc-and-ws'
+                        },
+                        room: {
+                            state: 'open',
+                            desiredPeerIds,
+                            activePeerIds: desiredPeerIds,
+                            readyPeerIds: desiredPeerIds,
+                            failedPeerIds: [],
+                            acceptedLayoutIdentity: {
+                                groupRevision: 1,
+                                presenceRevision: 1,
+                                version: 1,
+                                state: 'active'
+                            }
+                        }
+                    }
+                };
+            }
+        };
+        const agents = [
+            createAgent('A'),
+            createAgent('B'),
+            createAgent('C')
+        ] as const;
         const driver = createGroupFormationLifecycleDriver({
             apiBaseUrl: 'http://api.test',
             applicationId: 'application',
             workspaceId: 'workspace',
             messagesRtcTypeId: 'type',
-            messagesRtcTopicId: 'topic'
+            messagesRtcTopicId: 'topic',
+            formation
         });
 
         await driver.run({
@@ -128,10 +207,14 @@ describe('group formation lifecycle driver', () => {
         });
 
         const presenceReads = commands.filter((command) => command.commandId.startsWith('group-presence-'));
-        const connectBIndex = commands.findIndex((command) => command.agentId === 'agent-b' && command.command.kind === 'rtc.connect');
+        const connectBIndex = commands.findIndex(
+            (command) => command.agentId === 'agent-b' && command.command.kind === 'rtc.connect'
+        );
         expect(presenceReads).toHaveLength(4);
         expect(commands.indexOf(presenceReads[1])).toBeLessThan(connectBIndex);
-        expect(commands.find((command) => lifecycleOperation(command) === 'connect')).toMatchObject({
+        expect(
+            commands.find((command) => lifecycleOperation(command) === 'connect')
+        ).toMatchObject({
             command: {
                 request: {
                     body: {
@@ -146,5 +229,13 @@ describe('group formation lifecycle driver', () => {
                 }
             }
         });
+        expect(peerReadinessAgents).toEqual(['agent-a', 'agent-b']);
+        expect(canonicalRoomReadinessAgents).toEqual([
+            'agent-a',
+            'agent-b',
+            'agent-a',
+            'agent-b',
+            'agent-c'
+        ]);
     });
 });

@@ -30,6 +30,106 @@ interface ExpiryCrossingPresence {
 }
 
 describe('group presence summary evaluation time', () => {
+    it('preserves the presence revision when only the group revision advances', () => {
+        const current = createExpiryCrossingRead();
+        const group = {
+            ...current.group.value,
+            snapshotVersion: current.group.value.snapshotVersion + 1
+        };
+        const read = {
+            ...current,
+            group: stored(groupStateGroupStorageKey(REF), group)
+        };
+
+        expect(computeGroupPresenceSummary({
+            ref: REF,
+            read,
+            nowEpochMs: 2_000
+        })).toMatchObject({
+            outcome: 'write',
+            summary: {
+                causalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 1
+                },
+                activeSessionIds: []
+            }
+        });
+    });
+
+    it('preserves the presence revision when only active-session lease fields change', () => {
+        const read = createActivePresenceRead();
+        if (!read.current) {
+            throw new Error('Expected an active presence summary');
+        }
+        const current = read.current.value;
+        const leaseShifted = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => ({
+                ...session,
+                lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs - 100,
+                expiresAtEpochMs: session.expiresAtEpochMs - 100
+            }))
+        };
+
+        expect(computeGroupPresenceSummary({
+            ref: REF,
+            read: {
+                ...read,
+                group: stored(groupStateGroupStorageKey(REF), {
+                    ...read.group.value,
+                    snapshotVersion: 2
+                }),
+                current: stored(groupStatePresenceSummaryStorageKey(REF), leaseShifted)
+            },
+            nowEpochMs: 1_200
+        })).toMatchObject({
+            outcome: 'write',
+            summary: {
+                causalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 1
+                }
+            }
+        });
+    });
+
+    it('advances the presence revision when canonical active-session content changes', () => {
+        const read = createActivePresenceRead();
+        if (!read.current) {
+            throw new Error('Expected an active presence summary');
+        }
+        const current = read.current.value;
+        const divergent = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => ({
+                ...session,
+                generationId: 'superseded-generation'
+            }))
+        };
+
+        expect(computeGroupPresenceSummary({
+            ref: REF,
+            read: {
+                ...read,
+                group: stored(groupStateGroupStorageKey(REF), {
+                    ...read.group.value,
+                    snapshotVersion: 2
+                }),
+                current: stored(groupStatePresenceSummaryStorageKey(REF), divergent)
+            },
+            nowEpochMs: 1_200
+        })).toMatchObject({
+            outcome: 'write',
+            summary: {
+                causalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 2
+                }
+            }
+        });
+    });
+
     it('validates an expiry-crossing no-op at the compute observation time', () => {
         const read = createExpiryCrossingRead();
         const computed = computeGroupPresenceSummary({
@@ -248,6 +348,27 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
             )
         ],
         current: stored(groupStatePresenceSummaryStorageKey(REF), current)
+    };
+}
+
+function createActivePresenceRead(): GroupPresenceSummaryRead {
+    const read = createExpiryCrossingRead();
+    const storedSession = read.presenceSessions[0];
+    if (!storedSession) {
+        throw new Error('Expected an active presence session');
+    }
+    const session = storedSession.value;
+    const summary: GroupPresenceSummary = {
+        ...createExpiryCrossingSummary(),
+        activePrincipalIds: [session.principalId],
+        activeSessionIds: [session.sessionId],
+        activeSessions: [session],
+        activePrincipalCount: 1,
+        activeSessionCount: 1
+    };
+    return {
+        ...read,
+        current: stored(groupStatePresenceSummaryStorageKey(REF), summary)
     };
 }
 

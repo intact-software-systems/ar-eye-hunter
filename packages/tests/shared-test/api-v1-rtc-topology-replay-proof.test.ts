@@ -11,6 +11,7 @@ import {
     type ProofJsonObject
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
 import {
+    assertCheckpointMatchesMutation,
     assertPollDrivenReplayMetricDelta,
     assertSharedPublicationIdentity,
     exactPublicationExpectation,
@@ -554,13 +555,19 @@ describe('API-v1 RTC topology replay proof semantics', () => {
 
     it('binds each live mutation to its exact publication revision and replay delta', () => {
         // Correlation is the causal revision the mutation produced, never a
-        // precomputed work identity: legacy per-command work and damped coalesced
-        // work derive message ids differently, and the proof must hold for both.
+        // precomputed work identity from the coalesced publication path.
         expect(exactPublicationExpectation({ groupRevision: 7, presenceRevision: 9 })).toEqual({
-            causalRevision: { groupRevision: 7, presenceRevision: 10 },
+            causalRevision: { groupRevision: 7, presenceRevision: 9 },
             causalMatch: 'exact',
             deliveryKind: 'publication'
         });
+        assertCheckpointMatchesMutation(
+            {
+                causalRevision: { groupRevision: 7, presenceRevision: 9 },
+                version: 12
+            },
+            { groupRevision: 7, presenceRevision: 9 }
+        );
 
         const before = replayMetrics({
             poll: 7,

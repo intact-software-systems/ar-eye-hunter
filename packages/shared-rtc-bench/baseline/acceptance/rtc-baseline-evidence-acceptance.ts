@@ -77,6 +77,23 @@ function correctnessIssues(issues: readonly RtcBaselineIssueDto[], path: string,
     return issues.length > 0 ? issues : [issue(path, 'correctness-failure', message)];
 }
 
+function producerExitIssue(producerExitStatus: number) {
+    return issue(
+        '$.producerExitStatus',
+        'producer-exit-status',
+        `Producer exited with status ${producerExitStatus}.`
+    );
+}
+
+function retainsStructuredProducerFailure(
+    input: RtcBaselineRecordAttemptInputDto | RtcBaselineRecordCohortInputDto
+) {
+    // The RTC-B06 Playwright producer writes its schema-checked attempt from `finally`. Retaining
+    // that record makes a failed observation self-diagnosing; every other producer still fails on
+    // process status alone because it has no equivalent failed-attempt publication contract.
+    return 'locator' in input && input.locator.workloadId === 'RTC-B06';
+}
+
 function entryOwnershipIssue(
     entry: 'capture' | 'browser' | 'external',
     workloadId: RtcBaselineCaptureWorkloadInputDto['workloadId']
@@ -113,12 +130,8 @@ export function createRtcBaselineEvidenceAcceptance(
         owner: RtcBaselineFailureOwner,
         manifest?: RtcBaselineCaptureManifestDto
     ) {
-        if (input.producerExitStatus !== 0) {
-            const producerIssue = issue(
-                '$.producerExitStatus',
-                'producer-exit-status',
-                `Producer exited with status ${input.producerExitStatus}.`
-            );
+        if (input.producerExitStatus !== 0 && !retainsStructuredProducerFailure(input)) {
+            const producerIssue = producerExitIssue(input.producerExitStatus);
             return persistFailure({
                 baselineId: input.baselineId,
                 manifest,
@@ -134,8 +147,12 @@ export function createRtcBaselineEvidenceAcceptance(
                 baselineId: input.baselineId,
                 manifest,
                 owner,
-                issues: staged.issues,
-                rawEvidence: null
+                issues: input.producerExitStatus === 0
+                    ? staged.issues
+                    : [producerExitIssue(input.producerExitStatus)],
+                rawEvidence: input.producerExitStatus === 0
+                    ? null
+                    : { producerExitStatus: input.producerExitStatus }
             });
     }
 
@@ -317,12 +334,17 @@ export function createRtcBaselineEvidenceAcceptance(
             producerExitStatus: input.producerExitStatus
         });
         if (!accepted.ok) {
+            const failedProducer = input.producerExitStatus !== 0;
             return persistFailure({
                 baselineId: input.baselineId,
                 manifest: manifestResult.value,
                 owner,
-                issues: accepted.issues,
-                rawEvidence: staged.value
+                issues: failedProducer
+                    ? [producerExitIssue(input.producerExitStatus)]
+                    : accepted.issues,
+                rawEvidence: failedProducer
+                    ? { producerExitStatus: input.producerExitStatus }
+                    : staged.value
             });
         }
         const failedIndex = accepted.value.samples.findIndex(
@@ -336,16 +358,34 @@ export function createRtcBaselineEvidenceAcceptance(
                     return written;
                 }
             }
+            const failedIssues = input.producerExitStatus === 0
+                ? correctnessIssues(
+                    failed.issues,
+                    '$.samples.outcome',
+                    'A non-passing external sample stops evidence acceptance.'
+                )
+                : [
+                    producerExitIssue(input.producerExitStatus),
+                    ...failed.issues.filter((candidate) => candidate.code !== 'producer-exit-status')
+                ];
             return persistFailure({
                 baselineId: input.baselineId,
                 manifest: manifestResult.value,
                 owner: { kind: 'sample', identity: failed.identity },
-                issues: correctnessIssues(
-                    failed.issues,
-                    '$.samples.outcome',
-                    'A non-passing external sample stops evidence acceptance.'
-                ),
+                issues: failedIssues,
                 rawEvidence: failed.rawEvidence
+            });
+        }
+        if (input.producerExitStatus !== 0) {
+            const producerIssue = producerExitIssue(input.producerExitStatus);
+            return persistFailure({
+                baselineId: input.baselineId,
+                manifest: manifestResult.value,
+                owner,
+                issues: [producerIssue],
+                rawEvidence: accepted.value.samples[0]?.rawEvidence ?? {
+                    producerExitStatus: input.producerExitStatus
+                }
             });
         }
         const written = await dependencies.writeAcceptedArtifact(input.baselineId, accepted.value);

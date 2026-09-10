@@ -1,3 +1,4 @@
+import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -12,7 +13,10 @@ import {
     type RtcConnectReadinessOptions,
     type RtcConnectReadinessResult
 } from './browser/rtc-connect-readiness.ts';
-import { inferRallarBlackBoxDiagnosticSeverity, normalizeRallarBlackBoxRuntimeDiagnostic } from './diagnostics.ts';
+import {
+    inferRallarBlackBoxDiagnosticSeverity,
+    normalizeRallarBlackBoxRuntimeDiagnostic
+} from './diagnostics.ts';
 import {
     planRallarBlackBoxRtcStreamFrames,
     replaceRallarBlackBoxRtcStreamPlaceholders,
@@ -53,7 +57,9 @@ export type RallarBlackBoxBrowserRallarConnectionConfig = Readonly<{
  * connection's defaults and answers with the evidence the runtime recorded. The shapes are
  * named on the bridge, which is the side that owns the browser runtime types.
  */
-export type RallarBlackBoxBrowserRallarRuntimeMethod = (input: unknown) => Promise<unknown>;
+export type RallarBlackBoxBrowserRallarRuntimeMethod = (
+    input: unknown
+) => Promise<unknown>;
 
 export type RallarBlackBoxBrowserRallarCrdtRuntime = Readonly<{
     open: RallarBlackBoxBrowserRallarRuntimeMethod;
@@ -89,8 +95,12 @@ export interface RallarBlackBoxBrowserRoomRefreshOptions {
 }
 
 export interface RallarBlackBoxBrowserRallarRuntime {
-    authenticate?(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
-    connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
+    authenticate?(
+        config: RallarBlackBoxBrowserRallarConnectionConfig
+    ): Promise<unknown>;
+    connect(
+        config: RallarBlackBoxBrowserRallarConnectionConfig
+    ): Promise<unknown>;
     send: RallarBlackBoxBrowserRallarRuntimeMethod;
     sendWs?: RallarBlackBoxBrowserRallarRuntimeMethod;
     sendMessage: RallarBlackBoxBrowserRallarRuntimeMethod;
@@ -99,7 +109,10 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     readReceipts: RallarBlackBoxBrowserRallarRuntimeMethod;
     injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
-    refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;
+    refreshRoom(
+        options: RallarBlackBoxBrowserRoomRefreshOptions
+    ): Promise<unknown>;
+    waitForRoom: BlackBoxRallarRuntime['waitForRoom'];
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     readonly director?: RallarBlackBoxBrowserRallarDirectorRuntime;
     readonly formation?: RallarBlackBoxBrowserRallarFormationRuntime;
@@ -144,7 +157,10 @@ export type RallarBlackBoxBrowserWebSocket = {
     send(data: unknown): void;
     close(code?: number, reason?: string): void;
     addEventListener?: (type: string, listener: (event: unknown) => void) => void;
-    removeEventListener?: (type: string, listener: (event: unknown) => void) => void;
+    removeEventListener?: (
+        type: string,
+        listener: (event: unknown) => void
+    ) => void;
     onopen?: ((event: unknown) => void) | null;
     onmessage?: ((event: unknown) => void) | null;
     onclose?: ((event: unknown) => void) | null;
@@ -172,7 +188,9 @@ export type CreateRallarBlackBoxBrowserTestRuntimeOptions =
         defaultHttpBodyLimit?: number;
     }>;
 
-type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
+type CommandWithId =
+    & RallarBlackBoxTestCommand
+    & Readonly<{ commandId: string; }>;
 
 type HttpBodyMode = 'none' | 'text' | 'json';
 
@@ -204,7 +222,10 @@ const RUNTIME_IDENTITY_PLACEHOLDER_PATTERN = new RegExp(
     'gi'
 );
 const AUTH_PLACEHOLDER_TEST_PATTERN = new RegExp(AUTH_PLACEHOLDER_SOURCE, 'i');
-const CONFIG_PLACEHOLDER_TEST_PATTERN = new RegExp(CONFIG_PLACEHOLDER_SOURCE, 'i');
+const CONFIG_PLACEHOLDER_TEST_PATTERN = new RegExp(
+    CONFIG_PLACEHOLDER_SOURCE,
+    'i'
+);
 const RUNTIME_IDENTITY_PLACEHOLDER_TEST_PATTERN = new RegExp(
     RUNTIME_IDENTITY_PLACEHOLDER_SOURCE,
     'i'
@@ -221,10 +242,7 @@ const RTC_FAILURE_STATUSES = new Set([
     'expired'
 ]);
 
-const RTC_DATA_CHANNEL_FAILURE_STATUSES = new Set([
-    'closed',
-    'dropped'
-]);
+const RTC_DATA_CHANNEL_FAILURE_STATUSES = new Set(['closed', 'dropped']);
 
 type RtcSendFailure = Readonly<{
     code: string;
@@ -245,13 +263,13 @@ const RTC_READY_PEER_ID_PLACEHOLDER_PATTERN = /^\{rtc\.readyPeerIds\[(\d+)\]\}$/
 
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
+        ? (value as Record<string, unknown>)
         : {};
 }
 
 function optionalRecord(value: unknown): Record<string, unknown> | undefined {
     return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
+        ? (value as Record<string, unknown>)
         : undefined;
 }
 
@@ -271,8 +289,10 @@ function toPositiveInteger(value: unknown, fallback: number): number {
 
 function requiresRtcReadyPeerPlaceholder(value: unknown): boolean {
     if (typeof value === 'string') {
-        return value === RTC_READY_PEER_IDS_PLACEHOLDER ||
-            RTC_READY_PEER_ID_PLACEHOLDER_PATTERN.test(value);
+        return (
+            value === RTC_READY_PEER_IDS_PLACEHOLDER ||
+            RTC_READY_PEER_ID_PLACEHOLDER_PATTERN.test(value)
+        );
     }
 
     if (Array.isArray(value)) {
@@ -369,7 +389,10 @@ function withRtcConnectReadinessValue(
         };
 }
 
-function countDataChannelStatuses(diagnostics: unknown, status: string): number | undefined {
+function countDataChannelStatuses(
+    diagnostics: unknown,
+    status: string
+): number | undefined {
     const root = asRecord(diagnostics);
     if (!Array.isArray(root.results)) {
         return undefined;
@@ -407,7 +430,9 @@ function rtcSendObservation(
             status === 'circuit-open',
         droppedPayloadCount: countDataChannelStatuses(input.diagnostics, 'dropped'),
         replacedPayloadCount: firstDefined(
-            typeof root.replacedPayloadCount === 'number' ? root.replacedPayloadCount : undefined,
+            typeof root.replacedPayloadCount === 'number'
+                ? root.replacedPayloadCount
+                : undefined,
             typeof root.replacedCount === 'number' ? root.replacedCount : undefined
         ),
         errorCode: input.errorCode
@@ -476,7 +501,9 @@ function wsScopeValue(value: unknown): 'room' | 'world' | 'all' | undefined {
         : undefined;
 }
 
-function rtcSendFailureFromDiagnostics(diagnostics: unknown): RtcSendFailure | undefined {
+function rtcSendFailureFromDiagnostics(
+    diagnostics: unknown
+): RtcSendFailure | undefined {
     const root = asRecord(diagnostics);
     const status = toStringValue(root.status);
     if (status && RTC_FAILURE_STATUSES.has(status)) {
@@ -509,7 +536,9 @@ function rtcSendFailureFromDiagnostics(diagnostics: unknown): RtcSendFailure | u
         ? root.results.filter((entry) => {
             const result = asRecord(asRecord(entry).result);
             const resultStatus = toStringValue(result.status);
-            return Boolean(resultStatus && RTC_DATA_CHANNEL_FAILURE_STATUSES.has(resultStatus));
+            return Boolean(
+                resultStatus && RTC_DATA_CHANNEL_FAILURE_STATUSES.has(resultStatus)
+            );
         })
         : [];
     if (failedResults.length > 0) {
@@ -529,12 +558,16 @@ function rtcSendFailureFromDiagnostics(diagnostics: unknown): RtcSendFailure | u
 function toRtcTransport(
     value: unknown
 ): RallarBlackBoxBrowserRallarTransport | undefined {
-    return value === 'realtime' || value === 'messages.rtc' || value === 'messages.ws'
+    return value === 'realtime' ||
+            value === 'messages.rtc' ||
+            value === 'messages.ws'
         ? value
         : undefined;
 }
 
-function toEventTransport(value: unknown): RallarBlackBoxTestTransport | undefined {
+function toEventTransport(
+    value: unknown
+): RallarBlackBoxTestTransport | undefined {
     return value === 'realtime' ||
             value === 'messages.rtc' ||
             value === 'messages.ws' ||
@@ -544,23 +577,24 @@ function toEventTransport(value: unknown): RallarBlackBoxTestTransport | undefin
         : undefined;
 }
 
-function configProviderMode(config: RallarBlackBoxTestConfig | undefined): string | undefined {
+function configProviderMode(
+    config: RallarBlackBoxTestConfig | undefined
+): string | undefined {
     return toStringValue(asRecord(config?.control).providerMode);
 }
 
 function isStructuredRallarWebSocketEnvelope(value: unknown): boolean {
     const record = asRecord(value);
-    return [
-        'typeId',
-        'topicId',
-        'contextId',
-        'resourceId'
-    ].some((key) => record[key] !== undefined);
+    return ['typeId', 'topicId', 'contextId', 'resourceId'].some(
+        (key) => record[key] !== undefined
+    );
 }
 
 function isRuntimeNotConnectedError(error: unknown): boolean {
-    return error instanceof Error &&
-        error.message.includes('Black-box Rallar runtime is not connected.');
+    return (
+        error instanceof Error &&
+        error.message.includes('Black-box Rallar runtime is not connected.')
+    );
 }
 
 function toHeadersRecord(headers: Headers): Record<string, string> {
@@ -576,10 +610,12 @@ function toAlmConnectionName(
     config: RallarBlackBoxTestConfig | undefined
 ): string {
     const commandConnection = 'connection' in command ? command.connection : undefined;
-    return commandConnection ??
-        toStringValue(asRecord(config?.defaults).connection) ??
-        config?.actor ??
-        'default';
+    return (
+        commandConnection ??
+            toStringValue(asRecord(config?.defaults).connection) ??
+            config?.actor ??
+            'default'
+    );
 }
 
 function readOptionalBrowserSession(): AuthSession | undefined {
@@ -600,14 +636,20 @@ function normalizeUrlPrefix(value: string | undefined): string | undefined {
     return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-function configApiBaseUrl(config: RallarBlackBoxTestConfig | undefined): string | undefined {
+function configApiBaseUrl(
+    config: RallarBlackBoxTestConfig | undefined
+): string | undefined {
     return normalizeUrlPrefix(
         config?.apiBaseUrl ?? toStringValue(asRecord(config?.rallar).apiBaseUrl)
     );
 }
 
-function configWsBaseUrl(config: RallarBlackBoxTestConfig | undefined): string | undefined {
-    const configured = normalizeUrlPrefix(toStringValue(asRecord(config?.rallar).wsBaseUrl));
+function configWsBaseUrl(
+    config: RallarBlackBoxTestConfig | undefined
+): string | undefined {
+    const configured = normalizeUrlPrefix(
+        toStringValue(asRecord(config?.rallar).wsBaseUrl)
+    );
     if (configured) {
         return configured;
     }
@@ -635,15 +677,19 @@ function runtimeIdentity(config: RallarBlackBoxTestConfig | undefined): string {
         );
     }
 
-    return fnv1a64(`${config.runId}\u0000${config.agentId}`)
-        .padStart(RUNTIME_IDENTITY_BASE36_LENGTH, '0');
+    return fnv1a64(`${config.runId}\u0000${config.agentId}`).padStart(
+        RUNTIME_IDENTITY_BASE36_LENGTH,
+        '0'
+    );
 }
 
 function requiresCommandPlaceholder(value: unknown): boolean {
     if (typeof value === 'string') {
-        return AUTH_PLACEHOLDER_TEST_PATTERN.test(value) ||
+        return (
+            AUTH_PLACEHOLDER_TEST_PATTERN.test(value) ||
             CONFIG_PLACEHOLDER_TEST_PATTERN.test(value) ||
-            RUNTIME_IDENTITY_PLACEHOLDER_TEST_PATTERN.test(value);
+            RUNTIME_IDENTITY_PLACEHOLDER_TEST_PATTERN.test(value)
+        );
     }
 
     if (Array.isArray(value)) {
@@ -700,7 +746,11 @@ function replaceCommandPlaceholdersInString(
     return value
         .replace(
             RUNTIME_IDENTITY_PLACEHOLDER_PATTERN,
-            (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+            (
+                _match,
+                plainKey: string | undefined,
+                encodedKey: string | undefined
+            ) => {
                 const key = plainKey ?? encodedKey;
                 const replacement = key === 'runtimeIdentity'
                     ? runtimeIdentity(options.config)
@@ -718,7 +768,11 @@ function replaceCommandPlaceholdersInString(
         )
         .replace(
             CONFIG_PLACEHOLDER_PATTERN,
-            (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+            (
+                _match,
+                plainKey: string | undefined,
+                encodedKey: string | undefined
+            ) => {
                 const key = plainKey ?? encodedKey;
                 const replacement = key === 'apiBaseUrl'
                     ? configApiBaseUrl(options.config)
@@ -735,7 +789,11 @@ function replaceCommandPlaceholdersInString(
         )
         .replace(
             AUTH_PLACEHOLDER_PATTERN,
-            (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+            (
+                _match,
+                plainKey: string | undefined,
+                encodedKey: string | undefined
+            ) => {
                 const key = plainKey ?? encodedKey;
                 if (key === 'wsTicket') {
                     if (!options.wsTicket?.ticket) {
@@ -806,7 +864,7 @@ function replaceCommandPlaceholders<T>(
 
 function responseJsonRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
+        ? (value as Record<string, unknown>)
         : {};
 }
 
@@ -816,19 +874,26 @@ async function requestWebSocketTicket(
     session: AuthSession | undefined
 ): Promise<WebSocketTicketResolution> {
     if (!session) {
-        throw new Error('Cannot request websocket ticket without a logged-in Rallar session.');
+        throw new Error(
+            'Cannot request websocket ticket without a logged-in Rallar session.'
+        );
     }
 
     const apiBaseUrl = configApiBaseUrl(config);
     if (!apiBaseUrl) {
-        throw new Error('Cannot request websocket ticket without configured apiBaseUrl.');
+        throw new Error(
+            'Cannot request websocket ticket without configured apiBaseUrl.'
+        );
     }
 
     const ticketPath = `/api/auth/ws-ticket/requests/${encodeURIComponent(crypto.randomUUID())}`;
-    const response = await fetchFn(new URL(ticketPath, `${apiBaseUrl}/`).toString(), {
-        method: 'POST',
-        headers: withRallarAuthHeaders(undefined, session)
-    });
+    const response = await fetchFn(
+        new URL(ticketPath, `${apiBaseUrl}/`).toString(),
+        {
+            method: 'POST',
+            headers: withRallarAuthHeaders(undefined, session)
+        }
+    );
     const body = responseJsonRecord(await response.json());
     if (!response.ok) {
         throw new Error(`Websocket ticket request failed: ${response.status}`);
@@ -905,7 +970,10 @@ function toRequestUrl(
     config: RallarBlackBoxTestConfig | undefined,
     session: AuthSession | undefined
 ): string {
-    const requestUrl = replaceCommandPlaceholders(request.request.url, { config, session });
+    const requestUrl = replaceCommandPlaceholders(request.request.url, {
+        config,
+        session
+    });
     if (request.request.url) {
         return requestUrl ?? request.request.url;
     }
@@ -919,7 +987,10 @@ function toRequestUrl(
         throw new Error('http.request path requires configured apiBaseUrl.');
     }
 
-    const path = replaceCommandPlaceholders(request.request.path, { config, session });
+    const path = replaceCommandPlaceholders(request.request.path, {
+        config,
+        session
+    });
     return new URL(path, `${apiBaseUrl}/`).toString();
 }
 
@@ -1081,10 +1152,8 @@ class BrowserCommandAdapter {
         this.rallarRuntime = options.rallarRuntime;
         this.fetchFn = options.fetch ?? globalThis.fetch?.bind(globalThis);
         this.webSocketFactory = options.webSocketFactory ?? this.defaultWebSocketFactory();
-        this.defaultWsOpenTimeoutMs = options.defaultWsOpenTimeoutMs ??
-            DEFAULT_WS_OPEN_TIMEOUT_MS;
-        this.defaultHttpBodyLimit = options.defaultHttpBodyLimit ??
-            DEFAULT_HTTP_BODY_LIMIT;
+        this.defaultWsOpenTimeoutMs = options.defaultWsOpenTimeoutMs ?? DEFAULT_WS_OPEN_TIMEOUT_MS;
+        this.defaultHttpBodyLimit = options.defaultHttpBodyLimit ?? DEFAULT_HTTP_BODY_LIMIT;
     }
 
     async execute(
@@ -1112,15 +1181,40 @@ class BrowserCommandAdapter {
             case 'http.request':
                 return await this.httpRequest(command, context);
             case 'crdt.open':
-                return await this.executeCrdt(command, context, 'open', 'rallar.bb.crdt.opened');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'open',
+                    'rallar.bb.crdt.opened'
+                );
             case 'crdt.apply':
-                return await this.executeCrdt(command, context, 'apply', 'rallar.bb.crdt.applied');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'apply',
+                    'rallar.bb.crdt.applied'
+                );
             case 'crdt.read':
-                return await this.executeCrdt(command, context, 'read', 'rallar.bb.crdt.read');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'read',
+                    'rallar.bb.crdt.read'
+                );
             case 'crdt.sync':
-                return await this.executeCrdt(command, context, 'sync', 'rallar.bb.crdt.synced');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'sync',
+                    'rallar.bb.crdt.synced'
+                );
             case 'crdt.health':
-                return await this.executeCrdt(command, context, 'health', 'rallar.bb.crdt.health');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'health',
+                    'rallar.bb.crdt.health'
+                );
             case 'crdt.wait':
                 return await this.executeCrdt(
                     command,
@@ -1129,11 +1223,26 @@ class BrowserCommandAdapter {
                     'rallar.bb.crdt.wait_matched'
                 );
             case 'crdt.undo':
-                return await this.executeCrdt(command, context, 'undo', 'rallar.bb.crdt.undone');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'undo',
+                    'rallar.bb.crdt.undone'
+                );
             case 'crdt.redo':
-                return await this.executeCrdt(command, context, 'redo', 'rallar.bb.crdt.redone');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'redo',
+                    'rallar.bb.crdt.redone'
+                );
             case 'crdt.close':
-                return await this.executeCrdt(command, context, 'close', 'rallar.bb.crdt.closed');
+                return await this.executeCrdt(
+                    command,
+                    context,
+                    'close',
+                    'rallar.bb.crdt.closed'
+                );
             case 'crdt.destroy':
                 return await this.executeCrdt(
                     command,
@@ -1212,7 +1321,11 @@ class BrowserCommandAdapter {
             case 'fault.inject':
             case 'storage.counters':
             case 'agent.reload':
-                return await executeAlmBrowserCommand(this.almBrowserPort(), command, context);
+                return await executeAlmBrowserCommand(
+                    this.almBrowserPort(),
+                    command,
+                    context
+                );
             case 'health':
                 return await this.health(command, context);
             case 'close':
@@ -1297,9 +1410,7 @@ class BrowserCommandAdapter {
         );
 
         return {
-            connection: toStringValue(defaults.connection) ??
-                config?.actor ??
-                'default',
+            connection: toStringValue(defaults.connection) ?? config?.actor ?? 'default',
             actor: config?.actor,
             rallar: {
                 ...configuredRallar,
@@ -1318,8 +1429,7 @@ class BrowserCommandAdapter {
         options: Readonly<{ required?: boolean; }> = {}
     ): Promise<AuthSession | undefined> {
         let session = readOptionalBrowserSession();
-        const needsSession = options.required === true ||
-            requiresAuthSessionPlaceholder(value);
+        const needsSession = options.required === true || requiresAuthSessionPlaceholder(value);
         if (session || !needsSession || !this.rallarRuntime) {
             return session;
         }
@@ -1452,7 +1562,9 @@ class BrowserCommandAdapter {
         let timeout: ReturnType<typeof setTimeout> | undefined;
         const abortFromParent = () => {
             if (!controller.signal.aborted) {
-                controller.abort(parentSignal?.reason ?? 'Rallar black-box command was cancelled.');
+                controller.abort(
+                    parentSignal?.reason ?? 'Rallar black-box command was cancelled.'
+                );
             }
         };
         const cleanup = () => {
@@ -1486,7 +1598,10 @@ class BrowserCommandAdapter {
         };
     }
 
-    private async withAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    private async withAbort<T>(
+        promise: Promise<T>,
+        signal: AbortSignal | undefined
+    ): Promise<T> {
         if (!signal) {
             return await promise;
         }
@@ -1578,18 +1693,22 @@ class BrowserCommandAdapter {
         const data = asRecord(command.data);
         const dataScope = optionalRecord(data.scope);
         const configuredScope = optionalRecord(configuredRallar.scope);
-        const applicationId = nonEmptyStringValue(firstDefined(
-            data.applicationId,
-            dataScope?.applicationId,
-            configuredRallar.applicationId,
-            configuredScope?.applicationId
-        ));
-        const workspaceId = nonEmptyStringValue(firstDefined(
-            data.workspaceId,
-            dataScope?.workspaceId,
-            configuredRallar.workspaceId,
-            configuredScope?.workspaceId
-        ));
+        const applicationId = nonEmptyStringValue(
+            firstDefined(
+                data.applicationId,
+                dataScope?.applicationId,
+                configuredRallar.applicationId,
+                configuredScope?.applicationId
+            )
+        );
+        const workspaceId = nonEmptyStringValue(
+            firstDefined(
+                data.workspaceId,
+                dataScope?.workspaceId,
+                configuredRallar.workspaceId,
+                configuredScope?.workspaceId
+            )
+        );
         const stateScope = applicationId
             ? {
                 applicationId,
@@ -1597,18 +1716,14 @@ class BrowserCommandAdapter {
             }
             : configuredScope;
         const wsScope = wsScopeValue(data.scope);
-        const roomIdCandidate = nonEmptyStringValue(firstDefined(
-            data.roomId,
-            data.groupId,
-            config?.roomId
-        ));
-        const roomId = wsScope === 'all' || wsScope === 'world'
-            ? undefined
-            : roomIdCandidate;
+        const roomIdCandidate = nonEmptyStringValue(
+            firstDefined(data.roomId, data.groupId, config?.roomId)
+        );
+        const roomId = wsScope === 'all' || wsScope === 'world' ? undefined : roomIdCandidate;
         const configuredRoomRef = optionalRecord(configuredRallar.roomRef);
         const dataRoomRef = optionalRecord(data.roomRef);
         const roomRef = roomId
-            ? dataRoomRef ??
+            ? (dataRoomRef ??
                 configuredRoomRef ??
                 (applicationId
                     ? {
@@ -1616,17 +1731,18 @@ class BrowserCommandAdapter {
                         ...(workspaceId ? { workspaceId } : {}),
                         groupId: roomId
                     }
-                    : undefined)
+                    : undefined))
             : undefined;
-        const apiBaseUrl = nonEmptyStringValue(firstDefined(
-            configuredRallar.apiBaseUrl,
-            config?.apiBaseUrl
-        ));
-        const expectedSessionId = nonEmptyStringValue(firstDefined(
-            configuredRallar.expectedSessionId,
-            configuredRallar.sessionId,
-            config?.sessionId
-        ));
+        const apiBaseUrl = nonEmptyStringValue(
+            firstDefined(configuredRallar.apiBaseUrl, config?.apiBaseUrl)
+        );
+        const expectedSessionId = nonEmptyStringValue(
+            firstDefined(
+                configuredRallar.expectedSessionId,
+                configuredRallar.sessionId,
+                config?.sessionId
+            )
+        );
         const typeId = nonEmptyStringValue(data.typeId);
         const topicId = nonEmptyStringValue(data.topicId);
         const rallar = {
@@ -2026,9 +2142,7 @@ class BrowserCommandAdapter {
                 transport: command.transport,
                 data: payload,
                 payload,
-                message: typeof payload.message === 'string'
-                    ? payload.message
-                    : undefined,
+                message: typeof payload.message === 'string' ? payload.message : undefined,
                 source: 'browser-adapter'
             })
         });
@@ -2059,6 +2173,10 @@ class BrowserCommandAdapter {
         }
         const readinessOptions = this.rtcConnectReadinessOptions(command);
         if (readinessOptions) {
+            const transport = toRtcTransport(connectionConfig.rallar.transport);
+            const readinessTimeoutMessage = transport === 'messages.rtc'
+                ? 'RTC connect timed out waiting for room transport readiness.'
+                : 'RTC connect timed out waiting for ready peers.';
             this.recordRtcReadinessDiagnostic(
                 context,
                 command,
@@ -2070,11 +2188,12 @@ class BrowserCommandAdapter {
                     intervalMs: readinessOptions.intervalMs
                 }
             );
-            readiness = await waitForRtcConnectReadiness(
-                this.requireRallarRuntime(),
-                readinessOptions,
-                context.abortSignal?.()
-            );
+            readiness = await waitForRtcConnectReadiness({
+                runtime: this.requireRallarRuntime(),
+                transport,
+                options: readinessOptions,
+                parentSignal: context.abortSignal?.()
+            });
             this.recordRtcReadinessDiagnostic(
                 context,
                 command,
@@ -2084,9 +2203,7 @@ class BrowserCommandAdapter {
                 readiness.ready ? 'info' : 'error',
                 {
                     ...readiness,
-                    ...(!readiness.ready
-                        ? { message: 'RTC connect timed out waiting for ready peers.' }
-                        : {})
+                    ...(!readiness.ready ? { message: readinessTimeoutMessage } : {})
                 }
             );
             if (!readiness.ready) {
@@ -2095,7 +2212,7 @@ class BrowserCommandAdapter {
                     value: withRtcConnectReadinessValue(diagnostics, readiness),
                     error: {
                         code: 'RALLAR_BB_RTC_READY_TIMEOUT',
-                        message: 'RTC connect timed out waiting for ready peers.',
+                        message: readinessTimeoutMessage,
                         details: readiness
                     },
                     nextStatus: 'failed'
@@ -2161,8 +2278,8 @@ class BrowserCommandAdapter {
                 ? {
                     ...(resolvedSend as Record<string, unknown>),
                     ...Object.fromEntries(
-                        Object.entries(scopedSendFields).filter(([key]) =>
-                            !Object.prototype.hasOwnProperty.call(resolvedSend, key)
+                        Object.entries(scopedSendFields).filter(
+                            ([key]) => !Object.prototype.hasOwnProperty.call(resolvedSend, key)
                         )
                     )
                 }
@@ -2173,7 +2290,10 @@ class BrowserCommandAdapter {
         }
         if (requiresRtcReadyPeerPlaceholder(scopedSend)) {
             const health = await this.requireRallarRuntime().health();
-            scopedSend = replaceRtcReadyPeerPlaceholders(scopedSend, toRtcReadyPeerIds(health));
+            scopedSend = replaceRtcReadyPeerPlaceholders(
+                scopedSend,
+                toRtcReadyPeerIds(health)
+            );
         }
         const abort = this.commandAbortSignal(command, context);
         let diagnostics: unknown;
@@ -2197,13 +2317,17 @@ class BrowserCommandAdapter {
         });
         context.recordEvent({
             kind: 'diagnostic',
-            topic: failure ? 'rallar.bb.rtc.send_failed' : 'rallar.bb.rtc.send_completed',
+            topic: failure
+                ? 'rallar.bb.rtc.send_failed'
+                : 'rallar.bb.rtc.send_completed',
             commandId: command.commandId,
             connection: command.connection,
             transport: command.transport,
             severity: failure ? 'error' : 'info',
             payload: normalizeRallarBlackBoxRuntimeDiagnostic({
-                topic: failure ? 'rallar.bb.rtc.send_failed' : 'rallar.bb.rtc.send_completed',
+                topic: failure
+                    ? 'rallar.bb.rtc.send_failed'
+                    : 'rallar.bb.rtc.send_completed',
                 severity: failure ? 'error' : 'info',
                 commandId: command.commandId,
                 connection: command.connection,
@@ -2256,8 +2380,7 @@ class BrowserCommandAdapter {
         const abort = this.commandAbortSignal(command, context);
         const streamStartedAtEpochMs = Date.now();
         const maxInFlight = toPositiveInteger(command.maxInFlight, 64);
-        const drainTimeoutMs = typeof command.drainTimeoutMs === 'number' &&
-                command.drainTimeoutMs >= 0
+        const drainTimeoutMs = typeof command.drainTimeoutMs === 'number' && command.drainTimeoutMs >= 0
             ? command.drainTimeoutMs
             : 5_000;
         const progressEveryMs = toPositiveInteger(command.progressEveryMs, 1_000);
@@ -2298,11 +2421,14 @@ class BrowserCommandAdapter {
                     data: {
                         plannedFrames: plan.frames.length,
                         scheduledFrames: observations.length + active.size,
-                        completedFrames: observations.filter((observation) =>
-                            observation.ok && !observation.dropped
+                        completedFrames: observations.filter(
+                            (observation) => observation.ok && !observation.dropped
                         ).length,
-                        failedFrames: observations.filter((observation) => !observation.ok).length,
-                        droppedFrames: observations.filter((observation) => observation.dropped).length,
+                        failedFrames: observations.filter((observation) => !observation.ok)
+                            .length,
+                        droppedFrames: observations.filter(
+                            (observation) => observation.dropped
+                        ).length,
                         inFlightFrames: active.size
                     },
                     source: 'browser-adapter'
@@ -2386,13 +2512,15 @@ class BrowserCommandAdapter {
                         );
                         const completedAtEpochMs = Date.now();
                         const failure = rtcSendFailureFromDiagnostics(diagnostics);
-                        observations.push(this.toRtcStreamObservation(
-                            activeFrame,
-                            completedAtEpochMs,
-                            diagnostics,
-                            failure?.code,
-                            failure === undefined
-                        ));
+                        observations.push(
+                            this.toRtcStreamObservation(
+                                activeFrame,
+                                completedAtEpochMs,
+                                diagnostics,
+                                failure?.code,
+                                failure === undefined
+                            )
+                        );
                     }
                     catch (error) {
                         const completedAtEpochMs = Date.now();
@@ -2413,7 +2541,9 @@ class BrowserCommandAdapter {
                             ),
                             ok: false,
                             status: 'failed',
-                            errorCode: error instanceof Error ? error.name : 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED'
+                            errorCode: error instanceof Error
+                                ? error.name
+                                : 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED'
                         });
                     }
                     finally {
@@ -2483,7 +2613,9 @@ class BrowserCommandAdapter {
         const thresholdFailed = value.thresholdFailures.length > 0;
         const sendFailed = value.failedFrames > 0 && command.continueOnSendFailure !== true;
         const failed = thresholdFailed || sendFailed;
-        const topic = failed ? 'rallar.bb.rtc.stream_failed' : 'rallar.bb.rtc.stream_completed';
+        const topic = failed
+            ? 'rallar.bb.rtc.stream_failed'
+            : 'rallar.bb.rtc.stream_completed';
         const message = thresholdFailed
             ? 'RTC stream did not satisfy configured thresholds.'
             : sendFailed
@@ -2548,7 +2680,10 @@ class BrowserCommandAdapter {
             config: context.config(),
             session: readOptionalBrowserSession()
         });
-        const streamSend = replaceRallarBlackBoxRtcStreamPlaceholders(resolvedSend, streamContext);
+        const streamSend = replaceRallarBlackBoxRtcStreamPlaceholders(
+            resolvedSend,
+            streamContext
+        );
         const scopedSendFields = Object.fromEntries(
             Object.entries({
                 roomId: command.roomId,
@@ -2563,12 +2698,14 @@ class BrowserCommandAdapter {
             return streamSend;
         }
 
-        return streamSend && typeof streamSend === 'object' && !Array.isArray(streamSend)
+        return streamSend &&
+                typeof streamSend === 'object' &&
+                !Array.isArray(streamSend)
             ? {
                 ...(streamSend as Record<string, unknown>),
                 ...Object.fromEntries(
-                    Object.entries(scopedSendFields).filter(([key]) =>
-                        !Object.prototype.hasOwnProperty.call(streamSend, key)
+                    Object.entries(scopedSendFields).filter(
+                        ([key]) => !Object.prototype.hasOwnProperty.call(streamSend, key)
                     )
                 )
             }
@@ -2604,7 +2741,10 @@ class BrowserCommandAdapter {
             scheduledAtEpochMs: frame.scheduledAtEpochMs,
             startedAtEpochMs: frame.startedAtEpochMs,
             completedAtEpochMs,
-            startDriftMs: Math.max(0, frame.startedAtEpochMs - frame.scheduledAtEpochMs),
+            startDriftMs: Math.max(
+                0,
+                frame.startedAtEpochMs - frame.scheduledAtEpochMs
+            ),
             durationMs: Math.max(0, completedAtEpochMs - frame.startedAtEpochMs),
             ok,
             status,
@@ -2813,49 +2953,55 @@ class BrowserCommandAdapter {
     ): void {
         this.detachWebSocketListeners(connection);
         const disposers: Array<() => void> = [];
-        disposers.push(addWebSocketListener(socket, 'message', (event) => {
-            context.recordEvent({
-                kind: 'message',
-                topic: 'rallar.bb.ws.message',
-                connection,
-                transport: 'ws',
-                severity: 'info',
-                payload: {
-                    data: toWebSocketMessageData(event)
-                }
-            });
-        }));
-        disposers.push(addWebSocketListener(socket, 'close', (event) => {
-            this.webSockets.delete(connection);
-            this.detachWebSocketListeners(connection);
-            context.recordEvent({
-                kind: 'event',
-                topic: 'rallar.bb.ws.closed',
-                connection,
-                transport: 'ws',
-                severity: 'warning',
-                payload: toWebSocketClosePayload(event)
-            });
-        }));
-        disposers.push(addWebSocketListener(socket, 'error', (event) => {
-            context.recordEvent({
-                kind: 'diagnostic',
-                topic: 'rallar.bb.ws.error',
-                connection,
-                transport: 'ws',
-                severity: 'error',
-                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
-                    topic: 'rallar.bb.ws.error',
-                    severity: 'error',
+        disposers.push(
+            addWebSocketListener(socket, 'message', (event) => {
+                context.recordEvent({
+                    kind: 'message',
+                    topic: 'rallar.bb.ws.message',
                     connection,
                     transport: 'ws',
+                    severity: 'info',
                     payload: {
-                        event
-                    },
-                    source: 'browser-adapter'
-                })
-            });
-        }));
+                        data: toWebSocketMessageData(event)
+                    }
+                });
+            })
+        );
+        disposers.push(
+            addWebSocketListener(socket, 'close', (event) => {
+                this.webSockets.delete(connection);
+                this.detachWebSocketListeners(connection);
+                context.recordEvent({
+                    kind: 'event',
+                    topic: 'rallar.bb.ws.closed',
+                    connection,
+                    transport: 'ws',
+                    severity: 'warning',
+                    payload: toWebSocketClosePayload(event)
+                });
+            })
+        );
+        disposers.push(
+            addWebSocketListener(socket, 'error', (event) => {
+                context.recordEvent({
+                    kind: 'diagnostic',
+                    topic: 'rallar.bb.ws.error',
+                    connection,
+                    transport: 'ws',
+                    severity: 'error',
+                    payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                        topic: 'rallar.bb.ws.error',
+                        severity: 'error',
+                        connection,
+                        transport: 'ws',
+                        payload: {
+                            event
+                        },
+                        source: 'browser-adapter'
+                    })
+                });
+            })
+        );
         this.webSocketDisposers.set(connection, disposers);
     }
 
@@ -2892,9 +3038,7 @@ class BrowserCommandAdapter {
             const timeout = setTimeout(() => {
                 complete(() =>
                     reject(
-                        new Error(
-                            'WebSocket did not open within ' + timeoutMs + 'ms.'
-                        )
+                        new Error('WebSocket did not open within ' + timeoutMs + 'ms.')
                     )
                 );
             }, timeoutMs);
@@ -2922,25 +3066,31 @@ class BrowserCommandAdapter {
                 once: true
             });
 
-            cleanup.push(addWebSocketListener(socket, 'open', () => {
-                complete(resolve);
-            }));
-            cleanup.push(addWebSocketListener(socket, 'error', () => {
-                complete(() => reject(new Error('WebSocket failed before open.')));
-            }));
-            cleanup.push(addWebSocketListener(socket, 'close', (event) => {
-                const closePayload = toWebSocketClosePayload(event);
-                complete(() =>
-                    reject(
-                        new Error(
-                            'WebSocket closed before open. code=' +
-                                String(closePayload.code) +
-                                ', reason=' +
-                                String(closePayload.reason)
+            cleanup.push(
+                addWebSocketListener(socket, 'open', () => {
+                    complete(resolve);
+                })
+            );
+            cleanup.push(
+                addWebSocketListener(socket, 'error', () => {
+                    complete(() => reject(new Error('WebSocket failed before open.')));
+                })
+            );
+            cleanup.push(
+                addWebSocketListener(socket, 'close', (event) => {
+                    const closePayload = toWebSocketClosePayload(event);
+                    complete(() =>
+                        reject(
+                            new Error(
+                                'WebSocket closed before open. code=' +
+                                    String(closePayload.code) +
+                                    ', reason=' +
+                                    String(closePayload.reason)
+                            )
                         )
-                    )
-                );
-            }));
+                    );
+                })
+            );
         });
     }
 
@@ -3079,7 +3229,12 @@ class BrowserCommandAdapter {
             };
         }
 
-        this.closeWebSocketResource(connection, socket, command.code, command.reason);
+        this.closeWebSocketResource(
+            connection,
+            socket,
+            command.code,
+            command.reason
+        );
         return {
             status: 'ok',
             value: {
@@ -3101,7 +3256,10 @@ class BrowserCommandAdapter {
         }
         finally {
             this.webSockets.delete(connection);
-            if (options.detachImmediately === true || socket.readyState === undefined) {
+            if (
+                options.detachImmediately === true ||
+                socket.readyState === undefined
+            ) {
                 this.detachWebSocketListeners(connection);
             }
         }

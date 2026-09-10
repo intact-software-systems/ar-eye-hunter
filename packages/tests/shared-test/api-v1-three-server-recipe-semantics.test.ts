@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import {
     describe,
     expect,
@@ -82,7 +83,7 @@ describe('API-v1 three-server recipe semantics', () => {
         expect(
             (recipe.steps as Array<{ type?: string; }>).some((step) => step.type === 'parallel')
         ).toBe(true);
-        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
         expect(allSteps.find((step) => step.name === 'updateGroupThroughSecondary')).toMatchObject({
             connection: 'apiSecondary'
         });
@@ -144,7 +145,7 @@ describe('API-v1 three-server recipe semantics', () => {
         const { entries } = readApiV1Matrix();
         const entry = entries.find((candidate) => candidate.id === 'api-v1-rtc-topology-convergence');
         const recipe = readApiV1Recipe(entry!.recipe);
-        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
 
         expect(allSteps.find((step) => step.name === 'promoteBobThroughPrimary')).toMatchObject({
             request: {
@@ -186,15 +187,26 @@ describe('API-v1 three-server recipe semantics', () => {
                 },
                 expect: {
                     consume: true,
+                    decodeJsonPaths: ['payload.resource'],
                     ordered: false,
                     messages: [
                         {
                             route: { topicId: 'group-state.event' },
-                            payload: { typeId: 'group-state.event' }
+                            payload: {
+                                typeId: 'group-state.event',
+                                resource: {
+                                    event: { requestId: 'promote-bob-scope-{runId}' }
+                                }
+                            }
                         },
                         {
                             route: { topicId: 'group-state.event' },
-                            payload: { typeId: 'group-state.event' }
+                            payload: {
+                                typeId: 'group-state.event',
+                                resource: {
+                                    event: { requestId: 'update-group-scope-{runId}' }
+                                }
+                            }
                         }
                     ]
                 }
@@ -231,16 +243,14 @@ describe('API-v1 three-server recipe semantics', () => {
         }
     });
 
-    // The two envelopes the exact-revision assertions consume are the two
-    // earliest buffered group-state.event frames, so any third envelope in the
-    // window is read as a mutation. Under the apply landing the route-less
-    // applyPlannedLayout promotion emits exactly such an envelope, and whether
-    // it lands before the sockets open is a race the group's own load decides.
-    it('pins the held reconfigure landing the exact-revision assertions depend on', () => {
+    // Request-id matching excludes buffered presence events. Holding automatic
+    // promotion separately keeps this recipe focused on the two deliberately
+    // concurrent mutations; the route-less apply landing has its own coverage.
+    it('isolates concurrent mutations from accepted-layout promotion', () => {
         const { entries } = readApiV1Matrix();
         const entry = entries.find((candidate) => candidate.id === 'api-v1-rtc-topology-convergence');
         const recipe = readApiV1Recipe(entry!.recipe);
-        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
 
         expect(allSteps.find((step) => step.name === 'createGroupOnPrimary')).toMatchObject({
             request: {
@@ -263,7 +273,7 @@ describe('API-v1 three-server recipe semantics', () => {
 
     it('covers the route-less accepted-layout promotion the convergence recipe holds back', () => {
         const recipe = readApiV1Recipe('tests/api-v1/api-v1-state-topology-churn.json');
-        const steps = recipe.steps as Array<Record<string, unknown>>;
+        const steps = recipe.steps as readonly ApiJsonObject[];
 
         for (
             const [stepName, connection] of [
@@ -306,11 +316,11 @@ describe('API-v1 three-server recipe semantics', () => {
         expect(entry?.requires?.playwright).not.toBe(true);
 
         const recipe = readApiV1Recipe(entry!.recipe);
-        const parallel = (recipe.steps as Array<Record<string, unknown>>).find(
+        const parallel = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'runConcurrentClientChurn'
         ) as {
             type?: string;
-            groups?: Array<{ steps?: Array<Record<string, unknown>>; }>;
+            groups?: Array<{ steps?: readonly ApiJsonObject[]; }>;
         };
         expect(parallel.type).toBe('parallel');
         expect(parallel.groups).toHaveLength(3);
@@ -326,13 +336,13 @@ describe('API-v1 three-server recipe semantics', () => {
                 return new Set(steps.map((step) => step.connection).filter(Boolean));
             })
         ).toEqual([new Set(['apiPrimary']), new Set(['apiSecondary']), new Set(['apiTertiary'])]);
-        const finalReads = (recipe.steps as Array<Record<string, unknown>>)
+        const finalReads = (recipe.steps as readonly ApiJsonObject[])
             .filter((step) => String(step.name).startsWith('read'))
             .filter((step) => String((step.request as { path?: string; })?.path).includes('/groups/'));
         expect(new Set(finalReads.map((step) => step.connection))).toEqual(
             new Set(['apiPrimary', 'apiTertiary'])
         );
-        const latestObservation = (recipe.steps as Array<Record<string, unknown>>).find(
+        const latestObservation = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'deriveLatestChurnObservation'
         );
         expect(latestObservation).toMatchObject({
@@ -358,7 +368,7 @@ describe('API-v1 three-server recipe semantics', () => {
                 }
             }
         });
-        const floor = (recipe.steps as Array<Record<string, unknown>>).find(
+        const floor = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'deriveChurnReadFloor'
         );
         expect(floor).toMatchObject({
@@ -383,7 +393,7 @@ describe('API-v1 three-server recipe semantics', () => {
                 }
             }
         });
-        const churnRead = (recipe.steps as Array<Record<string, unknown>>).find(
+        const churnRead = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'readChurnGroupThroughPrimary'
         );
         expect(churnRead).toMatchObject({
@@ -407,7 +417,7 @@ describe('API-v1 three-server recipe semantics', () => {
                 }
             }
         });
-        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+        const allSteps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
         for (
             const [connectStepName, outputPrefix] of [
                 ['connectPrimaryClientToShared{loop.iteration}', 'primaryShared'],
@@ -428,7 +438,7 @@ describe('API-v1 three-server recipe semantics', () => {
                 }
             });
         }
-        const latestSharedObservation = (recipe.steps as Array<Record<string, unknown>>).find(
+        const latestSharedObservation = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'deriveLatestSharedObservation'
         );
         expect(latestSharedObservation).toMatchObject({
@@ -454,7 +464,7 @@ describe('API-v1 three-server recipe semantics', () => {
                 }
             }
         });
-        const sharedFloor = (recipe.steps as Array<Record<string, unknown>>).find(
+        const sharedFloor = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'deriveSharedReadFloor'
         );
         expect(sharedFloor).toMatchObject({
@@ -479,7 +489,7 @@ describe('API-v1 three-server recipe semantics', () => {
                 }
             }
         });
-        const sharedRead = (recipe.steps as Array<Record<string, unknown>>).find(
+        const sharedRead = (recipe.steps as readonly ApiJsonObject[]).find(
             (step) => step.name === 'readSharedGroupThroughTertiary'
         );
         expect(sharedRead).toMatchObject({
@@ -510,7 +520,7 @@ describe('API-v1 three-server recipe semantics', () => {
 
     it('uses the secondary auth boundary and tertiary fanout and catch-up for CRDT', () => {
         const recipe = readApiV1Recipe('tests/api-v1/api-v1-crdt-app-inbox.json');
-        const steps = recipe.steps as Array<Record<string, unknown>>;
+        const steps = recipe.steps as readonly ApiJsonObject[];
 
         expect(steps.find((step) => step.name === 'loginCrdtReader')).toMatchObject({
             connection: 'apiSecondary'

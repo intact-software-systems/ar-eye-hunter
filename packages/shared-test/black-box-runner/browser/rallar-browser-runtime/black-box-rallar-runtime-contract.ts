@@ -1,3 +1,4 @@
+import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -20,6 +21,13 @@ import type {
 } from './black-box-rallar-operation-contracts.ts';
 
 export interface BlackBoxRallarRoomRefreshOptions {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs: number;
+}
+
+export interface BlackBoxRallarRoomWaitOptions {
+    readonly connect: boolean;
+    readonly minReadyPeers: number;
     readonly signal?: AbortSignal;
     readonly timeoutMs: number;
 }
@@ -52,7 +60,9 @@ export interface BlackBoxRallarRuntime {
     authenticate(
         config: BlackBoxRallarConnectionConfig
     ): Promise<BlackBoxRallarAuthenticateDiagnostics>;
-    connect(config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics>;
+    connect(
+        config: BlackBoxRallarConnectionConfig
+    ): Promise<BlackBoxRallarConnectDiagnostics>;
     send(input: unknown): Promise<BlackBoxRallarSendDiagnostics>;
     sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
     sendMessage(input: unknown): Promise<BlackBoxRallarMessageSendDiagnostics>;
@@ -62,10 +72,15 @@ export interface BlackBoxRallarRuntime {
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;
+    waitForRoom(
+        options: BlackBoxRallarRoomWaitOptions
+    ): Promise<RallarRoomTransportStatus>;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly crdt: BlackBoxRallarCrdtRuntime;
     readonly director: BlackBoxRallarDirectorRuntime;
     readonly formation: BlackBoxRallarFormationRuntime;
     close(): Promise<BlackBoxRallarCloseDiagnostics>;
-    health(input?: BlackBoxRallarHealthInput): Promise<BlackBoxRallarHealthDiagnostics>;
+    health(
+        input?: BlackBoxRallarHealthInput
+    ): Promise<BlackBoxRallarHealthDiagnostics>;
 }

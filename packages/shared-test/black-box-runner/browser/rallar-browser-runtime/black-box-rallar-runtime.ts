@@ -40,7 +40,11 @@ import {
     decideBlackBoxRallarLifecycleRequest,
     mergeBlackBoxRallarAuthenticationConfig
 } from './black-box-rallar-operation-policy.ts';
-import type { BlackBoxRallarRoomRefreshOptions, BlackBoxRallarRuntime } from './black-box-rallar-runtime-contract.ts';
+import type {
+    BlackBoxRallarRoomRefreshOptions,
+    BlackBoxRallarRoomWaitOptions,
+    BlackBoxRallarRuntime
+} from './black-box-rallar-runtime-contract.ts';
 import {
     toBlackBoxRallarSerializedError,
     type BlackBoxRallarSerializedError
@@ -117,7 +121,9 @@ interface RuntimeConnectionAttempt {
     phase: string;
     lifecycleSubscriptions?: Pick<
         BlackBoxRallarConnectionState.Value,
-        'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle' | 'unsubscribeFormationDiagnostics'
+        | 'unsubscribeWsLifecycle'
+        | 'unsubscribeRtcLifecycle'
+        | 'unsubscribeFormationDiagnostics'
     >;
     unsubscribeConsoleDiagnostics?: () => void;
 }
@@ -206,8 +212,13 @@ class BlackBoxRallarConnectionRuntime {
             authenticationKey: toBlackBoxRallarAuthenticationKey,
             mergeAuthenticationConfig: mergeBlackBoxRallarAuthenticationConfig,
             authenticationClosedError: () =>
-                new Error('Authentication was cancelled because the Rallar runtime closed.'),
-            connectionClosedError: () => new Error('Connection was cancelled because the Rallar runtime closed.')
+                new Error(
+                    'Authentication was cancelled because the Rallar runtime closed.'
+                ),
+            connectionClosedError: () =>
+                new Error(
+                    'Connection was cancelled because the Rallar runtime closed.'
+                )
         });
         this.#healthReader = new BlackBoxRallarHealthReader({
             rallar: this.#rallar,
@@ -320,15 +331,17 @@ class BlackBoxRallarConnectionRuntime {
         const defaults = toBlackBoxRallarDefaults(config);
         // A connection that names no application has no defaults to carry the scripted ports.
         this.#rallar.setDefaults(
-            defaults === undefined ? undefined : {
-                ...defaults,
-                diagnosticsPorts: {
-                    transportFaultPort: this.#rallar.diagnostics.faults,
-                    indexedDbOperationObserver: this.#rallar.diagnostics.storage,
-                    outboundDiagnostics: this.#rallar.diagnostics.outboundDiagnostics.sink,
-                    onStorageReset: this.#rallar.diagnostics.storageReset.sink
+            defaults === undefined
+                ? undefined
+                : {
+                    ...defaults,
+                    diagnosticsPorts: {
+                        transportFaultPort: this.#rallar.diagnostics.faults,
+                        indexedDbOperationObserver: this.#rallar.diagnostics.storage,
+                        outboundDiagnostics: this.#rallar.diagnostics.outboundDiagnostics.sink,
+                        onStorageReset: this.#rallar.diagnostics.storageReset.sink
+                    }
                 }
-            }
         );
         return defaults;
     };
@@ -363,9 +376,13 @@ class BlackBoxRallarConnectionRuntime {
         this.#messagingController.resetDeliveryLedger();
         unsubscribed += this.#messagingController.cleanupWsSubscriptions();
         if (unsubscribed > 0 && topicConfig) {
-            this.#runtimeDiagnostics.emitDiagnostic(topicConfig, 'rallar.browser.cleanup.unsubscribe_completed', {
-                unsubscribed
-            });
+            this.#runtimeDiagnostics.emitDiagnostic(
+                topicConfig,
+                'rallar.browser.cleanup.unsubscribe_completed',
+                {
+                    unsubscribed
+                }
+            );
         }
         return unsubscribed;
     };
@@ -376,11 +393,15 @@ class BlackBoxRallarConnectionRuntime {
     ): void => {
         const expectedSessionId = config.rallar.expectedSessionId;
         if (expectedSessionId && expectedSessionId !== session.sessionId) {
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.session.expected_mismatch', {
-                expectedSessionId,
-                actualSessionId: session.sessionId,
-                username: session.username
-            });
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.session.expected_mismatch',
+                {
+                    expectedSessionId,
+                    actualSessionId: session.sessionId,
+                    username: session.username
+                }
+            );
         }
 
         if (!previousState) {
@@ -388,20 +409,30 @@ class BlackBoxRallarConnectionRuntime {
         }
 
         if (previousState.session.sessionId === session.sessionId) {
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.session.duplicate_detected', {
-                session: toBlackBoxRallarSessionDiagnostic(session),
-                previousConnection: previousState.config.connection,
-                previousRoomId: previousState.config.roomId
-            });
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.session.duplicate_detected',
+                {
+                    session: toBlackBoxRallarSessionDiagnostic(session),
+                    previousConnection: previousState.config.connection,
+                    previousRoomId: previousState.config.roomId
+                }
+            );
             return;
         }
 
-        this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.session.active_replaced', {
-            previousSession: toBlackBoxRallarSessionDiagnostic(previousState.session),
-            nextSession: toBlackBoxRallarSessionDiagnostic(session),
-            previousConnection: previousState.config.connection,
-            previousRoomId: previousState.config.roomId
-        });
+        this.#runtimeDiagnostics.emitDiagnostic(
+            config,
+            'rallar.browser.session.active_replaced',
+            {
+                previousSession: toBlackBoxRallarSessionDiagnostic(
+                    previousState.session
+                ),
+                nextSession: toBlackBoxRallarSessionDiagnostic(session),
+                previousConnection: previousState.config.connection,
+                previousRoomId: previousState.config.roomId
+            }
+        );
     };
     #requireState = (): BlackBoxRallarConnectionState.Value => {
         const state = this.#connectionState.get();
@@ -414,7 +445,9 @@ class BlackBoxRallarConnectionRuntime {
         config: BlackBoxRallarConnectionConfig
     ): Pick<
         BlackBoxRallarConnectionState.Value,
-        'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle' | 'unsubscribeFormationDiagnostics'
+        | 'unsubscribeWsLifecycle'
+        | 'unsubscribeRtcLifecycle'
+        | 'unsubscribeFormationDiagnostics'
     > => {
         const { ws, rtc } = this.#rallar;
         // The formation stream is room-scoped, so a connection that names no room installs none.
@@ -422,14 +455,26 @@ class BlackBoxRallarConnectionRuntime {
 
         return {
             ...(roomRef
-                ? { unsubscribeFormationDiagnostics: this.#formationController.installDiagnostics(roomRef) }
+                ? {
+                    unsubscribeFormationDiagnostics: this.#formationController.installDiagnostics(roomRef)
+                }
                 : {}),
             unsubscribeWsLifecycle: ws.onLifecycle(
-                (event) => this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
+                (event) =>
+                    this.#runtimeDiagnostics.emitDiagnostic(
+                        config,
+                        'rallar.browser.ws.lifecycle',
+                        event
+                    ),
                 { emitCurrent: true }
             ),
             unsubscribeRtcLifecycle: rtc.onLifecycle(
-                (event) => this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.rtc.lifecycle', event),
+                (event) =>
+                    this.#runtimeDiagnostics.emitDiagnostic(
+                        config,
+                        'rallar.browser.rtc.lifecycle',
+                        event
+                    ),
                 { emitCurrent: true }
             )
         };
@@ -439,11 +484,19 @@ class BlackBoxRallarConnectionRuntime {
         const transport = resolveBlackBoxRallarTransport(config);
 
         attempt.phase = 'transport-config';
-        this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, { transport });
-        const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
+        this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, {
+            transport
+        });
+        const laneId = transport === 'realtime'
+            ? resolveBlackBoxRallarLaneId(config)
+            : undefined;
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
-        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
+        const typeId = typedMessages
+            ? resolveBlackBoxRallarTypeId(config)
+            : undefined;
+        const topicId = typedMessages
+            ? resolveBlackBoxRallarTopicId(config)
+            : undefined;
         this.#runtimeDiagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             transport,
             laneId,
@@ -456,13 +509,17 @@ class BlackBoxRallarConnectionRuntime {
             apiBaseUrl: config.rallar.apiBaseUrl,
             ...blackBoxRallarScopeDiagnosticsOf(config)
         });
-        this.#authentication.requireCredentialsForAuthenticationIdentityChange(config);
+        this.#authentication.requireCredentialsForAuthenticationIdentityChange(
+            config
+        );
         const defaults = this.#configureRallarConnection(config);
         this.#runtimeDiagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             defaults
         });
     };
-    #openConnection = async (attempt: RuntimeConnectionAttempt): Promise<void> => {
+    #openConnection = async (
+        attempt: RuntimeConnectionAttempt
+    ): Promise<void> => {
         const { config, context } = attempt;
         attempt.phase = 'rallar-connect';
         this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, {
@@ -493,12 +550,16 @@ class BlackBoxRallarConnectionRuntime {
                 scope
             });
             context.assertCurrent();
-            this.#runtimeDiagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
-                roomId: config.roomId,
-                roomRef,
-                scope,
-                ...this.#healthReader.statusDiagnostics(config)
-            });
+            this.#runtimeDiagnostics.emitConnectPhaseCompleted(
+                config,
+                attempt.phase,
+                {
+                    roomId: config.roomId,
+                    roomRef,
+                    scope,
+                    ...this.#healthReader.statusDiagnostics(config)
+                }
+            );
         }
     };
     #subscribeRealtime = (
@@ -530,7 +591,11 @@ class BlackBoxRallarConnectionRuntime {
      * receiver needs are installed after it rather than inside #subscribeConnection.
      */
     #subscribeTypedMessages = (config: BlackBoxRallarConnectionConfig): void => {
-        if (isBlackBoxRallarTypedMessagesTransport(resolveBlackBoxRallarTransport(config))) {
+        if (
+            isBlackBoxRallarTypedMessagesTransport(
+                resolveBlackBoxRallarTransport(config)
+            )
+        ) {
             this.#messagingController.subscribeTypedChannel(config);
         }
     };
@@ -540,25 +605,28 @@ class BlackBoxRallarConnectionRuntime {
     ): (() => void) | undefined => {
         const transport = resolveBlackBoxRallarTransport(config);
         return transport === 'messages.rtc'
-            ? this.#rallar.messages.rtc.onMessage(resolveBlackBoxRallarMessageSelector(config), (message) => {
-                this.#runtimeDiagnostics.emit({
-                    kind: 'message',
-                    topic: 'rallar.browser.messages.rtc.message',
-                    connection: config.connection,
-                    actor: config.actor,
-                    transport,
-                    roomId: message.roomId ?? config.roomId,
-                    ...blackBoxRallarScopeDiagnosticsOf(config),
-                    peerId: session.sessionId,
-                    remotePeerId: message.senderId,
-                    senderId: message.senderId,
-                    typeId: message.typeId,
-                    topicId: message.topicId,
-                    contextId: message.contextId,
-                    resourceId: message.resourceId,
-                    data: message.payload
-                });
-            })
+            ? this.#rallar.messages.rtc.onMessage(
+                resolveBlackBoxRallarMessageSelector(config),
+                (message) => {
+                    this.#runtimeDiagnostics.emit({
+                        kind: 'message',
+                        topic: 'rallar.browser.messages.rtc.message',
+                        connection: config.connection,
+                        actor: config.actor,
+                        transport,
+                        roomId: message.roomId ?? config.roomId,
+                        ...blackBoxRallarScopeDiagnosticsOf(config),
+                        peerId: session.sessionId,
+                        remotePeerId: message.senderId,
+                        senderId: message.senderId,
+                        typeId: message.typeId,
+                        topicId: message.topicId,
+                        contextId: message.contextId,
+                        resourceId: message.resourceId,
+                        data: message.payload
+                    });
+                }
+            )
             : undefined;
     };
     #subscribeConnection = (
@@ -567,16 +635,26 @@ class BlackBoxRallarConnectionRuntime {
     ): BlackBoxRallarConnectionState.Value => {
         const { config } = attempt;
         const transport = resolveBlackBoxRallarTransport(config);
-        const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
+        const laneId = transport === 'realtime'
+            ? resolveBlackBoxRallarLaneId(config)
+            : undefined;
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
-        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
-        attempt.phase = transport === 'realtime' ? 'subscribe-realtime' : `subscribe-${transport}`;
+        const typeId = typedMessages
+            ? resolveBlackBoxRallarTypeId(config)
+            : undefined;
+        const topicId = typedMessages
+            ? resolveBlackBoxRallarTopicId(config)
+            : undefined;
+        attempt.phase = transport === 'realtime'
+            ? 'subscribe-realtime'
+            : `subscribe-${transport}`;
         this.#runtimeDiagnostics.emitConnectPhaseStarted(config, attempt.phase, {
             laneId,
             typeId,
             topicId,
-            selector: transport === 'messages.rtc' ? resolveBlackBoxRallarMessageSelector(config) : undefined
+            selector: transport === 'messages.rtc'
+                ? resolveBlackBoxRallarMessageSelector(config)
+                : undefined
         });
         const unsubscribeRealtime = this.#subscribeRealtime(config, session);
         const unsubscribeMessagesRtc = this.#subscribeMessages(config, session);
@@ -596,13 +674,21 @@ class BlackBoxRallarConnectionRuntime {
             ...attempt.lifecycleSubscriptions
         };
     };
-    #connectionDiagnostics = (state: BlackBoxRallarConnectionState.Value): BlackBoxRallarConnectDiagnostics => {
+    #connectionDiagnostics = (
+        state: BlackBoxRallarConnectionState.Value
+    ): BlackBoxRallarConnectDiagnostics => {
         const { config, session } = state;
         const transport = resolveBlackBoxRallarTransport(config);
-        const laneId = transport === 'realtime' ? resolveBlackBoxRallarLaneId(config) : undefined;
+        const laneId = transport === 'realtime'
+            ? resolveBlackBoxRallarLaneId(config)
+            : undefined;
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
-        const typeId = typedMessages ? resolveBlackBoxRallarTypeId(config) : undefined;
-        const topicId = typedMessages ? resolveBlackBoxRallarTopicId(config) : undefined;
+        const typeId = typedMessages
+            ? resolveBlackBoxRallarTypeId(config)
+            : undefined;
+        const topicId = typedMessages
+            ? resolveBlackBoxRallarTopicId(config)
+            : undefined;
         return {
             status: 'connected',
             connection: config.connection,
@@ -625,23 +711,34 @@ class BlackBoxRallarConnectionRuntime {
         config: BlackBoxRallarConnectionConfig,
         context: BlackBoxRallarLifecycleOperationContext
     ): Promise<BlackBoxRallarConnectDiagnostics> => {
-        const attempt: RuntimeConnectionAttempt = { config, context, phase: 'validate-config' };
+        const attempt: RuntimeConnectionAttempt = {
+            config,
+            context,
+            phase: 'validate-config'
+        };
         try {
             if (!config.rallar.apiBaseUrl) {
                 throw new Error('rallar.apiBaseUrl is required.');
             }
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.connect_started');
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.connect_started'
+            );
             attempt.unsubscribeConsoleDiagnostics = this.#consoleDiagnostics.install(config);
             this.#prepareConnection(attempt);
             attempt.phase = 'auth';
             const session = this.#connectionState.get()?.session ??
-                await this.#authentication.sessionForAuthentication(config);
+                (await this.#authentication.sessionForAuthentication(config));
             context.assertCurrent();
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.authenticated', {
-                clientId: session.clientId,
-                sessionId: session.sessionId,
-                username: session.username
-            });
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.authenticated',
+                {
+                    clientId: session.clientId,
+                    sessionId: session.sessionId,
+                    username: session.username
+                }
+            );
             const previousState = this.#connectionState.get();
             this.#emitSessionDiagnostics(config, session, previousState);
             attempt.lifecycleSubscriptions = this.#installRallarLifecycleDiagnostics(config);
@@ -651,7 +748,11 @@ class BlackBoxRallarConnectionRuntime {
             this.#subscribeTypedMessages(config);
             this.#connectionState.set(state);
             const diagnostics = this.#connectionDiagnostics(state);
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.connect_completed', diagnostics);
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.connect_completed',
+                diagnostics
+            );
             return diagnostics;
         }
         catch (caught) {
@@ -678,7 +779,9 @@ class BlackBoxRallarConnectionRuntime {
             throw error;
         }
     };
-    #connectedTargetRejection = (config: BlackBoxRallarConnectionConfig): Error | undefined => {
+    #connectedTargetRejection = (
+        config: BlackBoxRallarConnectionConfig
+    ): Error | undefined => {
         const state = this.#connectionState.get();
         if (!state) {
             return undefined;
@@ -696,9 +799,7 @@ class BlackBoxRallarConnectionRuntime {
                 target: blackBoxRallarConnectionTargetOf(config, state.session)
             }
         );
-        return decision.kind === 'reject'
-            ? new Error(decision.reason)
-            : undefined;
+        return decision.kind === 'reject' ? new Error(decision.reason) : undefined;
     };
     #ensureCrdtLiveConnection = async (
         config: BlackBoxRallarConnectionConfig,
@@ -719,13 +820,21 @@ class BlackBoxRallarConnectionRuntime {
                 if (queuedRejection) {
                     throw queuedRejection;
                 }
-                this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_started', {
-                    transportStrategy
-                });
+                this.#runtimeDiagnostics.emitDiagnostic(
+                    config,
+                    'rallar.browser.crdt.configure_started',
+                    {
+                        transportStrategy
+                    }
+                );
                 const defaults = this.#configureRallarConnection(config);
-                this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', {
-                    defaults
-                });
+                this.#runtimeDiagnostics.emitDiagnostic(
+                    config,
+                    'rallar.browser.crdt.configure_completed',
+                    {
+                        defaults
+                    }
+                );
 
                 if (!this.#rallar.isConnected()) {
                     const session = await this.#authentication.sessionForAuthentication(config);
@@ -741,20 +850,27 @@ class BlackBoxRallarConnectionRuntime {
                         });
                         context.assertCurrent();
                     }
-                    this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.crdt.connected', {
-                        session: toBlackBoxRallarSessionDiagnostic(session),
-                        transportStrategy
-                    });
+                    this.#runtimeDiagnostics.emitDiagnostic(
+                        config,
+                        'rallar.browser.crdt.connected',
+                        {
+                            session: toBlackBoxRallarSessionDiagnostic(session),
+                            transportStrategy
+                        }
+                    );
                 }
             }
         );
     };
-    #connect = (config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics> => {
+    #connect = (
+        config: BlackBoxRallarConnectionConfig
+    ): Promise<BlackBoxRallarConnectDiagnostics> => {
         const key = blackBoxRallarConnectionOperationKeyOf(config);
         const activeAuthentication = this.#lifecycle.authenticationConfig();
         if (
             activeAuthentication &&
-            toBlackBoxRallarAuthenticationKey(activeAuthentication) !== toBlackBoxRallarAuthenticationKey(config)
+            toBlackBoxRallarAuthenticationKey(activeAuthentication) !==
+                toBlackBoxRallarAuthenticationKey(config)
         ) {
             return this.#lifecycle.waitForAuthentication().then(
                 () => this.#connect(config),
@@ -811,11 +927,15 @@ class BlackBoxRallarConnectionRuntime {
         if (config?.roomId && config.rallar.leaveRoomOnClose !== false) {
             const roomRef = blackBoxRallarRoomRefOf(config);
             const scope = blackBoxRallarScopeOf(config);
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_started', {
-                roomId: config.roomId,
-                roomRef,
-                scope
-            });
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.cleanup.room_leave_started',
+                {
+                    roomId: config.roomId,
+                    roomRef,
+                    scope
+                }
+            );
             try {
                 await this.#rallar.rooms.leave({
                     roomId: config.roomId,
@@ -825,11 +945,15 @@ class BlackBoxRallarConnectionRuntime {
                     timeoutMs: config.rallar.timeoutMs
                 });
 
-                this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_completed', {
-                    roomId: config.roomId,
-                    roomRef,
-                    scope
-                });
+                this.#runtimeDiagnostics.emitDiagnostic(
+                    config,
+                    'rallar.browser.cleanup.room_leave_completed',
+                    {
+                        roomId: config.roomId,
+                        roomRef,
+                        scope
+                    }
+                );
                 return true;
             }
             catch (caught) {
@@ -848,10 +972,14 @@ class BlackBoxRallarConnectionRuntime {
             }
         }
         else if (config) {
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_skipped', {
-                roomId: config.roomId,
-                leaveRoomOnClose: config.rallar.leaveRoomOnClose
-            });
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.cleanup.room_leave_skipped',
+                {
+                    roomId: config.roomId,
+                    leaveRoomOnClose: config.rallar.leaveRoomOnClose
+                }
+            );
         }
 
         return false;
@@ -860,40 +988,61 @@ class BlackBoxRallarConnectionRuntime {
         config: BlackBoxRallarConnectionConfig | undefined
     ): Promise<RuntimeTransportCloseResult> => {
         if (config?.rallar.logoutOnClose) {
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.logout_started');
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.cleanup.logout_started'
+            );
             await this.#rallar.auth.logout({
                 timeoutMs: config.rallar.timeoutMs
             });
 
-            this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.logout_completed');
+            this.#runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.cleanup.logout_completed'
+            );
             return { logout: true, disconnected: false };
         }
         else {
             if (config) {
-                this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.disconnect_started');
+                this.#runtimeDiagnostics.emitDiagnostic(
+                    config,
+                    'rallar.browser.cleanup.disconnect_started'
+                );
             }
             await this.#rallar.disconnect();
 
             if (config) {
-                this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.disconnect_completed');
+                this.#runtimeDiagnostics.emitDiagnostic(
+                    config,
+                    'rallar.browser.cleanup.disconnect_completed'
+                );
             }
         }
         return { logout: false, disconnected: true };
     };
-    #closeEffect = async (preparation: RuntimeClosePreparation): Promise<BlackBoxRallarCloseDiagnostics> => {
+    #closeEffect = async (
+        preparation: RuntimeClosePreparation
+    ): Promise<BlackBoxRallarCloseDiagnostics> => {
         const config = preparation.config;
         const cleanupErrors: BlackBoxRallarSerializedError[] = [];
         try {
             if (config) {
-                this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.started', {
-                    roomId: config.roomId,
-                    ...blackBoxRallarScopeDiagnosticsOf(config),
-                    logoutOnClose: config.rallar.logoutOnClose === true,
-                    leaveRoomOnClose: config.rallar.leaveRoomOnClose !== false
-                });
+                this.#runtimeDiagnostics.emitDiagnostic(
+                    config,
+                    'rallar.browser.cleanup.started',
+                    {
+                        roomId: config.roomId,
+                        ...blackBoxRallarScopeDiagnosticsOf(config),
+                        logoutOnClose: config.rallar.logoutOnClose === true,
+                        leaveRoomOnClose: config.rallar.leaveRoomOnClose !== false
+                    }
+                );
             }
 
-            const unsubscribed = await this.#closeResources(preparation, cleanupErrors);
+            const unsubscribed = await this.#closeResources(
+                preparation,
+                cleanupErrors
+            );
             const leftRoom = await this.#leaveRoomForClose(config, cleanupErrors);
 
             const { logout, disconnected } = await this.#disconnectForClose(config);
@@ -926,7 +1075,11 @@ class BlackBoxRallarConnectionRuntime {
         }
         catch (caught) {
             const error = toError(caught);
-            this.#runtimeDiagnostics.emitError({ config: config, topic: 'rallar.browser.close_failed', error: error });
+            this.#runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.close_failed',
+                error: error
+            });
             throw error;
         }
     };
@@ -971,10 +1124,14 @@ class BlackBoxRallarConnectionRuntime {
             }
         }, activeCrdtOpens);
     };
-    #observeDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> => {
+    #observeDelivery = async (
+        input: unknown
+    ): Promise<BlackBoxRallarDeliveryObservation> => {
         const observe = decodeBlackBoxRallarDeliveryObserveInput(input);
         const deadlineEpochMs = this.#now() + observe.timeoutMs;
-        let observation = await this.#messagingController.refreshDelivery(observe.handleId);
+        let observation = await this.#messagingController.refreshDelivery(
+            observe.handleId
+        );
         while (!observe.state.includes(observation.state)) {
             if (this.#now() >= deadlineEpochMs) {
                 throw new TypeError(
@@ -984,21 +1141,32 @@ class BlackBoxRallarConnectionRuntime {
                 );
             }
             await this.#wait(DELIVERY_POLL_INTERVAL_MS);
-            observation = await this.#messagingController.refreshDelivery(observe.handleId);
+            observation = await this.#messagingController.refreshDelivery(
+                observe.handleId
+            );
         }
         return observation;
     };
-    #cancelDelivery = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
-        this.#messagingController.cancelDelivery(decodeBlackBoxRallarDeliveryHandleInput(input).handleId);
+    #cancelDelivery = async (
+        input: unknown
+    ): Promise<BlackBoxRallarDeliveryObservation> =>
+        this.#messagingController.cancelDelivery(
+            decodeBlackBoxRallarDeliveryHandleInput(input).handleId
+        );
     // F1 derives receipts from the admission ledger, so the peer-id lists stay empty until S1
     // carries real acknowledgements.
-    #readReceipts = async (input: unknown): Promise<BlackBoxRallarDeliveryObservation> =>
+    #readReceipts = async (
+        input: unknown
+    ): Promise<BlackBoxRallarDeliveryObservation> =>
         await this.#messagingController.refreshDelivery(
             decodeBlackBoxRallarDeliveryHandleInput(input).handleId
         );
     #requireScriptedPorts = (command: string): void => {
         const config = this.#connectionState.get()?.config;
-        if (config === undefined || toBlackBoxRallarDefaults(config) === undefined) {
+        if (
+            config === undefined ||
+            toBlackBoxRallarDefaults(config) === undefined
+        ) {
             throw new TypeError(
                 `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.scriptedPortsUnavailable}: ` +
                     `${command} needs a connection that names an application.`
@@ -1007,9 +1175,13 @@ class BlackBoxRallarConnectionRuntime {
     };
     #injectFault = async (input: unknown): Promise<void> => {
         this.#requireScriptedPorts('fault.inject');
-        this.#rallar.diagnostics.faults.inject(decodeBlackBoxRallarFaultInput(input));
+        this.#rallar.diagnostics.faults.inject(
+            decodeBlackBoxRallarFaultInput(input)
+        );
     };
-    #readStorageCounters = async (input: unknown): Promise<IndexedDbOperationCounts> => {
+    #readStorageCounters = async (
+        input: unknown
+    ): Promise<IndexedDbOperationCounts> => {
         this.#requireScriptedPorts('storage.counters');
         const counters = decodeBlackBoxRallarStorageCountersInput(input);
         const counts = this.#rallar.diagnostics.storage.getCounts();
@@ -1018,7 +1190,9 @@ class BlackBoxRallarConnectionRuntime {
         }
         return counts;
     };
-    #refreshRoom = async (options: BlackBoxRallarRoomRefreshOptions): Promise<void> => {
+    #refreshRoom = async (
+        options: BlackBoxRallarRoomRefreshOptions
+    ): Promise<void> => {
         const config = this.#requireState().config;
         const roomRef = blackBoxRallarRoomRefOf(config);
         const scope = blackBoxRallarScopeOf(config);
@@ -1034,6 +1208,26 @@ class BlackBoxRallarConnectionRuntime {
 
         await this.#rallar.refreshRoomState(roomRef, { ...options, scope });
     };
+    #waitForRoom = async (options: BlackBoxRallarRoomWaitOptions) => {
+        const config = this.#requireState().config;
+        const roomRef = blackBoxRallarRoomRefOf(config);
+        if (!roomRef) {
+            throwRallarValidation([
+                {
+                    path: '$.roomRef',
+                    code: 'room-ref-required',
+                    message: 'Room RTC readiness requires an exact room reference.'
+                }
+            ]);
+        }
+        return await this.#rallar.rtc.waitForRoom(roomRef, {
+            connect: options.connect,
+            laneId: resolveBlackBoxRallarLaneId(config),
+            minReadyPeers: options.minReadyPeers,
+            signal: options.signal,
+            timeoutMs: options.timeoutMs
+        });
+    };
     installation(): BlackBoxRallarRuntimeInstallation {
         const runtime: BlackBoxRallarRuntime = {
             authenticate: this.#authentication.authenticate,
@@ -1047,6 +1241,7 @@ class BlackBoxRallarConnectionRuntime {
             injectFault: this.#injectFault,
             readStorageCounters: this.#readStorageCounters,
             refreshRoom: this.#refreshRoom,
+            waitForRoom: this.#waitForRoom,
             readRtcMessageNacks: (messageId) => this.#rallar.readRtcMessageNacks(messageId),
             crdt: this.#crdtController,
             director: this.#directorController,
@@ -1063,7 +1258,9 @@ class BlackBoxRallarConnectionRuntime {
                     // Settled Q4: always present when a room resolves, and handed the resolved ref
                     // rather than a room id, so the one throwing path in the facade is unreachable
                     // on the two hot paths that call `health` from inside the runtime.
-                    formation: roomRef ? this.#formationController.summary(roomRef) : undefined
+                    formation: roomRef
+                        ? this.#formationController.summary(roomRef)
+                        : undefined
                 });
             }
         };
@@ -1078,7 +1275,9 @@ class BlackBoxRallarConnectionRuntime {
     }
 }
 
-export function createBlackBoxRallarRuntime(options: BlackBoxRallarConnectionRuntime.Input): BlackBoxRallarRuntime {
+export function createBlackBoxRallarRuntime(
+    options: BlackBoxRallarConnectionRuntime.Input
+): BlackBoxRallarRuntime {
     return new BlackBoxRallarConnectionRuntime(options).installation().runtime;
 }
 

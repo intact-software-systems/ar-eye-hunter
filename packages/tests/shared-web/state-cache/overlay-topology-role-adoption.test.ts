@@ -8,10 +8,12 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import {
     findAcceptedOverlayById,
     findPlannedOverlayById,
+    onAcceptedOverlayChange,
     resetOverlayAdoptionDiagnostics,
     setAcceptedOverlayById,
     setOverlayAdoptionDiagnosticsSink,
-    setPlannedOverlayById
+    setPlannedOverlayById,
+    waitForPlannedOverlayChangesIdle
 } from '@shared/repository/overlays-repository.ts';
 import {
     acceptGroupSnapshotRemoval,
@@ -117,6 +119,41 @@ describe('browser overlay topology role adoption', () => {
         expect(findAcceptedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
     });
 
+    it('updates RTC group ownership before publishing a promoted accepted layout to browser observers', async () => {
+        const initialGroup = groupSnapshot(1);
+        const topology = topologySnapshot(
+            initialGroup,
+            { groupRevision: 2, presenceRevision: 2 },
+            3
+        );
+        const acceptedGroup = groupSnapshot(2, toGroupLayoutIdentity(topology));
+        const order: string[] = [];
+        const manager = {
+            ...webRtcGroupManager(),
+            acceptGroupUpdate: async () => {
+                order.push('rtc-group-updated');
+            }
+        };
+        groupStateSnapshotsRepository.setGroupStateSnapshot(acceptedGroup);
+        setPlannedOverlayById(
+            topology.overlayId,
+            toOverlayInfoForSession(topology, 'session-a')
+        );
+        await waitForPlannedOverlayChangesIdle();
+        const unsubscribe = onAcceptedOverlayChange(() => {
+            order.push('browser-observer');
+        });
+
+        await acceptGroupSnapshotUpdate(
+            acceptedGroup,
+            manager,
+            { localSessionId: 'session-a', bootstrapDegree: 5 }
+        );
+        unsubscribe();
+
+        expect(order).toEqual(['rtc-group-updated', 'browser-observer']);
+    });
+
     it('writes a group-snapshot-first publication directly to accepted', async () => {
         const group = groupSnapshot(2);
         const topology = topologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
@@ -139,6 +176,35 @@ describe('browser overlay topology role adoption', () => {
         expect(publication).toMatchObject({ role: 'accepted', changed: true });
         expect(findAcceptedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
         expect(findPlannedOverlayById(topology.overlayId)?.provenance).toBe('bootstrap');
+    });
+
+    it('notifies RTC ownership before publishing an accepted overlay change to browser observers', async () => {
+        const group = groupSnapshot(2);
+        const topology = topologySnapshot(group, group.causalRevision, 3);
+        const acceptedGroup = groupSnapshot(2, toGroupLayoutIdentity(topology));
+        const order: string[] = [];
+        const manager = webRtcGroupManager(async () => {
+            order.push('rtc-reconciled');
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshot(acceptedGroup);
+        await acceptGroupSnapshotUpdate(
+            acceptedGroup,
+            manager,
+            { localSessionId: 'session-a', bootstrapDegree: 5 }
+        );
+        const unsubscribe = onAcceptedOverlayChange(() => {
+            order.push('browser-observer');
+        });
+
+        await adoptOverlayTopology({
+            topology,
+            sessionId: 'session-a',
+            webRtcGroupManager: manager,
+            adoption: 'publication'
+        });
+        unsubscribe();
+
+        expect(order).toEqual(['rtc-reconciled', 'browser-observer']);
     });
 
     it('does not promote a browser-local bootstrap that only shares the accepted identity tuple', async () => {
@@ -362,9 +428,11 @@ describe('browser overlay topology role adoption', () => {
     });
 });
 
-function webRtcGroupManager(): GroupSnapshotRtcSyncPort & Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'> {
+function webRtcGroupManager(
+    notifyOverlayTopologyChanged: () => Promise<void> = async () => undefined
+): GroupSnapshotRtcSyncPort & Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'> {
     return {
-        notifyOverlayTopologyChanged: async () => undefined,
+        notifyOverlayTopologyChanged,
         acceptGroupUpdate: async () => undefined,
         ensureAllGroupsConnected: async () => undefined,
         delete: async () => false,

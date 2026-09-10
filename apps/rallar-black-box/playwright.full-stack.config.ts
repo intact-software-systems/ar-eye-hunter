@@ -6,11 +6,16 @@ import {
     readFullStackApiServerMode,
     readFullStackSpaBaseUrl
 } from './playwright-full-stack-api-server.ts';
+import {
+    createFullStackControlWebServer,
+    readFullStackControlBaseUrl
+} from './playwright-full-stack-control-server.ts';
 
 const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
 const fullStackSpaBaseUrl = readFullStackSpaBaseUrl();
+const fullStackControlBaseUrl = readFullStackControlBaseUrl();
 const fullStackApiServerMode = fullStackEnabled
     ? readFullStackApiServerMode()
     : 'postgres';
@@ -45,12 +50,10 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         reuseExistingServer,
         timeout: 60_000
     },
-    {
-        command: 'cd ../rallar-black-box-control-server && deno task start',
-        url: 'http://127.0.0.1:5180/health',
-        reuseExistingServer,
-        timeout: 60_000
-    }
+    createFullStackControlWebServer({
+        baseUrl: fullStackControlBaseUrl,
+        reuseExistingServer
+    })
 ];
 
 export default defineConfig({

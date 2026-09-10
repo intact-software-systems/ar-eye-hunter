@@ -68,6 +68,8 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // write phases and attributing each commit to its origin; the limit was raised to 257.
         // Measured 257.34 KiB brotli after cutting the readiness scan volume and naming the hop
         // that drops an RTC offer (F2 Task 13 Step 4); the limit was raised to 258.
+        // Main's canonical room readiness (#557) measures 253.10546875 KiB brotli on its own;
+        // merging it with the ALM line measures 257.9580078125 KiB, so the 258 limit still holds.
         expect(result.brotliKiB).toBeLessThan(258);
     });
 });

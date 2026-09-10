@@ -12,6 +12,7 @@ import {
 } from './create-group-formation-lifecycle-driver.ts';
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import type {
     LiveRtcNackFailureDiagnostic,
     LiveRtcNackProbeStage,
@@ -31,6 +32,7 @@ export interface CreateLiveRtcDeliveryOperationsConfig {
     readonly workspaceId: string;
     readonly messagesRtcTypeId: string;
     readonly messagesRtcTopicId: string;
+    readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
 
 interface LiveRtcDeliveryRuntime extends CreateLiveRtcDeliveryOperationsConfig {
@@ -59,7 +61,11 @@ interface RunAllDeliveryPermutationsInput {
 }
 
 interface RunDeliveryMatrixInput extends RunAllDeliveryPermutationsInput {
-    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
+    readonly agents: readonly [
+        LiveRtcControlClient.Agent,
+        LiveRtcControlClient.Agent,
+        LiveRtcControlClient.Agent
+    ];
 }
 
 interface RunDeliveryMatrixResult {
@@ -125,13 +131,25 @@ export interface LiveRtcDeliveryOperations {
     runGroupFormation: GroupFormationLifecycleDriver['run'];
     reconnectAndWaitForPeerReadiness: GroupFormationLifecycleDriver['reconnectAndWaitForPeerReadiness'];
     sendMatrixPayload(input: SendMatrixPayloadInput): Promise<string>;
-    runWebSocketOpenSendCloseMatrix(input: RunWebSocketOpenSendCloseMatrixInput): Promise<readonly string[]>;
-    runDeliveryMatrix(input: RunDeliveryMatrixInput): Promise<RunDeliveryMatrixResult>;
-    runAllDeliveryPermutations(input: RunAllDeliveryPermutationsInput): Promise<RunDeliveryMatrixResult>;
+    runWebSocketOpenSendCloseMatrix(
+        input: RunWebSocketOpenSendCloseMatrixInput
+    ): Promise<readonly string[]>;
+    runDeliveryMatrix(
+        input: RunDeliveryMatrixInput
+    ): Promise<RunDeliveryMatrixResult>;
+    runAllDeliveryPermutations(
+        input: RunAllDeliveryPermutationsInput
+    ): Promise<RunDeliveryMatrixResult>;
     runNackProbe(input: ReceivedNackProbeInput): Promise<string>;
-    expectClosedTransportFailure(input: RtcFailureProbeInput): Promise<readonly string[]>;
-    closeAndResetAgents(input: CloseAndResetAgentsInput): Promise<readonly string[]>;
-    closeAndResetSettledAgentTrio(input: CloseAndResetSettledAgentTrioInput): Promise<readonly string[]>;
+    expectClosedTransportFailure(
+        input: RtcFailureProbeInput
+    ): Promise<readonly string[]>;
+    closeAndResetAgents(
+        input: CloseAndResetAgentsInput
+    ): Promise<readonly string[]>;
+    closeAndResetSettledAgentTrio(
+        input: CloseAndResetSettledAgentTrioInput
+    ): Promise<readonly string[]>;
 }
 
 export class LiveRtcNackProbeFailure extends Error {
@@ -185,9 +203,8 @@ export function createLiveRtcDeliveryOperations(
             input: RunAllDeliveryPermutationsInput
         ) => await runAllDeliveryPermutations(runtime, input),
         runNackProbe: async (input: ReceivedNackProbeInput) => await runNackProbe(runtime, input),
-        expectClosedTransportFailure: async (
-            input: RtcFailureProbeInput
-        ) => await expectClosedTransportFailure(runtime, input),
+        expectClosedTransportFailure: async (input: RtcFailureProbeInput) =>
+            await expectClosedTransportFailure(runtime, input),
         closeAndResetAgents,
         closeAndResetSettledAgentTrio
     };
@@ -376,7 +393,10 @@ async function runDeliveryMatrix(
     runtime: LiveRtcDeliveryRuntime,
     input: RunDeliveryMatrixInput
 ): Promise<RunDeliveryMatrixResult> {
-    const formation = await runtime.groupFormationLifecycleDriver.run({ ...input, readinessScope: 'owner' });
+    const formation = await runtime.groupFormationLifecycleDriver.run({
+        ...input,
+        readinessScope: 'owner'
+    });
     const [sender, agentB, agentC] = input.agents;
     const cases: DeliveryCase[] = [
         {
@@ -400,7 +420,13 @@ async function runDeliveryMatrix(
     ];
     const completed: CompletedDeliveryCase[] = [];
     for (const deliveryCase of cases) {
-        completed.push(await runDeliveryCase(runtime, { run: input, sessions: formation.sessions, deliveryCase }));
+        completed.push(
+            await runDeliveryCase(runtime, {
+                run: input,
+                sessions: formation.sessions,
+                deliveryCase
+            })
+        );
         if (deliveryCase.deliveryMode === 'direct') {
             await observeVisibleInbox(agentB, deliveryCase.matrixId);
         }
@@ -420,10 +446,16 @@ async function runDeliveryMatrix(
         );
     }
     return {
-        commandIds: [...formation.commandIds, ...completed.map((entry) => entry.commandId)],
+        commandIds: [
+            ...formation.commandIds,
+            ...completed.map((entry) => entry.commandId)
+        ],
         sessions: formation.sessions,
         scenarios: completed.map((entry) => entry.scenario),
-        timings: [...toReadinessTimings(input, formation, 'owner'), ...completed.map((entry) => entry.timing)]
+        timings: [
+            ...toReadinessTimings(input, formation, 'owner'),
+            ...completed.map((entry) => entry.timing)
+        ]
     };
 }
 
@@ -431,11 +463,16 @@ async function runAllDeliveryPermutations(
     runtime: LiveRtcDeliveryRuntime,
     input: RunAllDeliveryPermutationsInput
 ): Promise<RunDeliveryMatrixResult> {
-    const formation = await runtime.groupFormationLifecycleDriver.run({ ...input, readinessScope: 'all' });
+    const formation = await runtime.groupFormationLifecycleDriver.run({
+        ...input,
+        readinessScope: 'all'
+    });
     const slug = transportSlug(input.transport);
     const completed: CompletedDeliveryCase[] = [];
     for (const sender of input.agents) {
-        const receivers = input.agents.filter((agent) => agent.agentId !== sender.agentId);
+        const receivers = input.agents.filter(
+            (agent) => agent.agentId !== sender.agentId
+        );
         const cases: DeliveryCase[] = receivers.map((receiver) => ({
             sender,
             firstHopReceivers: [receiver],
@@ -452,14 +489,26 @@ async function runAllDeliveryPermutations(
             });
         }
         for (const deliveryCase of cases) {
-            completed.push(await runDeliveryCase(runtime, { run: input, sessions: formation.sessions, deliveryCase }));
+            completed.push(
+                await runDeliveryCase(runtime, {
+                    run: input,
+                    sessions: formation.sessions,
+                    deliveryCase
+                })
+            );
         }
     }
     return {
-        commandIds: [...formation.commandIds, ...completed.map((entry) => entry.commandId)],
+        commandIds: [
+            ...formation.commandIds,
+            ...completed.map((entry) => entry.commandId)
+        ],
         sessions: formation.sessions,
         scenarios: completed.map((entry) => entry.scenario),
-        timings: [...toReadinessTimings(input, formation, 'all'), ...completed.map((entry) => entry.timing)]
+        timings: [
+            ...toReadinessTimings(input, formation, 'all'),
+            ...completed.map((entry) => entry.timing)
+        ]
     };
 }
 
@@ -469,7 +518,10 @@ async function runNackProbe(
 ): Promise<string> {
     const commandId = `nack-not-yet-in-sync-${input.suffix}`;
     let messageId: string | null = null;
-    const observation: NackWireObservationState = { frames: [], matchingFrames: [] };
+    const observation: NackWireObservationState = {
+        frames: [],
+        matchingFrames: []
+    };
     let stage: LiveRtcNackProbeStage = 'start-observation';
     try {
         await startNackWireObservation(input.agent);
@@ -483,7 +535,11 @@ async function runNackProbe(
         });
         stage = 'message-identity';
         messageId = input.control.requireSentMessageId(result);
-        const identity = { messageId, senderSessionId: input.senderSessionId, targetSessionId: input.targetSessionId };
+        const identity = {
+            messageId,
+            senderSessionId: input.senderSessionId,
+            targetSessionId: input.targetSessionId
+        };
         stage = 'receive';
         await waitForReceivedNack(input.agent, identity, observation);
         stage = 'record-receipt';
@@ -513,7 +569,9 @@ async function runNackProbe(
     }
 }
 
-async function startNackWireObservation(agent: ReceivedNackProbeInput['agent']): Promise<void> {
+async function startNackWireObservation(
+    agent: ReceivedNackProbeInput['agent']
+): Promise<void> {
     await agent.page.evaluate(() => {
         if (!window.__liveRtcWireObservation) {
             throw new Error('RTC wire observer is missing.');
@@ -527,18 +585,26 @@ async function waitForReceivedNack(
     identity: Omit<LiveRtcReceivedNackProbe, 'frames'>,
     observation: NackWireObservationState
 ): Promise<void> {
-    await expect.poll(async () => {
-        observation.frames = await agent.page.evaluate(() => {
-            if (!window.__liveRtcWireObservation) {
-                throw new Error('RTC wire observer is missing.');
+    await expect
+        .poll(
+            async () => {
+                observation.frames = await agent.page.evaluate(() => {
+                    if (!window.__liveRtcWireObservation) {
+                        throw new Error('RTC wire observer is missing.');
+                    }
+                    return window.__liveRtcWireObservation.read();
+                });
+                observation.matchingFrames = observation.frames.filter((frame) =>
+                    hasLiveRtcNotYetInSyncNack({ ...identity, frames: [frame] })
+                );
+                return observation.matchingFrames.length > 0;
+            },
+            {
+                timeout: 15_000,
+                message: 'Expected a received not-yet-in-sync NACK for the probe message.'
             }
-            return window.__liveRtcWireObservation.read();
-        });
-        observation.matchingFrames = observation.frames.filter(
-            (frame) => hasLiveRtcNotYetInSyncNack({ ...identity, frames: [frame] })
-        );
-        return observation.matchingFrames.length > 0;
-    }, { timeout: 15_000, message: 'Expected a received not-yet-in-sync NACK for the probe message.' }).toBe(true);
+        )
+        .toBe(true);
 }
 
 async function captureNackProbeFailure(
@@ -563,12 +629,17 @@ async function captureNackProbeFailure(
     }
 }
 
-async function stopNackWireObservation(agent: ReceivedNackProbeInput['agent']): Promise<void> {
+async function stopNackWireObservation(
+    agent: ReceivedNackProbeInput['agent']
+): Promise<void> {
     try {
         await agent.page.evaluate(() => window.__liveRtcWireObservation?.stop());
     }
     catch (cause) {
-        console.error('Failed to stop live RTC NACK wire observation', toError(cause));
+        console.error(
+            'Failed to stop live RTC NACK wire observation',
+            toError(cause)
+        );
     }
 }
 
@@ -729,17 +800,19 @@ async function runDeliveryCase(
             ? undefined
             : firstHopReceivers.map((receiver) => input.sessions[receiver.prefix])
     });
-    const durations = await Promise.all(receivers.map((receiver) =>
-        input.run.control.waitForMessage({
-            runId: input.run.runId,
-            senderAgentId: sender.agentId,
-            agentId: receiver.agentId,
-            transport: input.run.transport,
-            matrixId,
-            deliveryMode,
-            startedAtMs
-        })
-    ));
+    const durations = await Promise.all(
+        receivers.map((receiver) =>
+            input.run.control.waitForMessage({
+                runId: input.run.runId,
+                senderAgentId: sender.agentId,
+                agentId: receiver.agentId,
+                transport: input.run.transport,
+                matrixId,
+                deliveryMode,
+                startedAtMs
+            })
+        )
+    );
     const receiverAgentIds = receivers.map((receiver) => receiver.agentId);
     return {
         commandId,
@@ -766,9 +839,14 @@ async function runDeliveryCase(
         }
     };
 }
-async function observeVisibleInbox(agent: LiveRtcControlClient.Agent, matrixId: string): Promise<void> {
+async function observeVisibleInbox(
+    agent: LiveRtcControlClient.Agent,
+    matrixId: string
+): Promise<void> {
     await openTab(agent.page, 'manual-rallar', 'black-box-runner');
-    await expect(agent.page.locator('#panel-manual-rallar .received-inbox-panel')).toContainText(matrixId, {
+    await expect(
+        agent.page.locator('#panel-manual-rallar .received-inbox-panel')
+    ).toContainText(matrixId, {
         timeout: 30_000
     });
 }
@@ -781,15 +859,17 @@ function toReadinessTimings(
     return readinessAgents.map((agent) => {
         const durationMs = formation.readinessDurations[agent.prefix];
         if (durationMs === undefined) {
-            throw new Error(`Readiness duration for agent ${agent.prefix} was not recorded.`);
+            throw new Error(
+                `Readiness duration for agent ${agent.prefix} was not recorded.`
+            );
         }
         return {
             kind: 'peer-ready',
             transport: input.transport,
             senderAgentId: agent.agentId,
-            receiverAgentIds: input.agents.filter((candidate) => candidate.agentId !== agent.agentId).map((candidate) =>
-                candidate.agentId
-            ),
+            receiverAgentIds: input.agents
+                .filter((candidate) => candidate.agentId !== agent.agentId)
+                .map((candidate) => candidate.agentId),
             durationMs
         };
     });

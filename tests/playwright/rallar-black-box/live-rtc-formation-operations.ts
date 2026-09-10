@@ -8,6 +8,7 @@ import type {
 } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestFormationCommandCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 import type { GroupLifecycleState } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupRef } from '../../../packages/shared/api/group-types.ts';
 
 import {
     openLiveRtcBrowserAgent,
@@ -16,7 +17,10 @@ import {
     type LiveRtcRestoredSession
 } from './live-rtc-browser-agents.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import { jsonRecord, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts';
+import {
+    jsonRecord,
+    type LiveRtcJsonRecord
+} from './live-rtc-evidence-json.ts';
 
 /**
  * The browser-side formation surface as the acceptance spec drives it.
@@ -39,13 +43,19 @@ export interface LiveRtcFormationOperations {
      * command sent to a page that was reopened under an agent's existing identity.
      */
     createCommandId(input: FormationCommandIdInput, name: string): string;
-    command(input: FormationCommandInput): Promise<BlackBoxRallarFormationSummary>;
-    tryCommand(input: FormationCommandInput): Promise<LiveRtcControlClient.Result>;
-    readiness(input: FormationAgentInput): Promise<FormationReadiness>;
+    command(
+        input: FormationCommandInput
+    ): Promise<BlackBoxRallarFormationSummary>;
+    tryCommand(
+        input: FormationCommandInput
+    ): Promise<LiveRtcControlClient.Result>;
+    readiness(input: FormationReadinessInput): Promise<FormationReadiness>;
     health(input: FormationAgentInput): Promise<FormationHealth>;
     waitForStage(input: FormationStageWaitInput): Promise<void>;
     countPeerCreated(input: FormationAgentInput): Promise<number>;
-    readFormationDiagnostics(input: FormationDiagnosticsInput): Promise<readonly FormationDiagnosticEvent[]>;
+    readFormationDiagnostics(
+        input: FormationDiagnosticsInput
+    ): Promise<readonly FormationDiagnosticEvent[]>;
     reopen(input: FormationReopenInput): Promise<LiveRtcControlClient.Agent>;
 }
 
@@ -60,7 +70,15 @@ export interface FormationAgentInput extends FormationCommandIdInput {
     readonly control: LiveRtcControlClient;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.Agent;
-    readonly groupId: string;
+    readonly roomRef: GroupRef;
+}
+
+export interface FormationReadinessInput extends FormationCommandIdInput {
+    readonly timeoutMs?: number;
+    readonly control: Pick<LiveRtcControlClient, 'executeOk' | 'resultValue'>;
+    readonly runId: string;
+    readonly agent: LiveRtcControlClient.FormationAgent;
+    readonly roomRef: GroupRef;
 }
 
 export interface FormationCommandInput extends FormationAgentInput {
@@ -117,7 +135,10 @@ const READINESS_TIMEOUT_MS = 60_000;
 
 export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
     let issuedCommandCount = 0;
-    const createCommandId = (input: FormationCommandIdInput, name: string): string => {
+    const createCommandId = (
+        input: FormationCommandIdInput,
+        name: string
+    ): string => {
         issuedCommandCount += 1;
         return `formation-${name}-${input.agent.prefix}-${input.suffix}-${issuedCommandCount}`;
     };
@@ -139,7 +160,10 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
                     ...(input.reason === undefined ? {} : { reason: input.reason })
                 }
             });
-            return decodeFormationSummary(record(input.control.resultValue(result)).formation, 'formation.command');
+            return decodeFormationSummary(
+                record(input.control.resultValue(result)).formation,
+                'formation.command'
+            );
         },
 
         async tryCommand(input) {
@@ -159,6 +183,13 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
         },
 
         async readiness(input) {
+            const timeoutMs = input.timeoutMs ?? READINESS_TIMEOUT_MS;
+            const startedAtMs = performance.now();
+            await input.agent.refreshRoom({ timeoutMs });
+            const remainingTimeoutMs = Math.max(
+                0,
+                timeoutMs - (performance.now() - startedAtMs)
+            );
             const commandId = createCommandId(input, 'readiness');
             const result = await input.control.executeOk({
                 runId: input.runId,
@@ -170,14 +201,20 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
                     ...toWireRoom(input),
                     // The in-browser wait and the poll that awaits it are the same budget; without
                     // this the command falls back to its own default and gives up first.
-                    timeoutMs: input.timeoutMs ?? READINESS_TIMEOUT_MS
+                    timeoutMs: remainingTimeoutMs
                 },
-                timeoutMs: (input.timeoutMs ?? READINESS_TIMEOUT_MS) + 30_000
+                timeoutMs: remainingTimeoutMs + 30_000
             });
             const value = record(input.control.resultValue(result));
             return {
-                readyAtEpochMs: decodeNumber(value.readyAtEpochMs, 'formation.readiness.readyAtEpochMs'),
-                formation: decodeFormationSummary(value.formation, 'formation.readiness')
+                readyAtEpochMs: decodeNumber(
+                    value.readyAtEpochMs,
+                    'formation.readiness.readyAtEpochMs'
+                ),
+                formation: decodeFormationSummary(
+                    value.formation,
+                    'formation.readiness'
+                )
             };
         },
 
@@ -231,13 +268,18 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
 
         async countPeerCreated(input) {
             const events = await readAgentEvents(input);
-            return events.filter((event) => event.topic === PEER_CREATED_TOPIC && event.data.kind === 'peer-created')
-                .length;
+            return events.filter(
+                (event) =>
+                    event.topic === PEER_CREATED_TOPIC &&
+                    event.data.kind === 'peer-created'
+            ).length;
         },
 
         async readFormationDiagnostics(input) {
             const events = await readAgentEvents(input);
-            return events.filter((event) => event.topic === input.topic && event.atEpochMs >= input.sinceEpochMs);
+            return events.filter(
+                (event) => event.topic === input.topic && event.atEpochMs >= input.sinceEpochMs
+            );
         },
 
         async reopen(input) {
@@ -251,7 +293,7 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
                 agentId: input.agent.agentId,
                 actor: input.agent.actor,
                 connection: input.agent.connection,
-                groupId: input.groupId
+                groupId: input.roomRef.groupId
             });
             // Half of the same-session proof: the seed survived the page load. It says nothing about
             // what the runtime will authenticate with, because that is decided later inside
@@ -276,11 +318,13 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
 }
 
 /** The room every formation command addresses, named exactly so the protocol's rule is satisfied. */
-function toWireRoom(input: FormationAgentInput): LiveRtcJsonRecord {
+function toWireRoom(
+    input: Pick<FormationAgentInput, 'roomRef'>
+): LiveRtcJsonRecord {
     return {
-        roomId: input.groupId,
-        applicationId: 'rallar-server',
-        workspaceId: 'default'
+        roomId: input.roomRef.groupId,
+        applicationId: input.roomRef.applicationId,
+        workspaceId: input.roomRef.workspaceId
     };
 }
 
@@ -301,7 +345,9 @@ function toWireCommandFields(
     return { command: input.command };
 }
 
-async function readAgentEvents(input: FormationAgentInput): Promise<readonly FormationDiagnosticEvent[]> {
+async function readAgentEvents(
+    input: FormationAgentInput
+): Promise<readonly FormationDiagnosticEvent[]> {
     const snapshot = await input.control.fetchRun(input.runId);
     return snapshot.events
         .filter((event) => event.agentId === input.agent.agentId)
@@ -325,14 +371,20 @@ export async function readRestoredSession(
     agent: Pick<LiveRtcControlClient.Agent, 'page' | 'prefix'>
 ): Promise<LiveRtcRestoredSession> {
     const stored = await agent.page.evaluate(() => window.localStorage.getItem('auth.session'));
-    expect(stored, `Agent ${agent.prefix} holds no auth.session to restore`).not.toBeNull();
+    expect(
+        stored,
+        `Agent ${agent.prefix} holds no auth.session to restore`
+    ).not.toBeNull();
     const session = record(JSON.parse(String(stored)));
     return {
         clientId: decodeString(session.clientId, 'auth.session.clientId'),
         accessToken: decodeString(session.accessToken, 'auth.session.accessToken'),
         username: decodeString(session.username, 'auth.session.username'),
         sessionId: decodeString(session.sessionId, 'auth.session.sessionId'),
-        expiresAtEpochMs: decodeNumber(session.expiresAtEpochMs, 'auth.session.expiresAtEpochMs')
+        expiresAtEpochMs: decodeNumber(
+            session.expiresAtEpochMs,
+            'auth.session.expiresAtEpochMs'
+        )
     };
 }
 
@@ -342,16 +394,21 @@ function record(value: RtcBaselineJson | undefined): LiveRtcJsonRecord {
 }
 
 function decodeStringArray(value: unknown): readonly string[] {
-    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+    return Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string')
+        : [];
 }
 
 /**
  * The block is required, not optional: two scenarios assert that fields inside it are absent, so a
  * decoder that tolerated a missing block would let them pass while proving nothing.
  */
-function decodeFormationSummary(value: unknown, source: string): BlackBoxRallarFormationSummary {
+function decodeFormationSummary(
+    value: unknown,
+    source: string
+): BlackBoxRallarFormationSummary {
     const summary: LiveRtcJsonRecord = typeof value === 'object' && value !== null
-        ? value as LiveRtcJsonRecord
+        ? (value as LiveRtcJsonRecord)
         : {};
     expect(
         typeof summary.stage === 'string',
@@ -370,4 +427,7 @@ function decodeNumber(value: unknown, path: string): number {
     return Number(value);
 }
 
-export type { BlackBoxRallarFormationRoomStatus, BlackBoxRallarFormationSummary };
+export type {
+    BlackBoxRallarFormationRoomStatus,
+    BlackBoxRallarFormationSummary
+};

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
     enqueueControlCommand,
     fetchControlRun,
+    FULL_STACK_CONTROL_BASE_URL,
     FULL_STACK_CONTROL_WS_URL,
     readFullStackConfig,
     uniqueSuffix,
@@ -45,7 +46,7 @@ test.describe('full-stack control orchestration', () => {
         expect(run.results?.some((result) => result.commandId === commandId && result.ok === true)).toBe(true);
         expect((run.events ?? []).length).toBeGreaterThan(0);
         const artifactResponse = await request.get(
-            `http://127.0.0.1:5180/runs/${encodeURIComponent(runId)}/artifacts`
+            `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`
         );
         expect(artifactResponse.ok()).toBe(true);
         const artifact = await artifactResponse.json() as {

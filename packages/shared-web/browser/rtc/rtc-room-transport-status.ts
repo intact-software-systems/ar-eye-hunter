@@ -1,7 +1,6 @@
 import type {
     RallarRoomTransportState,
     RallarRtcPeerStatus,
-    RallarRtcRoomLaneWaitResult,
     RallarRtcRoomLaneWaitStatus,
     RallarRtcRoomMode,
     RallarRtcStatus,
@@ -71,7 +70,10 @@ export function resolveRtcRoomTransportState(
         return 'idle';
     }
 
-    if (input.desiredPeerCount === 0 || input.readyPeerCount === input.desiredPeerCount) {
+    if (
+        input.readyPeerCount === input.desiredPeerCount &&
+        input.readyPeerCount >= input.minReadyPeers
+    ) {
         return 'open';
     }
 
@@ -113,23 +115,23 @@ export function isRtcRoomPeerFailed(peer: RallarRtcPeerStatus, laneId: string): 
 
 export function describeRtcRoomTransport(
     state: RallarRoomTransportState,
-    readiness?: RallarRtcRoomLaneWaitResult
+    waitStatus?: RallarRtcRoomLaneWaitStatus
 ): string | undefined {
     if (state === 'halted') {
         return 'Room RTC is halted by authoritative group state.';
     }
 
-    if (readiness?.status === 'empty') {
+    if (waitStatus === 'empty') {
         return 'Room has no RTC peer targets.';
     }
 
     if (
-        readiness?.status === 'timeout' ||
-        readiness?.status === 'failed' ||
-        readiness?.status === 'aborted' ||
-        readiness?.status === 'not-connected'
+        waitStatus === 'timeout' ||
+        waitStatus === 'failed' ||
+        waitStatus === 'aborted' ||
+        waitStatus === 'not-connected'
     ) {
-        return `Room RTC wait ended with ${readiness.status}.`;
+        return `Room RTC wait ended with ${waitStatus}.`;
     }
 
     if (state === 'idle') {

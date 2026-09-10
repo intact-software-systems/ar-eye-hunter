@@ -72,13 +72,13 @@ belongs to `connect` and `landing` to `reconfigure`; naming either on any other
 command is refused rather than dropped, so a mis-addressed field is reported
 instead of silently losing the fence or the landing it asked for.
 
-`formation.readiness` awaits the browser's own room readiness and returns the
-summary captured in the tick it resolved. It observes only: it never refreshes
-the room and never opens lanes, which is what makes it evidence about the
-browser rather than about the harness that drove it. It resolves when the
-room's transport state is `open` **and** the room has at least one desired
-peer, because an accepted layout with no desired peers reads `open` on the
-first tick and would satisfy a bare state check vacuously.
+`formation.readiness` delegates to the browser's canonical event-driven room
+wait and returns the summary captured when that wait resolves. It observes
+only: it never refreshes the room and never opens lanes, which is what makes it
+evidence about the browser rather than about the harness that drove it. It
+resolves when the room's transport state is `open` **and** the room has at
+least one desired peer, because an accepted layout with no desired peers reads
+`open` immediately and would satisfy a bare state check vacuously.
 
 Unlike `rtc.connect`, whose room fields are each independently optional, a
 formation command must name its room: an exact `roomRef`, or an
@@ -187,26 +187,34 @@ a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
 
 ## RTC Connect Readiness
 
-`rtc.connect.readiness` waits for actual ready-peer health before the command
-returns successfully. Its defaults are `minReadyPeers: 1`, `timeoutMs: 5000`,
-and `intervalMs: 100`. The command-level timeout should be longer than the
-readiness timeout so connection setup does not consume the readiness budget.
+`rtc.connect.readiness` applies the readiness policy for the selected
+transport before the command returns successfully. Its defaults are
+`minReadyPeers: 1`, `timeoutMs: 5000`, and `intervalMs: 100`. The command-level
+timeout should be longer than the readiness timeout so connection setup does
+not consume the readiness budget.
 
-For the `browser-rallar` runtime used by browser control agents and
-`rallar-remote-browser` distributed runs, missing peers trigger an immediate
-exact-room state and topology refresh and no more than one refresh per second
-afterward. The point read hydrates the group-scoped presence used for dialing,
-then reads through that room's planned and accepted topology.
-Refresh receives cancellation and the remaining readiness deadline. Transient
-refresh errors are retried, permanent errors fail, and only a later health
-result with enough ready peer IDs satisfies readiness.
+For `realtime`, the `browser-rallar` runtime used by browser control agents and
+`rallar-remote-browser` distributed runs retains the peer-health readiness
+loop. Missing peers trigger an immediate exact-room state and topology refresh
+and no more than one refresh per second afterward. Refresh receives
+cancellation and the remaining readiness deadline; transient refresh errors
+are retried, permanent errors fail, and only later health with enough ready
+peer IDs satisfies readiness.
+
+For `messages.rtc`, the runtime performs one exact-room refresh and then
+delegates to the product's canonical `rtc.waitForRoom` operation. Success
+requires an accepted layout and an `open` or `partial` room transport with the
+requested minimum ready peers. This path does not poll global health and does
+not retry the refresh. `messages.ws` opens no RTC lane and normally has no RTC
+readiness request.
 
 The command or its active `configure` command must therefore resolve either an
 exact `roomRef`, or `applicationId` plus `roomId`; omitted `workspaceId`
 defaults to `default`. Preflight emits a warning rather than an error when that
 identity is not recipe-resolvable because simulated providers and external
-runtime configuration can remain valid. `refreshRoom` is an internal runtime
-bridge operation, not a recipe command or public command-schema field.
+runtime configuration can remain valid. `refreshRoom` and `waitForRoom` are
+internal runtime bridge operations, not recipe commands or public
+command-schema fields.
 
 ## RTC Send Boundary And HTTP Result Evidence
 

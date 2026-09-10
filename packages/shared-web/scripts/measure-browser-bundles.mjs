@@ -35,6 +35,8 @@ const entries = [
         // Leasing a claim from the reservation the queue stamped measures 203.065 KiB, so the
         // ceiling moves to 204. Naming the hop that drops an RTC offer -- the peer's signaling
         // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
+        // Main's canonical room-readiness owner (#557) measures 200.324 KiB on its own; merging
+        // it with the ALM runtime measures 204.873 KiB, so the 205 ceiling still holds.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
