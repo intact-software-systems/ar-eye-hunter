@@ -64,20 +64,24 @@ export function decodeALOutboundIdentityEntry(entry: ResourceEntry): ALOutboundI
     }
 }
 
-/** Compact physical locators are not authority: the immutable identity fact detects collisions. */
+/**
+ * Compact physical locators are not authority: the immutable identity fact detects collisions.
+ * The scope hash leads (`resourceId`) so a browser session's rows are one bounded key-range delete.
+ */
 export function toALOutboundCanonicalKey(scope: string, message: ALMessage): Key {
     return {
         topicId: 'AL_OUTBOUND_MESSAGE',
-        contextId: `scope-${fnv1a64(scope)}`,
-        resourceId: `message-${fnv1a64(outboundMessageIdentity(message))}`
+        resourceId: `scope-${fnv1a64(scope)}`,
+        contextId: `message-${fnv1a64(outboundMessageIdentity(message))}`
     };
 }
 
+/** Mirrors the canonical key's owner-ordered locator so both topics share one range per scope. */
 export function toALOutboundIdentityKey(key: Key): Key {
     return {
         topicId: 'AL_OUTBOUND_IDENTITY',
-        contextId: 'canonical',
-        resourceId: fnv1a64(JSON.stringify([key.topicId, key.resourceId, key.contextId]))
+        resourceId: key.resourceId,
+        contextId: key.contextId
     };
 }
 

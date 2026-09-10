@@ -1,15 +1,12 @@
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
-import { decodeALAdmissionRecord } from '@shared/alm/al-admission-value-validation.ts';
-import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { Temporal } from '@js-temporal/polyfill';
+import { AL_ADMISSION_WORK_COMPLETED_RETENTION } from '@shared/alm/al-admission-work-backend.ts';
+import { toALInboundWorkKey } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { AL_ADMISSION_WORK_STORE_NAME } from '@shared/alm/open-indexed-db-admission-database.ts';
-import {
-    decodeALOutboundCanonicalMessage,
-    decodeALOutboundIdentityFact,
-    toALOutboundIdentityKey
-} from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
+import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
+import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     decodeStoredResourceEntry,
     decodeStoredResourceEntryValue,
@@ -19,133 +16,109 @@ import {
     computeIndexedDbQueueDelete,
     type ComputedIndexedDbQueueMutation
 } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
-import { isKeysEqual, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 
 import type { BrowserALRuntimeDeletionPolicy } from './browser-al-runtime-cleanup.ts';
-import {
-    BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX,
-    toBrowserSessionALRuntimeEntryKeyPrefixes
-} from './browser-al-runtime-identity.ts';
+
+/** High sentinel code point: bounds a string-prefix IndexedDB key range from above. */
+const KEY_RANGE_UPPER_SENTINEL = '\uffff';
+
+export interface BrowserALWorkCleanupRangesInput {
+    readonly namespacePrefixes: readonly string[];
+    readonly canonicalScopes: readonly string[];
+}
+
+/**
+ * One bounded range per owned AL_INBOUND/AL_OUTBOUND namespace and per owned canonical scope.
+ * The namespace's own work-key builders compute each bound: `toAppQueueKey` hash-truncates any
+ * part over its length limit, so a long browser namespace is not a literal prefix of its own key.
+ */
+export function toBrowserALWorkCleanupRanges(
+    input: BrowserALWorkCleanupRangesInput
+): readonly IDBKeyRange[] {
+    const ranges: IDBKeyRange[] = [];
+    for (const namespace of input.namespacePrefixes) {
+        const inboundResourceId = toALInboundWorkKey(namespace, '').resourceId;
+        const outboundResourceId = toALOutboundWorkKey(namespace, '').resourceId;
+        ranges.push(
+            IDBKeyRange.bound(
+                `AL_INBOUND/${inboundResourceId}`,
+                `AL_INBOUND/${inboundResourceId}${KEY_RANGE_UPPER_SENTINEL}`
+            )
+        );
+        ranges.push(
+            IDBKeyRange.bound(
+                `AL_OUTBOUND/${outboundResourceId}`,
+                `AL_OUTBOUND/${outboundResourceId}${KEY_RANGE_UPPER_SENTINEL}`
+            )
+        );
+    }
+    for (const scope of input.canonicalScopes) {
+        const hashed = `scope-${fnv1a64(scope)}`;
+        ranges.push(IDBKeyRange.bound(
+            `AL_OUTBOUND_MESSAGE/${hashed}/`,
+            `AL_OUTBOUND_MESSAGE/${hashed}/${KEY_RANGE_UPPER_SENTINEL}`
+        ));
+        ranges.push(IDBKeyRange.bound(
+            `AL_OUTBOUND_IDENTITY/${hashed}/`,
+            `AL_OUTBOUND_IDENTITY/${hashed}/${KEY_RANGE_UPPER_SENTINEL}`
+        ));
+    }
+    return ranges;
+}
 
 /** Reads retained facts directly: QueueBox read APIs may themselves evict expired rows. */
 export async function readBrowserALWorkCleanupRows(
     db: IDBDatabase,
-    keyPrefixes: readonly string[],
-    policy: BrowserALRuntimeDeletionPolicy
+    input: BrowserALWorkCleanupRangesInput
 ): Promise<readonly StoredResourceEntry[]> {
+    const ranges = toBrowserALWorkCleanupRanges(input);
     const tx = db.transaction(AL_ADMISSION_WORK_STORE_NAME, 'readonly');
-    const rows = await readIndexedDbTransaction(
-        tx,
-        async () =>
-            await new Promise<readonly StoredResourceEntry[]>((resolve, reject) => {
-                const found: StoredResourceEntry[] = [];
-                const request = tx.objectStore(AL_ADMISSION_WORK_STORE_NAME).openCursor(
-                    IDBKeyRange.bound('AL_INBOUND', 'AL_OUTBOUND\uffff')
-                );
-                request.onerror = () => reject(request.error);
-                request.onsuccess = () => {
-                    try {
-                        const cursor = request.result;
-                        if (!cursor) {
-                            resolve(found);
-                            return;
-                        }
-                        found.push(decodeStoredResourceEntryValue(cursor.value));
-                        cursor.continue();
-                    }
-                    catch (error) {
-                        reject(error);
-                    }
-                };
-            })
-    );
-    return selectBrowserALWorkCleanupRows(rows, keyPrefixes, policy);
+    return await readIndexedDbTransaction(tx, async () => {
+        const store = tx.objectStore(AL_ADMISSION_WORK_STORE_NAME);
+        const found: StoredResourceEntry[] = [];
+        for (const range of ranges) {
+            found.push(...await readBrowserALWorkCleanupRange(store, range));
+        }
+        return found;
+    });
 }
 
-function selectBrowserALWorkCleanupRows(
-    rows: readonly StoredResourceEntry[],
-    keyPrefixes: readonly string[],
-    policy: BrowserALRuntimeDeletionPolicy
-): readonly StoredResourceEntry[] {
-    const byKey = new Map(rows.map((row) => [row.keyString, row]));
-    const selected = new Map<string, StoredResourceEntry>();
-    for (const row of rows) {
-        if (row.key.topicId === 'AL_INBOUND') {
-            if (isSelectedInboundWork(row, keyPrefixes)) {
-                selected.set(row.keyString, row);
+function readBrowserALWorkCleanupRange(
+    store: IDBObjectStore,
+    range: IDBKeyRange
+): Promise<readonly StoredResourceEntry[]> {
+    return new Promise((resolve, reject) => {
+        const found: StoredResourceEntry[] = [];
+        const request = store.openCursor(range);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            try {
+                const cursor = request.result;
+                if (!cursor) {
+                    resolve(found);
+                    return;
+                }
+                found.push(decodeStoredResourceEntryValue(cursor.value));
+                cursor.continue();
             }
-            continue;
-        }
-        // Expired QueueBox getters can remove the identity first. Global expiry owns
-        // this reserved canonical topic; scoped/live deletion still requires the full fact.
-        if (
-            policy.kind === 'expired' && keyPrefixes.includes(BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX) &&
-            row.key.topicId === 'AL_OUTBOUND_MESSAGE' &&
-            decodeStoredResourceEntry(row).audit.expiryTs.epochMilliseconds <= policy.nowMs
-        ) {
-            const deadline = resolveALMessageExpireAtMs(decodePersistedALMessage(row.resource));
-            if (deadline === undefined || deadline > policy.nowMs) {
-                throw new TypeError('Expired browser canonical row has a live or missing message deadline');
+            catch (error) {
+                reject(error);
             }
-            selected.set(row.keyString, row);
-        }
-        if (row.typeId === 'AL_OUTBOUND_IDENTITY') {
-            const reference = decodeALOutboundIdentityFact(JSON.parse(row.resource)).reference;
-            if (!isKeysEqual(row.key, toALOutboundIdentityKey(reference.key))) {
-                throw new TypeError('Browser outbound identity fact differs from its physical slot');
-            }
-            if (!isSelectedBrowserCanonicalScope(reference.scope, keyPrefixes)) {
-                continue;
-            }
-            const canonical = byKey.get(toKeyAsString(reference.key));
-            if (canonical) {
-                decodeALOutboundCanonicalMessage(
-                    reference,
-                    decodeStoredResourceEntry(canonical),
-                    decodeStoredResourceEntry(row)
-                );
-                selected.set(canonical.keyString, canonical);
-            }
-            selected.set(row.keyString, row);
-        }
-        if (row.typeId.startsWith('AL_OUTBOUND:') && isSelectedOutboundWork(row, keyPrefixes)) {
-            selected.set(row.keyString, row);
-        }
-    }
-    return [...selected.values()];
+        };
+    });
 }
 
-function isSelectedOutboundWork(row: StoredResourceEntry, keyPrefixes: readonly string[]): boolean {
-    const work = decodeALAdmissionRecord(JSON.parse(row.resource), ['namespace', 'effectId', 'payload']);
-    if (
-        typeof work.namespace !== 'string' || typeof work.effectId !== 'string' ||
-        row.typeId !== toALOutboundWorkType(work.namespace) ||
-        !isKeysEqual(row.key, toALOutboundWorkKey(work.namespace, work.effectId))
-    ) {
-        throw new TypeError('Browser outbound action differs from its namespace or physical slot');
-    }
-    const namespace = work.namespace;
-    return keyPrefixes.some((prefix) => namespace.startsWith(prefix));
-}
-
-function isSelectedInboundWork(row: StoredResourceEntry, keyPrefixes: readonly string[]): boolean {
-    const work = decodeALAdmissionRecord(JSON.parse(row.resource), ['namespace', 'effectId', 'payload']);
-    if (typeof work.namespace !== 'string') {
-        throw new TypeError('Browser inbound work has no full namespace');
-    }
-    const namespace = work.namespace;
-    decodeALInboundWorkEntry(decodeStoredResourceEntry(row), namespace);
-    return keyPrefixes.some((prefix) => namespace.startsWith(prefix));
-}
-
-function isSelectedBrowserCanonicalScope(scope: string, keyPrefixes: readonly string[]): boolean {
-    if (!scope.startsWith('browser-session:')) {
-        return keyPrefixes.some((prefix) => scope.startsWith(prefix));
-    }
-    const sessionId = scope.slice('browser-session:'.length);
-    return toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId).some((owned) =>
-        keyPrefixes.some((prefix) => owned.startsWith(prefix))
-    );
+/** Hands expired/retention-expired AL work rows to the QueueBox's own bounded sweep, store-wide. */
+export async function writeBrowserALWorkExpiryCleanup(db: IDBDatabase, nowMs: number): Promise<boolean> {
+    const queueBox = new IndexedDbQueueBox({
+        connection: new IndexedDbConnection(async () => db),
+        storeName: AL_ADMISSION_WORK_STORE_NAME,
+        completedRetention: AL_ADMISSION_WORK_COMPLETED_RETENTION,
+        now: () => Temporal.Instant.fromEpochMilliseconds(nowMs),
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    return await queueBox.cleanupAsync();
 }
 
 export function computeBrowserALWorkCleanupMutations(

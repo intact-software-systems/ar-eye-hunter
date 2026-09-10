@@ -40,8 +40,8 @@ export function toALOutboundWorkType(namespace: string): string {
 export function toALOutboundWorkKey(namespace: string, effectId: string) {
     return toAppQueueKey({
         topicId: 'AL_OUTBOUND',
-        resourceId: encodeURIComponent(effectId),
-        contextId: encodeURIComponent(namespace)
+        resourceId: encodeURIComponent(namespace),
+        contextId: encodeURIComponent(effectId)
     });
 }
 

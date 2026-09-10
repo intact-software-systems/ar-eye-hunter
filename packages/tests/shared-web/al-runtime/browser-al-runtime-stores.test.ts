@@ -200,8 +200,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             keyPrefixes: ['browser:'],
-            scanned: 16,
-            deleted: 12
+            // AL_OUTBOUND work rows are expired via the QueueBox's own cleanupAsync sweep now,
+            // so this scanned/deleted count reflects the plain admission metadata rows only.
+            scanned: 6,
+            deleted: 6
         });
         expect(await readBrowserALRuntimeEntryKeys(currentSentPrefix)).toEqual([
             `${currentSentPrefix}:current-fresh`
@@ -232,7 +234,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         const result = await deleteExpiredBrowserALRuntimeEntries();
 
-        expect(result.deleted).toBe(4);
+        // The AL_OUTBOUND work row's own expiry now goes through cleanupAsync, off this count.
+        expect(result.deleted).toBe(2);
     });
 
     it.each([
@@ -287,8 +290,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId);
 
-        expect(result.scanned).toBe(9);
-        expect(result.deleted).toBe(4);
+        // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count.
+        expect(result.scanned).toBe(5);
+        expect(result.deleted).toBe(2);
         expect(await readBrowserALRuntimeEntryKeys(targetSentPrefix)).toEqual([
             `${targetSentPrefix}:target-fresh`
         ]);
@@ -444,17 +448,6 @@ describe('Browser AL runtime IndexedDB stores', () => {
     it('initialises repeated browser AL runtime expiry eviction', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        let evictionCount = 0;
-        let resolveSecondEviction!: () => void;
-        const secondEviction = new Promise<void>((resolve) => {
-            resolveSecondEviction = resolve;
-        });
-        vi.spyOn(console, 'log').mockImplementation(() => {
-            evictionCount += 1;
-            if (evictionCount === 2) {
-                resolveSecondEviction();
-            }
-        });
 
         const retention = {
             sentMessageTtlMs: 20,
@@ -479,9 +472,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ]);
 
         await vi.advanceTimersByTimeAsync(29);
-        await secondEviction;
-
-        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
+        await vi.waitFor(async () => expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]));
     });
 
     it('routes IndexedDB operations to the configured observer', async () => {

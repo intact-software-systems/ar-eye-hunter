@@ -29,3 +29,25 @@ export function toBrowserSessionALRuntimeEntryKeyPrefixes(
         toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcOverlayALRuntimeStoreId(sessionId))
     ];
 }
+
+/** The namespace an admission store built from this store id actually enqueues work under. */
+export function toBrowserALRuntimeNamespace(name: string): string {
+    return `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${name}`;
+}
+
+/**
+ * Every AL_INBOUND/AL_OUTBOUND work namespace one browser session can own, inbound and outbound
+ * alike — a store that only owns one direction simply never has rows under its other namespace.
+ */
+export function toBrowserSessionALRuntimeWorkNamespaces(
+    sessionId: string
+): readonly string[] {
+    return [
+        toBrowserWsClientALRuntimeStoreId(sessionId),
+        toBrowserRtcRxALRuntimeStoreId(sessionId),
+        toBrowserRtcOverlayALRuntimeStoreId(sessionId)
+    ].flatMap((storeId) => {
+        const namespace = toBrowserALRuntimeNamespace(storeId);
+        return [`${namespace}:inbound:admission`, `${namespace}:outbound:admission`];
+    });
+}

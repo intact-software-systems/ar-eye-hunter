@@ -24,7 +24,7 @@ import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-
 import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundIdentityFact, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
-import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
+import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     afterEach,
@@ -131,6 +131,48 @@ describe('browser canonical outbound cleanup', () => {
         expect(remaining.filter((row) => other.keys.has(row.keyString))).toHaveLength(other.keys.size);
         expect(remaining.some((row) => row.keyString.includes(unrelated.key.resourceId))).toBe(true);
     });
+
+    it('deletes one session\'s AL work rows through bounded per-owner cursor ranges', async () => {
+        const targetSession = `ranged-target-${crypto.randomUUID()}`;
+        const otherSession = `ranged-other-${crypto.randomUUID()}`;
+        const targetOutbound = await admitForSession(targetSession, 60_000);
+        const targetInbound = await retainPendingForSession(targetSession, 60_000);
+        const otherOutbound = await admitForSession(otherSession, 60_000);
+        const otherInbound = await retainPendingForSession(otherSession, 60_000);
+
+        const capturedRanges: IDBKeyRange[] = [];
+        const originalOpenCursor = IDBObjectStore.prototype.openCursor;
+        const openCursorSpy = vi.spyOn(IDBObjectStore.prototype, 'openCursor').mockImplementation(function (
+            this: IDBObjectStore,
+            range?: IDBValidKey | IDBKeyRange | null,
+            direction?: IDBCursorDirection
+        ) {
+            if (this.name === AL_ADMISSION_WORK_STORE_NAME && range instanceof IDBKeyRange) {
+                capturedRanges.push(range);
+            }
+            return originalOpenCursor.call(this, range ?? undefined, direction);
+        });
+
+        await deleteBrowserALRuntimeEntriesForSession(targetSession);
+        openCursorSpy.mockRestore();
+
+        expect(capturedRanges.length).toBeGreaterThan(0);
+        for (const range of capturedRanges) {
+            const lower = range.lower as string;
+            expect(
+                lower.startsWith('AL_INBOUND/') ||
+                    lower.startsWith('AL_OUTBOUND/') ||
+                    lower.startsWith('AL_OUTBOUND_MESSAGE/scope-') ||
+                    lower.startsWith('AL_OUTBOUND_IDENTITY/scope-')
+            ).toBe(true);
+        }
+
+        const remaining = await readRawWorkRows();
+        expect(remaining.filter((row) => targetOutbound.keys.has(row.keyString))).toEqual([]);
+        expect(remaining.some((row) => row.keyString === targetInbound.keyString)).toBe(false);
+        expect(remaining.filter((row) => otherOutbound.keys.has(row.keyString))).toHaveLength(otherOutbound.keys.size);
+        expect(remaining.some((row) => row.keyString === otherInbound.keyString)).toBe(true);
+    });
 });
 
 async function admitForSession(sessionId: string, ttlMs: number) {
@@ -181,5 +223,5 @@ async function retainPendingForSession(sessionId: string, ttlMs: number) {
         expireAtTimestamp: msg.constraints!.expiresAtMs!
     });
     await stores.workQueue.enqueueIfAbsent(work.entry);
-    return { queue: stores.workQueue, resource: work.entry.resource };
+    return { queue: stores.workQueue, resource: work.entry.resource, keyString: toKeyAsString(work.entry.key) };
 }
