@@ -153,6 +153,7 @@ export function toResourceEntry<T>(
     resource: T,
     expiryTs: Temporal.Instant = NEVER_EXPIRE_TS
 ): ResourceEntry {
+    const createdAt = Temporal.Now.zonedDateTimeISO('UTC');
     return {
         key: {
             topicId: typeId,
@@ -162,9 +163,9 @@ export function toResourceEntry<T>(
         resource: JSON.stringify(resource),
         typeId: typeId,
         audit: {
-            date: Temporal.Now.plainTimeISO(),
+            date: createdAt.toPlainTime(),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: createdAt.toPlainDateTime(),
             expiryTs
         },
         status: EntityStatus.NEW,
@@ -181,14 +182,15 @@ export function toResourceEntryWithKey<T>(
     resource: T,
     expiryTs: Temporal.Instant = NEVER_EXPIRE_TS
 ): ResourceEntry {
+    const createdAt = Temporal.Now.zonedDateTimeISO('UTC');
     return {
         key: key,
         resource: JSON.stringify(resource),
         typeId: typeId,
         audit: {
-            date: Temporal.Now.plainTimeISO(),
+            date: createdAt.toPlainTime(),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: createdAt.toPlainDateTime(),
             expiryTs
         },
         status: EntityStatus.NEW,

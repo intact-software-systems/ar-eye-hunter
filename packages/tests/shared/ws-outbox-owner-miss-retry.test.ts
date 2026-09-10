@@ -3,7 +3,6 @@ import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbou
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import {
     afterEach,
-    beforeEach,
     describe,
     expect,
     it,
@@ -59,16 +58,6 @@ interface WsOutboxServiceFixture {
 }
 
 describe('durable WS outbox owner misses', () => {
-    beforeEach(() => {
-        // A foreign row's readiness falls back to its createdTs reinterpreted as UTC (a pre-existing
-        // al-outbound-work-entry.ts gap this suite does not own); pin plainDateTimeISO's wall clock to
-        // Date.now's UTC reading so the engine's isWork() gate sees a due row on hosts outside UTC
-        // instead of one hours in the future (Temporal.Now.plainDateTimeISO reads the system clock
-        // independently of Temporal.Now.instant, so only mocking instant leaves this gap open).
-        vi.spyOn(Temporal.Now, 'plainDateTimeISO').mockImplementation(() =>
-            Temporal.Instant.fromEpochMilliseconds(Date.now()).toZonedDateTimeISO('UTC').toPlainDateTime()
-        );
-    });
     afterEach(() => {
         vi.useRealTimers();
         vi.restoreAllMocks();
