@@ -60,7 +60,11 @@ export interface ClaimALWorkInput {
 export interface ALWorkQueuePort {
     retainIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;
     readPage(input: ReadALWorkPageInput): Promise<ALWorkPage>;
-    /** The readiness scan: several statuses read together, so a probe costs one round trip. */
+    /**
+     * The readiness scan: several statuses read together, so a probe costs one round trip on a store
+     * that reads them from one snapshot, and one statement per status and work type on one that
+     * cannot (see `QueueBoxResourceEntryRepository.readWorkPages`).
+     */
     readPages(inputs: readonly ReadALWorkPageScanInput[]): Promise<readonly ALWorkPageScan[]>;
     claim(input: ClaimALWorkInput): Promise<readonly ALWorkClaim[]>;
     finalizeExhausted(maxCount: number): Promise<readonly ALWorkClaim[]>;
