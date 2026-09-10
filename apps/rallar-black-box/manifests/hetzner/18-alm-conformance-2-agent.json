@@ -267,7 +267,7 @@
             },
             "handleId": "alm-ws-deadline-expiry-send-1",
             "timeoutMs": 5000,
-            "ttlMs": 1000
+            "ttlMs": 7500
           },
           {
             "kind": "messages.observe",
@@ -679,7 +679,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ttlMs": 1000
+            "ttlMs": 7500
           },
           {
             "kind": "messages.observe",
@@ -1267,7 +1267,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ttlMs": 1000
+            "ttlMs": 7500
           },
           {
             "kind": "messages.observe",
