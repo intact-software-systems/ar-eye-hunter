@@ -54,6 +54,12 @@ const MICROTASK_DRAIN_TURNS = 50;
  * macrotask boundary. A caller-owned runtime schedules its own recheck via `setTimeout` on first
  * `ready()`; a timer-based yield (`yieldToOutboundWork`) would give that recheck a turn too, which
  * is not "wait for only the batch this call committed."
+ *
+ * It drains a fixed number of microtask turns, so those turns are a budget: a session or facade
+ * wrapper that adds an `await` turn on the fenced drain path spends part of it, and the shortfall
+ * shows up as an undelivered message somewhere else -- `ws-server-qos-policy.test.ts` is the test
+ * that measured it. `InMemoryAdmissionBackend.readWithin` states the same rule from the product
+ * side: a session must not cost a caller an extra turn.
  */
 export async function settleCommittedOutboundBatch(): Promise<void> {
     for (let turn = 0; turn < MICROTASK_DRAIN_TURNS; turn += 1) {

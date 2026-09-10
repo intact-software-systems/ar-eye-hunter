@@ -270,6 +270,9 @@ export class ALOutboundControlAdmission<TPrepared> {
         nowMs: number
     ): Promise<ALControlAdmissionRead> {
         const targetMsgId = controlTargetMsgId(parsed);
+        // The owner key gates the rest of the surface, so this callback awaits inside itself and
+        // spends a microtask turn a chain handed the session directly would not. A control
+        // admission is its own caller's work, never a turn taken from a drain being settled.
         return await this.backend.readWithin(async (session) => {
             const owner = await session.read(
                 toALOutboundMessageOwnerKey(this.namespace, targetMsgId),

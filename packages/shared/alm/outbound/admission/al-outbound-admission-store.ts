@@ -398,6 +398,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const nowMs = this.nowMs();
         // One snapshot answers everything the commit decides on: the effect rows it may replace and
         // the canonical pair it may write. The conditional write re-reads its own fences separately.
+        // Joining two reads costs this callback a microtask turn that handing the session straight
+        // to a chain does not, which is a budget a settled batch is measured in -- spend it here,
+        // where the commit is what the caller is waiting for, and nowhere on the read path.
         const observed = await this.backend.readWithin(async (session) => ({
             effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
             canonicalWrites: await this.readCanonicalWrites(session, bundle)
