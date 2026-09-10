@@ -649,6 +649,52 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
+    it('claims a row another writer enqueued once the wake that announced it reaches the owner', async () => {
+        const nowMs = 10_000;
+        const claimed: string[] = [];
+        const queue = new InMemoryQueueBox();
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: AL_TEST_TYPES,
+            leaseMs: 30_000,
+            nowMs: () => nowMs,
+            random: () => 0.5
+        });
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'external-writer-worker',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
+            selectReady: async (claimable, size) => ({
+                claims: await claimable.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async (claim) => {
+                claimed.push(claim.entry.key.contextId);
+                return { status: 'completed' };
+            },
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        await engine.executeOnce();
+
+        // Nobody's runtime wrote this: a server AppInbox transaction or a pub/sub requeue puts the
+        // row in the queue and announces it with the engine wake alone.
+        await queue.enqueue(newWorkEntry('AL_TEST', 'externally-written'));
+        engine.wake();
+        await engine.executeOnce();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(claimed).toEqual(['externally-written']);
+        handler.dispose();
+    });
+
     it('turns a remembered ready time into a batch without reading storage again', async () => {
         const released: string[] = [];
         const pending: ALWorkClaim[] = [];

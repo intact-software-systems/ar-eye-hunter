@@ -36,6 +36,7 @@ export class InboxOutboxEngine {
 
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
     private readonly readyAtByTask = new Map<string, number>();
+    private readonly wakeListeners = new Map<string, () => void>();
 
     includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
         this.readyAtByTask.delete(id);
@@ -46,6 +47,21 @@ export class InboxOutboxEngine {
     excludeTask(id: string): boolean {
         this.readyAtByTask.delete(id);
         return this.tasks.delete(id);
+    }
+
+    /**
+     * Registers a listener for every wake. A wake is the announcement that someone may have written
+     * work this engine's tasks own, so a task that answers readiness from memory drops that memory
+     * here instead of waiting out the idle ceiling. A listener runs synchronously during the wake
+     * and must not wake the engine.
+     */
+    includeWakeListener(id: string, listener: () => void): InboxOutboxEngine {
+        this.wakeListeners.set(id, listener);
+        return this;
+    }
+
+    excludeWakeListener(id: string): boolean {
+        return this.wakeListeners.delete(id);
     }
 
     wakeAt(taskId: string, readyAtMs: number | undefined): void {
@@ -87,6 +103,7 @@ export class InboxOutboxEngine {
     }
 
     wake(): void {
+        this.notifyWake();
         if (!this.running) {
             return;
         }
@@ -136,6 +153,12 @@ export class InboxOutboxEngine {
                 }
             });
         return this.execution;
+    }
+
+    private notifyWake(): void {
+        for (const listener of this.wakeListeners.values()) {
+            listener();
+        }
     }
 
     private scheduleEngine(delayMs: number): void {

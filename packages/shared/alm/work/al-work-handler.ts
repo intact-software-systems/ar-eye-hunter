@@ -96,6 +96,10 @@ export class ALWorkHandler {
             runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
             ongoingTasks: []
         });
+        // Every writer that is not this owner announces its row by waking the engine -- a server
+        // AppInbox transaction, a pub/sub requeue, another tab. The wake is therefore the moment the
+        // remembered answer stopped describing storage.
+        dependencies.queueEngine.includeWakeListener(dependencies.workerId, () => this.forgetReadiness());
     }
 
     async ready(): Promise<void> {
@@ -111,6 +115,7 @@ export class ALWorkHandler {
 
     dispose(): void {
         this.shutdown.abort();
+        this.dependencies.queueEngine.excludeWakeListener(this.dependencies.workerId);
         this.dependencies.queueEngine.excludeTask(this.dependencies.workerId);
         if (this.dependencies.ownsQueueEngine) {
             this.dependencies.queueEngine.stop();

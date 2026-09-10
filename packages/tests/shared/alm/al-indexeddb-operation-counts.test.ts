@@ -128,6 +128,42 @@ describe('outbound work owner IndexedDB scan volume', () => {
         expect((observer.getCounts().byKind['work-page'] ?? 0) - before).toBe(4);
         handler.dispose();
     });
+    it('claims a row an external writer enqueued once a wake announces it', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const port = createOutboundWorkPort(observer);
+        const claimed: string[] = [];
+        const engine = new InboxOutboxEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'al-outbound:external-wake',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => NOW_MS },
+            pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, NOW_MS, NO_DEFERRAL),
+            selectReady: async (claimable, size) => ({
+                claims: await claimable.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async (claim) => {
+                claimed.push(claim.entry.key.contextId);
+                return { status: 'completed' };
+            },
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        await engine.executeOnce();
+
+        // The row reaches the queue without this runtime's admission: only the wake announces it.
+        await port.retainIfAbsent(newOutboundWorkEntry(WORK_TYPES[1], 'external-write'));
+        engine.wake();
+        await engine.executeOnce();
+
+        await vi.waitFor(() => expect(claimed).toEqual(['external-write']));
+        handler.dispose();
+    });
 });
 
 function createOutboundWorkPort(observer: IndexedDbOperationObserver): ALWorkQueuePort {

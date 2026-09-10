@@ -12,6 +12,23 @@ afterEach(() => {
 });
 
 describe('engine', () => {
+    it('tells every wake listener that someone announced work, until it is excluded', async () => {
+        const engine = new InboxOutboxEngine();
+        const announced: string[] = [];
+        engine.includeWakeListener('owner', () => announced.push('owner'));
+
+        // A stopped engine schedules nothing, but the announcement is still true.
+        engine.wake();
+        engine.start();
+        expect(announced).toEqual(['owner', 'owner']);
+
+        engine.excludeWakeListener('owner');
+        engine.wake();
+
+        expect(announced).toEqual(['owner', 'owner']);
+        engine.stop();
+    });
+
     it('wakes for a registered task deadline before idle backoff elapses', async () => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();
