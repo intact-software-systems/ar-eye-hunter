@@ -315,7 +315,9 @@ describe('QRtcPeerConnection', () => {
             }
         };
         const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
-        onTestFinished(() => peer.reset());
+        onTestFinished(() => {
+            peer.reset();
+        });
         const failures: QRtcPeerConnection.SignalingFailure[] = [];
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
