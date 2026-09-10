@@ -177,13 +177,17 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const decision = await readSupersedenceDecision({ store, message, nowMs: Date.now });
         const canonicalKey = decision.entries[0].key;
         const identityKey = toALOutboundIdentityKey(canonicalKey);
-        ownedKeys.push(canonicalKey, identityKey);
         const actionKey = toALOutboundWorkKey(store.namespace, decision.bundle!.durableEffects[0].effectId);
+        ownedKeys.push(canonicalKey, identityKey, actionKey);
+        // The racing row outlives the aborted bundle, so it is owned like the rest: the shared
+        // Postgres queue is scanned by suites that decode every row they meet, and this one is
+        // written for its key alone.
+        const independentWinner = JSON.stringify({ marker: 'independent winner' });
         const write = backend.write.bind(backend);
         const race = vi.spyOn(backend, 'write').mockImplementationOnce((operation) =>
             write(async (transaction) => {
                 const result = await operation(transaction);
-                await other.workQueue.enqueue({ ...entry, key: actionKey, resource: 'independent winner' });
+                await other.workQueue.enqueue({ ...entry, key: actionKey, resource: independentWinner });
                 return result;
             })
         );
@@ -194,7 +198,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.getItem(identityKey)).toBeUndefined();
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         expect(await other.read(`${store.namespace}:msg-owner:${message.id.msgId}`, (value) => value)).toBeUndefined();
-        expect((await other.workQueue.getItem(actionKey))?.resource).toBe('independent winner');
+        expect((await other.workQueue.getItem(actionKey))?.resource).toBe(independentWinner);
     });
 
     postgresIt('refuses concurrent conflicting sender reuse of one globally addressed message id without overwriting metadata', async () => {

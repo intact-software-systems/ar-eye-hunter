@@ -271,8 +271,11 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
 
 async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandlerHarness>) {
     const entries = await Promise.all((await h.queue.getAllKeys()).map((key) => h.queue.getItem(key)));
+    // Against Postgres this queue is shared with every other suite, so the outbox type gates the
+    // scan: a foreign row must be skipped, not decoded.
     const entry = entries.find((candidate) =>
-        candidate?.status === EntityStatus.NEW &&
+        candidate?.typeId === OutboxQueueReader.OUTBOX_ENQUEUE_TYPE &&
+        candidate.status === EntityStatus.NEW &&
         JSON.parse(candidate.resource).payload.typeId === AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
     );
     if (!entry) {
