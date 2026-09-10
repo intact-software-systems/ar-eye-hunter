@@ -399,6 +399,33 @@ This plan-only result recording does not change the benchmarked runtime code;
 all remaining functional and live-browser proof runs from the resulting exact
 branch head.
 
+The exact `e074605ec6ae8ea2fec6960b3d497c457f2fb63b` branch head then passed
+three consecutive default browser matrices without retry. Its all-scenarios
+matrix exposed one remaining composition defect during replacement-C
+readiness. The A and B readiness commands reported roughly 56 seconds of
+remaining budget but returned after only 594 and 737 milliseconds; B's lanes
+to C opened about 300 milliseconds later. The low-level
+`BrowserRtcWaitRuntime.waitForRoomLane({ connect: false })` had correctly
+reported that a desired peer did not exist yet, but the room owner had treated
+that instantaneous lane result as a terminal room result. This was not a lost
+signaling answer and does not justify a signaling retry or timeout increase.
+
+The correction remains in `BrowserRtcRoomRuntime`: non-connecting room waits
+observe both room-authority changes and existing RTC lifecycle/status events,
+re-read the composite desired/ready state after subscribing, and settle only
+when the current accepted layout and requested ready-peer threshold agree.
+Connecting waits still delegate lane creation and waiting to
+`BrowserRtcWaitRuntime`; the low-level non-connecting lane contract remains an
+instantaneous existing-lane operation. A deterministic regression first
+reproduced the premature `idle` result, then passed with the composite
+subscription. The uncommitted candidate also passed the complete 24-test room
+runtime file, all 71 shared-web RTC tests, the retry-free all-scenarios browser
+matrix, and all five lifecycle acceptance scenarios. The two lifecycle cases
+previously suppressed for returning-member readiness are now active tests; no
+obsolete `fixme` path remains. These runs are diagnostic until the correction
+is committed and pushed, after which exact-head default repetitions,
+all-scenarios proof, branch review, and final gates must run again.
+
 ### Current execution horizon
 
 | Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

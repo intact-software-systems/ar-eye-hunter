@@ -90,13 +90,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     });
 
-    // L9: flaky at roughly one run in two, and not because of the harness — a control run at the
-    // commandId fix without the session pin fails identically. `formation.readiness` on the RETURNING
-    // member times out with `state idle`: its surviving peers still hold the lane it left with, and
-    // `settleSurvivors` asks them to look again exactly once. The three scenarios that never run a
-    // readiness barrier on a reopened member are stable, so the barrier is what is racy, not the
-    // reopen. Un-fixme this once the returning member is reliably re-dialled.
-    test.fixme('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }) => {
+    test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'progress');
         try {
@@ -126,13 +120,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     });
 
-    // L9: flaky at roughly one run in two, and not because of the harness — a control run at the
-    // commandId fix without the session pin fails identically. `formation.readiness` on the RETURNING
-    // member times out with `state idle`: its surviving peers still hold the lane it left with, and
-    // `settleSurvivors` asks them to look again exactly once. The three scenarios that never run a
-    // readiness barrier on a reopened member are stable, so the barrier is what is racy, not the
-    // reopen. Un-fixme this once the returning member is reliably re-dialled.
-    test.fixme('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
+    test('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'barrier');
         try {

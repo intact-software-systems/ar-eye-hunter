@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+import {
+    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+    type WebRtcConnectionService
+} from '@shared/services/web-rtc-connection-service.ts';
 
 import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 import {
@@ -605,6 +608,43 @@ describe('Rallar RTC room wait', () => {
             'realtime',
             expect.objectContaining({ timeoutMs: expect.any(Number) })
         );
+    });
+
+    it('observes desired peers that are created after a non-connecting room wait starts', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
+        mockGroupSnapshot(snapshot);
+        let rtcLifecycle: WebRtcConnectionService.PeerLifecycleCallback | undefined;
+        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(
+            (_id, callbacks) => {
+                rtcLifecycle = callbacks;
+                return mocks.webRtcConnectionService;
+            }
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        const readiness = facade.rtc.waitForRoom('room-1', {
+            connect: false,
+            laneId: 'realtime',
+            timeoutMs: 250
+        });
+        expect(rtcLifecycle).toBeDefined();
+        const opened = await mockOpenRtcLane('peer-1', 'realtime');
+        if (!rtcLifecycle || !opened.peer) {
+            throw new Error('Room readiness did not subscribe before the peer opened.');
+        }
+        rtcLifecycle.onCreated(opened.peer);
+
+        await expect(readiness).resolves.toMatchObject({
+            rtc: {
+                state: 'open',
+                acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+                desiredPeerIds: ['peer-1'],
+                readyPeerIds: ['peer-1']
+            }
+        });
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
     });
 
     it('waits for an accepted layout that covers the current room presence revision', async () => {

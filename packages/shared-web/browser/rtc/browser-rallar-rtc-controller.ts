@@ -76,6 +76,7 @@ function createBrowserRtcRuntimes(
         isConnected: () => input.readMiddleware() !== undefined,
         readWsStatus: input.readWsStatus,
         readRtcStatus: (options) => status.read(options),
+        subscribeRtcStatus: (laneId, listener) => lifecycle.onStatus(listener, { laneId, emitCurrent: false }),
         resolveRoomTransportTarget: input.resolveRoomTransportTarget,
         subscribeRoomTransportTarget: input.subscribeRoomTransportTarget,
         resolveRoomRef: input.resolveRoomRef,
