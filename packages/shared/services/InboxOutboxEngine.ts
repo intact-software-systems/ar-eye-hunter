@@ -4,6 +4,12 @@ import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
 
 const NOT_SET = -1;
 
+/**
+ * The longest the engine waits between passes once nothing creates work: its idle ceiling, and the
+ * horizon within which anything it did not itself schedule is discovered.
+ */
+export const INBOX_OUTBOX_ENGINE_MAX_IDLE_MS = 3_000;
+
 export class InboxOutboxEngine {
     private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ milliseconds: 100 });
     private static readonly MAX_IS_WORK_CHECKS: number = 1_000;
@@ -12,7 +18,9 @@ export class InboxOutboxEngine {
     private static readonly FIXED_DELAY_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({
         milliseconds: 100
     });
-    private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ seconds: 3 });
+    private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({
+        milliseconds: INBOX_OUTBOX_ENGINE_MAX_IDLE_MS
+    });
     private static readonly SCHEDULE_JITTER_RATIO = 0.2;
 
     private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 });

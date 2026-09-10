@@ -1,6 +1,6 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { toError } from '../../resilience/to-error.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from './al-work-queue-port.ts';
 
@@ -56,11 +56,11 @@ export interface ALWorkBatchDiagnostics {
 
 /**
  * How long an owner that has neither committed nor run a batch keeps answering from its last probe.
- * It is the engine's own idle ceiling (`MAX_IDLE_SCHEDULED_ENGINE`, 3 s), so work another tab wrote,
- * or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of costing
- * a storage read on every engine round.
+ * It is the engine's own idle ceiling, derived from it so the two cannot drift apart: work another
+ * tab wrote, or a row a crashed owner's lease still holds, is discovered on that idle cadence
+ * instead of costing a storage read on every engine round.
  */
-export const AL_WORK_READINESS_MEMORY_MS = 3_000;
+export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
 
 /** The last probe's answer; `readyAtMs` undefined is the probe reporting no work at all. */
 interface ALWorkReadinessMemory {
