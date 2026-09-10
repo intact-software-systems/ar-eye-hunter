@@ -56,7 +56,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // behavior, with all operator dependency exclusions intact.
         // Measured 252.87 KiB brotli after the inbound runtime composed on the generic work
         // handler (F2 Task 5); the limit was raised to the next whole KiB at 252.02 (R22/R24).
-        expect(result.brotliKiB).toBeLessThan(253);
+        // Measured 253.03 KiB brotli after wiring outbound admission diagnostics through the
+        // browser composition and middleware (F2 Task 6b); the limit was raised to 254.
+        expect(result.brotliKiB).toBeLessThan(254);
     });
 });
 

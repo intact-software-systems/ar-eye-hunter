@@ -107,6 +107,25 @@ The summary is a projection, not a pass-through. It drops the peers array, the
 lane id, the reason and the read-time clock the room status carries, so a pin
 never asserts on a value that changes with every read.
 
+## Outbound Admission Diagnostics
+
+`rallar.browser.alm.outbound_diagnostics` carries one AL outbound runtime
+diagnostics event per emission, recorded the moment the outbound runtime calls
+the sink — independent of any connection, so it observes admission work for
+every session the page opens. The event's `data` is the event itself:
+
+- `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`, or
+  `effect-drain`
+- `durationMs`: how long that phase took
+- the phase's own identity fields: `senderId` and `queued` for
+  `sender-queue-wait`; `senderId`, `lockName` and `available` for the two
+  `browser-lock-*` phases; `workerId`, `claimedCount`, `completedCount`,
+  `rescheduledCount` and `rejectedCount` for `effect-drain`
+
+This is the evidence a `deadline-expiry` conformance run uses to attribute a
+slow admission (the serialized IndexedDB chain a typed send commits through)
+to a phase instead of a single opaque send latency.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

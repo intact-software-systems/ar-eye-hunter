@@ -112,7 +112,10 @@ const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 const OVERSIZED_PAYLOAD_BYTES = 70_000;
 const OVERSIZED_PAYLOAD_FILLER = 'x'.repeat(OVERSIZED_PAYLOAD_BYTES);
 const OVERSIZED_REJECTION_REASON = 'Payload exceeds';
-const EXPIRY_TTL_MS = 1_000;
+// Must clear the slowest observed outbound-admission latency (up to 5s on a loaded CI runner) with
+// margin, and still leave most of the receiver's `deadlineMs - RESPONSE_MARGIN_MS` absence window
+// after expiry, so the absence proves the ttl expired rather than racing the deadline itself.
+const EXPIRY_TTL_MS = 7_500;
 const FAULT_REMAINING = 100;
 const RESYNC_GAP_SEQ = 300;
 

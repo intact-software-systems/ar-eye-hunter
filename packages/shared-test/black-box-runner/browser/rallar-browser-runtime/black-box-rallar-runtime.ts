@@ -195,6 +195,7 @@ class BlackBoxRallarConnectionRuntime {
             laneIdOf: resolveBlackBoxRallarLaneId,
             scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf
         });
+        this.#installOutboundDiagnosticsRecorder();
         this.#lifecycle = createBlackBoxRallarLifecycleController<
             BlackBoxRallarConnectionConfig,
             LoginResponse | AuthSession,
@@ -287,6 +288,20 @@ class BlackBoxRallarConnectionRuntime {
         });
         return { crdt, director, formation, messaging };
     }
+    /**
+     * The AL outbound runtime is wired to `diagnostics.outboundDiagnostics.sink` on every connect
+     * (see `#configureRallarConnection`), well before this fires, but that sink only forwards to
+     * whatever recorder is attached — so this attaches the one and only recorder, once, here.
+     */
+    #installOutboundDiagnosticsRecorder = (): void => {
+        this.#rallar.diagnostics.outboundDiagnostics.setRecorder((event) => {
+            this.#runtimeDiagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { ...event }
+            });
+        });
+    };
     #configureRallarConnection = (
         config: BlackBoxRallarConnectionConfig
     ): Parameters<BlackBoxBrowserRallarRuntimeDependency['setDefaults']>[0] => {
@@ -298,7 +313,8 @@ class BlackBoxRallarConnectionRuntime {
                 ...defaults,
                 diagnosticsPorts: {
                     transportFaultPort: this.#rallar.diagnostics.faults,
-                    indexedDbOperationObserver: this.#rallar.diagnostics.storage
+                    indexedDbOperationObserver: this.#rallar.diagnostics.storage,
+                    outboundDiagnostics: this.#rallar.diagnostics.outboundDiagnostics.sink
                 }
             }
         );

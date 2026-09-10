@@ -278,7 +278,8 @@ describe('Rallar facade default scope behavior', () => {
             {
                 diagnosticsPorts: {
                     transportFaultPort: { decideSend: expect.any(Function) },
-                    indexedDbOperationObserver: { observe: expect.any(Function) }
+                    indexedDbOperationObserver: { observe: expect.any(Function) },
+                    outboundDiagnostics: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),
                 scope: {
@@ -320,7 +321,11 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             expect.objectContaining({
-                diagnosticsPorts: { transportFaultPort, indexedDbOperationObserver }
+                diagnosticsPorts: {
+                    transportFaultPort,
+                    indexedDbOperationObserver,
+                    outboundDiagnostics: expect.any(Function)
+                }
             })
         );
     });

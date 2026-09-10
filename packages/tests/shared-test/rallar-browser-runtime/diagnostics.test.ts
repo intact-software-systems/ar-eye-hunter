@@ -283,3 +283,28 @@ it('emits expected-session and duplicate-session diagnostics', async () => {
         'rallar.browser.cleanup.unsubscribe_completed'
     ]));
 });
+
+it('records an AL outbound admission diagnostics event into the agent event log', async () => {
+    // The recorder attaches at construction, independent of any connection.
+    await loadRuntime();
+
+    facade.rallar.diagnostics.outboundDiagnostics.sink({
+        kind: 'sender-queue-wait',
+        senderId: 'sender-1',
+        queued: true,
+        durationMs: 42
+    });
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            data: {
+                kind: 'sender-queue-wait',
+                senderId: 'sender-1',
+                queued: true,
+                durationMs: 42
+            }
+        })
+    ]));
+});

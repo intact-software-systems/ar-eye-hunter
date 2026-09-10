@@ -180,7 +180,8 @@ describe('Rallar startup lifecycle behavior', () => {
             {
                 diagnosticsPorts: {
                     transportFaultPort: { decideSend: expect.any(Function) },
-                    indexedDbOperationObserver: { observe: expect.any(Function) }
+                    indexedDbOperationObserver: { observe: expect.any(Function) },
+                    outboundDiagnostics: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),
                 scope: {

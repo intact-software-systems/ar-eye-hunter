@@ -48,6 +48,10 @@ import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/ra
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type {
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -146,10 +150,31 @@ export interface BlackBoxBrowserRoomsDependency {
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
 
+/**
+ * The AL outbound runtime calls `sink` on every admission event, before the connection runtime
+ * that owns the agent event log exists. `setRecorder` lets that runtime attach its recorder once
+ * constructed, so `sink` forwards to whatever recorder is currently attached (a no-op until then).
+ */
+export interface BlackBoxOutboundDiagnosticsRelay {
+    readonly sink: ALOutboundRuntimeDiagnosticsSink;
+    setRecorder(recorder: ALOutboundRuntimeDiagnosticsSink): void;
+}
+
+export function createBlackBoxOutboundDiagnosticsRelay(): BlackBoxOutboundDiagnosticsRelay {
+    let recorder: ALOutboundRuntimeDiagnosticsSink = () => {};
+    return {
+        sink: (event: ALOutboundRuntimeDiagnosticsEvent) => recorder(event),
+        setRecorder: (next) => {
+            recorder = next;
+        }
+    };
+}
+
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
 export interface BlackBoxBrowserDiagnosticsDependency {
     readonly faults: ScriptedTransportFaultPort;
     readonly storage: CountingIndexedDbOperationObserver;
+    readonly outboundDiagnostics: BlackBoxOutboundDiagnosticsRelay;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -179,6 +204,7 @@ export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFa
 export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserRallarRuntimeDependency {
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
+    const outboundDiagnostics = createBlackBoxOutboundDiagnosticsRelay();
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,
@@ -233,7 +259,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage }
+        diagnostics: { faults, storage, outboundDiagnostics }
     });
 }
 

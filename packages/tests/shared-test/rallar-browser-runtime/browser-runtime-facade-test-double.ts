@@ -1,14 +1,16 @@
-import type {
-    BlackBoxBrowserAuthDependency,
-    BlackBoxBrowserCrdtDependency,
-    BlackBoxBrowserDiagnosticsDependency,
-    BlackBoxBrowserDirectorDependency,
-    BlackBoxBrowserMessagesDependency,
-    BlackBoxBrowserRallarRuntimeDependency,
-    BlackBoxBrowserRealtimeDependency,
-    BlackBoxBrowserRoomsDependency,
-    BlackBoxBrowserRtcDependency,
-    BlackBoxBrowserWsDependency
+import {
+    createBlackBoxOutboundDiagnosticsRelay,
+    type BlackBoxBrowserAuthDependency,
+    type BlackBoxBrowserCrdtDependency,
+    type BlackBoxBrowserDiagnosticsDependency,
+    type BlackBoxBrowserDirectorDependency,
+    type BlackBoxBrowserMessagesDependency,
+    type BlackBoxBrowserRallarRuntimeDependency,
+    type BlackBoxBrowserRealtimeDependency,
+    type BlackBoxBrowserRoomsDependency,
+    type BlackBoxBrowserRtcDependency,
+    type BlackBoxBrowserWsDependency,
+    type BlackBoxOutboundDiagnosticsRelay
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type {
     RallarMessageHandler,
@@ -326,6 +328,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
+let outboundDiagnosticsRelay = createBlackBoxOutboundDiagnosticsRelay();
 
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get faults(): ScriptedTransportFaultPort {
@@ -333,6 +336,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get storage(): CountingIndexedDbOperationObserver {
         return countingStorage;
+    },
+    get outboundDiagnostics(): BlackBoxOutboundDiagnosticsRelay {
+        return outboundDiagnosticsRelay;
     }
 };
 
@@ -377,6 +383,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
+    outboundDiagnosticsRelay = createBlackBoxOutboundDiagnosticsRelay();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);

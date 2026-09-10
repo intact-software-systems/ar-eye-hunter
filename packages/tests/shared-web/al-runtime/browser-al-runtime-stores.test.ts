@@ -24,7 +24,10 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import {
+    createPassThroughALOutboundRuntimeDiagnosticsSink,
+    toRallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
@@ -487,7 +490,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         configureBrowserALRuntimeStores(sessionId, {
             diagnosticsPorts: {
                 transportFaultPort: createPassThroughTransportFaultPort(),
-                indexedDbOperationObserver: observer
+                indexedDbOperationObserver: observer,
+                outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink()
             }
         });
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);

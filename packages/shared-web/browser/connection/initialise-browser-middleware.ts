@@ -1,5 +1,4 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -64,7 +63,6 @@ export interface MiddlewareInitOptions {
     readonly bootstrapDegree?: number;
     readonly scope?: StateScope;
     readonly onAuthInvalid?: (error: Error) => void | Promise<void>;
-    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }
 
 export interface ToCreateWsUrlInput {
@@ -223,7 +221,7 @@ async function initialiseBrowserWebSocketTransport(
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
         newConnectionRequestId: () => crypto.randomUUID(),
-        outboundDiagnostics: input.options.outboundDiagnostics
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
     }).catch((caught) => {
         const error = toError(caught);
         console.error('Failed to connect WebSocket client:', error);
@@ -271,7 +269,7 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcConnectionService,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            outboundDiagnostics: input.options.outboundDiagnostics
+            outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
         }
     );
     const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(

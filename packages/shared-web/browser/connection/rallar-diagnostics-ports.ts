@@ -1,3 +1,4 @@
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createPassThroughIndexedDbOperationObserver,
     type IndexedDbOperationObserver
@@ -10,11 +11,17 @@ import {
 export interface RallarDiagnosticsPortsInput {
     readonly transportFaultPort?: TransportFaultPort;
     readonly indexedDbOperationObserver?: IndexedDbOperationObserver;
+    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }
 
 export interface RallarDiagnosticsPorts {
     readonly transportFaultPort: TransportFaultPort;
     readonly indexedDbOperationObserver: IndexedDbOperationObserver;
+    readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
+}
+
+export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
+    return () => {};
 }
 
 export function toRallarDiagnosticsPorts(
@@ -23,6 +30,7 @@ export function toRallarDiagnosticsPorts(
     return {
         transportFaultPort: input?.transportFaultPort ?? createPassThroughTransportFaultPort(),
         indexedDbOperationObserver: input?.indexedDbOperationObserver ??
-            createPassThroughIndexedDbOperationObserver()
+            createPassThroughIndexedDbOperationObserver(),
+        outboundDiagnostics: input?.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
     };
 }
