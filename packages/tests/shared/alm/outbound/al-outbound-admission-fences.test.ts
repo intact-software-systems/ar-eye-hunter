@@ -39,6 +39,9 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+
+import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     computeOutboundTestAdmission,
     createOutboundCanonicalEntry,
@@ -48,6 +51,8 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound
 
 const ADMISSION_STORE_NAME = 'entries';
 const FENCE_NAMESPACE = 'fence';
+
+type FenceStorage = 'memory' | 'indexeddb' | 'pglite';
 
 interface FenceFixture {
     readonly store: ALOutboundAdmissionStore<OutboundTestPayload>;
@@ -61,7 +66,7 @@ interface FenceFixture {
     readonly readAdmissionState: () => Promise<string>;
 }
 
-describe.each(['memory', 'indexeddb'] as const)('outbound admission fences over %s', (storage) => {
+describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fences over %s', (storage) => {
     it('aborts a changed sender version without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const winner = await computeOutboundTestAdmission(fixture.store, createOutboundMessage('version-winner'));
@@ -143,10 +148,12 @@ describe.each(['memory', 'indexeddb'] as const)('outbound admission fences over 
     });
 });
 
-async function createFenceFixture(storage: 'memory' | 'indexeddb'): Promise<FenceFixture> {
+async function createFenceFixture(storage: FenceStorage): Promise<FenceFixture> {
     const namespace = FENCE_NAMESPACE;
     const fixture = storage === 'memory'
         ? createInMemoryFenceBackend()
+        : storage === 'pglite'
+        ? await createPGliteFenceBackend(namespace)
         : createIndexedDbFenceBackend(`fence-${crypto.randomUUID()}`);
     const store = createALOutboundAdmissionStore({
         nowMs: Date.now,
@@ -159,6 +166,19 @@ async function createFenceFixture(storage: 'memory' | 'indexeddb'): Promise<Fenc
     });
     await store.ready();
     return { ...fixture, store };
+}
+
+/**
+ * PostgreSQL keeps no store-wide revision row: every admission row carries its own, and a callback
+ * that returns without mutating writes nothing at all. The whole namespace with those per-row
+ * revisions is therefore the same witness the other two backends' whole-store fingerprint is.
+ */
+async function createPGliteFenceBackend(namespace: string): Promise<Omit<FenceFixture, 'store'>> {
+    const { sql, repository } = await createPSqlAdmissionTestStorage();
+    return {
+        backend: new PSqlAdmissionWorkBackend(sql, namespace),
+        readAdmissionState: async () => toAdmissionStateFingerprint('per-row', await repository.findAllEntries(namespace))
+    };
 }
 
 function createInMemoryFenceBackend(): Omit<FenceFixture, 'store'> {
