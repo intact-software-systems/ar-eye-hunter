@@ -25,6 +25,7 @@ import {
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
+    createPassThroughALInboundRuntimeDiagnosticsSink,
     createPassThroughALOutboundRuntimeDiagnosticsSink,
     toRallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -503,6 +504,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
                 transportFaultPort: createPassThroughTransportFaultPort(),
                 indexedDbOperationObserver: observer,
                 outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink(),
+                inboundDiagnostics: createPassThroughALInboundRuntimeDiagnosticsSink(),
                 onStorageReset: () => {}
             }
         });

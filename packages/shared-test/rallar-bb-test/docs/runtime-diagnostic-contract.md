@@ -172,6 +172,40 @@ This is the evidence a `deadline-expiry` conformance run uses to attribute a
 slow admission (the serialized IndexedDB chain a typed send commits through)
 to a phase instead of a single opaque send latency.
 
+## Inbound Admission Diagnostics
+
+`rallar.browser.alm.inbound_diagnostics` carries one AL inbound runtime
+diagnostics event per emission, recorded the moment the inbound runtime calls
+the sink — the receiving half of the outbound topic above, and, like it,
+independent of any connection. The event's `data` is the event itself:
+
+- `kind`: `admission-outcome` or `effect-drain`
+- `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
+  to, on both kinds. One page runs a WS inbound owner and an RTC inbound
+  owner, so this says which lane an event came from
+- `admission-outcome` carries `msgId`, `typeId`, `outcome` and `reason` for
+  every message that reached ingress with a decodable identity — one event per
+  `admitIncomingMessage` call. A value that never decoded has no identity to
+  report and emits nothing
+- `outcome` is where the message stopped: `committed` (admitted, or a control
+  the runtime handled — the only ending that leaves durable work behind),
+  `pending` (held for an asynchronous authority recheck), `unauthorized`
+  (ingress authority or the plan refused it), `rejected` (decode, validation,
+  expiry, or a plan drop that is not an authority refusal), or `not-handled`
+  (duplicate, resync-required, disposed, or an unhandled control)
+- `reason` is the plan's drop reason, the rejection's code, or the acceptance
+  kind that carries neither
+- `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
+  `rescheduledCount` and `rejectedCount` for each inbound work batch, the same
+  five fields the outbound topic reports for its own drains
+
+The two kinds together discriminate a delivery that never arrives. An
+`unauthorized` outcome is the drop that otherwise leaves no trace at all: it
+writes nothing, sends no NACK and returns no error. A `committed` outcome
+followed only by drains with `claimedCount: 0` is the other shape — the row
+exists and no consumer is registered for its `typeId`, so the rotation never
+selects it.
+
 ## Storage Reset Diagnostics
 
 `rallar.browser.alm.storage_reset` carries an `ALStorageResetEvent` recorded

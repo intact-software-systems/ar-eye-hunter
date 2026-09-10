@@ -63,7 +63,8 @@ describe('inbound admission preparation boundary', () => {
             ...createRuntimeDependencies(stores),
             sendControlMessage: async (message) => {
                 controls.push(message);
-            }
+            },
+            diagnostics: undefined
         });
         const original = createMessage(seq);
         const message = {
@@ -265,7 +266,8 @@ describe('inbound admission preparation boundary', () => {
 
         const runtime = new ALInboundMessageRuntime({
             ...createRuntimeDependencies(stores),
-            planIncomingMessage: (message, source, observations) => withFreshnessPolicy(planIncomingMessage(message, source, observations))
+            planIncomingMessage: (message, source, observations) => withFreshnessPolicy(planIncomingMessage(message, source, observations)),
+            diagnostics: undefined
         });
         try {
             const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
@@ -290,7 +292,8 @@ describe('inbound admission preparation boundary', () => {
             planIncomingMessage: (message, source, observations) => {
                 const plan = planIncomingMessage(message, source, observations);
                 return freshnessEnabled ? withFreshnessPolicy(plan) : plan;
-            }
+            },
+            diagnostics: undefined
         });
         try {
             for (let seq = 2; seq <= 9; seq++) {
@@ -387,7 +390,8 @@ describe('inbound admission preparation boundary', () => {
             ...createRuntimeDependencies(stores),
             sendControlMessage: async (message) => {
                 controls.push(message);
-            }
+            },
+            diagnostics: undefined
         });
         try {
             const first = await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
@@ -418,7 +422,8 @@ describe('inbound admission preparation boundary', () => {
                 if (controls.length === 1) {
                     throw new Error('Temporary control transport failure');
                 }
-            }
+            },
+            diagnostics: undefined
         });
         try {
             await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
@@ -504,7 +509,8 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
         clock: { nowMs: () => Date.now() },
         random: () => 0.5,
         queueEngine: new InboxOutboxEngine(),
-        ownsQueueEngine: true
+        ownsQueueEngine: true,
+        diagnostics: undefined
     };
 }
 

@@ -54,7 +54,8 @@ it('terminalizes a malformed reservation without starving independent timeout re
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async () => {}
+        sendControlMessage: async () => {},
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
@@ -116,7 +117,8 @@ it('retries durable local delivery after restart with a single admission work ow
                     throw new Error('Application temporarily unavailable');
                 }
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
     const first = createRuntime();
     onTestFinished(() => first.dispose());
@@ -175,7 +177,8 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
                         throw new Error('Application temporarily unavailable');
                     }
                 },
-                sendControlMessage: async () => {}
+                sendControlMessage: async () => {},
+                diagnostics: undefined
             });
         const initial = createRuntime();
         onTestFinished(() => initial.dispose());
@@ -249,7 +252,8 @@ it.each([
         forwardMessage: async (incoming) => {
             deliveries.push(`forward:${incoming.id.msgId}`);
         },
-        sendControlMessage: async () => {}
+        sendControlMessage: async () => {},
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     const incoming: ALMessage = {
@@ -298,7 +302,8 @@ it('retains predecessor completion through the longest admitted deadline across 
             dispatchInboxEntry: async (entry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
     const initial = createRuntime();
     onTestFinished(() => initial.dispose());
@@ -357,7 +362,8 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
         },
         sendControlMessage: async (control) => {
             controls.push(control);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
@@ -429,7 +435,8 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
             }
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async () => {}
+        sendControlMessage: async () => {},
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     const second: ALMessage = { ...message(2), qos: { durability: { algo: durability } } };
@@ -500,7 +507,8 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             },
             sendControlMessage: async (control) => {
                 controls.push(control);
-            }
+            },
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
         await runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
@@ -587,7 +595,8 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
                 }
                 delivered.push(decodePersistedALMessage(entry.resource).ordering!.seq!);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
         return { runtime, engine };

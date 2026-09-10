@@ -6,6 +6,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
     ConnectionContext,
     InMemoryQueueBox,
@@ -21,10 +22,12 @@ describe('WS server inbound identity', () => {
         const server = new JsonWebSocketServer();
         const socket = new FakeSocket();
         server.addConnection(new ConnectionContext({ id: 'session-attacker', socket }));
+        const inboundDiagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
         const service = createDefaultWsQueueBoxServerService({
             outbox: new InMemoryQueueBox(),
             socket: server,
-            name: 'server-1'
+            name: 'server-1',
+            inboundDiagnostics: (event) => inboundDiagnostics.push(event)
         });
         const received: ALMessage[] = [];
         service.onAnyInboxMessageDo('identity-test', {
@@ -43,6 +46,16 @@ describe('WS server inbound identity', () => {
 
             await socket.dispatchMessage(matching);
             await expect.poll(() => received).toEqual([matching]);
+
+            // The forged message never reached the runtime, so only the admitted one is named here.
+            expect(
+                inboundDiagnostics.filter((event) => event.kind === 'admission-outcome')
+            ).toEqual([expect.objectContaining({
+                msgId: 'matching-message',
+                typeId: 'test.identity.v1',
+                outcome: 'committed',
+                reason: 'admitted'
+            })]);
         }
         finally {
             service.dispose();

@@ -223,6 +223,7 @@ it('preserves nested live bootstrap identity and RTC lane defaults', async () =>
             transportFaultPort: facade.rallar.diagnostics.faults,
             indexedDbOperationObserver: facade.rallar.diagnostics.storage,
             outboundDiagnostics: facade.rallar.diagnostics.outboundDiagnostics.sink,
+            inboundDiagnostics: facade.rallar.diagnostics.inboundDiagnostics.sink,
             onStorageReset: facade.rallar.diagnostics.storageReset.sink
         }
     });

@@ -78,7 +78,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         try {
             await runtime.ready();
@@ -106,7 +107,8 @@ describe('inbound durable effect worker lifecycle', () => {
 
             planIncomingMessage,
             dispatchInboxEntry: async () => {},
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         try {
             await expect(runtime.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
@@ -155,7 +157,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     new TypeError('invalid durable delivery')
                 );
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         try {
             await runtime.ready();
@@ -203,7 +206,8 @@ describe('inbound durable effect worker lifecycle', () => {
             },
             sendControlMessage: async (message) => {
                 delivered.push(message.id.msgId);
-            }
+            },
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
@@ -247,7 +251,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry) => {
                 delivered.push(entry.key.resourceId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
         const valid = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'valid-source', contextId: 'room' }, 'receiver', 'chat', {});
@@ -299,7 +304,8 @@ describe('inbound durable effect worker lifecycle', () => {
 
             planIncomingMessage,
             dispatchInboxEntry: async () => {},
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         try {
             await runtime.ready();
@@ -326,7 +332,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         };
         const runtime = new ALInboundMessageRuntime(dependencies);
         onTestFinished(() => runtime.dispose());
@@ -360,7 +367,8 @@ describe('inbound durable effect worker lifecycle', () => {
                 selfPeerId: 'receiver',
                 toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
                 stores: { admissionStore: store, workQueue: resources.workQueue }
-            })
+            }),
+            diagnostics: undefined
         });
         onTestFinished(() => restarted.dispose());
         await restarted.ready();
@@ -395,7 +403,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
 
@@ -423,7 +432,8 @@ describe('inbound durable effect worker lifecycle', () => {
                 dispatchStarted.resolve();
                 await releaseDispatch.promise;
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         onTestFinished(() => {
             releaseDispatch.resolve();
@@ -452,7 +462,8 @@ describe('inbound durable effect worker lifecycle', () => {
             sendControlMessage: async () => {
                 sendStarted.resolve();
                 await releaseSend.promise;
-            }
+            },
+            diagnostics: undefined
         });
         onTestFinished(() => {
             releaseSend.resolve();
@@ -540,7 +551,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).route.resourceId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
@@ -576,7 +588,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         const first = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'first', contextId: 'room' }, 'receiver', 'chat', {});
         const second = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {});
@@ -611,7 +624,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         const resumeRead = Promise.withResolvers<void>();
         onTestFinished(() => {
@@ -707,7 +721,8 @@ describe('inbound durable effect worker lifecycle', () => {
                 attempts += 1;
                 throw new Error('Delivery temporarily unavailable');
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         try {
@@ -779,7 +794,8 @@ describe('inbound durable effect worker lifecycle', () => {
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {}
+            sendControlMessage: async () => {},
+            diagnostics: undefined
         };
         const runtime = new ALInboundMessageRuntime(dependencies);
         onTestFinished(() => {
@@ -805,7 +821,8 @@ describe('inbound durable effect worker lifecycle', () => {
                 selfPeerId: 'receiver',
                 toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
                 stores: { admissionStore: store, workQueue: resources.workQueue }
-            })
+            }),
+            diagnostics: undefined
         });
         onTestFinished(() => restarted.dispose());
         await restarted.ready();

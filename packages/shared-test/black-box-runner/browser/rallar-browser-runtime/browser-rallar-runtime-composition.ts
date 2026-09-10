@@ -54,6 +54,7 @@ import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/ra
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
     ALOutboundRuntimeDiagnosticsEvent,
@@ -190,6 +191,7 @@ export interface BlackBoxBrowserDiagnosticsDependency {
     readonly faults: ScriptedTransportFaultPort;
     readonly storage: CountingIndexedDbOperationObserver;
     readonly outboundDiagnostics: BlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>;
+    readonly inboundDiagnostics: BlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>;
     readonly storageReset: BlackBoxDiagnosticsRelay<ALStorageResetEvent>;
 }
 
@@ -229,6 +231,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
     const outboundDiagnostics = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
+    const inboundDiagnostics = createBlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>();
     const storageReset = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
@@ -284,7 +287,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, outboundDiagnostics, storageReset }
+        diagnostics: { faults, storage, outboundDiagnostics, inboundDiagnostics, storageReset }
     });
 }
 

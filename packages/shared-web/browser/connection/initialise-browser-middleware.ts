@@ -232,7 +232,8 @@ async function initialiseBrowserWebSocketTransport(
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
         newConnectionRequestId: () => crypto.randomUUID(),
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
     }).catch((caught) => {
         const error = toError(caught);
         console.error('Failed to connect WebSocket client:', error);
@@ -288,7 +289,8 @@ async function initialiseBrowserRtcTransport(
             webRtcOverlayMulticastManager,
             qboxEngine: input.webSocketTransport.qboxEngine,
             clientData: input.clientData,
-            roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input)
+            roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
+            inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
         }
     );
     registerBrowserRttEgress(input, rtcRxStreamer);

@@ -15,6 +15,10 @@ import type {
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
 import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
+import {
+    toALInboundAdmissionDiagnostics,
+    type ALInboundRuntimeDiagnosticsSink
+} from './al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_WORK_LEASE_MS, decodeALInboundWorkEntry, toALInboundWorkType } from './al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
@@ -83,6 +87,7 @@ export namespace ALInboundMessageRuntime {
         ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
+        readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }
 
@@ -137,7 +142,16 @@ export class ALInboundMessageRuntime {
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
             runClaim: (claim) => this.runInboundClaim(claim),
-            diagnostics: undefined
+            diagnostics: (event) =>
+                dependencies.diagnostics?.({
+                    kind: 'effect-drain',
+                    workerId: event.workerId,
+                    durationMs: event.durationMs,
+                    claimedCount: event.claimedCount,
+                    completedCount: event.completedCount,
+                    rescheduledCount: event.rescheduledCount,
+                    rejectedCount: event.rejectedCount
+                })
         });
         if (dependencies.ownsQueueEngine) {
             void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
@@ -170,6 +184,30 @@ export class ALInboundMessageRuntime {
             return Either.ofLeft(decoded.left);
         }
         const msg = decoded.right!;
+        const admitted = await this.admitDecodedMessage(msg, source, planIncomingMessage);
+        this.recordAdmissionOutcome(msg, admitted);
+        return admitted;
+    }
+
+    /** A value that never decoded has no identity to record; every identity that does gets one event. */
+    private recordAdmissionOutcome(
+        msg: ALMessage,
+        admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>
+    ): void {
+        this.dependencies.diagnostics?.({
+            kind: 'admission-outcome',
+            workerId: this.dependencies.effectWorkerId,
+            msgId: msg.id.msgId,
+            typeId: msg.payload.typeId,
+            ...toALInboundAdmissionDiagnostics(admitted)
+        });
+    }
+
+    private async admitDecodedMessage(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        planIncomingMessage: ALInboundPlanner
+    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         const validated = validateALInboundMessage(msg, source, this.dependencies.effectPreparation.selfPeerId);
         if (validated.left) {
             return Either.ofLeft(validated.left);

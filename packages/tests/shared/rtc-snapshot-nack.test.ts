@@ -135,7 +135,8 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
         },
         sendControlMessage: async (control) => {
             controls.push(control);
-        }
+        },
+        diagnostics: undefined
     });
     return { runtime, observed, delivered, controls, message, stores };
 }

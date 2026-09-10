@@ -2,6 +2,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
@@ -22,6 +23,7 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly connectTimeoutMs?: number;
         readonly newConnectionRequestId?: () => string;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     }
 }
 
@@ -50,6 +52,7 @@ function createBrowserWebSocketQueueBoxService(
         inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
         outboundStores,
         outboundDiagnostics: input.outboundDiagnostics,
+        inboundDiagnostics: input.inboundDiagnostics,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: {
             ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,

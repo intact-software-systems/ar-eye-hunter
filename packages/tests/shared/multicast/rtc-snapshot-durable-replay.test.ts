@@ -363,7 +363,8 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         },
         sendControlMessage: async (message) => {
             controls.push(message);
-        }
+        },
+        diagnostics: undefined
     });
     return { runtime, stores, engine, observed, planner, delivered, forwarded, controls };
 }

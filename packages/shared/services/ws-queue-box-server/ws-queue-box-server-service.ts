@@ -17,6 +17,7 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
 import type {
@@ -69,6 +70,7 @@ export namespace WsQueueBoxServerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
@@ -93,6 +95,7 @@ export namespace WsQueueBoxServerService {
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
@@ -226,7 +229,8 @@ export class WsQueueBoxServerService {
                 await this.outboundRuntime.acceptControlMessage(message);
             },
             forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
-            canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message)
+            canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
+            diagnostics: dependencies.inboundDiagnostics
         });
     }
 
@@ -706,6 +710,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
+        inboundDiagnostics: input.inboundDiagnostics,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,

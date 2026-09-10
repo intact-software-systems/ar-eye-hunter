@@ -281,7 +281,8 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
         sendControlMessage: async () => {},
         forwardMessage: async (outgoing) => {
             forwarded.push(outgoing.id.msgId);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return { state, runtime, admissionStore, delivered, forwarded };

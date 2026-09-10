@@ -1,4 +1,5 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
@@ -84,6 +85,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    readonly wsInboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly createGroupStateInboxService: (
         input: RallarGroupStateInboxServiceFactoryInput
     ) => GroupStateInboxService;

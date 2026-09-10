@@ -209,7 +209,8 @@ function createFixture() {
         },
         sendControlMessage: async (message) => {
             controls.push(message);
-        }
+        },
+        diagnostics: undefined
     });
     return { runtime, admissionStore, delivered, controls, state };
 }

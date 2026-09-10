@@ -220,7 +220,8 @@ async function admitInboundWorkload(): Promise<void> {
         dispatchInboxEntry: async (entry) => {
             decodePersistedALMessage(entry.resource);
         },
-        sendControlMessage: async () => {}
+        sendControlMessage: async () => {},
+        diagnostics: undefined
     });
     try {
         await runtime.ready();

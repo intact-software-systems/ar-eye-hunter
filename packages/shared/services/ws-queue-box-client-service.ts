@@ -18,6 +18,7 @@ import {
 } from '../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
@@ -118,6 +119,7 @@ export namespace WsQueueBoxClientService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly newConnectionRequestId?: () => string;
         readonly reconnect?: ReconnectOptions;
@@ -131,6 +133,7 @@ export namespace WsQueueBoxClientService {
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly newConnectionRequestId: (() => string) | undefined;
         readonly reconnect: ReconnectOptions;
     }
@@ -227,7 +230,8 @@ export class WsQueueBoxClientService {
                 },
                 onControlMessage: async (msg) => {
                     await this.outboundRuntime.acceptControlMessage(msg);
-                }
+                },
+                diagnostics: this.dependencies.inboundDiagnostics
             }
         );
     }
@@ -749,6 +753,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
+        inboundDiagnostics: input.inboundDiagnostics,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: input.reconnect ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
     });

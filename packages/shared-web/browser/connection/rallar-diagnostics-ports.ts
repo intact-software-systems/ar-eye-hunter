@@ -1,3 +1,4 @@
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
     createPassThroughALStorageResetSink,
     type ALStorageResetEvent
@@ -16,6 +17,7 @@ export interface RallarDiagnosticsPortsInput {
     readonly transportFaultPort?: TransportFaultPort;
     readonly indexedDbOperationObserver?: IndexedDbOperationObserver;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
 }
 
@@ -23,10 +25,15 @@ export interface RallarDiagnosticsPorts {
     readonly transportFaultPort: TransportFaultPort;
     readonly indexedDbOperationObserver: IndexedDbOperationObserver;
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
+    readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink;
     readonly onStorageReset: (event: ALStorageResetEvent) => void;
 }
 
 export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
+    return () => {};
+}
+
+export function createPassThroughALInboundRuntimeDiagnosticsSink(): ALInboundRuntimeDiagnosticsSink {
     return () => {};
 }
 
@@ -38,6 +45,7 @@ export function toRallarDiagnosticsPorts(
         indexedDbOperationObserver: input?.indexedDbOperationObserver ??
             createPassThroughIndexedDbOperationObserver(),
         outboundDiagnostics: input?.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
+        inboundDiagnostics: input?.inboundDiagnostics ?? createPassThroughALInboundRuntimeDiagnosticsSink(),
         onStorageReset: input?.onStorageReset ?? createPassThroughALStorageResetSink()
     };
 }

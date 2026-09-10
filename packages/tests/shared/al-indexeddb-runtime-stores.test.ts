@@ -204,7 +204,8 @@ describe('IndexedDB AL runtime stores', () => {
                 const msg = decodePersistedALMessage(entry.resource);
                 dispatchedMsgIds.push(msg.id.msgId);
             },
-            sendControlMessage: async () => Promise.resolve()
+            sendControlMessage: async () => Promise.resolve(),
+            diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
         const msg = newALUnicastMessage(
@@ -761,7 +762,8 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
         },
-        sendControlMessage: async () => Promise.resolve()
+        sendControlMessage: async () => Promise.resolve(),
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return runtime;

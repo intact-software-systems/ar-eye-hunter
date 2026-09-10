@@ -264,7 +264,8 @@ function createRuntime(stores: ALInboundRuntimeStores, received: string[], contr
         },
         sendControlMessage: async (message) => {
             controls.push(message);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return runtime;

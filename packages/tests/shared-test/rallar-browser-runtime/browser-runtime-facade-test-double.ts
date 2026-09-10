@@ -29,6 +29,7 @@ import type {
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -354,6 +355,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let outboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
+let inboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>();
 let storageResetRelay = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
 
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
@@ -365,6 +367,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get outboundDiagnostics(): BlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent> {
         return outboundDiagnosticsRelay;
+    },
+    get inboundDiagnostics(): BlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent> {
+        return inboundDiagnosticsRelay;
     },
     get storageReset(): BlackBoxDiagnosticsRelay<ALStorageResetEvent> {
         return storageResetRelay;
@@ -414,6 +419,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
     outboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
+    inboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>();
     storageResetRelay = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

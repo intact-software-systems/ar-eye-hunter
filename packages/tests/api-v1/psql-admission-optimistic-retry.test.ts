@@ -317,7 +317,8 @@ function createInboundTestRuntime(
         },
         sendControlMessage: async (msg) => {
             controls.push(msg);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return runtime;

@@ -77,7 +77,7 @@ it.each(['authority', 'deadline'] as const)('checks current %s before admitting 
         const current = dependencies.planIncomingMessage(msg, source, observations);
         return boundary === 'authority' ? { ...current, dropReason: 'Room authorization was revoked' } : current;
     });
-    const restarted = new ALInboundMessageRuntime({ ...dependencies, planIncomingMessage: planner });
+    const restarted = new ALInboundMessageRuntime({ ...dependencies, planIncomingMessage: planner, diagnostics: undefined });
     onTestFinished(() => restarted.dispose());
     await restarted.ready();
     if (boundary === 'authority') {
@@ -103,7 +103,8 @@ it('refuses to report pending when an existing admission attempt completed after
     const dependencies = runtimeDependencies(stores, delivered, controls);
     const restarted = new ALInboundMessageRuntime({
         ...dependencies,
-        readPendingAdmissionAuthority: async () => ({ kind: 'rejected' })
+        readPendingAdmissionAuthority: async () => ({ kind: 'rejected' }),
+        diagnostics: undefined
     });
     onTestFinished(() => restarted.dispose());
     await restarted.ready();
@@ -160,7 +161,8 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         planIncomingMessage: (msg, source, observations) => ({
             ...dependencies.planIncomingMessage(msg, source, observations),
             dropReason: 'Room authorization was revoked'
-        })
+        }),
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
@@ -209,7 +211,8 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores) {
         planIncomingMessage: (msg, source, observations) => {
             const plan = dependencies.planIncomingMessage(msg, source, observations);
             return { ...plan, effective: { ...plan.effective, expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } } };
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     const commit = stores.admissionStore.commitBundle.bind(stores.admissionStore);
@@ -259,6 +262,7 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
         },
         sendControlMessage: async (msg) => {
             controls.push(msg);
-        }
+        },
+        diagnostics: undefined
     };
 }

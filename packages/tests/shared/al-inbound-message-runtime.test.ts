@@ -854,7 +854,8 @@ function createInboundHarness(
         forwardMessage: overrides.forwardMessage ?? (async (msg) => {
             forwardedIds.push(msg.id.msgId);
         }),
-        canForwardMessage: overrides.canForwardMessage
+        canForwardMessage: overrides.canForwardMessage,
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
 

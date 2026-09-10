@@ -296,7 +296,8 @@ function createDefaultInboundRuntime(
         },
         sendControlMessage: async (msg) => {
             controlMessages.push(msg);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return runtime;
