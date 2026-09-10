@@ -2071,6 +2071,36 @@ moved or changed test.
         "requiredConstraint": "A settled failed refresh must not leave the scoped group permanently marked active.",
         "failureRationale": "A retained failed task would suppress every later QueueBox recovery attempt and strand messages behind stale room authority."
       }
+    },
+    {
+      "id": "rtc-signaling-failure-report-not-a-log",
+      "domain": "RTC peer signaling failure reporting",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A terminal signaling admission is reported to the session as a typed failure per lost hop instead of being written to the console and dropped. Executable assertion: “reports the hop a terminal signaling failure lost, instead of logging and dropping it”.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#reports the hop a terminal signaling failure lost, instead of logging and dropping it",
+      "coverageRelation": "The named test drives both outbound hops through a rejecting signaler and observes the failure callback the peer owns; the console absence is what separates a reported hop from the log-and-drop behaviour it replaced.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Console error port of the outbound signaling chain",
+        "observableEffect": "No console record for a hop that was reported through onSignalingFailed.",
+        "requiredConstraint": "An outbound hop lost to a terminal admission produces the typed failure and nothing on the console port.",
+        "failureRationale": "A console line beside the report would mean the outbound chain still swallows the hop into a log, which is precisely the behaviour the typed failure exists to replace, and no failure value distinguishes the two."
+      }
+    },
+    {
+      "id": "queuebox-pubsub-requeue-announces-external-write",
+      "domain": "QueueBox pub/sub outbox requeue",
+      "owner": "Rallar server maintainers",
+      "summary": "A row the bridge requeues after a failed remote delivery is announced to the engine as an external write, because the requeue runs outside every ALM runtime. Executable assertion: “announces a requeued row as an external write, because the requeue runs outside every runtime”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime",
+      "coverageRelation": "The named test drives a failed remote delivery through the bridge and observes both the requeued row in the outbox and the engine-wake port the bridge owns; the row state alone says nothing about whether an owner was told.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Engine external-write wake port supplied to the bridge",
+        "observableEffect": "One announcement for the one row the requeue put back in the queue.",
+        "requiredConstraint": "A requeue that replaced the row announces exactly once; one that wrote nothing announces not at all.",
+        "failureRationale": "Without the announcement the requeued row waits out the owner idle ceiling instead of being claimed, and a second announcement per row would make every owner on the engine drop its remembered readiness twice for one write."
+      }
     }
   ],
   "entries": [
@@ -4724,6 +4754,28 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The two-call assertion proves the failed first refresh released its group slot and the next retained recovery report reached the authority port.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry"
+    },
+    {
+      "id": "test-structure-coupling-f5fc95d6dae01a59",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-signaling-failure-report-not-a-log",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The failure list alone cannot say the hop stopped being logged; only the untouched console port shows the report replaced the log rather than joining it.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#reports the hop a terminal signaling failure lost, instead of logging and dropping it"
+    },
+    {
+      "id": "test-structure-coupling-1ae3fa894e872390",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queuebox-pubsub-requeue-announces-external-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The requeued row is durable state either way; the wake count is the only witness that the owner which must claim it was actually told, and told once.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime"
     }
   ]
 }
