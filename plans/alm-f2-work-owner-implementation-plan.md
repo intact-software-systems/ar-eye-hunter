@@ -1571,7 +1571,7 @@ compare), the exact durable result (`commitBundle` → `'committed' | 'conflict'
 after-commit effect (`ALWorkHandler.committed`). Record the five landmarks and any search escape in
 the PR body.
 
-- [ ] **Step 3: Open the PR**
+- [x] **Step 3: Open the PR**
 
 Body sections: Goal (F2 outcome), Changes (Tasks 1 to 11 in one paragraph each), Acceptance (the
 spec's F2 acceptance list mapped to tests and lanes), Validation (Step 1 with the commit each figure
