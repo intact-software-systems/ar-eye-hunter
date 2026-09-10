@@ -387,11 +387,23 @@ changes preserve `presenceRevision` while a meaningful session-field change
 advances it. A fresh pinned comparison from the resulting committed candidate
 is mandatory; do not reuse, suppress, or add a reason to the failed result.
 
+The fresh pinned A-B-B-A comparison passed for optimized runtime commit
+`a01fa0b6d976c8e5e3e0d00b24ba8f69950a9c4c`. Its four independently recreated
+positions again accepted 75,600 commands with zero exhaustion, zero atomic-
+completion failures, and complete receipt/outbox evidence. Both candidate
+positions reproduced uncontended and shared performance close to or better than
+the two base positions; the unchanged pooled comparator accepted all latency,
+throughput, SQL/row/byte, transaction-duration, and correctness gates. The
+pooler still required the bounded 16 GiB Node heap for its four 476 MiB sources.
+This plan-only result recording does not change the benchmarked runtime code;
+all remaining functional and live-browser proof runs from the resulting exact
+branch head.
+
 ### Current execution horizon
 
-| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                    |
+| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Archive run 34430533353                             | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 2     | Complete and merge canonical room-readiness PR #557 | Make shared-web the canonical event-driven room-readiness owner; make black-box transport policy delegate to it; keep accepted layouts for their connection lifecycle; keep exact B06 topology assertions and bounded failed-control-result evidence; complete deterministic regressions, a green fresh/pinned state-write comparison, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, polling, retry, timeout increase, library, migration, compatibility layer, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
