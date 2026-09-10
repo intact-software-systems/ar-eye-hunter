@@ -101,6 +101,12 @@ counters.
   `QueueBoxUtilities.toResourceEntryFromMsg`) stamps `date`/`createdTs` from one UTC instant — the
   readers reinterpret `createdTs` as UTC wall clock, and the old `isAnyEntryToLock` path had masked
   the local-zone stamp until the handler's probe became the sole cold-discovery path.
+- R47–R51 (Task 8): the completed-retention sweep budgets deletable rows through a cursor-paged
+  `by-status-end` range (`['status', 'endEpochMs', 'keyString']`, 256 per page, 8 pages per run;
+  retained rows never consume the deletion budget — above 2048 retained rows ahead of a deletable
+  one the run deletes nothing, accepted until V1's retention budgets); `reserveTimeoutEntries` reads
+  `max(maxToReserve, 64)` per type so the probe and the reservation agree; the readiness probe is
+  split into one reader per status class; `browser/rallar.ts` budget 202 KiB (201.04 recorded).
 - R40 (Task 11): the outbound admission family (`al-outbound-admission-store.ts`, `-reads.ts`,
   `-keys.ts`, `-effect-store.ts`, `-validation.ts`, plus a `-mutations.ts` split of the store's
   compute/apply half) moves into `packages/shared/alm/outbound/admission/` in one move with
@@ -1199,7 +1205,7 @@ Every former whole-store scan becomes a loop over the requested `typeIds × stat
 `maxToReserve` (or 64 for probes), and `cleanupAsync` deletes at most 256 expired rows and 256
 retention-expired completed rows per run.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts` with `fake-indexeddb/auto`:
 seed 300 entries of three types and mixed statuses, then assert (a) `reserveEntries` for one type
@@ -1209,12 +1215,12 @@ removes only expired rows and completed rows past retention, (c) `isAnyEntryToLo
 one RETRY row is due and false when none is, and (d) `readAllStoredQueueEntries` no longer exists
 (`expect('readAllStoredQueueEntries' in storeModule).toBe(false)`).
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add the two fields and two indexes, write the three readers, and rewrite the five bodies. For
 `reserveEntries` with `observations === undefined`:
@@ -1242,12 +1248,12 @@ type with `maxToReserve`; `isAnyEntryToLock` reads one `NEW` row per type, `RETR
 fairness index with `fairnessDueEpochMs <= now` (`IDBKeyRange.bound([typeId, RETRY, 0], [typeId, RETRY, now])`, count 1),
 and `RESERVED` rows (64 per type) for the timeout predicate; `cleanupAsync` uses the two new readers.
 
-- [ ] **Step 4: Run the queue box suites**
+- [x] **Step 4: Run the queue box suites**
 
 Run: `npx vitest run packages/tests/shared/queuebox packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared/indexeddb-queuebox-computed-write.test.ts packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/queuebox packages/tests/shared
