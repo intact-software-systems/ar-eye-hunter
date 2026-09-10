@@ -69,8 +69,9 @@ observation stream, and B06 E3-memory observation tooling are merged. Five
 distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
 #402 landed directly, and the four observations formerly published by PRs
 #405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
-superseded PRs and branches were closed. Nine B06 observations have failed with
-`acceptedMetrics: false` and are archived on `main`. The first five, their
+superseded PRs and branches were closed. Ten B06 observations have failed with
+`acceptedMetrics: false` and are archived on `main`; an eleventh verified failed
+observation is pending unchanged in PR #556. The first five, their
 focused corrections in PRs #499 and #510, and the Branch Release quiescence
 correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
 PR #519; its focused publication-wake identity correction merged in PR #520.
@@ -235,16 +236,36 @@ non-expiring send budget; bounded-rejection and deadline-expiry absence windows
 remain unchanged. The exact CI-shaped local lane again passed all three carriers
 without retries after both corrections. This changes no product timeout or
 retry. No compatibility surface or legacy callback remains.
-Keep subsequent corrections and local proof in PR #554 until this exact slice
-is complete; do not create another hypothesis PR or spend a full CI cycle after
-each local observation.
+PR #554 merged as `44de5ae450211f0d5901afe884d8c160aa1a2f91` after its
+branch gates passed. Publish run 34430533353 observed that moving-main snapshot
+and passed its source, tooling, finalization, archive-integrity, and publication
+jobs. The default warmup passed, but the first retained default attempt failed
+its `messages.rtc` broadcast with `RALLAR_BB_RTC_NO_ROUTE`: the browser had all
+expected peers in `rtcStatus.readyPeerIds` while its current formation still
+lacked the accepted overlay used by multicast routing. PR #556 contains the
+verified failed ZIP/index row with `acceptedMetrics: false` and no repeat.
+
+The next single correction-and-proof PR separates peer-only connection
+readiness from active-formation readiness. Post-activation and reconnect
+barriers require an open room, an accepted layout, and every expected peer in
+that layout's desired and ready sets before delivery starts; the pre-activation
+initial-pair barrier remains peer-only. The same PR makes failed RTC-B06
+observations self-diagnosing: the Playwright finalizer records at most twenty
+sanitized failed control results, and external acceptance retains those facts
+only after the staged attempt passes its existing identity/schema checks.
+Malformed, absent, or non-RTC failed-producer output still fails closed on the
+process exit. Three retry-free default matrices passed in one reused local
+server session, followed by one retry-free 24-case all-scenarios matrix. Keep
+the remaining review, validation, and correction work in this one PR; do not
+split another hypothesis or test-only branch from it.
 
 ### Current execution horizon
 
-| Order | Slice                                                                | Completion evidence                                                                                                                                                                                                                                                                                                                                                  |
-| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Archive run 34361576057                                               | PR #553 merges the verified failed ZIP/index row unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 2     | Complete and merge correction/proof PR #554                           | Keep bounded NACK diagnostics, the evidenced RTC recovery corrections, lifecycle-owned room refresh, durable admission-fact observation, all local stress repetitions, branch review, and final CI in this one PR. The exact candidate passes focused tests, type/build/style/structure checks, the retry-free RTC ALM conformance lane, five retry-free delivery-only runs, three retry-free complete RTC smoke runs, and one final Branch Release Gate. Do not split further hypothesis or test-only PRs from this slice. |
+| Order | Slice                                                    | Completion evidence                                                                                                                                                                                                                                                                |
+| ----- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Archive run 34430533353                                  | PR #556 merges the verified failed ZIP/index row unchanged; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                |
+| 2     | Complete and merge the active-layout correction/proof PR | Keep the explicit active-formation barrier, bounded failed-control-result evidence, deterministic regressions, repeated default/all-scenarios local proof, touched-file closure, branch review, and final CI in one PR. No lock, retry, timeout increase, library, or legacy path. |
+
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
 moving `main`. The workflow must archive one verified primary with
@@ -4038,8 +4059,8 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains nine failed B06 primaries archived on `main`, one
-verified failed primary pending in PR #553, and no accepted metrics.
+Current evidence contains ten failed B06 primaries archived on `main`, one
+verified failed primary pending in PR #556, and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
@@ -4194,10 +4215,17 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Dispatch run 34361576057 from moving `main`; verify its failed primary,
       preserve it unchanged in observation PR #553, and do not accept metrics
       or run a repeat.
-- [ ] Merge PR #554's bounded, payload-free NACK failure diagnostics,
+- [x] Merge PR #554's bounded, payload-free NACK failure diagnostics,
       lifecycle-owned RTC authority recovery, and durable admission-fact
       observation after focused tests, exact default E3,
       type/build/style/structure, and branch review gates pass.
+- [x] Dispatch run 34430533353 from the then-current moving `main`; verify its
+      failed primary, preserve it unchanged in observation PR #556, and do not
+      accept metrics or run a repeat.
+- [ ] Merge PR #556's verified failed ZIP/index row unchanged.
+- [ ] Merge the single active-layout correction/proof PR after its deterministic
+      regressions, repeated default/all-scenarios E3 proof, touched-file closure,
+      branch review, and final gates pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.

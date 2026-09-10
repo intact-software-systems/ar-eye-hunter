@@ -45,6 +45,8 @@ function readResultValue(
 describe('group formation lifecycle driver', () => {
     it('waits for exact current membership and accepts a newer active publication', async () => {
         const commands: LiveRtcControlClient.ExecuteInput[] = [];
+        const peerReadinessAgents: string[] = [];
+        const activeFormationReadinessAgents: string[] = [];
         const topologyStates: Array<'removed' | 'active'> = ['removed', 'active'];
         const activeSessionIds = [
             ['stale-session', 'session-a'],
@@ -106,7 +108,14 @@ describe('group formation lifecycle driver', () => {
             readyPeerIds: () => [],
             waitForMessage: async () => 1,
             waitForPeerAbsence: async () => undefined,
-            waitForPeerReadiness: async () => 1
+            waitForPeerReadiness: async (input) => {
+                peerReadinessAgents.push(input.agent.agentId);
+                return 1;
+            },
+            waitForActiveFormationReadiness: async (input) => {
+                activeFormationReadinessAgents.push(input.agent.agentId);
+                return 1;
+            }
         };
         const agents = [createAgent('A'), createAgent('B'), createAgent('C')] as const;
         const driver = createGroupFormationLifecycleDriver({
@@ -146,5 +155,13 @@ describe('group formation lifecycle driver', () => {
                 }
             }
         });
+        expect(peerReadinessAgents).toEqual(['agent-a', 'agent-b']);
+        expect(activeFormationReadinessAgents).toEqual([
+            'agent-a',
+            'agent-b',
+            'agent-a',
+            'agent-b',
+            'agent-c'
+        ]);
     });
 });

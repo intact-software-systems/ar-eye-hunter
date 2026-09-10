@@ -68,6 +68,7 @@ export interface LiveRtcControlPort extends
         | 'executeResult'
         | 'resultValue'
         | 'requireSessionId'
+        | 'waitForActiveFormationReadiness'
         | 'waitForPeerReadiness'
         | 'waitForPeerAbsence'
         | 'waitForMessage'
@@ -213,21 +214,21 @@ async function reconnectFormationAgent(
         suffix: input.suffix
     });
     const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all([
-        input.control.waitForPeerReadiness({
+        input.control.waitForActiveFormationReadiness({
             runId: input.runId,
             agent: input.survivingAgents[0],
             expectedPeerIds: [connection.sessionId],
             suffix: input.suffix,
             startedAtMs
         }),
-        input.control.waitForPeerReadiness({
+        input.control.waitForActiveFormationReadiness({
             runId: input.runId,
             agent: input.survivingAgents[1],
             expectedPeerIds: [connection.sessionId],
             suffix: input.suffix,
             startedAtMs
         }),
-        input.control.waitForPeerReadiness({
+        input.control.waitForActiveFormationReadiness({
             runId: input.runId,
             agent: input.reconnectingAgent,
             expectedPeerIds: input.survivingSessionIds,
@@ -407,7 +408,7 @@ async function connectInitialPair(
         transport: input.transport
     });
     await Promise.all(agents.map(async (agent, index) =>
-        await input.control.waitForPeerReadiness({
+        await input.control.waitForActiveFormationReadiness({
             runId: input.runId,
             agent,
             expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
@@ -691,7 +692,7 @@ async function waitForFormationReadiness(
 ): Promise<Readonly<Partial<Record<AgentPrefix, number>>>> {
     const durations = await Promise.all(input.run.agents.map(async (agent) => ({
         prefix: agent.prefix,
-        durationMs: await input.run.control.waitForPeerReadiness({
+        durationMs: await input.run.control.waitForActiveFormationReadiness({
             runId: input.run.runId,
             agent,
             expectedPeerIds: input.run.agents

@@ -21,6 +21,8 @@ describe('live RTC control client', () => {
     let control: LiveRtcControlClient;
     let nowMs: number;
     let readyPeerIds: string[];
+    let activeFormationReady: boolean;
+    let formationPeerIds: string[];
     let diagnosticsRoot: string;
     let results: LiveRtcControlClient.Result[];
     let events: LiveRtcControlClient.Event[];
@@ -30,6 +32,8 @@ describe('live RTC control client', () => {
     beforeEach(async () => {
         nowMs = 100;
         readyPeerIds = ['session-b', 'session-c'];
+        activeFormationReady = true;
+        formationPeerIds = [...readyPeerIds];
         diagnosticsRoot = mkdtempSync(path.join(tmpdir(), 'live-rtc-control-client-'));
         results = [];
         events = [];
@@ -53,6 +57,23 @@ describe('live RTC control client', () => {
                                 rtcStatus: {
                                     activePeerIds: readyPeerIds,
                                     readyPeerIds
+                                },
+                                formation: {
+                                    room: {
+                                        state: activeFormationReady ? 'open' : 'connecting',
+                                        desiredPeerIds: formationPeerIds,
+                                        readyPeerIds: formationPeerIds,
+                                        ...(activeFormationReady
+                                            ? {
+                                                acceptedLayoutIdentity: {
+                                                    groupRevision: 1,
+                                                    presenceRevision: 1,
+                                                    version: 1,
+                                                    state: 'active'
+                                                }
+                                            }
+                                            : {})
+                                    }
                                 },
                                 rtcDiagnostics: {
                                     sessionId: 'health-session',
@@ -147,6 +168,83 @@ describe('live RTC control client', () => {
             suffix: 'delayed-topology',
             startedAtMs: 100
         })).resolves.toBe(200);
+    });
+
+    it('does not report active formation readiness before the accepted layout arrives', async () => {
+        activeFormationReady = false;
+        let refreshCount = 0;
+        refreshRoom.mockImplementation(async () => {
+            refreshCount += 1;
+            nowMs += 100;
+            activeFormationReady = refreshCount >= 2;
+        });
+
+        await expect(control.waitForActiveFormationReadiness({
+            runId: 'run-formation-readiness',
+            agent,
+            expectedPeerIds: ['session-b', 'session-c'],
+            suffix: 'activated',
+            startedAtMs: 100
+        })).resolves.toBe(200);
+        expect(refreshCount).toBe(2);
+    });
+
+    it('does not accept a layout that omits an expected peer', async () => {
+        formationPeerIds = ['session-b'];
+        let refreshCount = 0;
+        refreshRoom.mockImplementation(async () => {
+            refreshCount += 1;
+            nowMs += 100;
+            if (refreshCount >= 2) {
+                formationPeerIds = ['session-b', 'session-c'];
+            }
+        });
+
+        await expect(control.waitForActiveFormationReadiness({
+            runId: 'run-current-formation-readiness',
+            agent,
+            expectedPeerIds: ['session-b', 'session-c'],
+            suffix: 'activated',
+            startedAtMs: 100
+        })).resolves.toBe(200);
+        expect(refreshCount).toBe(2);
+    });
+
+    it('captures bounded failed command facts without retaining payloads or credentials', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast',
+            ok: false,
+            result: {
+                value: {
+                    credential: 'must-not-be-retained',
+                    status: 'sent',
+                    message: {
+                        status: 'no-route',
+                        reason: 'Skipping RTC outbound message without overlay context',
+                        message: { payload: { resource: 'must-not-be-retained' } },
+                        entries: []
+                    }
+                }
+            }
+        });
+
+        expect(await control.captureAttemptFailure({ runId: 'run-failed-send' })).toEqual({
+            kind: 'control-result-failures',
+            runCaptureSucceeded: true,
+            failedResults: [
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-broadcast',
+                    ok: false,
+                    runtimeStatus: 'sent',
+                    admissionStatus: 'no-route',
+                    reason: 'Skipping RTC outbound message without overlay context',
+                    entryCount: 0,
+                    entryStatuses: []
+                }
+            ]
+        });
     });
 
     it('rejects readiness when authoritative room refresh fails', async () => {

@@ -1,7 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
-import type { RtcBaselineSampleIdentityDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
+import type { RtcBaselineAcceptedArtifact } from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import type {
+    RtcBaselineCaptureManifestDto,
+    RtcBaselineExternalAttemptDto,
+    RtcBaselineExternalCohortDto,
+    RtcBaselineJson,
+    RtcBaselineOuterAttemptDto,
+    RtcBaselineRecordAttemptInputDto,
+    RtcBaselineSampleIdentityDto
+} from '../../../baseline/contracts/rtc-baseline-contracts.ts';
+import { normalizeRtcBaselineJson } from '../../../baseline/contracts/rtc-baseline-decoding.ts';
+
+type RtcBaselineEvidenceAcceptanceDependencies = Parameters<typeof createRtcBaselineEvidenceAcceptance>[0];
 
 const firstIdentity = {
     sampleId: 'rtc-b01-case-input-retained-001-001',
@@ -55,7 +67,7 @@ const secondAttempt = {
     outerOrdinal: 2,
     sampleIds: ['rtc-b01-case-input-retained-002-001']
 };
-const manifest = {
+const manifest: RtcBaselineCaptureManifestDto = {
     schema: 'rallar.rtc-baseline.manifest.v1' as const,
     request: {
         schema: 'rallar.rtc-baseline.capture-request.v1' as const,
@@ -73,7 +85,7 @@ const manifest = {
     repeatLink: null
 };
 
-function dependencies(overrides: Record<string, unknown> = {}) {
+function dependencies(overrides: Partial<RtcBaselineEvidenceAcceptanceDependencies> = {}) {
     return {
         initializeStore: async () => ({ ok: true as const, value: undefined }),
         readManifest: async () => ({ ok: true as const, value: manifest }),
@@ -95,8 +107,8 @@ const syntheticOwnership = 'Synthetic workloads must enter through capture.';
 const browserOwnership = 'Native-browser workloads must enter through record-browser.';
 const externalOwnership = 'Local-full-stack workloads must enter through external ingestion.';
 
-function collectWrites(writes: unknown[]) {
-    return async (_baselineId: string, artifact: unknown) => {
+function collectWrites(writes: RtcBaselineAcceptedArtifact[]) {
+    return async (_baselineId: string, artifact: RtcBaselineAcceptedArtifact) => {
         writes.push(artifact);
         return { ok: true as const, value: undefined };
     };
@@ -106,7 +118,7 @@ function rejected(path: string, code: string, message: string) {
     return { ok: false, issues: [{ path, code, message }] };
 }
 
-function manifestFor(workloadId: 'RTC-B05' | 'RTC-B06') {
+function manifestFor(workloadId: 'RTC-B05' | 'RTC-B06'): RtcBaselineCaptureManifestDto {
     const browser = workloadId === 'RTC-B05';
     const baselineId = browser
         ? '20260807-0123456789ab-e2-browser'
@@ -137,7 +149,9 @@ function manifestFor(workloadId: 'RTC-B05' | 'RTC-B06') {
     };
 }
 
-function externalInput(workloadId: 'RTC-B01' | 'RTC-B05' | 'RTC-B06') {
+function externalInput(
+    workloadId: 'RTC-B01' | 'RTC-B05' | 'RTC-B06'
+): RtcBaselineRecordAttemptInputDto {
     const browser = workloadId === 'RTC-B05';
     return {
         baselineId: browser
@@ -157,13 +171,13 @@ function externalInput(workloadId: 'RTC-B01' | 'RTC-B05' | 'RTC-B06') {
     };
 }
 
-function stagedExternalAttempt() {
+function stagedExternalAttempt(): RtcBaselineExternalAttemptDto {
     const workloadId = 'RTC-B06' as const;
     const input = externalInput(workloadId);
     const manifest = manifestFor(workloadId);
     const outer = manifest.outerAttempts[0]!;
     const identity = {
-        sampleId: outer.sampleIds[0],
+        sampleId: outer.sampleIds[0]!,
         workloadId,
         caseId: outer.caseId,
         inputKey: outer.inputKey,
@@ -202,13 +216,27 @@ function stagedExternalAttempt() {
     };
 }
 
+function normalizeStagedJson(value: object): RtcBaselineJson {
+    const normalized = normalizeRtcBaselineJson(value);
+    if (!normalized.ok) {
+        throw new Error(`Test fixture is not valid JSON: ${JSON.stringify(normalized.issues)}`);
+    }
+    return normalized.value;
+}
+
 describe('RTC baseline evidence acceptance', () => {
     it('starts one fresh child per outer attempt and persists every exact inner outcome', async () => {
-        const writes: unknown[] = [];
-        const runFreshWorker = vi
-            .fn()
-            .mockResolvedValueOnce({ outcomes: [passedFirst, passedSecond] })
-            .mockResolvedValueOnce({ outcomes: [passedThird] });
+        const writes: RtcBaselineAcceptedArtifact[] = [];
+        const workerInputs: Array<{ baselineId: string; outerAttempt: RtcBaselineOuterAttemptDto; }> = [];
+        const runFreshWorker = async (input: {
+            baselineId: string;
+            outerAttempt: RtcBaselineOuterAttemptDto;
+        }) => {
+            workerInputs.push(input);
+            return input.outerAttempt.outerOrdinal === 1
+                ? { outcomes: [passedFirst, passedSecond] }
+                : { outcomes: [passedThird] };
+        };
         const acceptance = createRtcBaselineEvidenceAcceptance(
             dependencies({
                 runFreshWorker,
@@ -223,22 +251,21 @@ describe('RTC baseline evidence acceptance', () => {
             ok: true,
             value: { acceptedSampleCount: 3 }
         });
-        expect(runFreshWorker).toHaveBeenCalledTimes(2);
-        expect(runFreshWorker).toHaveBeenNthCalledWith(1, {
-            baselineId: manifest.request.baselineId,
-            outerAttempt: attempt
-        });
-        expect(runFreshWorker).toHaveBeenNthCalledWith(2, {
-            baselineId: manifest.request.baselineId,
-            outerAttempt: secondAttempt
-        });
+        expect(workerInputs).toEqual([
+            { baselineId: manifest.request.baselineId, outerAttempt: attempt },
+            { baselineId: manifest.request.baselineId, outerAttempt: secondAttempt }
+        ]);
         expect(writes).toEqual([passedFirst, passedSecond, passedThird]);
     });
 
     it('gives producer status precedence over valid-looking staged browser evidence', async () => {
-        const writes: unknown[] = [];
-        const readStagedJson = vi.fn(async () => ({ ok: true as const, value: {} }));
-        const browserManifest = {
+        const writes: RtcBaselineAcceptedArtifact[] = [];
+        let stagedReadCount = 0;
+        const readStagedJson = async () => {
+            stagedReadCount += 1;
+            return { ok: true as const, value: {} };
+        };
+        const browserManifest: RtcBaselineCaptureManifestDto = {
             ...manifestFor('RTC-B05'),
             outerAttempts: [
                 {
@@ -267,7 +294,7 @@ describe('RTC baseline evidence acceptance', () => {
             rawResultRelativePath: 'artifacts/staging/rtc-b05-browser-data-channel-lifecycle-iterations-25-retained-001.json'
         });
         expect(result).toEqual({ ok: false, issues: [producerIssue] });
-        expect(readStagedJson).not.toHaveBeenCalled();
+        expect(stagedReadCount).toBe(0);
         expect(writes).toHaveLength(1);
     });
 
@@ -295,12 +322,12 @@ describe('RTC baseline evidence acceptance', () => {
     });
 
     it('accepts a valid external sample and writes every normalized field', async () => {
-        const writes: unknown[] = [];
+        const writes: RtcBaselineAcceptedArtifact[] = [];
         const externalAttempt = stagedExternalAttempt();
         const external = createRtcBaselineEvidenceAcceptance(
             dependencies({
                 readManifest: async () => ({ ok: true, value: manifestFor('RTC-B06') }),
-                readStagedJson: async () => ({ ok: true, value: externalAttempt }),
+                readStagedJson: async () => ({ ok: true, value: normalizeStagedJson(externalAttempt) }),
                 writeAcceptedArtifact: collectWrites(writes)
             })
         );
@@ -318,12 +345,61 @@ describe('RTC baseline evidence acceptance', () => {
             ok: false,
             issues: [producerIssue]
         });
-        expect(Reflect.get(writes.at(-1)!, 'artifactKind')).toBe('failure');
+        expect(writes.at(-1)).toMatchObject({ artifactKind: 'failure' });
+    });
+
+    it('retains valid staged RTC-B06 failure facts when its producer exits nonzero', async () => {
+        const writes: RtcBaselineAcceptedArtifact[] = [];
+        const externalAttempt = stagedExternalAttempt();
+        const rawEvidence = {
+            attemptFailure: {
+                kind: 'control-result-failures',
+                failedResults: [{ commandId: 'send-broadcast', admissionStatus: 'no-route' }]
+            }
+        };
+        externalAttempt.producerExitStatus = 9;
+        Object.assign(externalAttempt.samples[0]!, {
+            outcome: 'failed',
+            metrics: [],
+            rawEvidence,
+            issues: [producerIssue]
+        });
+        Object.assign(externalAttempt.sampleOutcomes[0]!, {
+            outcome: 'failed',
+            issues: [producerIssue]
+        });
+        let stagedReadCount = 0;
+        const readStagedJson = async () => {
+            stagedReadCount += 1;
+            return {
+                ok: true as const,
+                value: normalizeStagedJson(externalAttempt)
+            };
+        };
+        const external = createRtcBaselineEvidenceAcceptance(
+            dependencies({
+                readManifest: async () => ({ ok: true, value: manifestFor('RTC-B06') }),
+                readStagedJson,
+                writeAcceptedArtifact: collectWrites(writes)
+            })
+        );
+
+        expect(
+            await external.recordExternalAttempt({
+                ...externalInput('RTC-B06'),
+                producerExitStatus: 9
+            })
+        ).toEqual({ ok: false, issues: [producerIssue] });
+        expect(stagedReadCount).toBe(1);
+        expect(writes.at(-1)).toMatchObject({
+            artifactKind: 'failure',
+            rawEvidence
+        });
     });
 
     it('binds an external cohort to its exact locator, members, raw path, and producer facts', async () => {
-        const writes: unknown[] = [];
-        const b06Manifest = {
+        const writes: RtcBaselineAcceptedArtifact[] = [];
+        const b06Manifest: RtcBaselineCaptureManifestDto = {
             ...manifestFor('RTC-B06'),
             expectedCohorts: [
                 {
@@ -333,7 +409,7 @@ describe('RTC baseline evidence acceptance', () => {
                 }
             ]
         };
-        const stagedCohort = {
+        const stagedCohort: RtcBaselineExternalCohortDto = {
             schema: 'rallar.rtc-baseline.external-cohort.v1',
             identity: {
                 cohortId: 'rtc-b06-e3-memory-retention',
@@ -357,7 +433,7 @@ describe('RTC baseline evidence acceptance', () => {
         const acceptance = createRtcBaselineEvidenceAcceptance(
             dependencies({
                 readManifest: async () => ({ ok: true, value: b06Manifest }),
-                readStagedJson: async () => ({ ok: true, value: stagedCohort }),
+                readStagedJson: async () => ({ ok: true, value: normalizeStagedJson(stagedCohort) }),
                 writeAcceptedArtifact: collectWrites(writes)
             })
         );
@@ -378,6 +454,6 @@ describe('RTC baseline evidence acceptance', () => {
             ok: false,
             issues: [producerIssue]
         });
-        expect(Reflect.get(writes.at(-1)!, 'artifactKind')).toBe('failure');
+        expect(writes.at(-1)).toMatchObject({ artifactKind: 'failure' });
     });
 });

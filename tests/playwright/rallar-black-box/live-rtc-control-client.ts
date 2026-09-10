@@ -31,7 +31,9 @@ import {
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
 import type {
+    LiveRtcAttemptFailureDiagnostic,
     LiveRtcDiagnosticsCheckpoint,
+    LiveRtcFailedControlResult,
     LiveRtcNackAgentHealth,
     LiveRtcNackEventClassification,
     LiveRtcNackFailureDiagnostic,
@@ -153,12 +155,16 @@ export namespace LiveRtcControlClient {
         timeoutMs?: number;
     }
 
-    export interface WaitForPeerReadinessInput {
+    export interface WaitForRtcReadinessInput {
         runId: string;
         agent: Pick<FormationAgent, 'agentId' | 'prefix' | 'refreshRoom'>;
         expectedPeerIds: readonly string[];
         suffix: string;
         startedAtMs: number;
+    }
+
+    export interface CaptureAttemptFailureInput {
+        readonly runId: string;
     }
 
     export interface WaitForPeerAbsenceInput {
@@ -388,8 +394,17 @@ export class LiveRtcControlClient {
         );
     }
 
-    async waitForPeerReadiness(
-        input: LiveRtcControlClient.WaitForPeerReadinessInput
+    waitForPeerReadiness(input: LiveRtcControlClient.WaitForRtcReadinessInput): Promise<number> {
+        return this.#waitForRtcReadiness(input, 'peers');
+    }
+
+    waitForActiveFormationReadiness(input: LiveRtcControlClient.WaitForRtcReadinessInput): Promise<number> {
+        return this.#waitForRtcReadiness(input, 'active-formation');
+    }
+
+    async #waitForRtcReadiness(
+        input: LiveRtcControlClient.WaitForRtcReadinessInput,
+        requirement: 'peers' | 'active-formation'
     ): Promise<number> {
         const deadlineMs = this.#monotonicNow() + 60_000;
         let attempt = 0;
@@ -412,19 +427,37 @@ export class LiveRtcControlClient {
                     timeoutMs: healthTimeoutMs
                 }).catch(() => undefined);
                 if (!result?.ok) {
-                    return [];
+                    return false;
                 }
-                return stringArrayValue(
-                    jsonRecord(
-                        jsonRecord(this.resultValue(result).rallar)?.rtcStatus
-                    )?.readyPeerIds
+                const rallar = jsonRecord(this.resultValue(result).rallar);
+                const readyPeerIds = stringArrayValue(
+                    jsonRecord(rallar?.rtcStatus)?.readyPeerIds
                 );
+                const expectedPeersReady = input.expectedPeerIds.every((peerId) => readyPeerIds.includes(peerId));
+                if (!expectedPeersReady) {
+                    return false;
+                }
+                if (requirement === 'peers') {
+                    return true;
+                }
+                const room = jsonRecord(jsonRecord(rallar?.formation)?.room);
+                const desiredPeerIds = stringArrayValue(room?.desiredPeerIds);
+                const roomReadyPeerIds = stringArrayValue(room?.readyPeerIds);
+                return room?.state === 'open' &&
+                    jsonRecord(room.acceptedLayoutIdentity) !== undefined &&
+                    input.expectedPeerIds.every((peerId) =>
+                        desiredPeerIds.includes(peerId) && roomReadyPeerIds.includes(peerId)
+                    );
             }, {
-                message: `Expected ${input.agent.agentId} to see ready peers ${
-                    input.expectedPeerIds.join(', ')
-                } for ${input.suffix}`,
+                message: requirement === 'peers'
+                    ? `Expected ${input.agent.agentId} to see ready peers ${
+                        input.expectedPeerIds.join(', ')
+                    } for ${input.suffix}`
+                    : `Expected ${input.agent.agentId} to hold an active accepted layout with ready peers ${
+                        input.expectedPeerIds.join(', ')
+                    } for ${input.suffix}`,
                 timeout: 60_000
-            }).toEqual(expect.arrayContaining([...input.expectedPeerIds]));
+            }).toBe(true);
         }
         catch (cause) {
             try {
@@ -443,7 +476,7 @@ export class LiveRtcControlClient {
     }
 
     async #recordReadinessFailure(
-        input: LiveRtcControlClient.WaitForPeerReadinessInput,
+        input: LiveRtcControlClient.WaitForRtcReadinessInput,
         attempt: number,
         failure: Error
     ): Promise<void> {
@@ -472,6 +505,29 @@ export class LiveRtcControlClient {
                 2
             )
         );
+    }
+
+    async captureAttemptFailure(
+        input: LiveRtcControlClient.CaptureAttemptFailureInput
+    ): Promise<LiveRtcAttemptFailureDiagnostic> {
+        try {
+            const run = await this.fetchRun(input.runId);
+            return {
+                kind: 'control-result-failures',
+                runCaptureSucceeded: true,
+                failedResults: run.results
+                    .filter((result): result is LiveRtcControlClient.Result & { ok: false; } => result.ok === false)
+                    .slice(-20)
+                    .map(toFailedControlResult)
+            };
+        }
+        catch {
+            return {
+                kind: 'control-result-failures',
+                runCaptureSucceeded: false,
+                failedResults: []
+            };
+        }
     }
 
     async waitForPeerAbsence(
@@ -649,12 +705,8 @@ export class LiveRtcControlClient {
                 senderSessionId: input.senderSessionId,
                 targetSessionId: input.targetSessionId
             }),
-            recentResults: (run?.results ?? []).slice(-100).map((result) =>
-                classifyNackResult(result, input)
-            ),
-            recentEvents: (run?.events ?? []).slice(-100).map((event) =>
-                classifyNackEvent(event, input)
-            )
+            recentResults: (run?.results ?? []).slice(-100).map((result) => classifyNackResult(result, input)),
+            recentEvents: (run?.events ?? []).slice(-100).map((event) => classifyNackEvent(event, input))
         };
     }
 
@@ -851,7 +903,9 @@ function classifyNackResult(
         agentRole: classifyNackAgentRole(result.agentId, input),
         commandRole: result.commandId === input.commandId
             ? 'probe'
-            : result.commandId.startsWith('health-nack-failure-') ? 'health' : 'other',
+            : result.commandId.startsWith('health-nack-failure-')
+            ? 'health'
+            : 'other',
         ok: result.ok
     };
 }
@@ -1004,6 +1058,27 @@ function summarizeSendResult(
         ...(messageId ? { messageId } : {}),
         entryCount: entries.length,
         entryStatuses
+    };
+}
+
+function toFailedControlResult(
+    result: LiveRtcControlClient.Result & { ok: false; }
+): LiveRtcFailedControlResult {
+    const diagnostics = jsonRecord(result.result?.value) ?? {};
+    const admission = jsonRecord(diagnostics.message) ?? {};
+    const entries = Array.isArray(admission.entries) ? admission.entries : [];
+    return {
+        agentId: result.agentId ?? null,
+        commandId: result.commandId,
+        ok: false,
+        runtimeStatus: stringValue(diagnostics.status) ?? null,
+        admissionStatus: stringValue(admission.status) ?? null,
+        reason: stringValue(admission.reason) ?? null,
+        entryCount: entries.length,
+        entryStatuses: entries
+            .map((entry) => stringValue(jsonRecord(entry)?.status))
+            .filter((status): status is string => Boolean(status))
+            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
     };
 }
 

@@ -333,17 +333,24 @@ async function finalizeLiveRtcAttempt(input: FinalizeLiveRtcAttemptInput): Promi
             console.error('Failed to attach live RTC cleanup diagnostics', toError(cause));
         }
     }
-    await writeAttemptEvidence({ ...input, producerExitStatus: errors.length > 0 ? 1 : input.producerExitStatus });
+    const producerExitStatus = errors.length > 0 ? 1 : input.producerExitStatus;
+    const attemptFailure = producerExitStatus === 0
+        ? null
+        : await input.control.captureAttemptFailure({ runId: input.runId });
+    await writeAttemptEvidence({ ...input, producerExitStatus }, attemptFailure);
     if (errors.length > 0 && input.producerExitStatus === 0) {
         throw new AggregateError(errors, 'Live RTC attempt cleanup failed.');
     }
 }
 
-async function writeAttemptEvidence(input: WriteAttemptEvidenceInput): Promise<void> {
+async function writeAttemptEvidence(
+    input: WriteAttemptEvidenceInput,
+    attemptFailure: LiveRtcPerformanceRawEvidence['attemptFailure']
+): Promise<void> {
     if (!input.context) {
         return;
     }
-    const rawEvidence = toLiveRtcRawEvidence({ ...input, context: input.context });
+    const rawEvidence = toLiveRtcRawEvidence({ ...input, context: input.context, attemptFailure });
     const attempt = buildLiveRtcExternalAttempt({
         locator: input.context.locator,
         sampleIdentity: input.context.sampleIdentity,
@@ -1141,6 +1148,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
 
 interface LiveRtcEvidenceInput extends WriteAttemptEvidenceInput {
     readonly context: LiveRtcPerformanceAttemptContext;
+    readonly attemptFailure: LiveRtcPerformanceRawEvidence['attemptFailure'];
 }
 
 function toLiveRtcRawEvidence(
@@ -1182,6 +1190,7 @@ function toLiveRtcRawEvidence(
         timings: input.timings,
         diagnostics: input.diagnostics,
         failureDiagnostics: input.failureDiagnostics,
+        attemptFailure: input.attemptFailure,
         retention: input.retention,
         assertions: input.assertions
     };

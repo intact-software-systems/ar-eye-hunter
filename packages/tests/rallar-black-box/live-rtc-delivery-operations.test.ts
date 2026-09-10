@@ -688,7 +688,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         }
         throw new Error('Recorded connect result must contain a session ID');
     }
-    waitForPeerReadiness = async (input: LiveRtcControlClient.WaitForPeerReadinessInput): Promise<number> => {
+    waitForPeerReadiness = async (input: LiveRtcControlClient.WaitForRtcReadinessInput): Promise<number> => {
         await input.agent.refreshRoom({ timeoutMs: 60_000 });
         const dialableSessions = this.acceptedSessions.length > 0
             ? this.acceptedSessions
@@ -715,6 +715,9 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             this.pendingReadiness.set(input.agent.prefix, pending);
         });
     };
+    waitForActiveFormationReadiness = async (
+        input: LiveRtcControlClient.WaitForRtcReadinessInput
+    ): Promise<number> => await this.waitForPeerReadiness(input);
     waitForPeerAbsence = async (input: LiveRtcControlClient.WaitForPeerAbsenceInput): Promise<void> => {
         this.milestones.push(`absent:${input.agent.prefix}:${input.departedPeerIds.join(',')}`);
     };
