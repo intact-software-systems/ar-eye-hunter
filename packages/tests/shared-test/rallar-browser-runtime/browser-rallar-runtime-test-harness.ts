@@ -48,7 +48,17 @@ const defaultRtcDiagnostics = {
             makingOffer: false,
             ignoreOffer: false,
             iceCandidateQueueSize: 0,
-            remoteStreamIds: []
+            remoteStreamIds: [],
+            signaling: {
+                outboundOfferCount: 1,
+                outboundAnswerCount: 0,
+                outboundIceCandidateCount: 0,
+                inboundOfferCount: 0,
+                inboundAnswerCount: 1,
+                inboundIceCandidateCount: 0,
+                outboundSignalingErrorCount: 0,
+                inboundSignalingErrorCount: 0
+            }
         },
         connectionDiagnostics: {
             connectCallCount: 1,
