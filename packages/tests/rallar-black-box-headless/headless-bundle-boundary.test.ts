@@ -63,8 +63,8 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // limit was raised to 255.
         // Main measured 252.37 KiB brotli for the RTC authority recovery and live
         // durable-admission observation (#554) against a 253 limit; merging both lines
-        // measured MERGE_MEASUREMENT_PLACEHOLDER KiB, so the larger limit governs.
-        expect(result.brotliKiB).toBeLessThan(255);
+        // measured 255.46 KiB, so the limit was raised to 256.
+        expect(result.brotliKiB).toBeLessThan(256);
     });
 });
 

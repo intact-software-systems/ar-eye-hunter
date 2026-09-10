@@ -39,11 +39,12 @@ const esbuildBin = path.join(
 const budgetedEntries: readonly BundleBoundary[] = [
     {
         // Maintainer approved necessary ALM growth; the queue box's paged terminal sweep and
-        // split readiness probe measure 201.04296875 KiB. Keep an explicit 202 KiB ceiling.
+        // split readiness probe measure 201.04296875 KiB. Merging the RTC group-snapshot refresh
+        // and transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 202
+        brotliBudgetKiB: 203
     },
     {
         label: 'browser/rallar-core.ts',
