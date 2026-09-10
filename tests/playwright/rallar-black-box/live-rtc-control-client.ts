@@ -485,46 +485,29 @@ export class LiveRtcControlClient {
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> {
         const deadlineMs = this.#monotonicNow() + 60_000;
+        const readyAtMs = await this.#observeRtcReadiness(input, deadlineMs);
+        if (readyAtMs >= deadlineMs) {
+            throw new Error(
+                `RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`
+            );
+        }
+        return readyAtMs - input.startedAtMs;
+    }
+
+    async #observeRtcReadiness(
+        input: LiveRtcControlClient.WaitForRtcReadinessInput,
+        deadlineMs: number
+    ): Promise<number> {
         let attempt = 0;
         try {
             await expect
                 .poll(
-                    async () => {
-                        const refreshTimeoutMs = deadlineMs - this.#monotonicNow();
-                        if (refreshTimeoutMs <= 0) {
-                            throw new Error(
-                                `RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`
-                            );
-                        }
-                        await input.agent.refreshRoom({ timeoutMs: refreshTimeoutMs });
-                        const healthTimeoutMs = Math.min(
-                            15_000,
-                            deadlineMs - this.#monotonicNow()
-                        );
-                        if (healthTimeoutMs <= 0) {
-                            throw new Error(
-                                `RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`
-                            );
-                        }
-                        const result = await this.executeResult({
-                            runId: input.runId,
-                            agentId: input.agent.agentId,
-                            commandId: `health-ready-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
-                            command: { kind: 'health' },
-                            timeoutMs: healthTimeoutMs
-                        }).catch(() => undefined);
-                        if (!result?.ok) {
-                            return false;
-                        }
-                        const rallar = jsonRecord(this.resultValue(result).rallar);
-                        const readyPeerIds = stringArrayValue(
-                            jsonRecord(rallar?.rtcStatus)?.readyPeerIds
-                        );
-                        const expectedPeersReady = input.expectedPeerIds.every((peerId) =>
-                            readyPeerIds.includes(peerId)
-                        );
-                        return expectedPeersReady;
-                    },
+                    async () =>
+                        await this.#readRtcReadiness(
+                            input,
+                            deadlineMs,
+                            attempt++
+                        ),
                     {
                         message: `Expected ${input.agent.agentId} to see ready peers ${
                             input.expectedPeerIds.join(
@@ -548,13 +531,45 @@ export class LiveRtcControlClient {
             }
             throw cause;
         }
-        const readyAtMs = this.#monotonicNow();
-        if (readyAtMs >= deadlineMs) {
+        return this.#monotonicNow();
+    }
+
+    async #readRtcReadiness(
+        input: LiveRtcControlClient.WaitForRtcReadinessInput,
+        deadlineMs: number,
+        attempt: number
+    ): Promise<boolean> {
+        const refreshTimeoutMs = deadlineMs - this.#monotonicNow();
+        if (refreshTimeoutMs <= 0) {
             throw new Error(
                 `RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`
             );
         }
-        return readyAtMs - input.startedAtMs;
+        await input.agent.refreshRoom({ timeoutMs: refreshTimeoutMs });
+        const healthTimeoutMs = Math.min(
+            15_000,
+            deadlineMs - this.#monotonicNow()
+        );
+        if (healthTimeoutMs <= 0) {
+            throw new Error(
+                `RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`
+            );
+        }
+        const result = await this.executeResult({
+            runId: input.runId,
+            agentId: input.agent.agentId,
+            commandId: `health-ready-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt}`,
+            command: { kind: 'health' },
+            timeoutMs: healthTimeoutMs
+        }).catch(() => undefined);
+        if (!result?.ok) {
+            return false;
+        }
+        const rallar = jsonRecord(this.resultValue(result).rallar);
+        const readyPeerIds = stringArrayValue(
+            jsonRecord(rallar?.rtcStatus)?.readyPeerIds
+        );
+        return input.expectedPeerIds.every((peerId) => readyPeerIds.includes(peerId));
     }
 
     async #recordReadinessFailure(

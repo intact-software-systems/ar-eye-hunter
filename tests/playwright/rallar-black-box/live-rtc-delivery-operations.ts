@@ -75,6 +75,12 @@ interface RunDeliveryMatrixResult {
     readonly timings: readonly LiveRtcPerformanceTiming[];
 }
 
+interface CompleteDeliveryCasesInput {
+    readonly run: RunDeliveryMatrixInput;
+    readonly sessions: Readonly<Record<AgentPrefix, string>>;
+    readonly deliveryCases: readonly DeliveryCase[];
+}
+
 interface RtcFailureProbeInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
@@ -397,66 +403,16 @@ async function runDeliveryMatrix(
         ...input,
         readinessScope: 'owner'
     });
-    const [sender, agentB, agentC] = input.agents;
-    const cases: DeliveryCase[] = [
-        {
-            sender,
-            firstHopReceivers: [agentB],
-            deliveryMode: 'direct',
-            matrixId: `direct-${input.transport}-${input.suffix}`
-        },
-        {
-            sender,
-            firstHopReceivers: [agentB, agentC],
-            deliveryMode: 'multicast',
-            matrixId: `multicast-${input.transport}-${input.suffix}`
-        },
-        {
-            sender,
-            firstHopReceivers: [agentB, agentC],
-            deliveryMode: 'broadcast',
-            matrixId: `broadcast-${input.transport}-${input.suffix}`
-        }
-    ];
-    const completed: CompletedDeliveryCase[] = [];
-    for (const deliveryCase of cases) {
-        completed.push(
-            await runDeliveryCase(runtime, {
-                run: input,
-                sessions: formation.sessions,
-                deliveryCase
-            })
-        );
-        if (deliveryCase.deliveryMode === 'direct') {
-            await observeVisibleInbox(agentB, deliveryCase.matrixId);
-        }
-        if (deliveryCase.deliveryMode === 'broadcast') {
-            await observeVisibleInbox(agentC, deliveryCase.matrixId);
-        }
-    }
-    if (input.transport === 'realtime') {
-        const health = await input.control.executeOk({
-            runId: input.runId,
-            agentId: sender.agentId,
-            commandId: `health-a-${input.suffix}`,
-            command: { kind: 'health' }
-        });
-        expect(input.control.readyPeerIds(health)).toEqual(
-            expect.arrayContaining([formation.sessions.B, formation.sessions.C])
-        );
-    }
-    return {
-        commandIds: [
-            ...formation.commandIds,
-            ...completed.map((entry) => entry.commandId)
-        ],
+    const deliveryCases = createDeliveryCases(input);
+    const completed = await completeDeliveryCases(runtime, {
+        run: input,
         sessions: formation.sessions,
-        scenarios: completed.map((entry) => entry.scenario),
-        timings: [
-            ...toReadinessTimings(input, formation, 'owner'),
-            ...completed.map((entry) => entry.timing)
-        ]
-    };
+        deliveryCases
+    });
+    if (input.transport === 'realtime') {
+        await assertRealtimeSenderReadiness(input, formation.sessions);
+    }
+    return toDeliveryMatrixResult(input, formation, completed);
 }
 
 async function runAllDeliveryPermutations(
@@ -780,6 +736,104 @@ interface CompletedDeliveryCase {
     readonly scenario: LiveRtcControlClient.DeliveryScenario;
     readonly timing: LiveRtcPerformanceTiming;
 }
+
+interface WaitForDeliveryReceiptsInput {
+    readonly run: RunAllDeliveryPermutationsInput;
+    readonly deliveryCase: DeliveryCase;
+    readonly receivers: readonly LiveRtcControlClient.FormationAgent[];
+    readonly startedAtMs: number;
+}
+
+function createDeliveryCases(
+    input: RunDeliveryMatrixInput
+): readonly DeliveryCase[] {
+    const [sender, agentB, agentC] = input.agents;
+    return [
+        {
+            sender,
+            firstHopReceivers: [agentB],
+            deliveryMode: 'direct',
+            matrixId: `direct-${input.transport}-${input.suffix}`
+        },
+        {
+            sender,
+            firstHopReceivers: [agentB, agentC],
+            deliveryMode: 'multicast',
+            matrixId: `multicast-${input.transport}-${input.suffix}`
+        },
+        {
+            sender,
+            firstHopReceivers: [agentB, agentC],
+            deliveryMode: 'broadcast',
+            matrixId: `broadcast-${input.transport}-${input.suffix}`
+        }
+    ];
+}
+
+async function completeDeliveryCases(
+    runtime: LiveRtcDeliveryRuntime,
+    input: CompleteDeliveryCasesInput
+): Promise<readonly CompletedDeliveryCase[]> {
+    const completed: CompletedDeliveryCase[] = [];
+    for (const deliveryCase of input.deliveryCases) {
+        completed.push(
+            await runDeliveryCase(runtime, {
+                run: input.run,
+                sessions: input.sessions,
+                deliveryCase
+            })
+        );
+        await observeDeliveryCaseInbox(deliveryCase, input.run.agents);
+    }
+    return completed;
+}
+
+async function observeDeliveryCaseInbox(
+    deliveryCase: DeliveryCase,
+    agents: RunDeliveryMatrixInput['agents']
+): Promise<void> {
+    if (deliveryCase.deliveryMode === 'direct') {
+        await observeVisibleInbox(agents[1], deliveryCase.matrixId);
+    }
+    if (deliveryCase.deliveryMode === 'broadcast') {
+        await observeVisibleInbox(agents[2], deliveryCase.matrixId);
+    }
+}
+
+async function assertRealtimeSenderReadiness(
+    input: RunDeliveryMatrixInput,
+    sessions: Readonly<Record<AgentPrefix, string>>
+): Promise<void> {
+    const health = await input.control.executeOk({
+        runId: input.runId,
+        agentId: input.agents[0].agentId,
+        commandId: `health-a-${input.suffix}`,
+        command: { kind: 'health' }
+    });
+    expect(input.control.readyPeerIds(health)).toEqual(
+        expect.arrayContaining([sessions.B, sessions.C])
+    );
+}
+
+function toDeliveryMatrixResult(
+    input: RunDeliveryMatrixInput,
+    formation: Awaited<ReturnType<GroupFormationLifecycleDriver['run']>>,
+    completed: readonly CompletedDeliveryCase[]
+): RunDeliveryMatrixResult {
+    return {
+        commandIds: [
+            ...formation.commandIds,
+            ...completed.map((entry) => entry.commandId)
+        ],
+        sessions: formation.sessions,
+        scenarios: completed.map((entry) => entry.scenario),
+        timings: [
+            ...toReadinessTimings(input, formation, 'owner'),
+            ...completed.map((entry) => entry.timing)
+        ]
+    };
+}
+
 async function runDeliveryCase(
     runtime: LiveRtcDeliveryRuntime,
     input: RunDeliveryCaseInput
@@ -800,56 +854,76 @@ async function runDeliveryCase(
             ? undefined
             : firstHopReceivers.map((receiver) => input.sessions[receiver.prefix])
     });
-    const deliveryResults = await Promise.allSettled(
-        receivers.map((receiver) =>
-            input.run.control.waitForMessage({
-                runId: input.run.runId,
-                senderAgentId: sender.agentId,
-                agentId: receiver.agentId,
-                transport: input.run.transport,
-                matrixId,
-                deliveryMode,
-                possibleReceiverAgentIds: receivers.map((possibleReceiver) => possibleReceiver.agentId),
-                startedAtMs
-            })
-        )
-    );
-    const failedDelivery = deliveryResults.find(
-        (result): result is PromiseRejectedResult => result.status === 'rejected'
-    );
-    if (failedDelivery) {
-        throw failedDelivery.reason;
-    }
-    const durations = deliveryResults.map((result) => {
-        if (result.status === 'rejected') {
-            throw result.reason;
-        }
-        return result.value;
+    const durations = await waitForDeliveryReceipts({
+        run: input.run,
+        deliveryCase: input.deliveryCase,
+        receivers,
+        startedAtMs
     });
     const receiverAgentIds = receivers.map((receiver) => receiver.agentId);
     return {
         commandId,
-        scenario: {
-            matrixId,
+        scenario: toDeliveryScenario(input, receiverAgentIds, roomAudience),
+        timing: toDeliveryTiming(input, receiverAgentIds, durations)
+    };
+}
+
+async function waitForDeliveryReceipts(
+    input: WaitForDeliveryReceiptsInput
+): Promise<readonly number[]> {
+    const receiverWaits = input.receivers.map((receiver) =>
+        input.run.control.waitForMessage({
+            runId: input.run.runId,
+            senderAgentId: input.deliveryCase.sender.agentId,
+            agentId: receiver.agentId,
             transport: input.run.transport,
-            deliveryMode,
-            senderAgentId: sender.agentId,
-            expectedAgentIds: receiverAgentIds,
-            allowedAgentIds: roomAudience || deliveryMode === 'broadcast'
-                ? input.run.agents.map((agent) => agent.agentId)
-                : receiverAgentIds
-        },
-        timing: {
-            kind: deliveryMode === 'direct'
-                ? 'direct-delivery'
-                : deliveryMode === 'multicast'
-                ? 'multicast-delivery'
-                : 'broadcast-delivery',
-            transport: input.run.transport,
-            senderAgentId: sender.agentId,
-            receiverAgentIds,
-            durationMs: Math.max(...durations)
-        }
+            matrixId: input.deliveryCase.matrixId,
+            deliveryMode: input.deliveryCase.deliveryMode,
+            possibleReceiverAgentIds: input.receivers.map((agent) => agent.agentId),
+            startedAtMs: input.startedAtMs
+        })
+    );
+    try {
+        return await Promise.all(receiverWaits);
+    }
+    catch (cause) {
+        await Promise.allSettled(receiverWaits);
+        throw cause;
+    }
+}
+
+function toDeliveryScenario(
+    input: RunDeliveryCaseInput,
+    receiverAgentIds: readonly string[],
+    roomAudience: boolean
+): LiveRtcControlClient.DeliveryScenario {
+    return {
+        matrixId: input.deliveryCase.matrixId,
+        transport: input.run.transport,
+        deliveryMode: input.deliveryCase.deliveryMode,
+        senderAgentId: input.deliveryCase.sender.agentId,
+        expectedAgentIds: receiverAgentIds,
+        allowedAgentIds: roomAudience || input.deliveryCase.deliveryMode === 'broadcast'
+            ? input.run.agents.map((agent) => agent.agentId)
+            : receiverAgentIds
+    };
+}
+
+function toDeliveryTiming(
+    input: RunDeliveryCaseInput,
+    receiverAgentIds: readonly string[],
+    durations: readonly number[]
+): LiveRtcPerformanceTiming {
+    return {
+        kind: input.deliveryCase.deliveryMode === 'direct'
+            ? 'direct-delivery'
+            : input.deliveryCase.deliveryMode === 'multicast'
+            ? 'multicast-delivery'
+            : 'broadcast-delivery',
+        transport: input.run.transport,
+        senderAgentId: input.deliveryCase.sender.agentId,
+        receiverAgentIds,
+        durationMs: Math.max(...durations)
     };
 }
 async function observeVisibleInbox(
