@@ -128,19 +128,24 @@ to a phase instead of a single opaque send latency.
 
 ## Storage Reset Diagnostics
 
-`rallar.browser.alm.storage_reset` carries one `ALStorageResetEvent` per
-delete-and-recreate reset of the browser ALM IndexedDB database, recorded the
-moment `openIndexedDbAdmissionDatabase` deletes and reopens a database whose
-stores or schema identity no longer match. The event's `data` is the event
-itself:
+`rallar.browser.alm.storage_reset` carries an `ALStorageResetEvent` recorded
+the moment `openIndexedDbAdmissionDatabase` deletes and reopens a database
+whose stores or schema identity no longer match. This is not one event per
+delete-and-recreate cutover: every opener racing the same mismatched database
+detects it independently and emits its own event, so a single cutover can
+leave behind N events, one per concurrent opener. The event's `data` is the
+event itself:
 
 - `dbName`: the IndexedDB database that was reset
 - `previousSchemaId`: the schema id read back before the reset, or `undefined`
-  when the store set itself did not match (so no schema id could be read)
+  either when the store set itself did not match (so no schema id could be
+  read) or when the stores matched but the database carried no schema record
+  at all (an undecodable or absent schema row is treated as a mismatch, not a
+  hard failure)
 - `schemaId`: the current `AL_ADMISSION_SCHEMA_ID` the database now carries
 - `reason`: `schema-id-mismatch` when the stores matched but the stored
-  schema id differed, or `store-schema-mismatch` when the store set, key
-  path, auto-increment, or index set did not match
+  schema id was missing, undecodable, or differed, or `store-schema-mismatch`
+  when the store set, key path, auto-increment, or index set did not match
 
 This is the evidence an incompatible browser cutover (new indexes, new key
 layouts, new stored fields) leaves behind: it confirms the old database was

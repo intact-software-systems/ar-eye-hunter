@@ -1,10 +1,7 @@
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import {
-    toRallarDiagnosticsPorts,
-    type RallarDiagnosticsPortsInput
-} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     toRallarCommandOptions,
@@ -19,7 +16,7 @@ export interface RallarSessionConnectionInput {
     readonly sessionId: string;
     readonly scope: StateScope | undefined;
     readonly operationOptions: RallarOperationOptions;
-    readonly diagnosticsPorts: RallarDiagnosticsPortsInput | undefined;
+    readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly hasAuthEndInProgress: () => boolean;
     readonly isSessionCurrent: () => boolean;
     readonly onAuthInvalid: (error: Error) => Promise<void>;
@@ -185,7 +182,7 @@ function toMiddlewareOptions(
 ): MiddlewareInitOptions {
     return {
         ...toRallarOperationOptions(input.operationOptions),
-        diagnosticsPorts: toRallarDiagnosticsPorts(input.diagnosticsPorts),
+        diagnosticsPorts: input.diagnosticsPorts,
         ...(input.scope ? { scope: input.scope } : {}),
         onAuthInvalid: async (error) => {
             const connectionError = error instanceof Error

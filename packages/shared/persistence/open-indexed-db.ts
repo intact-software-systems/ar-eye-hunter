@@ -29,12 +29,9 @@ interface IndexedDbStoreSchema<InitialRecord extends object> {
 
 /** Thrown when an existing database's store, key path, auto-increment, or index set is not the required schema. */
 export class IndexedDbSchemaMismatchError extends Error {
-    readonly reason: string;
-
     constructor(reason: string) {
         super(reason);
         this.name = 'IndexedDbSchemaMismatchError';
-        this.reason = reason;
     }
 }
 

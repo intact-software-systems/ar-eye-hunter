@@ -1,3 +1,4 @@
+import { readIndexedDbRequest } from '../persistence/indexed-db-request.ts';
 import {
     IndexedDbSchemaMismatchError,
     openIndexedDbWithStores,
@@ -193,13 +194,20 @@ function decodeIndexedDbAdmissionSchemaId(value: IDBRequest['result']): string |
     return decodeALAdmissionValue(stored.value, AL_ADMISSION_SCHEMA_KEY, decodeALAdmissionString);
 }
 
+/**
+ * A row that cannot be read or decoded is a mismatch, not a hard failure (R54): the caller treats
+ * `undefined` the same as "no schema record yet" and resets, so this never throws.
+ */
 async function readStoredSchemaId(db: IDBDatabase, storeName: string): Promise<string | undefined> {
-    const value = await new Promise<IDBRequest['result']>((resolve, reject) => {
-        const request = db.transaction(storeName, 'readonly').objectStore(storeName).get(AL_ADMISSION_SCHEMA_KEY);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB schema read failed'));
-    });
-    return decodeIndexedDbAdmissionSchemaId(value);
+    try {
+        const value = await readIndexedDbRequest(
+            db.transaction(storeName, 'readonly').objectStore(storeName).get(AL_ADMISSION_SCHEMA_KEY)
+        );
+        return decodeIndexedDbAdmissionSchemaId(value);
+    }
+    catch {
+        return undefined;
+    }
 }
 
 async function deleteIndexedDbDatabase(dbName: string): Promise<void> {
@@ -207,10 +215,14 @@ async function deleteIndexedDbDatabase(dbName: string): Promise<void> {
         const request = indexedDB.deleteDatabase(dbName);
         let blockedTimer: ReturnType<typeof setTimeout> | undefined;
         request.onblocked = () => {
-            blockedTimer = setTimeout(
-                () => reject(new ALStorageResetBlockedError(dbName)),
-                INDEXED_DB_DELETE_BLOCKED_TIMEOUT_MS
-            );
+            // IndexedDB offers no way to cancel a delete request: once armed, this timer can
+            // still reject while the delete itself later succeeds against the blocking connection.
+            if (blockedTimer === undefined) {
+                blockedTimer = setTimeout(
+                    () => reject(new ALStorageResetBlockedError(dbName)),
+                    INDEXED_DB_DELETE_BLOCKED_TIMEOUT_MS
+                );
+            }
         };
         request.onsuccess = () => {
             clearTimeout(blockedTimer);

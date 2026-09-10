@@ -63,7 +63,9 @@ describe('RTC message diagnostic receipts', () => {
             expect(await admissionStore.readSentMessage('attempted')).toEqual(sentBefore);
         }
         finally {
-            await deleteBrowserALRuntimeEntriesForSession(sessionId);
+            await deleteBrowserALRuntimeEntriesForSession(sessionId, {
+                onStorageReset: diagnosticsPorts.onStorageReset
+            });
         }
     });
 });

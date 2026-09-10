@@ -6,6 +6,10 @@ import type {
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
@@ -68,6 +72,9 @@ export namespace BrowserSessionAuthLifecycle {
 export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     private readonly authStateListeners = new Set<RallarAuthChangeListener>();
     private readonly input: BrowserSessionAuthLifecycle.Input;
+    // Resolved fresh at the top of every connect(); cleanupEndedSession() reuses this instead of
+    // re-normalizing the sparse defaults a second time. Defaults pass-through until a connect() runs.
+    private diagnosticsPorts: RallarDiagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
@@ -85,12 +92,15 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             throw new Error('Cannot init middleware: no auth session.');
         }
         this.scheduleAuthExpiry(session);
+        this.diagnosticsPorts = toRallarDiagnosticsPorts(
+            this.input.connectionRuntime.readDefaults()?.diagnosticsPorts
+        );
 
         const middleware = await this.input.connectionLifecycle.connect({
             sessionId: session.sessionId,
             scope,
             operationOptions,
-            diagnosticsPorts: this.input.connectionRuntime.readDefaults()?.diagnosticsPorts,
+            diagnosticsPorts: this.diagnosticsPorts,
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
             isSessionCurrent: () => readSession()?.sessionId === session.sessionId,
             onAuthInvalid: async (error) => await this.handleAuthInvalidError(error)
@@ -282,7 +292,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         const dataCleanupError = await captureError(() => this.input.closeDataScopes(session));
         try {
             await deleteBrowserALRuntimeEntriesForSession(session.sessionId, {
-                onStorageReset: this.input.connectionRuntime.readDefaults()?.diagnosticsPorts?.onStorageReset
+                onStorageReset: this.diagnosticsPorts.onStorageReset
             });
         }
         catch {

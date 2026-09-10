@@ -194,7 +194,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
         const unrelatedSentPrefix = toBrowserOutboundSentPrefix(unrelatedRuntimeName);
 
-        const result = await deleteExpiredBrowserALRuntimeEntries();
+        const result = await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
 
         expect(result).toMatchObject({
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
@@ -232,7 +232,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             throw new Error('Periodic expiry cleanup must not scan the complete object store');
         });
 
-        const result = await deleteExpiredBrowserALRuntimeEntries();
+        const result = await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
 
         // The AL_OUTBOUND work row's own expiry now goes through cleanupAsync, off this count.
         expect(result.deleted).toBe(2);
@@ -254,8 +254,11 @@ describe('Browser AL runtime IndexedDB stores', () => {
             ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp })
         });
 
-        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(
+            deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
+                onStorageReset: diagnosticsPorts.onStorageReset
+            })
+        ).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect(await readBrowserALRuntimeEntryKeys(key)).toEqual([key]);
     });
 
@@ -288,7 +291,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
             toBrowserWsClientALRuntimeStoreId(otherSessionId)
         );
 
-        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId);
+        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
         // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count.
         expect(result.scanned).toBe(5);
@@ -340,7 +345,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         await vi.advanceTimersByTimeAsync(15_001);
 
-        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(sessionId);
+        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
         expect(result.deleted).toBe(1);
         expect(await readBrowserALRuntimeEntryKeys(ownerPrefix)).toEqual([]);
@@ -389,7 +396,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
             toBrowserWsClientALRuntimeStoreId(otherSessionId)
         );
 
-        const result = await deleteBrowserALRuntimeEntriesForSession(targetSessionId);
+        const result = await deleteBrowserALRuntimeEntriesForSession(targetSessionId, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
         expect(result.scanned).toBe(11);
         expect(result.deleted).toBe(11);
@@ -435,8 +444,12 @@ describe('Browser AL runtime IndexedDB stores', () => {
             return originalTransaction.call(this, storeNames, mode, options);
         });
 
-        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, { nowMs: 100 }))
-            .rejects.toThrow('cleanup conflicted');
+        await expect(
+            deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
+                nowMs: 100,
+                onStorageReset: diagnosticsPorts.onStorageReset
+            })
+        ).rejects.toThrow('cleanup conflicted');
 
         expect(await readBrowserALRuntimeEntry(key)).toMatchObject({
             key,
@@ -461,18 +474,25 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await persistSentMessage(admissionStore, 'initial-expired');
         await vi.advanceTimersByTimeAsync(21);
 
-        await initBrowserALRuntimeExpiryEviction(50);
+        const stop = await initBrowserALRuntimeExpiryEviction({
+            onStorageReset: diagnosticsPorts.onStorageReset,
+            intervalMs: 50
+        });
+        try {
+            expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
 
-        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
+            await persistSentMessage(admissionStore, 'interval-expired');
+            await vi.advanceTimersByTimeAsync(21);
+            expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([
+                `${sentPrefix}:interval-expired`
+            ]);
 
-        await persistSentMessage(admissionStore, 'interval-expired');
-        await vi.advanceTimersByTimeAsync(21);
-        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([
-            `${sentPrefix}:interval-expired`
-        ]);
-
-        await vi.advanceTimersByTimeAsync(29);
-        await vi.waitFor(async () => expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]));
+            await vi.advanceTimersByTimeAsync(29);
+            await vi.waitFor(async () => expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]));
+        }
+        finally {
+            stop();
+        }
     });
 
     it('routes IndexedDB operations to the configured observer', async () => {

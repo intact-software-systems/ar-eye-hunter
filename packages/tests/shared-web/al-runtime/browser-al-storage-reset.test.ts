@@ -5,6 +5,7 @@ import {
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_SCHEMA_KEY,
     AL_ADMISSION_WORK_STORE_NAME,
+    ALStorageResetBlockedError,
     openIndexedDbAdmissionDatabase,
     type ALStorageResetEvent
 } from '@shared/alm/open-indexed-db-admission-database.ts';
@@ -75,9 +76,121 @@ describe('browser ALM storage schema identity reset', () => {
                 reason: 'store-schema-mismatch'
             }]);
             expect([...db.objectStoreNames].sort()).toEqual([AL_ADMISSION_WORK_STORE_NAME, STORE_NAME].sort());
+            expect(await getRow(db, AL_ADMISSION_SCHEMA_KEY)).toMatchObject({
+                key: AL_ADMISSION_SCHEMA_KEY,
+                value: AL_ADMISSION_SCHEMA_ID
+            });
         }
         finally {
             db.close();
+        }
+    });
+
+    it('resets the database when the stored schema row has the wrong shape', async () => {
+        const dbName = `al-storage-reset-bad-shape-${crypto.randomUUID()}`;
+        const oldDb = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: 'old',
+            onStorageReset: assertNoStorageReset
+        });
+        // A schema row whose value is not a string fails decodeALAdmissionString: R54 treats an
+        // undecodable row the same as a missing one, resetting rather than throwing.
+        await putRow(oldDb, {
+            key: AL_ADMISSION_SCHEMA_KEY,
+            value: 12345,
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER
+        });
+        oldDb.close();
+
+        const events: ALStorageResetEvent[] = [];
+        const db = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: (event) => events.push(event)
+        });
+        try {
+            expect(events).toEqual([{
+                dbName,
+                previousSchemaId: undefined,
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                reason: 'schema-id-mismatch'
+            }]);
+            expect(await getRow(db, AL_ADMISSION_SCHEMA_KEY)).toMatchObject({
+                key: AL_ADMISSION_SCHEMA_KEY,
+                value: AL_ADMISSION_SCHEMA_ID
+            });
+        }
+        finally {
+            db.close();
+        }
+    });
+
+    // Real time, not fake timers: fake-indexeddb has no `setImmediate` to schedule its own
+    // internal work in this jsdom-less environment, so it falls back to `setTimeout` — faking
+    // that here would stall IndexedDB's own event delivery, not just the 5s timeout under test.
+    it('rejects with ALStorageResetBlockedError when the delete stays blocked past its timeout', async () => {
+        const dbName = `al-storage-reset-blocked-${crypto.randomUUID()}`;
+        const seedDb = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: 'old',
+            onStorageReset: assertNoStorageReset
+        });
+        seedDb.close();
+
+        // A raw connection with no onversionchange handler ignores the delete's versionchange
+        // event and so blocks it, exactly like another tab that hasn't reloaded yet.
+        const blocker = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = indexedDB.open(dbName);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+        });
+
+        await expect(openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        })).rejects.toBeInstanceOf(ALStorageResetBlockedError);
+
+        blocker.close();
+    }, 10_000);
+
+    it('resolves both handles when two opens race the same mismatched database', async () => {
+        const dbName = `al-storage-reset-concurrent-${crypto.randomUUID()}`;
+        const oldDb = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: 'old',
+            onStorageReset: assertNoStorageReset
+        });
+        oldDb.close();
+
+        const events: ALStorageResetEvent[] = [];
+        const [first, second] = await Promise.all([
+            openIndexedDbAdmissionDatabase({
+                dbName,
+                storeName: STORE_NAME,
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: (event) => events.push(event)
+            }),
+            openIndexedDbAdmissionDatabase({
+                dbName,
+                storeName: STORE_NAME,
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: (event) => events.push(event)
+            })
+        ]);
+        try {
+            expect(events.length).toBeGreaterThanOrEqual(1);
+            expect(await getRow(first, AL_ADMISSION_SCHEMA_KEY)).toMatchObject({ value: AL_ADMISSION_SCHEMA_ID });
+            expect(await getRow(second, AL_ADMISSION_SCHEMA_KEY)).toMatchObject({ value: AL_ADMISSION_SCHEMA_ID });
+        }
+        finally {
+            first.close();
+            second.close();
         }
     });
 });

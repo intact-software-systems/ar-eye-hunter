@@ -414,7 +414,7 @@ function toConnectionInput(sessionId: string): RallarSessionConnectionInput {
         sessionId,
         scope: undefined,
         operationOptions: {},
-        diagnosticsPorts: undefined,
+        diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         hasAuthEndInProgress: () => false,
         isSessionCurrent: () => true,
         onAuthInvalid: async () => undefined

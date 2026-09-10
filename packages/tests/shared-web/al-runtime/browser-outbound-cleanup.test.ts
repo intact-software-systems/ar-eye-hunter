@@ -70,12 +70,14 @@ describe('browser canonical outbound cleanup', () => {
         const unrelated = toResourceEntryWithKey({ topicId: 'unrelated', contextId: 'test', resourceId: crypto.randomUUID() }, 'unrelated', {});
         await other.queue.enqueueIfAbsent(unrelated);
         vi.setSystemTime(Date.now() + 11);
-        await deleteExpiredBrowserALRuntimeEntries();
+        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
         let rows = await readRawWorkRows();
         expect(rows.some((row) => row.resource === expired.resource)).toBe(false);
         expect(rows.some((row) => row.resource === target.resource)).toBe(true);
         expect(rows.some((row) => row.resource === other.resource)).toBe(true);
-        await deleteBrowserALRuntimeEntriesForSession(targetSession);
+        await deleteBrowserALRuntimeEntriesForSession(targetSession, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
         rows = await readRawWorkRows();
         expect(rows.some((row) => row.resource === target.resource)).toBe(false);
         expect(rows.some((row) => row.resource === other.resource)).toBe(true);
@@ -91,13 +93,13 @@ describe('browser canonical outbound cleanup', () => {
         await fresh.store.workQueue.enqueueIfAbsent(unrelated);
         await vi.advanceTimersByTimeAsync(11);
 
-        await deleteExpiredBrowserALRuntimeEntries();
+        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
         const remaining = await readRawWorkRows();
 
         expect(remaining.filter((row) => expired.keys.has(row.keyString))).toEqual([]);
         expect(remaining.filter((row) => fresh.keys.has(row.keyString))).toHaveLength(fresh.keys.size);
         expect(remaining.some((row) => row.keyString.includes(unrelated.key.resourceId))).toBe(true);
-        await deleteExpiredBrowserALRuntimeEntries();
+        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
         expect(await readRawWorkRows()).toEqual(remaining);
     });
 
@@ -111,7 +113,7 @@ describe('browser canonical outbound cleanup', () => {
         expect(await expired.store.workQueue.getItem(toALOutboundIdentityKey(reference.key))).toBeUndefined();
         expect((await readRawWorkRows()).filter((row) => expired.keys.has(row.keyString))).toHaveLength(2);
 
-        await deleteExpiredBrowserALRuntimeEntries();
+        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
 
         expect((await readRawWorkRows()).filter((row) => expired.keys.has(row.keyString))).toEqual([]);
     });
@@ -153,26 +155,33 @@ describe('browser canonical outbound cleanup', () => {
         await vi.advanceTimersByTimeAsync(11);
         const otherLive = await admitForSession(otherLiveSession, 60_000);
 
-        await deleteExpiredBrowserALRuntimeEntriesForSession(targetSession);
+        await deleteExpiredBrowserALRuntimeEntriesForSession(targetSession, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
         const remaining = await readRawWorkRows();
         expect(remaining.filter((row) => otherExpired.keys.has(row.keyString))).toEqual([]);
         expect(remaining.filter((row) => otherLive.keys.has(row.keyString))).toHaveLength(otherLive.keys.size);
     });
 
-    // Everything below this point runs after `initBrowserALRuntimeExpiryEviction` has started a
-    // real, never-cancelled background sweep (see that test): a later test calling the 'expired'
-    // policy can race it for a write conflict. Keep 'expired'-policy assertions above this line.
     it('runs repeated timer eviction against the shared outbound work store', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2030-08-01T00:00:00Z'));
         const first = await admitForSession(`timer-first-${crypto.randomUUID()}`, 20);
-        await initBrowserALRuntimeExpiryEviction(10);
-        await vi.advanceTimersByTimeAsync(25);
-        await vi.waitFor(async () => expect((await readRawWorkRows()).filter((row) => first.keys.has(row.keyString))).toEqual([]));
-        const second = await admitForSession(`timer-second-${crypto.randomUUID()}`, 20);
-        await vi.advanceTimersByTimeAsync(25);
-        await vi.waitFor(async () => expect((await readRawWorkRows()).filter((row) => second.keys.has(row.keyString))).toEqual([]));
+        const stop = await initBrowserALRuntimeExpiryEviction({
+            onStorageReset: diagnosticsPorts.onStorageReset,
+            intervalMs: 10
+        });
+        try {
+            await vi.advanceTimersByTimeAsync(25);
+            await vi.waitFor(async () => expect((await readRawWorkRows()).filter((row) => first.keys.has(row.keyString))).toEqual([]));
+            const second = await admitForSession(`timer-second-${crypto.randomUUID()}`, 20);
+            await vi.advanceTimersByTimeAsync(25);
+            await vi.waitFor(async () => expect((await readRawWorkRows()).filter((row) => second.keys.has(row.keyString))).toEqual([]));
+        }
+        finally {
+            stop();
+        }
     });
 
     it('removes one session canonical and action rows while keeping another session and unrelated work', async () => {
@@ -182,7 +191,9 @@ describe('browser canonical outbound cleanup', () => {
         const unrelated = toResourceEntryWithKey({ topicId: 'unrelated', contextId: 'test', resourceId: crypto.randomUUID() }, 'unrelated', {});
         await other.store.workQueue.enqueueIfAbsent(unrelated);
 
-        await deleteBrowserALRuntimeEntriesForSession(targetSession);
+        await deleteBrowserALRuntimeEntriesForSession(targetSession, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
         const remaining = await readRawWorkRows();
 
         expect(remaining.filter((row) => target.keys.has(row.keyString))).toEqual([]);
@@ -211,7 +222,9 @@ describe('browser canonical outbound cleanup', () => {
             return originalOpenCursor.call(this, range ?? undefined, direction);
         });
 
-        await deleteBrowserALRuntimeEntriesForSession(targetSession);
+        await deleteBrowserALRuntimeEntriesForSession(targetSession, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
         openCursorSpy.mockRestore();
 
         expect(capturedRanges.length).toBeGreaterThan(0);

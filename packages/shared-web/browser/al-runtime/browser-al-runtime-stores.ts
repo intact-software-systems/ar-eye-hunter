@@ -31,7 +31,8 @@ import {
 
 type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
 
-export interface ConfigureBrowserALRuntimeStoresInput extends Omit<BrowserALRuntimeOptions, 'observer'> {
+export interface ConfigureBrowserALRuntimeStoresInput
+    extends Omit<BrowserALRuntimeOptions, 'observer' | 'onStorageReset'> {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
 }
 
