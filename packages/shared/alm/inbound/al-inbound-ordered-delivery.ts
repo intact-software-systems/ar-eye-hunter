@@ -2,18 +2,21 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import {
+    computeALInboundBufferedRelease,
+    type ALInboundBufferedRelease
+} from './admission/compute-al-inbound-admission.ts';
+import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
-import { computeALInboundBufferedRelease, type ALInboundBufferedRelease } from './admission/compute-al-inbound-admission.ts';
 import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
-import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 
 export namespace ALInboundOrderedDelivery {
     export type Readiness =

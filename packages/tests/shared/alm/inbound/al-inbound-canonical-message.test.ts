@@ -12,6 +12,7 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundCommitBundle
@@ -22,7 +23,6 @@ import {
     computeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';

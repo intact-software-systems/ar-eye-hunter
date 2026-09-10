@@ -9,11 +9,6 @@ import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
-import type {
-    ALOutboundDurableEffectWrite,
-    ALOutboundEffectSnapshot,
-    ALOutboundPreparedMessageDecoder
-} from './al-outbound-admission-store.ts';
 import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
@@ -28,6 +23,11 @@ import {
     decodeALOutboundWorkEntry,
     toALOutboundWorkKey
 } from '../al-outbound-work-entry.ts';
+import type {
+    ALOutboundDurableEffectWrite,
+    ALOutboundEffectSnapshot,
+    ALOutboundPreparedMessageDecoder
+} from './al-outbound-admission-store.ts';
 
 export interface ALOutboundEffectIssue {
     readonly code: string;
