@@ -597,6 +597,58 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
+    it('re-probes storage when a retained claim settles after its own batch ended', async () => {
+        const released: string[] = [];
+        const pending: ALWorkClaim[] = [toFakeALWorkClaim('retained-row')];
+        let probeCount = 0;
+        let settleRetained: ((outcome: ALWorkOutcome) => void) | undefined;
+        const settled = new Promise<ALWorkOutcome>((resolve) => {
+            settleRetained = resolve;
+        });
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`) }),
+            claim: async ({ maxCount }) => pending.splice(0, maxCount)
+        };
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'retained-worker',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 10_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => {
+                probeCount += 1;
+                return undefined;
+            },
+            selectReady: async (p, size) => ({
+                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async () => ({ status: 'retained', settled }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+        probeCount = 0;
+        for (let round = 0; round < 25; round += 1) {
+            await engine.executeOnce();
+        }
+        expect(probeCount).toBe(1);
+        expect(released).toEqual([]);
+
+        // The release lands after the batch ended: it is a row change no batch boundary covers.
+        settleRetained?.({ status: 'retry' });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(released).toEqual(['retained-row:retry']);
+
+        await engine.executeOnce();
+        expect(probeCount).toBe(2);
+
+        handler.dispose();
+    });
+
     it('turns a remembered ready time into a batch without reading storage again', async () => {
         const released: string[] = [];
         const pending: ALWorkClaim[] = [];

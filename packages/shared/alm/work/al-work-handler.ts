@@ -266,7 +266,12 @@ export class ALWorkHandler {
             void result.settled
                 .then((outcome) => this.dependencies.port.release(claim, outcome))
                 .catch((error) => console.error('Retained ALM work failed', error))
-                .finally(() => this.dependencies.queueEngine.wake());
+                .finally(() => {
+                    // This release lands after its batch ended, so it is the one row change no batch
+                    // boundary covers: the remembered answer still describes the row as reserved.
+                    this.forgetReadiness();
+                    this.dependencies.queueEngine.wake();
+                });
             return;
         }
         await this.dependencies.port.release(claim, result);
