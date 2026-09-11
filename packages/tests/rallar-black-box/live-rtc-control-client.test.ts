@@ -172,28 +172,79 @@ describe('live RTC control client', () => {
         ).resolves.toBe(200);
     });
 
-    it('captures bounded failed command facts without retaining payloads or credentials', async () => {
-        results.push({
-            agentId: 'agent-a',
-            commandId: 'send-broadcast',
-            ok: false,
-            result: {
-                value: {
-                    credential: 'must-not-be-retained',
-                    status: 'sent',
-                    message: {
-                        status: 'no-route',
-                        reason: 'Skipping RTC outbound message without overlay context',
-                        message: { payload: { resource: 'must-not-be-retained' } },
-                        entries: []
+    it('captures only bounded error-details facts from real failed command envelopes', async () => {
+        results.push(
+            {
+                agentId: 'agent-a',
+                commandId: 'send-broadcast',
+                ok: false,
+                error: {
+                    code: 'RALLAR_BB_RTC_NO_ROUTE',
+                    message: 'producer failure includes must-not-be-retained',
+                    details: {
+                        credential: 'must-not-be-retained',
+                        status: 'sent',
+                        message: {
+                            status: 'no-route',
+                            reason: 'Skipping RTC outbound message without overlay context',
+                            message: {
+                                id: { msgId: 'message-must-not-be-retained' },
+                                payload: { resource: 'must-not-be-retained' }
+                            },
+                            entries: []
+                        }
+                    }
+                }
+            },
+            {
+                agentId: 'agent-a',
+                commandId: 'send-malformed-details',
+                ok: false,
+                error: { details: 'must-not-be-retained' }
+            },
+            {
+                agentId: 'agent-a',
+                commandId: 'send-absent-details',
+                ok: false,
+                error: { code: 'RALLAR_BB_RTC_SEND_FAILED' }
+            },
+            {
+                agentId: 'agent-a',
+                commandId: 'send-contradictory',
+                ok: false,
+                result: {
+                    value: {
+                        status: 'sent',
+                        message: {
+                            status: 'accepted',
+                            reason: 'must-not-be-retained',
+                            entries: [{ status: 'COMPLETED' }]
+                        }
+                    }
+                },
+                error: {
+                    details: {
+                        status: 'unexpected-runtime-status',
+                        message: {
+                            status: 'pending-admission',
+                            reason: 'not-yet-in-sync',
+                            entries: Array.from(
+                                { length: 25 },
+                                (_, index) => ({
+                                    status: index === 0 ? 'RETRY' : 'sensitive-status'
+                                })
+                            )
+                        }
                     }
                 }
             }
-        });
+        );
 
-        expect(
-            await control.captureAttemptFailure({ runId: 'run-failed-send' })
-        ).toEqual({
+        const diagnostic = await control.captureAttemptFailure({
+            runId: 'run-failed-send'
+        });
+        expect(JSON.stringify(diagnostic)).not.toContain('must-not-be-retained');
+        expect(diagnostic).toEqual({
             kind: 'control-result-failures',
             runCaptureSucceeded: true,
             messageFailures: [],
@@ -204,9 +255,42 @@ describe('live RTC control client', () => {
                     ok: false,
                     runtimeStatus: 'sent',
                     admissionStatus: 'no-route',
-                    reason: 'Skipping RTC outbound message without overlay context',
+                    reason: 'other',
                     entryCount: 0,
                     entryStatuses: []
+                },
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-malformed-details',
+                    ok: false,
+                    runtimeStatus: null,
+                    admissionStatus: null,
+                    reason: null,
+                    entryCount: 0,
+                    entryStatuses: []
+                },
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-absent-details',
+                    ok: false,
+                    runtimeStatus: null,
+                    admissionStatus: null,
+                    reason: null,
+                    entryCount: 0,
+                    entryStatuses: []
+                },
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-contradictory',
+                    ok: false,
+                    runtimeStatus: 'other',
+                    admissionStatus: 'pending-admission',
+                    reason: 'not-yet-in-sync',
+                    entryCount: 25,
+                    entryStatuses: [
+                        'RETRY',
+                        ...Array.from({ length: 19 }, () => 'other')
+                    ]
                 }
             ]
         });
@@ -370,18 +454,30 @@ describe('live RTC control client', () => {
         results.push({
             agentId: 'agent-a',
             commandId: 'send-direct-timeout',
-            ok: true,
+            ok: false,
             result: {
                 value: {
+                    status: 'must-not-be-retained',
+                    message: {
+                        status: 'accepted',
+                        reason: 'must-not-be-retained',
+                        entries: [{ status: 'COMPLETED' }]
+                    }
+                }
+            },
+            error: {
+                code: 'RALLAR_BB_RTC_NO_ROUTE',
+                message: 'must-not-be-retained',
+                details: {
                     status: 'sent',
                     message: {
-                        status: 'pending-admission',
-                        reason: 'awaiting a durable admission retry',
+                        status: 'no-route',
+                        reason: 'Skipping RTC outbound message without overlay context',
                         message: {
                             id: { msgId: 'message-direct-timeout' },
                             payload: { resource: 'must-not-be-retained' }
                         },
-                        entries: [{ status: 'NEW', resource: 'must-not-be-retained' }]
+                        entries: []
                     },
                     credential: 'must-not-be-retained'
                 }
@@ -438,12 +534,13 @@ describe('live RTC control client', () => {
                         'agent-b': { captureSucceeded: true, commandSucceeded: true }
                     },
                     sendResult: {
+                        ok: false,
                         runtimeStatus: 'sent',
-                        admissionStatus: 'pending-admission',
+                        admissionStatus: 'no-route',
                         reason: 'other',
                         messageIdPresent: true,
-                        entryCount: 1,
-                        entryStatuses: ['NEW']
+                        entryCount: 0,
+                        entryStatuses: []
                     }
                 }
             ]

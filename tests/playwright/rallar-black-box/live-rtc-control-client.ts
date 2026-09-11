@@ -30,11 +30,15 @@ import {
     stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+import {
+    summarizeLiveRtcSendResult,
+    summarizeNackSendResult,
+    toFailedControlResult
+} from './live-rtc-failure-diagnostics.ts';
 import type {
     LiveRtcAttemptFailureDiagnostic,
     LiveRtcDiagnosticFailure,
     LiveRtcDiagnosticsCheckpoint,
-    LiveRtcFailedControlResult,
     LiveRtcFailureAgentHealth,
     LiveRtcMessageFailureAgentHealth,
     LiveRtcMessageFailureDiagnostic,
@@ -43,9 +47,7 @@ import type {
     LiveRtcNackEventClassification,
     LiveRtcNackFailureDiagnostic,
     LiveRtcNackProbeStage,
-    LiveRtcNackResultClassification,
-    LiveRtcNackSendResultSummary,
-    LiveRtcSendResultSummary
+    LiveRtcNackResultClassification
 } from './live-rtc-performance-evidence.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 
@@ -475,13 +477,7 @@ export class LiveRtcControlClient {
         }
     }
 
-    waitForPeerReadiness(
-        input: LiveRtcControlClient.WaitForRtcReadinessInput
-    ): Promise<number> {
-        return this.#waitForRtcReadiness(input);
-    }
-
-    async #waitForRtcReadiness(
+    async waitForPeerReadiness(
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> {
         const deadlineMs = this.#monotonicNow() + 60_000;
@@ -1145,135 +1141,8 @@ function summarizeMessageFailureEvent(
     };
 }
 
-const MAX_RETAINED_SEND_ENTRY_STATUSES = 20;
 const MAX_RETAINED_MESSAGE_FAILURES = 2;
 const MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS = 100;
-
-function summarizeNackSendResult(
-    result: LiveRtcControlClient.Result | undefined,
-    probeMessageId: string | null
-): LiveRtcNackSendResultSummary | undefined {
-    if (!result) {
-        return undefined;
-    }
-    const summary = summarizeLiveRtcSendResult(result);
-    if (!summary) {
-        return undefined;
-    }
-    return {
-        ...summary,
-        messageIdMatchesProbe: probeMessageId === null
-            ? null
-            : messageIdFromSendResult(result) === probeMessageId
-    };
-}
-
-function classifyNackRuntimeStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['runtimeStatus'] {
-    return value === undefined ? 'missing' : value === 'sent' ? 'sent' : 'other';
-}
-
-function classifyNackReason(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['reason'] {
-    return value === undefined
-        ? 'missing'
-        : value === 'not-yet-in-sync'
-        ? value
-        : 'other';
-}
-
-function classifyNackAdmissionStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['admissionStatus'] {
-    switch (value) {
-        case 'accepted':
-        case 'enqueued':
-        case 'skipped':
-        case 'duplicate':
-        case 'pending-admission':
-        case 'superseded':
-        case 'expired':
-        case 'no-route':
-        case 'rate-limited':
-        case 'circuit-open':
-        case 'failed':
-            return value;
-        default:
-            return value === undefined ? 'missing' : 'other';
-    }
-}
-
-function classifyNackEntryStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['entryStatuses'][number] {
-    switch (value) {
-        case 'NEW':
-        case 'RETRY':
-        case 'RESERVED':
-        case 'COMPLETED':
-        case 'FAILED':
-        case 'ABORTED':
-        case 'NON_RETRYABLE':
-        case 'PARTITIONED':
-        case 'MERGED':
-            return value;
-        default:
-            return 'other';
-    }
-}
-
-function summarizeLiveRtcSendResult(
-    result: LiveRtcControlClient.Result | undefined
-): LiveRtcSendResultSummary | undefined {
-    if (!result) {
-        return undefined;
-    }
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    const entries = Array.isArray(admission.entries) ? admission.entries : [];
-    return {
-        ok: result.ok,
-        runtimeStatus: classifyNackRuntimeStatus(stringValue(diagnostics.status)),
-        admissionStatus: classifyNackAdmissionStatus(stringValue(admission.status)),
-        reason: classifyNackReason(stringValue(admission.reason)),
-        messageIdPresent: messageIdFromSendResult(result) !== undefined,
-        entryCount: entries.length,
-        entryStatuses: entries
-            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
-            .map((entry) => classifyNackEntryStatus(stringValue(jsonRecord(entry)?.status)))
-    };
-}
-
-function messageIdFromSendResult(
-    result: LiveRtcControlClient.Result
-): string | undefined {
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    return stringValue(jsonRecord(jsonRecord(admission.message)?.id)?.msgId);
-}
-
-function toFailedControlResult(
-    result: LiveRtcControlClient.Result & { ok: false; }
-): LiveRtcFailedControlResult {
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    const entries = Array.isArray(admission.entries) ? admission.entries : [];
-    return {
-        agentId: result.agentId ?? null,
-        commandId: result.commandId,
-        ok: false,
-        runtimeStatus: stringValue(diagnostics.status) ?? null,
-        admissionStatus: stringValue(admission.status) ?? null,
-        reason: stringValue(admission.reason) ?? null,
-        entryCount: entries.length,
-        entryStatuses: entries
-            .map((entry) => stringValue(jsonRecord(entry)?.status))
-            .filter((status): status is string => Boolean(status))
-            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
-    };
-}
 
 export interface LiveRtcObservedDeliveries {
     readonly events: readonly LiveRtcControlClient.Event[];
