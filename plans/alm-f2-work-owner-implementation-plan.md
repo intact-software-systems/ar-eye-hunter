@@ -1660,12 +1660,22 @@ send as queue wait.
       passes that follow one typed send 30 -> 1. `rtc.status` carries the peer's signaling counts and
       `commit-phases` carries `msgId` and `typeId`. The `sendSignal` stall was bounded and is fixed for
       the three statuses that clear on their own; two residues are recorded in the Step 4 report.
-- [ ] **Step 5: Re-observe on the runner** — push, let the observation job run, read
+- [x] **Step 5: Re-observe on the runner** — push, let the observation job run, read
       `alm-conformance-lane-<sha>`: the ws smoke cell green on all three scenarios, per-send admission wall
       clock on the runner recorded against the 1.9 s F1 baseline, RTC readiness back under the 30 s budget;
       one more iteration is allowed before the maintainer is asked again.
-- [ ] **Step 6: Final gates** — the Task 12 list on the final tree plus the Postgres lanes on the gate;
+- [x] **Step 6: Final gates** — the Task 12 list on the final tree plus the Postgres lanes on the gate;
       the PR body's Validation and Findings sections updated with the runner figures.
+
+**Task 13 outcome (2026-09-11, six observation runs):** the ws smoke cell is green on every run since the
+transaction fix; the ws send median on the runner is 1.6 s against F1's 1.9 s (7.4 s when the PR
+opened); readiness scans fell from 15.6 to 5.1 per second; RTC readiness recovered to 12 of 12 peers
+under the 30 s budget on runs at the runner's normal speed, and the rtc cell's pass/fail boundary
+sits at roughly 30–35 ms per storage operation, so a slow runner still times out cold peers. Routed to
+the maintainer as findings, not fixed here: the RTC `not-yet-in-sync` delivery loss (a pending frame is
+discarded without retention and the sender's retry never fires; S2), the harness budgets (30 s RTC
+readiness, 10 s non-expiring send) sitting inside the runner's speed spread, and the readiness-scan
+rate rising back to 11.3 per second in one run (the `readiness-probe` cause event now names it).
 
 ---
 
