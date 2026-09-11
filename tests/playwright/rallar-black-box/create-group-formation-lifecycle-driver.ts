@@ -412,10 +412,9 @@ async function connectInitialPair(
     input: RunGroupFormationLifecycleInput,
     connections: readonly [FormationAgentConnection, FormationAgentConnection]
 ): Promise<readonly string[]> {
-    const owner = input.agents[0];
-    const agents = [owner, input.agents[1]] as const;
+    const agents = [input.agents[0], input.agents[1]] as const;
     const suffix = `${input.transport.replace('.', '-')}-${input.suffix}-initial-pair`;
-    const lifecycle = { ...input, owner, suffix };
+    const lifecycle = { ...input, owner: agents[0], suffix };
     const topologyCommandId = await configureMeshTopology(config, lifecycle);
     const stageReceipt = await enterGroupConnectionCycle(config, lifecycle);
     const plannedLayout = await waitForPlannedLayout(config, {
