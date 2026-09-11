@@ -57,7 +57,8 @@ describe('live RTC control client', () => {
                     response.writeHead(400).end();
                     return;
                 }
-                const agentId = incoming.url?.split('/')[4];
+                const encodedAgentId = incoming.url?.split('/')[4];
+                const agentId = encodedAgentId === undefined ? undefined : decodeURIComponent(encodedAgentId);
                 if (command.commandId.startsWith('health-readiness-failure-')) {
                     readinessHealthAgents.push(agentId ?? 'missing-agent');
                 }
@@ -521,6 +522,74 @@ describe('live RTC control client', () => {
                 attempts: [{ peerId: 'session-b', diagnostics: { attempts: 2 } }, { peerId: 'session-c', diagnostics: null }]
             }
         });
+    });
+
+    it.each([
+        {
+            failedAgentId: `credential=SENTINEL-failed-${'x'.repeat(10_000)}`,
+            discoveredAgentIds: [`credential=SENTINEL-discovered-${'y'.repeat(10_000)}`, 'causal-agent-1'],
+            references: ['@causal-agent-1', '@causal-agent-2', 'causal-agent-1']
+        },
+        {
+            failedAgentId: 'causal-agent-1',
+            discoveredAgentIds: ['@causal-agent-1', 'credential=SENTINEL-discovered'],
+            references: ['causal-agent-1', '@causal-agent-2', '@causal-agent-3']
+        }
+    ])('retains distinct bounded agent references for hostile metadata, case %#', async ({ failedAgentId, discoveredAgentIds, references }) => {
+        const selectedAgentIds = [failedAgentId, ...discoveredAgentIds];
+        runAgentIds = [...discoveredAgentIds, 'agent-outside'];
+        events = [...selectedAgentIds, 'agent-outside'].map((agentId, index) => ({
+            agentId,
+            payload: { kind: 'diagnostic', topic: 'rallar.browser.ws.lifecycle', atEpochMs: index, data: { kind: 'open' } }
+        }));
+        selectedAgentIds.forEach((agentId, index) => {
+            healthValues[agentId] = { rallar: { session: { sessionId: `session-${index}` } } };
+        });
+        const allHealthStarted = Promise.withResolvers<void>();
+        const releaseHealth = Promise.withResolvers<void>();
+        holdHealthCommand = async () => {
+            if (readinessHealthAgents.length === 3) {
+                allHealthStarted.resolve();
+            }
+            await releaseHealth.promise;
+        };
+        const failure = new Error('SENTINEL-readiness-error');
+        refreshRoom.mockRejectedValue(failure);
+        const readiness = control.waitForPeerReadiness({
+            runId: 'run-hostile-agents',
+            agent: { ...agent, agentId: failedAgentId },
+            expectedPeerIds: ['session-b'],
+            suffix: 'hostile',
+            startedAtMs: 100
+        });
+        const rejection = expect(readiness).rejects.toBe(failure);
+        try {
+            await Promise.race([allHealthStarted.promise, new Promise<void>((resolve) => setTimeout(resolve, 200))]);
+            expect(readinessHealthAgents).toHaveLength(3);
+            expect(new Set(readinessHealthAgents)).toEqual(new Set(selectedAgentIds));
+        }
+        finally {
+            releaseHealth.resolve();
+            await rejection;
+        }
+        const artifactFiles = readdirSync(diagnosticsRoot);
+        expect(artifactFiles).toHaveLength(1);
+        expect(artifactFiles[0]?.length).toBeLessThan(200);
+        expect(artifactFiles.join()).not.toMatch(/SENTINEL|credential/);
+        const serialized = readFileSync(path.join(diagnosticsRoot, artifactFiles[0]!), 'utf8');
+        const sidecar = JSON.parse(serialized);
+        expect(serialized.length).toBeLessThan(10_000);
+        expect(serialized).not.toMatch(/SENTINEL|credential|agent-outside/);
+        expect(sidecar.agentId).toBe(references[0]);
+        expect(Object.keys(sidecar.healthByAgentId)).toEqual(references);
+        expect(Object.values(sidecar.healthByAgentId)).toMatchObject([
+            { captureSucceeded: true, localSessionId: 'session-0' },
+            { captureSucceeded: true, localSessionId: 'session-1' },
+            { captureSucceeded: true, localSessionId: 'session-2' }
+        ]);
+        expect(sidecar.health).toEqual(sidecar.healthByAgentId[references[0]!]);
+        expect(sidecar.causalEvents.map((event: { agentId: string; }) => event.agentId)).toEqual(references);
+        expect(readinessHealthAgents).toHaveLength(3);
     });
 
     it('retains only a fixed category when readiness health capture fails', async () => {

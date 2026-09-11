@@ -21,7 +21,7 @@ export interface LiveRtcReadinessAgentHealth {
 
 export interface LiveRtcCausalEventsInput {
     readonly events: readonly LiveRtcControlClient.Event[];
-    readonly agentIds: readonly string[];
+    readonly agentReferences: ReadonlyMap<string, string>;
     readonly peerIds: readonly string[];
 }
 
@@ -57,15 +57,21 @@ interface LiveRtcCausalEventProjection extends LiveRtcJsonRecord {
     readonly agentId: string;
 }
 
+/** Raw IDs exclude '@'; generated aliases use that disjoint namespace and contain no input text. */
+export function toCausalAgentReference(agentId: string, ordinal: number): string {
+    return toCausalIdentity(agentId) ?? `@causal-agent-${ordinal}`;
+}
+
 /** Ordinals count observed opens/creations within this retained tail, never a runtime generation. */
 export function toLiveRtcCausalEvents(input: LiveRtcCausalEventsInput): readonly LiveRtcJsonRecord[] {
     const relevant = input.events.flatMap<LiveRtcCausalEventProjection>((event) => {
-        if (!event.agentId || !input.agentIds.includes(event.agentId)) {
+        const agentReference = event.agentId === undefined ? undefined : input.agentReferences.get(event.agentId);
+        if (agentReference === undefined) {
             return [];
         }
         const runtimeEvent = toLiveRtcRuntimeEvent(event.payload);
         const projected = toCausalEvent(runtimeEvent, input.peerIds);
-        return projected ? [{ agentId: event.agentId, ...projected }] : [];
+        return projected ? [{ agentId: agentReference, ...projected }] : [];
     }).slice(-MAX_CAUSAL_EVENTS);
     const wsGenerations = new Map<string, number>();
     const peerLifetimes = new Map<string, Map<string, number>>();

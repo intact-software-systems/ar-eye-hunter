@@ -19,6 +19,7 @@ import {
     type LiveRtcAgentDiagnostics
 } from './live-rtc-agent-diagnostics.ts';
 import {
+    toCausalAgentReference,
     toCausalPeerIds,
     toLiveRtcCausalEvents,
     toLiveRtcReadinessHealth,
@@ -584,11 +585,15 @@ export class LiveRtcControlClient {
         }
         const runCapture = await this.#captureRun(input.runId);
         const agentIds = [input.agent.agentId, ...new Set(runCapture.run?.agents.map((agent) => agent.agentId))]
-            .filter((agentId, index, all) => all.indexOf(agentId) === index).slice(0, 3).sort();
+            .filter((agentId, index, all) => all.indexOf(agentId) === index).slice(0, 3);
+        const agentReferences = new Map(
+            agentIds.map((agentId, index) => [agentId, toCausalAgentReference(agentId, index + 1)])
+        );
+        const failedAgentReference = toCausalAgentReference(input.agent.agentId, 1);
         const healthByAgentId = Object.fromEntries(
             await Promise.all(
-                agentIds.map(async (agentId) =>
-                    [agentId, await this.#readReadinessFailureHealth(input, agentId, attempt)] as const
+                [...agentReferences].map(async ([agentId, agentReference]) =>
+                    [agentReference, await this.#readReadinessFailureHealth(input, agentId, attempt)] as const
                 )
             )
         );
@@ -597,19 +602,23 @@ export class LiveRtcControlClient {
             ...Object.values(healthByAgentId).flatMap((health) => health.localSessionId ? [health.localSessionId] : [])
         ]);
         await this.#writeDiagnosticsArtifact(
-            `live-rtc-readiness-failure-${safeFileName(input.agent.agentId)}-${safeFileName(input.suffix)}.json`,
+            `live-rtc-readiness-failure-${encodeURIComponent(failedAgentReference)}-${safeFileName(input.suffix)}.json`,
             JSON.stringify(
                 {
                     runId: input.runId,
-                    agentId: input.agent.agentId,
+                    agentId: failedAgentReference,
                     expectedPeerIds: toCausalPeerIds([...input.expectedPeerIds]),
                     capturedAtEpochMs: this.#epochNow(),
                     failure: { name: 'readiness-failed', message: 'RTC peer readiness observation failed.' },
-                    health: healthByAgentId[input.agent.agentId],
+                    health: healthByAgentId[failedAgentReference],
                     healthByAgentId,
                     runCaptureSucceeded: runCapture.succeeded,
                     causalOrdinalScope: 'retained-event-tail',
-                    causalEvents: toLiveRtcCausalEvents({ events: runCapture.run?.events ?? [], agentIds, peerIds })
+                    causalEvents: toLiveRtcCausalEvents({
+                        events: runCapture.run?.events ?? [],
+                        agentReferences,
+                        peerIds
+                    })
                 },
                 null,
                 2
