@@ -227,11 +227,20 @@ independent of any connection. The event's `data` is the event itself:
   already decided — enough, measured, to move the very races this sink exists
   to explain
 
-The two kinds together discriminate a delivery that never arrives. An
+- `rotation-alive` carries `workerId`, `emptyRoundCount` and `durationMs`: one
+  event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds that claimed and
+  rejected nothing, with the wall time those rounds spanned. It is the liveness
+  witness the suppression above costs: without it a rotation that keeps finding
+  nothing and a rotation that stopped running both report nothing at all. An
+  owner whose queue is empty scans nothing and reports none
+
+The three kinds together discriminate a delivery that never arrives. An
 `unauthorized` outcome is the drop that otherwise leaves no trace at all: it
 writes nothing, sends no NACK and returns no error. A `committed` outcome that
 no `effect-drain` ever follows is the other shape — the row exists and no
-consumer is registered for its `typeId`, so the rotation never selects it.
+consumer is registered for its `typeId`, so the rotation never selects it, and
+the `rotation-alive` events beside it are what say the rotation was running
+while that happened.
 
 ## Storage Reset Diagnostics
 

@@ -32,6 +32,14 @@ export type ALInboundRuntimeDiagnosticsEvent =
         completedCount: number;
         rescheduledCount: number;
         rejectedCount: number;
+    }>
+    | Readonly<{
+        kind: 'rotation-alive';
+        workerId: string;
+        /** Empty rounds this one event stands for; the cadence is `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS`. */
+        emptyRoundCount: number;
+        /** The wall time those rounds spanned, so a slowed rotation reads as a long gap, not an absence. */
+        durationMs: number;
     }>;
 
 export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnosticsEvent) => void;

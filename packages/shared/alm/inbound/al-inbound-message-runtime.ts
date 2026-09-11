@@ -96,6 +96,14 @@ export namespace ALInboundMessageRuntime {
     }
 }
 
+/**
+ * How many empty rotation rounds one liveness event stands for. The rotation runs a batch every
+ * engine round it still owes a page, so this is roughly one event every few seconds of scanning --
+ * enough to separate a rotation that keeps finding nothing from one that stopped running, and far
+ * too rare to bring back the per-round cost the empty batches were suppressed for.
+ */
+export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
+
 export class ALInboundMessageRuntime {
     private readonly admissionStore: ALInboundAdmissionStore;
     private readonly readyPromise: Promise<void>;
@@ -105,6 +113,8 @@ export class ALInboundMessageRuntime {
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly workSelector: ALInboundWorkSelector;
     private readonly work: ALWorkHandler;
+    private emptyRoundCount = 0;
+    private emptyRoundsFromMs: number | undefined;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -204,6 +214,7 @@ export class ALInboundMessageRuntime {
 
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
         if (event.claimedCount === 0 && event.rejectedCount === 0) {
+            this.recordEmptyRotationRound(event);
             return;
         }
         this.dependencies.diagnostics?.({
@@ -215,6 +226,29 @@ export class ALInboundMessageRuntime {
             rescheduledCount: event.rescheduledCount,
             rejectedCount: event.rejectedCount
         });
+    }
+
+    /**
+     * Suppressing the empty rounds left the rotation itself unobservable: a committed admission that
+     * no drain follows reads the same whether no consumer is registered for its typeId or the
+     * rotation stopped running. One event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` of them says
+     * which, and carries the wall time they spanned so a slowed rotation reads as a long gap.
+     */
+    private recordEmptyRotationRound(event: ALWorkBatchDiagnostics): void {
+        const nowMs = this.dependencies.clock.nowMs();
+        this.emptyRoundCount += 1;
+        this.emptyRoundsFromMs ??= nowMs - event.durationMs;
+        if (this.emptyRoundCount < AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS) {
+            return;
+        }
+        this.dependencies.diagnostics?.({
+            kind: 'rotation-alive',
+            workerId: event.workerId,
+            emptyRoundCount: this.emptyRoundCount,
+            durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs)
+        });
+        this.emptyRoundCount = 0;
+        this.emptyRoundsFromMs = undefined;
     }
 
     /** A value that never decoded has no identity to record; every identity that does gets one event. */

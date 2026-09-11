@@ -10,6 +10,7 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
+    AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS,
     ALInboundMessageRuntime,
     type ALInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -25,7 +26,10 @@ import '../../setup-browser-indexeddb.ts';
 
 type AdmissionOutcomeEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'admission-outcome'; }>;
 type EffectDrainEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'effect-drain'; }>;
+type RotationAliveEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'rotation-alive'; }>;
 
+/** Engine rounds one poll attempt drives, so the rotation reaches its liveness cadence in a few. */
+const ROTATION_ROUNDS_PER_ATTEMPT = 16;
 const SELF_PEER_ID = 'receiver';
 const SENDER_PEER_ID = 'sender';
 
@@ -63,10 +67,11 @@ interface InboundDiagnosticsFixtureInput {
 function createRuntime(input: InboundDiagnosticsFixtureInput) {
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const delivered: string[] = [];
+    const queueEngine = new InboxOutboxEngine();
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: SELF_PEER_ID,
         stores: createStores(input.kind),
-        queueEngine: new InboxOutboxEngine(),
+        queueEngine,
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
     });
     const runtime = new ALInboundMessageRuntime({
@@ -88,7 +93,7 @@ function createRuntime(input: InboundDiagnosticsFixtureInput) {
         effectWorkerId: 'inbound-diagnostics-worker'
     });
     onTestFinished(() => runtime.dispose());
-    return { runtime, diagnostics, delivered };
+    return { runtime, diagnostics, delivered, queueEngine };
 }
 
 function createIncomingMessage(msgId: string): ALMessage {
@@ -110,6 +115,10 @@ function admissionOutcomesOf(
 
 function drainsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly EffectDrainEvent[] {
     return diagnostics.filter((event): event is EffectDrainEvent => event.kind === 'effect-drain');
+}
+
+function rotationsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly RotationAliveEvent[] {
+    return diagnostics.filter((event): event is RotationAliveEvent => event.kind === 'rotation-alive');
 }
 
 it.each(['memory', 'indexeddb'] as const)(
@@ -199,4 +208,34 @@ it.each(['memory', 'indexeddb'] as const)(
         await expect.poll(() => delivered).toEqual([]);
         expect(drainsOf(diagnostics)).toEqual([]);
     }
+);
+
+it.each(['memory', 'indexeddb'] as const)(
+    'reports the rotation still running while it claims nothing over %s',
+    async (kind) => {
+        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false });
+
+        await runtime.ready();
+        await runtime.admitIncomingMessage(
+            createIncomingMessage('rotation-liveness'),
+            { kind: 'rtc-peer', peerId: SENDER_PEER_ID }
+        );
+        await expect.poll(async () => {
+            for (let round = 0; round < ROTATION_ROUNDS_PER_ATTEMPT; round += 1) {
+                await queueEngine.executeOnce();
+            }
+            return rotationsOf(diagnostics).length;
+        }, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+
+        // The witness that separates "no consumer is registered for this typeId" from "the rotation
+        // stopped": the row is still there, still scanned, and still claimed by nobody.
+        expect(rotationsOf(diagnostics)[0]).toMatchObject({
+            kind: 'rotation-alive',
+            workerId: 'inbound-diagnostics-worker',
+            emptyRoundCount: AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS
+        });
+        expect(rotationsOf(diagnostics)[0]?.durationMs).toBeGreaterThanOrEqual(0);
+        expect(drainsOf(diagnostics)).toEqual([]);
+    },
+    30_000
 );
