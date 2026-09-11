@@ -19,6 +19,7 @@ import {
     toALInboundWorkKey
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -30,6 +31,14 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import {
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    createInboundTestStores,
+    INBOUND_TEST_SOURCE,
+    setNextInboundCommitConflicted
+} from './inbound-runtime-test-fixture.ts';
 
 describe('inbound durable effect worker lifecycle', () => {
     afterEach(() => {
@@ -510,6 +519,31 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(acceptance.right).toEqual({ kind: 'control', handled: true });
         await sendStarted.promise;
         releaseSend.resolve();
+    });
+
+    it('dispatches a replayed admission in the batch its own commit schedules', async () => {
+        const fixture = createInboundTestRuntime({
+            stores: createInboundTestStores({
+                namespace: 'replayed-dispatch',
+                storage: 'memory',
+                observer: createPassThroughIndexedDbOperationObserver()
+            }),
+            effectWorkerId: 'al-inbound:replayed-dispatch'
+        });
+        await fixture.runtime.ready();
+        setNextInboundCommitConflicted(fixture.stores.admissionStore);
+
+        const acceptance = await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'replayed-dispatch' }),
+            INBOUND_TEST_SOURCE
+        );
+
+        expect(acceptance.right).toEqual({ kind: 'pending-admission' });
+        // The replay runs inside a claim of the page that batch already read, so the dispatch it
+        // commits is behind that page. The engine is never started and no round is ever executed
+        // here: the batch this commit schedules for the end of the replaying one is the only thing
+        // that can have claimed the dispatch.
+        await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
     });
 
     it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {

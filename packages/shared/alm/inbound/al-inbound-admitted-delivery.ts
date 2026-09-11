@@ -142,8 +142,8 @@ export class ALInboundAdmittedDelivery {
 
     /**
      * `observed` is the eligibility read's own surface for this row, so a claim that carries one
-     * re-reads nothing: only the entry's expiry and the plan's retry intent can have moved inside
-     * the claim window, and both are re-decided below against a fresh clock reading.
+     * re-reads only what the claim window can still change: the entry's expiry and the plan's retry
+     * intent, both against a fresh clock reading, and an ordered message's predecessor.
      */
     async deliver(
         effect: ALPersistedInboundEffect,

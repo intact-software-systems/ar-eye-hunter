@@ -14,11 +14,27 @@ import {
     type ALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
+import { createInboundTestMessage, createInboundTestStores } from '../inbound-runtime-test-fixture.ts';
 
 const NOW_MS = 1_800_000_000_000;
+/** A full page of rows, so a batch that reads its own page size reads every one of them. */
+const DISPATCH_PAGE_ROWS = AL_INBOUND_WORK_PAGE_SIZE;
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 describe('ALInboundWorkSelector readiness', () => {
     it('advertises no readiness from a batch that claimed nothing', async () => {
@@ -56,6 +72,23 @@ describe('ALInboundWorkSelector readiness', () => {
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         expect(selection.claims).toHaveLength(1);
     });
+});
+
+describe('ALInboundWorkSelector eligibility reads', () => {
+    it.each([AL_INBOUND_WORK_PAGE_SIZE, 4])(
+        'reads eligibility once for each of the %i rows a batch claims, and for no row beyond them',
+        async (pageSize) => {
+            const fixture = await createDispatchPageFixture();
+            const readReadiness = vi.spyOn(fixture.delivery, 'readReadiness');
+
+            const selection = await fixture.selector.selectReady(fixture.port, pageSize);
+
+            // The page read is bounded by the same page size the claim is, so the rows this batch
+            // could never take cost it no eligibility read at all.
+            expect(selection.claims).toHaveLength(pageSize);
+            expect(readReadiness).toHaveBeenCalledTimes(pageSize);
+        }
+    );
 });
 
 interface SelectorFixture {
@@ -122,4 +155,32 @@ function createPendingAdmissionEntry(namespace: string) {
         observedAtMs: NOW_MS,
         expireAtTimestamp: NOW_MS + 60_000
     }).entry;
+}
+
+interface DispatchPageFixture {
+    readonly delivery: ALInboundAdmittedDelivery;
+    readonly port: ALWorkQueuePort;
+    readonly selector: ALInboundWorkSelector;
+}
+
+/** A full page of committed `dispatch-local` rows: every one of them claimable by the next batch. */
+async function createDispatchPageFixture(): Promise<DispatchPageFixture> {
+    const namespace = 'inbound-dispatch-page';
+    const stores = createInboundTestStores({
+        namespace,
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    for (let row = 0; row < DISPATCH_PAGE_ROWS; row += 1) {
+        await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: `dispatch-${row}` }));
+    }
+    expect(await stores.workQueue.getAllKeys(), 'one dispatch-local row per admission').toHaveLength(
+        DISPATCH_PAGE_ROWS
+    );
+    const delivery = createInboundTestDispatch(stores).delivery;
+    return {
+        delivery,
+        port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now })
+    };
 }

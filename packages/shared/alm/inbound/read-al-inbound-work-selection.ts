@@ -54,6 +54,14 @@ interface ALInboundPageEligibility
     readonly readyAtMs: number | undefined;
 }
 
+/** The held page and the scan position it advanced: what the probe reads and the batch then claims from. */
+interface ALInboundRotationPage {
+    readSelection(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection>;
+    /** Drops the held page, so the round that follows reads a fresh one. */
+    forgetSelection(pending: Promise<ALInboundWorkSelection>): void;
+    restartScan(): void;
+}
+
 interface ALInboundWorkSelectorDependencies {
     readonly delivery: ALInboundAdmittedDelivery;
     readonly namespace: string;
@@ -181,54 +189,30 @@ function resolveALInboundScannedReadyAtMs(
 export function createALInboundWorkSelector(
     dependencies: ALInboundWorkSelectorDependencies
 ): ALInboundWorkSelector {
-    let scan: ALInboundWorkScan = SCAN_START;
-    let observed: Promise<ALInboundWorkSelection> | undefined;
+    const page = createALInboundRotationPage(dependencies);
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
-
-    const readSelection = (port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection> => {
-        const scanned = scan;
-        const pending = observed ?? readALInboundWorkSelection({
-            port,
-            scan: scanned,
-            namespace: dependencies.namespace,
-            pageSize,
-            nowMs: dependencies.nowMs()
-        }, dependencies.delivery).then((selection) => {
-            if (scan === scanned) {
-                scan = selection.scan;
-            }
-            return selection;
-        });
-        observed = pending;
-        return pending;
-    };
-    const forgetSelection = (pending: Promise<ALInboundWorkSelection>): void => {
-        if (observed === pending) {
-            observed = undefined;
-        }
-    };
     return {
         readNextReadyAtMs: async (port) => {
-            const pending = readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
+            const pending = page.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
             let selection: ALInboundWorkSelection;
             try {
                 selection = await pending;
             }
             catch (error) {
-                forgetSelection(pending);
+                page.forgetSelection(pending);
                 throw error;
             }
             if (!selection.readyNow) {
                 // An exhausted rotation must observe a fresh page on the next probe.
-                forgetSelection(pending);
+                page.forgetSelection(pending);
                 return selection.nextReadyAtMs;
             }
             // A rotation that still owes a page is due to the probe, never to the batch that follows.
             return dependencies.nowMs();
         },
         selectReady: async (port, pageSize) => {
-            const pending = readSelection(port, pageSize);
-            forgetSelection(pending);
+            const pending = page.readSelection(port, pageSize);
+            page.forgetSelection(pending);
             const selection = await pending;
             const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
             claimedObservations = selection.observations;
@@ -239,9 +223,44 @@ export function createALInboundWorkSelector(
         },
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         restartScan: () => {
+            page.restartScan();
+            claimedObservations = new Map();
+        }
+    };
+}
+
+/** The one page a rotation round holds between its readiness probe and the batch that follows it. */
+function createALInboundRotationPage(
+    dependencies: ALInboundWorkSelectorDependencies
+): ALInboundRotationPage {
+    let scan: ALInboundWorkScan = SCAN_START;
+    let observed: Promise<ALInboundWorkSelection> | undefined;
+    return {
+        readSelection: (port, pageSize) => {
+            const scanned = scan;
+            const pending = observed ?? readALInboundWorkSelection({
+                port,
+                scan: scanned,
+                namespace: dependencies.namespace,
+                pageSize,
+                nowMs: dependencies.nowMs()
+            }, dependencies.delivery).then((selection) => {
+                if (scan === scanned) {
+                    scan = selection.scan;
+                }
+                return selection;
+            });
+            observed = pending;
+            return pending;
+        },
+        forgetSelection: (pending) => {
+            if (observed === pending) {
+                observed = undefined;
+            }
+        },
+        restartScan: () => {
             scan = SCAN_START;
             observed = undefined;
-            claimedObservations = new Map();
         }
     };
 }

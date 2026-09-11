@@ -374,11 +374,12 @@ it('reads the ordering track again at the dispatch its readiness read already cl
     const message = createInboundTestMessage({ msgId: 'ordered-dispatch', seq: 1 });
     const effect = await readInboundTestDispatchEffect(stores, message);
     const readiness = await dispatch.delivery.readReadiness(effect, Date.now());
-
-    const ordered = vi.spyOn(stores.admissionStore, 'readOrderedDelivery');
     expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
 
-    // A predecessor can land inside the claim window, so this is the one decision no claim carries.
-    expect(ordered.mock.calls[0], 'the dispatch asks the track again').toEqual([toALOrderingTrackKey(message), 1]);
+    // The first delivery moved the track this observation was read against, which is exactly what a
+    // predecessor landing inside a claim window does. A dispatch that trusted the carried readiness
+    // would hand the page a second copy.
+    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
+
     expect(dispatch.dispatched).toEqual(['ordered-dispatch']);
 });
