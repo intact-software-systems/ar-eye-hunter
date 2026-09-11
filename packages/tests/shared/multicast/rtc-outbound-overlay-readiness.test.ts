@@ -1,6 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
-import { newALBroadcastMessage, newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosEffectivePolicy, ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -11,11 +23,12 @@ import {
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -51,6 +64,118 @@ afterEach(() => {
 });
 
 describe('RTC durable accepted-overlay readiness', () => {
+    it('submits prepared accepted traffic through a surviving edge during flowing reconfiguration', async () => {
+        const fixture = await createFixture();
+        fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+        const message = createMessage('multicast');
+        const reconfiguring = createFlowingReconfiguration();
+        validateAuthoritativeGroupSnapshot(reconfiguring, roomRef);
+        const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
+        vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            const committed = await commit(bundle);
+            expect(committed).toBe('committed');
+            const prepared = await readPreparedEntry(fixture);
+            expect(prepared).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
+            expect(prepared.audit.expiryTs.epochMilliseconds).toBe(6_000);
+            expect(JSON.parse(prepared.resource).payload).toMatchObject({
+                kind: 'send-prepared',
+                message: { msgId: message.id.msgId, senderId: 'self', expiresAtMs: 6_000 },
+                prepared: { forwarding: { nextHopPeerIds: ['peer-1'] } }
+            });
+            expect(native.createdConnections[0].channels[0].sent).toEqual([]);
+            vi.setSystemTime(1_050);
+            fixture.groups.accept('room', reconfiguring);
+            return committed;
+        });
+
+        const admitted = await fixture.manager.enqueueIfAbsent(message);
+        expect(admitted.status, admitted.reason).toBe('enqueued');
+        expect(reconfiguring.causalRevision).toEqual({ groupRevision: 2, presenceRevision: 4 });
+        expect(reconfiguring.group.acceptedLayoutIdentity).toEqual({ groupRevision: 1, presenceRevision: 3, version: 7, state: 'active' });
+        await vi.advanceTimersByTimeAsync(0);
+
+        const completed = await readPreparedEntry(fixture);
+        expect(completed).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+        expect(completed.audit.expiryTs.epochMilliseconds).toBe(6_000);
+        const sent = native.createdConnections[0].channels[0].sent;
+        expect(sent).toHaveLength(1);
+        expect(JSON.parse(String(sent[0]))).toMatchObject({
+            id: message.id,
+            constraints: { expiresAtMs: 6_000 },
+            forwarding: { nextHopPeerIds: ['peer-1'] }
+        });
+        expect(native.createdConnections[1].channels[0].sent).toEqual([]);
+    });
+
+    it.each(
+        [
+            'halted',
+            'identity-missing',
+            'identity-removed',
+            'identity-superseded',
+            'room-expired',
+            'session-expired',
+            'member-removed',
+            'overlay-removed',
+            'overlay-foreign',
+            'overlay-superseded',
+            'edge-removed'
+        ] as const
+    )('never revives prepared traffic revoked by %s during reconfiguration', async (revocation) => {
+        const fixture = await createFixture();
+        const overlay = createOverlay(['peer-1']);
+        fixture.overlays.accept(overlayId, overlay);
+        const snapshot = createFlowingReconfiguration();
+        const revoked: GroupSnapshot = {
+            ...snapshot,
+            group: {
+                ...snapshot.group,
+                transportState: revocation === 'halted' ? 'halted' : 'flowing',
+                expiresAtEpochMs: revocation === 'room-expired' ? 1_000 : null,
+                acceptedLayoutIdentity: revocation === 'identity-missing'
+                    ? null
+                    : revocation === 'identity-removed'
+                    ? { groupRevision: 2, presenceRevision: 4, version: 8, state: 'removed' }
+                    : revocation === 'identity-superseded'
+                    ? { groupRevision: 2, presenceRevision: 4, version: 8, state: 'active' }
+                    : snapshot.group.acceptedLayoutIdentity
+            },
+            activeSessions: snapshot.activeSessions.map((session) =>
+                revocation === 'session-expired' && session.sessionId === 'peer-1'
+                    ? { ...session, expiresAtEpochMs: 1_000 }
+                    : session
+            ),
+            members: snapshot.members.map((member) =>
+                revocation === 'member-removed' && member.principalId === 'peer-1'
+                    ? { ...member, status: 'removed', removed: member.updated, left: null, banned: null }
+                    : member
+            )
+        };
+        const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
+        vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            const committed = await commit(bundle);
+            expect(committed).toBe('committed');
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.NEW });
+            fixture.groups.accept('room', revoked);
+            fixture.overlays.accept(overlayId, {
+                ...overlay,
+                state: revocation === 'overlay-removed' ? 'removed' : 'active',
+                groupRef: revocation === 'overlay-foreign' ? { ...roomRef, workspaceId: 'other' } : roomRef,
+                overlayVersion: revocation === 'overlay-superseded' ? 8 : 7,
+                nextHopSessionIds: revocation === 'edge-removed' ? [] : ['peer-1']
+            });
+            return committed;
+        });
+
+        expect((await fixture.manager.enqueueIfAbsent(createMessage('multicast'))).status).toBe('enqueued');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+        fixture.groups.accept('room', createSnapshot());
+        fixture.overlays.accept(overlayId, overlay);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+    });
+
     it.each([true, false])('retains captured durability and ACK=%s when provider defaults change during the gap', async (acknowledge) => {
         let defaults: Partial<ALQosEffectivePolicy> = {
             delivery: { algo: 'at-least-once', opts: {} },
@@ -514,6 +639,31 @@ function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayM
 function createSnapshot(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2'] });
     return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 3, version: 7, state: 'active' } } };
+}
+
+function createFlowingReconfiguration(): GroupSnapshot {
+    const snapshot = createSnapshot();
+    return {
+        ...snapshot,
+        causalRevision: { groupRevision: 2, presenceRevision: 4 },
+        group: {
+            ...snapshot.group,
+            snapshotVersion: 2,
+            presenceVersion: 4,
+            lifecycleState: 'reconfiguring',
+            formationEpoch: 1,
+            formationElectorate: ['self', 'peer-1', 'peer-2']
+        },
+        activeSessions: snapshot.activeSessions.filter((session) => session.sessionId !== 'peer-2'),
+        onlineMemberCount: 2
+    };
+}
+
+async function readPreparedEntry(fixture: OverlayFixture): Promise<ResourceEntry> {
+    const rows = await Promise.all((await fixture.resources.workQueue.getAllKeys()).map((key) => fixture.resources.workQueue.getItem(key)));
+    const prepared = rows.filter((row) => row && JSON.parse(row.resource).payload?.kind === 'send-prepared');
+    expect(prepared).toHaveLength(1);
+    return prepared[0]!;
 }
 
 function createOverlay(nextHopSessionIds: readonly string[]): OverlayInfo {

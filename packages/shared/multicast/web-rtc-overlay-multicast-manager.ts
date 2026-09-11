@@ -3,7 +3,6 @@ import {
     isSameGroupRef,
     toScopedOverlayId
 } from '@shared/api/api-type-utils.ts';
-import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 
 import { ALMessage, readALTargetGroupRef } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
@@ -36,6 +35,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
+import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
     EnqueuedType,
     OverlayId,
@@ -70,7 +70,6 @@ import {
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
-
 import { toRtcOutboundTracking } from './to-rtc-outbound-tracking.ts';
 import { writeRtcChannelMessage } from './write-rtc-channel-message.ts';
 
@@ -526,7 +525,7 @@ export class WebRtcOverlayMulticastManager {
         const identity = room.group.acceptedLayoutIdentity;
         if (
             room.group.transportState !== 'flowing' || !identity || identity.state !== 'active' ||
-            identity.presenceRevision !== room.causalRevision.presenceRevision
+            (overlay === undefined && identity.presenceRevision !== room.causalRevision.presenceRevision)
         ) {
             return { kind: 'unauthorized', reason: 'RTC accepted room authority is not current and flowing' };
         }
