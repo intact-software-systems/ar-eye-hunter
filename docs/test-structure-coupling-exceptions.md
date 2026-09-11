@@ -2043,6 +2043,21 @@ moved or changed test.
       }
     },
     {
+      "id": "rtc-group-refresh-reads-the-code-not-the-detail",
+      "domain": "Browser RTC group authority recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "The recovery reads the drop code at the head of an inbound denial's reason, so a denial carrying another code requests nothing however its detail reads. Executable assertion: \u201cdoes not read authority after a denial the refresh cannot repair\u201d.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after a denial the refresh cannot repair",
+      "coverageRelation": "The test reports an unauthorized denial through the public recovery callback and observes the injected authoritative group-refresh port remain unused, beside the sibling test that reports a not-yet-in-sync denial whose reason names the branch after the code.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
+        "observableEffect": "A denial that is not not-yet-in-sync produces no authoritative point read, cache adoption, or QueueBox wake.",
+        "requiredConstraint": "Only the not-yet-in-sync code may request current group authority; the detail after it never widens that set.",
+        "failureRationale": "The reason is matched by its head rather than compared whole, so a match that is too loose would send every unauthorized RTC drop to the authority endpoint, and no returned value distinguishes that from the drop itself."
+      }
+    },
+    {
       "id": "rtc-group-refresh-coalesces-concurrent-requests",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
@@ -4732,6 +4747,17 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The absent refresh call proves successful message admission does not add an authoritative read and QueueBox wake to the normal RTC delivery path.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after successful admission"
+    },
+    {
+      "id": "test-structure-coupling-189d9f62c9fbd148",
+      "path": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-group-refresh-reads-the-code-not-the-detail",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The refresh returns nothing either way; the untouched authority port is the only witness that a denial carrying another code did not reach it.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after a denial the refresh cannot repair"
     },
     {
       "id": "test-structure-coupling-c7847aaa460d293a",

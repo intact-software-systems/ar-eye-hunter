@@ -258,7 +258,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         expect(roomAuthorityRefresh.afterInboundAdmission).toHaveBeenCalledWith(
             message,
-            { kind: 'not-admitted', reason: 'not-yet-in-sync' }
+            { kind: 'not-admitted', reason: 'not-yet-in-sync: Awaiting the required room snapshot version' }
         );
     });
 

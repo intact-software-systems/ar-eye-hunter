@@ -101,6 +101,27 @@ describe('RTC group-snapshot refresh', () => {
         expect(authorityAdopted).toBe(false);
         expect(requestedSnapshotVersions).toEqual([6]);
     });
+
+    it('reads authority for a denial whose reason names the branch after the code', async () => {
+        const refreshGroupSnapshot = vi.fn(async () => undefined);
+        const refresh = new RtcGroupSnapshotRefresh({ refreshGroupSnapshot });
+
+        await refresh.afterInboundAdmission(
+            roomMessage(6),
+            { kind: 'not-admitted', reason: 'not-yet-in-sync: Awaiting a room authority observation' }
+        );
+
+        expect(refreshGroupSnapshot).toHaveBeenCalledWith(roomRef, 6, expect.any(AbortSignal));
+    });
+
+    it('does not read authority after a denial the refresh cannot repair', async () => {
+        const refreshGroupSnapshot = vi.fn(async () => undefined);
+        const refresh = new RtcGroupSnapshotRefresh({ refreshGroupSnapshot });
+
+        await refresh.afterInboundAdmission(roomMessage(6), { kind: 'not-admitted', reason: 'unauthorized' });
+
+        expect(refreshGroupSnapshot).not.toHaveBeenCalled();
+    });
 });
 
 function roomMessage(minSnapshotVersion: number) {

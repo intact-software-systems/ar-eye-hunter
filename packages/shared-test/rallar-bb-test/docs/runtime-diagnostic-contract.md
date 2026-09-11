@@ -194,7 +194,12 @@ independent of any connection. The event's `data` is the event itself:
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
   (duplicate, resync-required, disposed, or an unhandled control)
 - `reason` is the plan's drop reason, the rejection's code, or the acceptance
-  kind that carries neither
+  kind that carries neither. A drop the RTC room-snapshot admission decided
+  carries the drop code at the head of that reason and the denial that fired
+  after it -- `not-yet-in-sync: Awaiting the required room snapshot version`,
+  and likewise for the missing observation, the missing session, the missing
+  member and the missing server relay authority -- so an RTC delivery lost at
+  ingress names which of the five room-authority branches held it
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
   touched work, the same five fields the outbound topic reports for its own

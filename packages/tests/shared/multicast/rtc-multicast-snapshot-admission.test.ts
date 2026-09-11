@@ -31,7 +31,8 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
 
         const plan = manager.planIncomingMessage(createRoomMessage(mode), { kind: 'rtc-peer', peerId: 'peer-1' });
 
-        expect(plan.dropReason).toBe('not-yet-in-sync');
+        expect(plan.dropReason).toBe('not-yet-in-sync: Awaiting a room authority observation');
+        expect(plan.dropReasonCode).toBe('not-yet-in-sync');
         expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.forwarding.nextHopPeerIds).toEqual([]);
         expect(plan.ack.enabled).toBe(false);
@@ -47,7 +48,9 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         const stale = createSnapshot();
         groupCache.accept('room-1', { ...stale, group: { ...stale.group, snapshotVersion: 1 } });
 
-        expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(
+            'not-yet-in-sync: Awaiting the required room snapshot version'
+        );
         groupCache.accept('room-1', createSnapshot());
 
         const admitted = manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' });
@@ -90,7 +93,9 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         });
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(
+            'not-yet-in-sync: Awaiting a room authority observation'
+        );
         manager.dispose();
     });
 
@@ -132,7 +137,9 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         groupCache.acceptAt({ key: 'room-1', value: createSnapshot(), nowEpochMs: 1, expireAtEpochMs: 2 });
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(
+            'not-yet-in-sync: Awaiting a room authority observation'
+        );
         manager.dispose();
     });
 
@@ -150,13 +157,65 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         manager.dispose();
     });
 
+    it.each([
+        {
+            denial: 'a room the cache holds no observation of',
+            toSnapshot: (): GroupSnapshot | undefined => undefined,
+            fromPeerId: 'peer-1',
+            reason: 'Awaiting a room authority observation'
+        },
+        {
+            denial: 'a required peer the roster carries no session for',
+            toSnapshot: () => withoutSession(createSnapshot(), 'peer-1'),
+            fromPeerId: 'peer-1',
+            reason: 'Awaiting room session authority'
+        },
+        {
+            denial: 'a session whose principal has no member row',
+            toSnapshot: () => withoutMember(createSnapshot(), 'peer-1'),
+            fromPeerId: 'peer-1',
+            reason: 'Awaiting room member authority'
+        },
+        {
+            denial: 'an observation behind the message target floor',
+            toSnapshot: () => atSnapshotVersion(createSnapshot(), 1),
+            fromPeerId: 'peer-1',
+            reason: 'Awaiting the required room snapshot version'
+        },
+        {
+            denial: 'a relayed copy arriving without server relay authority',
+            toSnapshot: (): GroupSnapshot | undefined => createSnapshot(),
+            fromPeerId: 'peer-2',
+            reason: 'Awaiting server room relay authority'
+        }
+    ])('names $denial in the drop reason the ingress event carries', ({ toSnapshot, fromPeerId, reason }) => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const snapshot = toSnapshot();
+        if (snapshot) {
+            groupCache.accept('room-1', snapshot);
+        }
+        const manager = createDefaultSnapshotAdmissionManager(groupCache);
+
+        const plan = manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: fromPeerId });
+
+        // The code and the NACK the sender reads stay the contract's; only the detail names the branch.
+        expect(plan.dropReason).toBe(`not-yet-in-sync: ${reason}`);
+        expect(plan.dropReasonCode).toBe('not-yet-in-sync');
+        expect(plan.nack).toMatchObject({ enabled: true, toPeerId: fromPeerId, reason: 'not-yet-in-sync' });
+        manager.dispose();
+    });
+
     it('requires authority for unversioned and originating room plans', () => {
         const manager = createDefaultSnapshotAdmissionManager(new LatestRepository());
         const versioned = createRoomMessage('multicast');
         const unversioned: ALMessage = { ...versioned, targets: { mode: 'multicast', groupRef: roomRef } };
 
-        expect(manager.planIncomingMessage(unversioned, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe('not-yet-in-sync');
-        expect(manager.planIncomingMessage(versioned).dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(unversioned, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(
+            'not-yet-in-sync: Awaiting a room authority observation'
+        );
+        expect(manager.planIncomingMessage(versioned).dropReason).toBe(
+            'not-yet-in-sync: Awaiting a room authority observation'
+        );
         manager.dispose();
     });
 });
@@ -199,4 +258,16 @@ function createRoomMessage(mode: 'multicast' | 'broadcast'): ALMessage {
 function createSnapshot(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2'] });
     return { ...snapshot, group: { ...snapshot.group, snapshotVersion: 2 } };
+}
+
+function withoutSession(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {
+    return { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.sessionId !== sessionId) };
+}
+
+function withoutMember(snapshot: GroupSnapshot, principalId: string): GroupSnapshot {
+    return { ...snapshot, members: snapshot.members.filter((member) => member.principalId !== principalId) };
+}
+
+function atSnapshotVersion(snapshot: GroupSnapshot, snapshotVersion: number): GroupSnapshot {
+    return { ...snapshot, group: { ...snapshot.group, snapshotVersion } };
 }
