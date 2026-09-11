@@ -417,6 +417,94 @@
     },
     {
       "kind": "diagnostic",
+      "atEpochMs": 1789077938849,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-66",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "c0cd16e2-8a9c-41bd-941d-01f82c024296:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 138,
+            "readOperationCount": 9,
+            "commitDurationMs": 165,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077939112,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-71",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "18476b9d-1254-4a2e-bd59-42e4707c2244:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 566,
+            "readOperationCount": 9,
+            "commitDurationMs": 225,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077939734,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-71",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "980d98eb-d029-47e8-867b-0ddfe716d315:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 199,
+            "readOperationCount": 9,
+            "commitDurationMs": 142,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077940214,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-76",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "376fb87c-4735-42ce-a7c3-b3175886919e:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 373,
+            "readOperationCount": 9,
+            "commitDurationMs": 141,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
       "atEpochMs": 1789077941342,
       "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
       "eventId": "event-79",
@@ -433,6 +521,116 @@
               ],
               "readyPeerIds": []
             }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077942518,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-85",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "d68aa6cc-dd4f-472b-ab3b-aea835887559",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 599,
+            "readOperationCount": 9,
+            "commitDurationMs": 5,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077943751,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-89",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "341a2bf6-0c4e-4b19-a047-18184ca2ea85:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 488,
+            "readOperationCount": 9,
+            "commitDurationMs": 339,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077943854,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-76",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "08e9c939-f4dc-4b64-92ed-69ed276a41c1",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 151,
+            "readOperationCount": 9,
+            "commitDurationMs": 6,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077944843,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-81",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "eeeda052-e980-4fbb-bdd7-4f03f564626b",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 154,
+            "readOperationCount": 9,
+            "commitDurationMs": 242,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077945918,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-94",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "2901f283-dff2-481c-9ebc-29cd9b67d6de",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 327,
+            "readOperationCount": 9,
+            "commitDurationMs": 984,
+            "commitOutcome": "committed"
           }
         }
       }

@@ -18,9 +18,10 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/rallar-bb-test');
 
 // Both fixtures are trimmed copies of hosted observation runs of the rtc cell: the green head
-// `c99cf654e` and the red head `902fa30a7`. Events the regime does not read were dropped, the
-// commit phases were capped at ten, and the run's own earliest event was kept so the opening
-// window still starts where it started on the runner.
+// `c99cf654e` and the red head `902fa30a7`. Events the regime does not read were dropped, and the
+// run's own earliest event was kept so the opening window still starts where it started on the
+// runner. The normal fixture keeps every in-window `send`-origin commit phase (18) so the pinned
+// figure matches the real cell; the slow fixture keeps its original trim.
 const NORMAL_FIXTURE = 'alm-observation-normal-regime-snapshot.json';
 const SLOW_FIXTURE = 'alm-observation-slow-regime-snapshot.json';
 
@@ -96,8 +97,8 @@ describe('computeALMObservationRegime', () => {
         expect(regime.regime).toBe('normal');
         expect(regime.perOperation).toEqual({
             outcome: 'measured',
-            medianMs: 16.78,
-            sampleCount: 9
+            medianMs: 24.06,
+            sampleCount: 18
         });
         expect(regime.runId).toBe('alm-rtc-1789077925043-04591945-9cb6-4db4-a5');
         expect(regime.carrier).toBe('rtc');
