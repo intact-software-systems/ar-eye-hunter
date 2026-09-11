@@ -315,11 +315,12 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(second, 'peer-1');
 
         expect(delivered).toEqual([]);
-        expect(
-            (await fixture.outbound()).flatMap((message) => {
-                const control = shared.parseALControlMessage(message);
-                return control ? [control.type] : [];
-            }).sort()
+        await expect.poll(
+            async () =>
+                (await fixture.outbound()).flatMap((message) => {
+                    const control = shared.parseALControlMessage(message);
+                    return control ? [control.type] : [];
+                }).sort()
         ).toEqual(['nack', 'repair']);
 
         await fixture.receive(first, 'peer-1');
@@ -364,7 +365,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         );
 
         expect(delivered).toEqual([message.id.msgId]);
-        expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
+        await expect.poll(async () => (await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
             type: 'ack',
             payload: expect.objectContaining({ status: 'subtree-complete', toPeerId: 'peer-1', ackedMsgId: message.id.msgId })
         });
