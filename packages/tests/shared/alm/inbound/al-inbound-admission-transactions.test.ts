@@ -12,15 +12,20 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundPendingAdmission } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
+    createInboundTestAdmission,
     createInboundTestMessage,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
+    planInboundTestMessage,
     readInboundTestAdmission,
-    readInboundTestDecisionSurface
+    readInboundTestDecisionSurface,
+    setNextInboundCommitConflicted
 } from '../inbound-runtime-test-fixture.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
 
@@ -44,6 +49,31 @@ const ONE_DECISION_SURFACE: readonly IDBTransactionMode[] = ['readonly'];
  * it has to observe a store state later than the one it fences, so it can see a commit in between.
  */
 const COMMITTING_CONTROL_ADMISSION: readonly IDBTransactionMode[] = ['readonly', 'readonly', 'readwrite'];
+
+/**
+ * What a data admission that reaches its commit owes: the one decision surface `attempt` reads, the
+ * write phase's own fence snapshot, then the conditional write.
+ */
+const COMMITTING_ADMISSION_ATTEMPT: readonly IDBTransactionMode[] = ['readonly', 'readonly', 'readwrite'];
+
+/**
+ * What the second phase of a conflicted admission costs today: the retained row's own absence guard
+ * and the row itself, then a whole second attempt.
+ *
+ * The conclusion this measurement was written to reach: a conflict means at least one
+ * authority-bearing observation moved, so everything the fence compares -- message owner, dedup,
+ * ordering snapshot, supersedence pair, delivery progress, acks, control owners -- has to be read
+ * again, and the replay's decision surface stays. What the replay repeats beyond that is immutable
+ * and already carried: `retainPending` persists the decoded message with its resolved deadline and
+ * the validated source, and re-deriving the pre-plan, the deadline and the effect facts from them
+ * opens no transaction. Carrying them in the retained payload would therefore save no storage, so
+ * the persisted contract is left as it stands and this pin is the whole of the second phase's cost.
+ */
+const RETAIN_THEN_REPLAY: readonly IDBTransactionMode[] = [
+    'readonly',
+    'readwrite',
+    ...COMMITTING_ADMISSION_ATTEMPT
+];
 
 async function createAdmissionFixture(): Promise<ALInboundRuntimeStores> {
     const stores = createInboundTestStores({
@@ -131,6 +161,21 @@ function newAcknowledgement(message: ALMessage): ALMessage {
             observedAtEpochMs: Date.now()
         }
     );
+}
+
+/** The pending value one attempt leaves behind when a competing writer beats it to the fence. */
+async function readConflictedPendingAdmission(
+    admission: ALInboundMessageAdmission,
+    admissionStore: ALInboundAdmissionStore,
+    msg: ALMessage
+): Promise<ALInboundPendingAdmission> {
+    setNextInboundCommitConflicted(admissionStore);
+    const attempt = await admission.attempt(msg, INBOUND_TEST_SOURCE, planInboundTestMessage);
+    const conflicted = attempt.right;
+    if (conflicted?.kind !== 'conflict' || conflicted.pending === undefined) {
+        throw new Error('Expected the competing writer to force a retained conflict');
+    }
+    return conflicted.pending;
 }
 
 it('reads a first inbound decision surface in 1 readonly transaction', async () => {
@@ -242,4 +287,43 @@ it('commits one bundle with one fence snapshot and one write, neither queued beh
     // Each one starts on an unlocked store: the fence snapshot is closed before the conditional
     // write is created, so the readwrite never queues behind an idle readonly.
     expect(recorded.liveWhenOpened()).toEqual([0, 0]);
+});
+
+it('admits one message in 1 surface, 1 fence and 1 write', async () => {
+    const admission = createInboundTestAdmission(await createAdmissionFixture());
+    const msg = createInboundTestMessage({ msgId: 'single-attempt' });
+
+    const recorded = recordIndexedDbTransactions();
+    await admission.attempt(msg, INBOUND_TEST_SOURCE, planInboundTestMessage);
+
+    expect(recorded.modes(), 'ALInboundMessageAdmission.attempt').toEqual(COMMITTING_ADMISSION_ATTEMPT);
+});
+
+it('retains a conflicted admission and replays it to completion', async () => {
+    const stores = await createAdmissionFixture();
+    const admission = createInboundTestAdmission(stores);
+    const pending = await readConflictedPendingAdmission(
+        admission,
+        stores.admissionStore,
+        createInboundTestMessage({ msgId: 'conflicted-replay' })
+    );
+
+    expect(await admission.retainPending(pending)).toEqual({ kind: 'pending-admission' });
+    expect(await admission.replay(pending)).toBe('completed');
+});
+
+it('retains and replays a conflicted admission in 1 guarded row and 1 second attempt', async () => {
+    const stores = await createAdmissionFixture();
+    const admission = createInboundTestAdmission(stores);
+    const pending = await readConflictedPendingAdmission(
+        admission,
+        stores.admissionStore,
+        createInboundTestMessage({ msgId: 'conflicted-cost' })
+    );
+
+    const recorded = recordIndexedDbTransactions();
+    await admission.retainPending(pending);
+    await admission.replay(pending);
+
+    expect(recorded.modes(), 'retainPending then replay').toEqual(RETAIN_THEN_REPLAY);
 });
