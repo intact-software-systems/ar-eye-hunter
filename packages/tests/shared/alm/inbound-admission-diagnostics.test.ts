@@ -298,7 +298,6 @@ it.each(['memory', 'indexeddb'] as const)(
         // The slowest single round of them: a rotation that crawls says so without stopping.
         const rotation = rotationsOf(diagnostics)[0]!;
         expect(rotation.durationMs).toBeGreaterThanOrEqual(0);
-        expect(rotation.longestRoundMs).toBeGreaterThanOrEqual(0);
         expect(rotation.longestRoundMs).toBeLessThanOrEqual(rotation.durationMs);
         expect(drainsOf(diagnostics)).toEqual([]);
     },

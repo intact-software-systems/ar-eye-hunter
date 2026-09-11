@@ -316,7 +316,12 @@ export class ALInboundMessageRuntime {
         return Either.ofRight(result.acceptance);
     }
 
-    /** A conflict the plan does not retain wrote nothing, so it announces no commit. */
+    /**
+     * Only the retained row is announced. A conflict the plan does not retain never reaches
+     * retention, and a retention that answers anything but `pending-admission` wrote no claimable
+     * row either: an expired message is rejected before the row is written, and a row already in a
+     * terminal status holds no work for the worker.
+     */
     private async retainConflictedAdmission(
         pending: ALInboundPendingAdmission | undefined
     ): Promise<ALInboundMessageRuntime.Acceptance> {
@@ -324,7 +329,9 @@ export class ALInboundMessageRuntime {
             return { kind: 'not-admitted', reason: 'conflict' };
         }
         const acceptance = await this.admission.retainPending(pending);
-        this.commitWork();
+        if (acceptance.kind === 'pending-admission') {
+            this.commitWork();
+        }
         return acceptance;
     }
 

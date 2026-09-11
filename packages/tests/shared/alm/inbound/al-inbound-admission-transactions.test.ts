@@ -80,19 +80,20 @@ const RETAIN_THEN_REPLAY: readonly IDBTransactionMode[] = [
 ];
 
 /**
- * What one unordered `dispatch-local` row owes from the readiness read that clears it to the page
- * it reaches: the one retained message and the one stored planning surface both of them decide on.
- * The claim the rotation takes between them is the only thing that ever separated the two.
+ * What one unordered `dispatch-local` row owes from the readiness read that clears it to the page it
+ * reaches: one session, holding both the retained message and the stored planning surface they
+ * decide on. The claim the rotation takes between them separates nothing -- the dispatch decides on
+ * the surface that one read carried.
  */
-const ONE_DISPATCHED_MESSAGE: readonly IDBTransactionMode[] = ['readonly', 'readonly'];
+const ONE_DISPATCHED_MESSAGE: readonly IDBTransactionMode[] = ['readonly'];
 
 /**
  * The same round for a claim that carries nothing, which is what every claim behind a replay's commit
- * gets: the replay restarts the scan, so the dispatch reads the surface its own eligibility read took.
+ * gets: the replay restarts the scan, so the dispatch opens for itself the one session its own
+ * eligibility read already opened.
  */
 const DISPATCH_WITHOUT_ITS_OBSERVATION: readonly IDBTransactionMode[] = [
     ...ONE_DISPATCHED_MESSAGE,
-    'readonly',
     'readonly'
 ];
 
@@ -366,7 +367,7 @@ it('dispatches the unordered row its readiness read cleared', async () => {
     expect(dispatch.dispatched).toEqual(['ready-then-dispatched']);
 });
 
-it('reads one message and one planning surface from readiness through dispatch', async () => {
+it('reads the message and its planning surface in 1 readonly transaction, readiness through dispatch', async () => {
     const stores = await createAdmissionFixture();
     const dispatch = createInboundTestDispatch(stores, Date.now);
     const effect = await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: 'dispatch-cost' }));
@@ -392,7 +393,7 @@ it('dispatches a row whose claim carries no observation', async () => {
     expect(dispatch.dispatched).toEqual(['dispatched-unobserved']);
 });
 
-it('reads the message and its planning surface twice when the claim carries no observation', async () => {
+it('opens that one session twice when the claim carries no observation', async () => {
     const stores = await createAdmissionFixture();
     const dispatch = createInboundTestDispatch(stores, Date.now);
     const effect = await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: 'unobserved-cost' }));

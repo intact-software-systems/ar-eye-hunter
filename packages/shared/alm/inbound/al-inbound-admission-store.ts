@@ -363,15 +363,19 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 
     readStoredPlanningState(input: ReadALInboundStoredPlanningInput): Promise<ALInboundStoredPlanningRead>;
 
+    /**
+     * The retained message and the planning state it is planned against, from one read session.
+     * Absent when the canonical message row is gone, which is the delivery's own corruption signal.
+     */
+    readDeliverySurface(
+        reference: ALInboundMessageReference,
+        nowMs: number
+    ): Promise<ALInboundStoredPlanningRead | undefined>;
+
     readInboundMessage(reference: ALInboundMessageReference): Promise<ALMessage | undefined>;
 
     /** Absent when the owner index names no single original sender for the acknowledging peer. */
     readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined>;
-
-    readAcknowledgementState(
-        msgId: string,
-        senderId: string
-    ): Promise<Pick<ALInboundAdmissionObservations, 'pendingAck' | 'acks'>>;
 
     commitMutations(
         request: ALInboundWriteRequest
@@ -549,21 +553,43 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readStoredPlanningState(input: ReadALInboundStoredPlanningInput): Promise<ALInboundStoredPlanningRead> {
-        return await this.backend.readWithin(async (session): Promise<ALInboundStoredPlanningRead> => {
-            const owner = await this.readMessageOwner(session, input.msg);
-            return {
-                msg: input.msg,
-                source: owner.source,
-                nowMs: input.nowMs,
-                supersedenceKey: owner.supersedenceKey,
-                supersedence: await this.readSupersedenceState(
-                    session,
-                    owner.supersedenceKey ?? undefined,
-                    input.msg.id.msgId
-                ),
-                supersedenceTrackTtlMs: this.supersedenceTrackTtlMs
-            };
+        return await this.backend.readWithin(
+            async (session) => await this.readStoredPlanning(session, input.msg, input.nowMs)
+        );
+    }
+
+    async readDeliverySurface(
+        reference: ALInboundMessageReference,
+        nowMs: number
+    ): Promise<ALInboundStoredPlanningRead | undefined> {
+        return await this.backend.readWithin(async (session) => {
+            const stored = await readALInboundStoredMessage({
+                database: session,
+                namespace: this.namespace,
+                reference
+            });
+            return stored === undefined ? undefined : await this.readStoredPlanning(session, stored.msg, nowMs);
         });
+    }
+
+    private async readStoredPlanning(
+        database: Pick<ALAdmissionBackend, 'read'>,
+        msg: ALMessage,
+        nowMs: number
+    ): Promise<ALInboundStoredPlanningRead> {
+        const owner = await this.readMessageOwner(database, msg);
+        return {
+            msg,
+            source: owner.source,
+            nowMs,
+            supersedenceKey: owner.supersedenceKey,
+            supersedence: await this.readSupersedenceState(
+                database,
+                owner.supersedenceKey ?? undefined,
+                msg.id.msgId
+            ),
+            supersedenceTrackTtlMs: this.supersedenceTrackTtlMs
+        };
     }
 
     async commitMutations(
@@ -804,13 +830,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             );
         }
         return owner;
-    }
-
-    async readAcknowledgementState(
-        msgId: string,
-        senderId: string
-    ): Promise<Pick<ALInboundAdmissionObservations, 'pendingAck' | 'acks'>> {
-        return await this.backend.readWithin((session) => this.readStoredAcknowledgements(session, msgId, senderId));
     }
 
     async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {

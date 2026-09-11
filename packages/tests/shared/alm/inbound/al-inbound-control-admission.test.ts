@@ -2,7 +2,11 @@ import { createTestALInboundControlAdmission } from '@shared-test/shared/create-
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionReadContext
+} from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -25,6 +29,11 @@ import {
     it,
     vi
 } from 'vitest';
+
+import {
+    readInboundTestAcknowledgements,
+    type InboundTestAcknowledgements
+} from '../read-inbound-test-acknowledgements.ts';
 
 const message: ALMessage = {
     id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000 },
@@ -168,6 +177,18 @@ function recordALInboundCommits(
     return commits;
 }
 
+async function readAcknowledgements(
+    backend: ALAdmissionReadContext,
+    admissionStore: ALInboundAdmissionStore
+): Promise<InboundTestAcknowledgements> {
+    return await readInboundTestAcknowledgements({
+        backend,
+        namespace: admissionStore.namespace,
+        msgId: message.id.msgId,
+        senderId: message.id.senderId
+    });
+}
+
 async function readRetainedWork(
     admissionStore: ALInboundAdmissionStore,
     workQueue: QueueBoxResourceEntryRepository
@@ -198,26 +219,26 @@ const UNRESOLVED_CONTROL_OWNERS: readonly UnresolvedControlOwnerCase[] = [
 
 describe('inbound control admission', () => {
     it('commits an acknowledgement from the peer that owes it', async () => {
-        const { admissionStore, control } = createFixture();
+        const { backend, admissionStore, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
 
         const result = await control.admit(createAcknowledgement('receiver'));
 
         expect(result.kind).toBe('committed');
         expect(result.kind === 'committed' && result.acceptance.handled).toBe(true);
-        const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
+        const state = await readAcknowledgements(backend, admissionStore);
         expect(state.acks.map((ack) => ack.fromPeerId)).toEqual(['receiver']);
         expect(state.pendingAck).toBeUndefined();
     });
 
     it('writes nothing for an acknowledgement from a peer that does not own the message', async () => {
-        const { admissionStore, workQueue, control } = createFixture();
+        const { backend, admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
 
         const result = await control.admit(createAcknowledgement('intruder'));
 
         expect(result).toEqual({ kind: 'not-handled' });
-        const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
+        const state = await readAcknowledgements(backend, admissionStore);
         expect(state.acks).toEqual([]);
         expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
         expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
@@ -226,13 +247,13 @@ describe('inbound control admission', () => {
     it.each(UNRESOLVED_CONTROL_OWNERS)(
         'writes nothing for an acknowledgement whose owner index names $named',
         async ({ controlOwners }) => {
-            const { admissionStore, workQueue, control } = createFixture();
+            const { backend, admissionStore, workQueue, control } = createFixture();
             await seedPendingAcknowledgement(admissionStore, controlOwners);
 
             const result = await control.admit(createAcknowledgement('receiver'));
 
             expect(result).toEqual({ kind: 'not-handled' });
-            const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
+            const state = await readAcknowledgements(backend, admissionStore);
             expect(state.acks).toEqual([]);
             expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
             expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
@@ -249,8 +270,7 @@ describe('inbound control admission', () => {
         const conflicted = await control.admit(createAcknowledgement('receiver'));
 
         expect(conflicted).toEqual({ kind: 'pending-control' });
-        expect((await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId)).acks)
-            .toEqual([]);
+        expect((await readAcknowledgements(backend, admissionStore)).acks).toEqual([]);
         const retained = await readRetainedWork(admissionStore, workQueue);
         expect(retained).toHaveLength(1);
         expect(retained[0]!.payload.kind).toBe('admit-control');
@@ -266,7 +286,7 @@ describe('inbound control admission', () => {
 
         expect(replayed.outcome).toEqual({ status: 'completed' });
         expect(replayed.acceptance?.handled).toBe(true);
-        const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
+        const state = await readAcknowledgements(backend, admissionStore);
         expect(state.acks.map((ack) => ack.fromPeerId)).toEqual(['receiver']);
         expect(state.pendingAck).toBeUndefined();
         // One commit carries the accepted acknowledgement and the control it forwards; a split write fails here.

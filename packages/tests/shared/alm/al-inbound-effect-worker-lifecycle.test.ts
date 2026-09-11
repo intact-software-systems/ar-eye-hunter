@@ -588,6 +588,70 @@ describe('inbound durable effect worker lifecycle', () => {
         expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
     });
 
+    it('leaves retained work unclaimed when the conflicted admission it retained had already expired', async () => {
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: new InboxOutboxEngine(),
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (message) => {
+                controls.push(message);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        await runtime.ready();
+
+        // The retained row of the pin above, behind the page the bootstrap batch already read. No
+        // engine round is ever driven here, so only an announcement can bring the batch that claims it.
+        const forwarded = computeALInboundWorkEntry({
+            namespace: resources.admissionStore.namespace,
+            effectId: 'expired-retention-control',
+            observedAtMs: nowMs,
+            expireAtTimestamp: nowMs + 600_000,
+            payload: {
+                kind: 'send-control',
+                msg: newALAckControlMessage({ v: 2, msgId: 'expired-retention-ack', ts: 1, senderId: 'receiver' }, {
+                    ackedMsgId: 'tracked-message',
+                    fromPeerId: 'receiver',
+                    toPeerId: 'sender',
+                    status: 'accepted',
+                    observedAtEpochMs: 1
+                })
+            }
+        });
+        await resources.workQueue.enqueueIfAbsent(forwarded.entry);
+        const message = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'expired-retention', contextId: 'room' },
+            'receiver',
+            'chat',
+            {},
+            { ttlMs: 1_000 }
+        );
+        // The losing attempt writes nothing, and the message outlives its own deadline before the
+        // retention that would have kept it: `retainPending` rejects it and retains no row at all.
+        vi.spyOn(resources.admissionStore, 'commitBundle').mockImplementationOnce(async () => {
+            nowMs += 2_000;
+            return 'conflict';
+        });
+
+        const acceptance = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'expired' });
+        expect(controls).toEqual([]);
+        expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
+    });
+
     it('dispatches a replayed admission in the batch its own commit schedules', async () => {
         const fixture = createInboundTestRuntime({
             stores: createInboundTestStores({

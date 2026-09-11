@@ -120,8 +120,10 @@ describe('ALInboundWorkSelector eligibility reads', () => {
 
             const selection = await fixture.selector.selectReady(fixture.port, pageSize);
 
-            // The page read is bounded by the same page size the claim is, so the rows this batch
-            // could never take cost it no eligibility read at all.
+            // No probe ran before this call, so `selectReady` reads the page itself, at the size it
+            // was given: every row that page holds is a row this batch claims, and each costs one
+            // eligibility read. In production the probe reads the page at `AL_INBOUND_WORK_PAGE_SIZE`
+            // and the batch behind it reuses that page rather than reading one of its own.
             expect(selection.claims).toHaveLength(pageSize);
             expect(readReadiness).toHaveBeenCalledTimes(pageSize);
         }

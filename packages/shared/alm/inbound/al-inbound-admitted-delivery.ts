@@ -113,18 +113,27 @@ export class ALInboundAdmittedDelivery {
         return ready ? READY_WITHOUT_OBSERVATION : NOT_READY;
     }
 
-    /** The surface a dispatch or a forward decides on: the retained message and its stored planning state. */
+    /**
+     * The surface a dispatch or a forward decides on: the one retained message and the stored
+     * planning state it is planned against, from one read session. A missing retained copy is
+     * storage corruption, not a retry.
+     */
     private async readStoredDeliveryObservation(
         reference: ALInboundMessageReference,
         nowMs: number
     ): Promise<ALInboundDeliveryObservation> {
-        const msg = await this.readAdmittedMessage(reference);
-        const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs });
+        const read = await this.admissionStore.readDeliverySurface(reference, nowMs);
+        if (read === undefined) {
+            throw new ALAdmissionCorruptionError(
+                JSON.stringify(reference),
+                new TypeError('Inbound message owner row is missing')
+            );
+        }
         return {
-            msg,
+            msg: read.msg,
             source: read.source,
             plan: this.dependencies.planIncomingMessage(
-                msg,
+                read.msg,
                 read.source,
                 computeALInboundStoredPlanningObservations(read)
             )
@@ -203,18 +212,6 @@ export class ALInboundAdmittedDelivery {
             await this.readStoredDeliveryObservation(release.message, this.dependencies.clock.nowMs()),
             expireAtTimestamp
         );
-    }
-
-    /** Delivery reads the one retained copy; a missing owner row is storage corruption, not a retry. */
-    private async readAdmittedMessage(reference: ALInboundMessageReference): Promise<ALMessage> {
-        const msg = await this.admissionStore.readInboundMessage(reference);
-        if (msg === undefined) {
-            throw new ALAdmissionCorruptionError(
-                JSON.stringify(reference),
-                new TypeError('Inbound message owner row is missing')
-            );
-        }
-        return msg;
     }
 
     private async dispatchAdmittedMessage(
