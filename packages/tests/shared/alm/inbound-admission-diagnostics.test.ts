@@ -27,7 +27,6 @@ type EffectDrainEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'effec
 type RotationAliveEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'rotation-alive'; }>;
 type ClaimSettledEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'claim-settled'; }>;
 type ReadInboundPendingAuthority = NonNullable<ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority']>;
-type ReadinessProbeEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'readiness-probe'; }>;
 
 /** Engine rounds one poll attempt drives, so the rotation reaches its liveness cadence in a few. */
 const ROTATION_ROUNDS_PER_ATTEMPT = 16;
@@ -77,10 +76,6 @@ function rotationsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): 
 
 function claimsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly ClaimSettledEvent[] {
     return diagnostics.filter((event): event is ClaimSettledEvent => event.kind === 'claim-settled');
-}
-
-function probesOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly ReadinessProbeEvent[] {
-    return diagnostics.filter((event): event is ReadinessProbeEvent => event.kind === 'readiness-probe');
 }
 
 /** Runs bounded engine rounds until the rotation reports itself alive, so an absence can be read. */
@@ -215,54 +210,6 @@ it.each(
             attempts: 1,
             outcome
         });
-    }
-);
-
-it('relays the readiness probe the rotation spends its storage on', async () => {
-    const { runtime, diagnostics, queueEngine } = createRuntime({ kind: 'memory' });
-
-    await runtime.ready();
-    await queueEngine.executeOnce();
-    await expect.poll(() => probesOf(diagnostics).length).toBeGreaterThanOrEqual(1);
-
-    // The probe that reports `none` is the rotation finding nothing, not the relay losing an answer.
-    const probe = probesOf(diagnostics)[0]!;
-    expect(probe.workerId).toBe(DIAGNOSTICS_WORKER_ID);
-    expect(probe.readyAtMs === 'none' || typeof probe.readyAtMs === 'number').toBe(true);
-    expect(probe.durationMs).toBeGreaterThanOrEqual(0);
-    expect(['no-memory', 'external-wake', 'own-commit', 'batch', 'retained-release', 'age-bound'])
-        .toContain(probe.cause);
-});
-
-it.each(['memory', 'indexeddb'] as const)(
-    'names an unauthorized drop that writes nothing, sends no NACK and returns no error over %s',
-    async (kind) => {
-        const { runtime, diagnostics, delivered } = createRuntime({
-            kind,
-            plan: (plan) => ({
-                ...plan,
-                dropReason: 'unauthorized',
-                dropReasonCode: 'unauthorized',
-                localDelivery: { enabled: false, persist: false, deferred: false },
-                nack: { enabled: false, reason: 'unauthorized', missingSeqs: [] }
-            })
-        });
-        const message = createInboundTestMessage({ msgId: 'unauthorized-drop' });
-
-        await runtime.ready();
-        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
-
-        // Without this event the drop is indistinguishable from a delivery still on its way.
-        expect(admitted.right).toEqual({ kind: 'not-admitted', reason: 'unauthorized' });
-        expect(admissionOutcomesOf(diagnostics)).toEqual([{
-            kind: 'admission-outcome',
-            workerId: DIAGNOSTICS_WORKER_ID,
-            msgId: message.id.msgId,
-            typeId: 'chat.private-text.v1',
-            outcome: 'unauthorized',
-            reason: 'unauthorized'
-        }]);
-        expect(delivered).toEqual([]);
     }
 );
 

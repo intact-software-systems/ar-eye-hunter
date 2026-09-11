@@ -204,32 +204,25 @@ export class ALInboundMessageRuntime {
     }
 
     /**
-     * The two halves of a rotation round, relayed on different terms. A probe is reported as it
-     * happens: it reads one page every engine round by construction, so one event per probe is that
-     * same cadence and no more, and it is the read the batch then claims from -- without it a
-     * rotation whose page read is what crawls reports a fast batch over a slow round. A batch is
-     * reported only when it touched work, for the reason `recordWorkBatch` gives.
+     * A batch is relayed when it touched work; a probe is not relayed at all. The rotation's probe
+     * reads a page every engine round by construction, and in the conformance lane every relayed
+     * event is a round trip out of the page, so one event per round roughly doubled that page's
+     * traffic and with it its measured per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC
+     * signaling far enough that the delivery baseline received nothing and the lane failed.
+     * Suppressed, the same cell passes at 10.3 ms/op. The probe's own `durationMs` is still measured
+     * and the outbound owners, whose probes are the invalidations they can name, still report theirs.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
             this.recordWorkBatch(event);
-            return;
         }
-        this.dependencies.diagnostics?.({
-            kind: 'readiness-probe',
-            workerId: event.workerId,
-            cause: event.cause,
-            readyAtMs: event.readyAtMs,
-            durationMs: event.durationMs
-        });
     }
 
     /**
      * The rotation runs a batch every engine round, so an empty one is its normal resting state: it
      * claimed nothing, ran nothing and released nothing, and every number it could carry was already
-     * decided by the probe relayed above it. It is suppressed for having no evidence to add, not for
-     * costing events -- `rotation-alive` below is what keeps a silent rotation distinguishable from
-     * a stopped one.
+     * decided by the probe that preceded it. It is suppressed for the same reason the probe is, and
+     * `rotation-alive` below is what keeps a silent rotation distinguishable from a stopped one.
      */
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
         if (event.claimedCount === 0 && event.rejectedCount === 0) {

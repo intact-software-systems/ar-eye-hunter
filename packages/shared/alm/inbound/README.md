@@ -115,9 +115,15 @@ idle owner — `al-indexeddb-operation-counts.test.ts`, both an empty queue and 
 a row no consumer claims — the probe reaches storage on more than half of them (97 of
 100 as measured, the rest being rounds spent inside the batch the round before started),
 against the 4 of 100 the outbound owner spends answering from memory. The measurement
-agrees with the construction, so the rotation keeps the per-round probe, and the
-`readiness-probe` event the runtime now relays is bounded by that same rate: at most one
-per engine round, and never a cadence the page was not already paying for.
+agrees with the construction, so the rotation keeps the per-round probe.
+
+The runtime relays no `readiness-probe` for it. One event per engine round is cheap in
+storage and expensive in the conformance lane, where every relayed diagnostic is a round
+trip out of the page: it roughly doubled the page's event traffic and its measured
+per-operation cost, 8.2 to 20.9 ms/op, which delayed RTC signaling far enough that the
+delivery baseline received nothing and the cell failed. Suppressed, the same cell passes
+at 10.3 ms/op, and `rotation-alive` remains the liveness witness that a scanning rotation
+is still running.
 
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
 namespace, full identity, queue slot, and deadline. Malformed claimed work becomes

@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
@@ -215,27 +216,26 @@ describe('inbound work owner IndexedDB scan volume', () => {
     });
 
     it.each(['empty-queue', 'deferred-row'] as const)(
-        'probes storage on every idle rotation round and relays one event for each, scanning an %s',
+        'probes storage on every idle rotation round and relays nothing for it, scanning an %s',
         async (scanned) => {
             const idle = await readIdleInboundRotation(scanned);
 
             // The rotation carries its scan position inside the read, so no answer of its own can
-            // stand and every round reaches storage. Relaying one event per probe is therefore the
-            // engine's own pass rate and no cadence of its own.
-            // A per-second bound is the same statement over these hundred rounds, so it is left
-            // unasserted rather than restated: ten rounds are one idle second of this engine.
-            expect(idle.probes).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
-            expect(idle.probes).toBeLessThanOrEqual(INBOUND_IDLE_ROUNDS);
-            // A probe that answers "due now" holds its page for the batch, which reads none of its own.
+            // stand and every round reaches storage. That is also why the runtime relays no
+            // `readiness-probe`: one event per engine round is a round trip out of the page in the
+            // conformance lane, which doubled its per-operation cost and failed the RTC cell.
             expect(idle.workPages).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
-            expect(idle.workPages).toBeLessThanOrEqual(idle.probes);
+            expect(idle.workPages).toBeLessThanOrEqual(INBOUND_IDLE_ROUNDS);
+            // `rotation-alive` is the one thing an idle rotation may say, and it says it once per
+            // `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds rather than once per round.
+            expect(idle.relayedKinds.filter((kind) => kind !== 'rotation-alive')).toEqual([]);
         }
     );
 });
 
 interface IdleInboundRotation {
     readonly workPages: number;
-    readonly probes: number;
+    readonly relayedKinds: readonly ALInboundRuntimeDiagnosticsEvent['kind'][];
 }
 
 /** An owner with an empty queue, driven for ten idle seconds of engine passes and nothing else. */
@@ -266,9 +266,7 @@ async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'):
 
     return {
         workPages: observer.getCounts().byKind['work-page'] ?? 0,
-        probes: fixture.diagnostics
-            .slice(eventsBefore)
-            .filter((event) => event.kind === 'readiness-probe').length
+        relayedKinds: fixture.diagnostics.slice(eventsBefore).map((event) => event.kind)
     };
 }
 

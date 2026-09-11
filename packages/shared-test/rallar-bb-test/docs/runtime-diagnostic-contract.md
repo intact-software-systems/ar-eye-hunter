@@ -179,9 +179,9 @@ every session the page opens. The event's `data` is the event itself:
   that has not probed yet. `readyAtMs` is the answer: an epoch-ms time work is
   next due, or `none` for no work at all. A probe is not a batch, so it is
   outside the empty-batch suppression the drains carry. The inbound rotation
-  reports its own probes on its own topic, with a `durationMs` this one does not
-  carry: its probe reads a page every engine round by construction, and that page
-  is the one its batch then claims from
+  reports none: its probe reads a page every engine round by construction, and
+  relaying one event per round costs more in this harness than the answer is
+  worth (see **Inbound Admission Diagnostics** below)
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
@@ -199,8 +199,13 @@ diagnostics event per emission, recorded the moment the inbound runtime calls
 the sink — the receiving half of the outbound topic above, and, like it,
 independent of any connection. The event's `data` is the event itself:
 
-- `kind`: `admission-outcome`, `effect-drain`, `claim-settled`,
-  `readiness-probe` or `rotation-alive`
+- `kind`: `admission-outcome`, `effect-drain`, `claim-settled` or
+  `rotation-alive`. There is no `readiness-probe` on this topic: the inbound
+  rotation probes storage on every engine round by construction, and relaying
+  one event per round doubled the page's measured per-operation cost in the
+  conformance lane (8.2 → 20.9 ms/op) and delayed RTC signaling until the cell
+  failed, so the inbound owner does not relay probes and `rotation-alive` below
+  is its liveness witness instead
 - `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
   to, on every kind. One page runs a WS inbound owner and an RTC inbound
   owner, so this says which lane an event came from
@@ -244,7 +249,8 @@ independent of any connection. The event's `data` is the event itself:
   outside them, and so is the page read the readiness probe paid for: a probe
   that answers "due now" holds its page for the batch that follows, which reads
   none of its own and reports a `selectionDurationMs` near zero. That page read
-  is on the `readiness-probe` event instead
+  is reported nowhere on this topic — it is the cost the suppressed probe event
+  would have carried, and a reader must not mistake its absence for a fast round
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
   `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
   so a delivery can be followed from its own `admission-outcome` to the claim
@@ -266,14 +272,6 @@ independent of any connection. The event's `data` is the event itself:
   decoded at all: the generic work handler classifies those, and the
   `effect-drain` beside them still counts them. So `claimedCount` is a ceiling on
   the `claim-settled` events of one drain, never a guarantee of the count
-- `readiness-probe` carries `workerId`, `cause`, `readyAtMs` and `durationMs`,
-  relayed from the same generic owner the outbound topic reports (the field
-  meanings are in **Outbound Admission Diagnostics** above). The inbound event
-  adds `durationMs`: the rotation's probe is a page read, and it is the read the
-  batch that follows claims from, so this is where a drain whose page read is
-  what crawls shows it. It is bounded by the engine's own pass rate — at most one
-  event per engine round, measured at ten per idle second — because the rotation
-  carries its scan position inside that read and no answer of its own can stand
 - `rotation-alive` carries `workerId`, `emptyRoundCount`, `durationMs` and
   `longestRoundMs`: one event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds
   that claimed and rejected nothing, with the wall time those rounds spanned and

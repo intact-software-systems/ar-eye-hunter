@@ -1,6 +1,5 @@
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
-import type { ALWorkReadinessProbeCause } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -64,15 +63,6 @@ export type ALInboundRuntimeDiagnosticsEvent =
         outcome: ALWorkOutcome['status'];
         /** How long the row had been due when the batch that claimed it started. */
         queueWaitMs: number;
-    }>
-    | Readonly<{
-        kind: 'readiness-probe';
-        workerId: string;
-        cause: ALWorkReadinessProbeCause;
-        /** What storage answered: when work is next due, or `none` for no work at all. */
-        readyAtMs: number | 'none';
-        /** What that read cost. The rotation's probe holds the page its batch then claims from, so this is that page read. */
-        durationMs: number;
     }>
     | Readonly<{
         kind: 'rotation-alive';
