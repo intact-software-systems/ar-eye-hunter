@@ -200,7 +200,7 @@ async function writeObservationFiles(
         OBSERVATION_DIRECTORY_NAME
     );
     await mkdir(directory, { recursive: true });
-    const fileName = `${observation.carrier}-${scope}`;
+    const fileName = toObservationFileName(observation.carrier, observation.testInfo.retry);
     await writeFile(
         path.join(directory, `${fileName}.json`),
         toJsonText(observation.regime),
@@ -211,6 +211,11 @@ async function writeObservationFiles(
         toJsonText(observation.snapshot),
         'utf8'
     );
+}
+
+/** An unsuffixed name would let a retried cell overwrite the first attempt's regime and snapshot. */
+function toObservationFileName(carrier: AlmConformanceCarrier, retry: number): string {
+    return retry === 0 ? `${carrier}-${scope}` : `${carrier}-${scope}-retry${retry}`;
 }
 
 /** Kept for a failed cell's convenience: the snapshot is one click away in the Playwright report. */
