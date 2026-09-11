@@ -240,7 +240,7 @@ rose from 33–40 % to 63–65 % in the slow regime.
   must move in the same commit (Decision D3: the browser store resets, and the PR body lists what
   pending work is discarded).
 
-- [ ] **Step 1: Name what the second phase must re-read (RED test first).** Write a test that runs a
+- [x] **Step 1: Name what the second phase must re-read (RED test first).** Write a test that runs a
       conflicting admission and asserts, through the transaction spy, how many readonly transactions
       the retain-then-replay pair costs today versus one `attempt()`. Then decide, in the test's own
       comment, which observations are **authority-bearing** and must be re-read on replay (the
@@ -250,21 +250,29 @@ rose from 33–40 % to 63–65 % in the slow regime.
       validated source, the effect facts from `readALInboundEffectFacts`).
       Expected conclusion, to be confirmed by the test rather than assumed: the surface must be
       re-read; the _decode, plan pre-pass, deadline resolution and validation_ must not.
-- [ ] **Step 2: Carry the immutable half.** `retainPending` already stores the message with its
+- [x] **Step 2: Carry the immutable half — not executed (measurement, ruling R11).** Step 1 measured
+      one committing attempt at `[readonly, readonly, readwrite]` and retain-then-replay at
+      `[readonly (absence guard), readwrite (row), readonly, readonly, readwrite]`: the replay already
+      costs one surface, one fence and one write, and `retainPending` already persists the decoded
+      message with its resolved deadline and the validated source. The carry would move the schema id
+      (D3 reset) for no storage saving, so `ALInboundPendingAdmission` and `AL_ADMISSION_SCHEMA_ID`
+      stay as they are; the entry-point split would only move pure calls. Original text kept below
+      for the record.
+      _Original:_ `retainPending` already stores the message with its
       resolved deadline (`toALInboundMessageWithDeadline`). Extend the retained payload with the
       validated `source` it already has plus the resolved `deadline`, and have `replay()` skip
       `resolveALMessageExpireAtMs` and the pre-plan pass, entering `attempt()` at the read. Split
       `attempt()` into `attemptFromDecoded(admitted, source, planner, facts)` and keep `attempt()` as
       the ingress entry that decodes and pre-plans. No decision moves down the call stack: the
       deadline and the source are decided at the boundary, once, and persisted.
-- [ ] **Step 3: Do not make the replay wait a round for a rotation.** `retainConflictedAdmission`
+- [x] **Step 3: Do not make the replay wait a round for a rotation.** `retainConflictedAdmission`
       (`al-inbound-message-runtime.ts:299-308`) calls `commitWork()`, which calls
       `workSelector.restartScan()` and `work.committed()` — the handler runs a batch immediately when
       idle (`al-work-handler.ts:166-175`). Pin that a retained conflict reaches its replay in the
       same batch when the owner is idle, and in the immediately following one when it is not
       (`commitPending` → `runPendingCommit`). If the pin fails, the fix is in the handler's
       `commitPending` path, not in a new timer.
-- [ ] **Step 4: Verify and commit.** Focused Vitest over
+- [x] **Step 4: Verify and commit.** Focused Vitest over
       `packages/tests/shared/alm/al-inbound-pending-admission.test.ts` and the transaction test; the
       schema-id move verified by `packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts`.
       Commands: `npx vitest run packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/inbound packages/tests/shared-web/al-runtime`
