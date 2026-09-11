@@ -27,6 +27,7 @@ import {
     createOutboundMessage
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
+import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -47,49 +48,6 @@ const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     persist: true,
     preparedMessages: [{ text: msg.id.msgId }]
 });
-
-interface RecordedIndexedDbTransactions {
-    /** Every transaction the run opened, in order, so a pin can separate the read chain from the write. */
-    modes(): readonly IDBTransactionMode[];
-    /** How many earlier transactions still held their store locks as each one was created. */
-    liveWhenOpened(): readonly number[];
-    /** How many transactions still hold their store locks now. */
-    liveCount(): number;
-}
-
-function recordIndexedDbTransactions(): RecordedIndexedDbTransactions {
-    const modes: IDBTransactionMode[] = [];
-    const liveWhenOpened: number[] = [];
-    const live = new Set<IDBTransaction>();
-    const openTransaction = IDBDatabase.prototype.transaction;
-    const abortTransaction = IDBTransaction.prototype.abort;
-    // abort() finishes the transaction there and then; its event arrives a task later, which is
-    // already too late to say whether the write that followed queued behind it.
-    vi.spyOn(IDBTransaction.prototype, 'abort').mockImplementation(function (this: IDBTransaction) {
-        live.delete(this);
-        abortTransaction.call(this);
-    });
-    vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
-        this: IDBDatabase,
-        storeNames: string | Iterable<string>,
-        mode?: IDBTransactionMode,
-        options?: IDBTransactionOptions
-    ) {
-        modes.push(mode ?? 'readonly');
-        liveWhenOpened.push(live.size);
-        const transaction = openTransaction.call(this, storeNames, mode, options);
-        live.add(transaction);
-        for (const ended of ['complete', 'abort', 'error']) {
-            transaction.addEventListener(ended, () => live.delete(transaction));
-        }
-        return transaction;
-    });
-    return {
-        modes: () => modes,
-        liveWhenOpened: () => liveWhenOpened,
-        liveCount: () => live.size
-    };
-}
 
 /**
  * What an admission that reaches its commit costs: the decision surface, then the write phase's own
