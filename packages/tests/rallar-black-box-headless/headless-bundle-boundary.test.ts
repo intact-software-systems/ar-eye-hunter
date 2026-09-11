@@ -73,7 +73,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // Measured 258.2626953125 KiB brotli after the Task 13 fix round -- the engine's wake
         // listeners, the typed RTC signaling failure and its lifecycle forwarding; the limit was
         // raised to 259.
-        expect(result.brotliKiB).toBeLessThan(259);
+        // Measured 259.0634765625 KiB brotli after the Task 13 evidence round -- the named
+        // room-authority denial, the outbound readiness probe and the inbound rotation's liveness
+        // witness; the limit was raised to 260.
+        expect(result.brotliKiB).toBeLessThan(260);
     });
 });
 
