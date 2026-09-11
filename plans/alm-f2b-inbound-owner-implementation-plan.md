@@ -386,9 +386,15 @@ rotation never reaches — 0 events in every observation run.
       with the payload kind decoded by the inbound runtime (the handler is generic and must not decode
       an inbound payload — pass the kind in from `runInboundClaim`). Pin one event per claim with the
       right outcome for completed, retry and non-retryable.
-- [ ] **Step 3: Relay `readiness-probe` and extend `rotation-alive`.** Pin the event rate per idle
-      second over a fake engine; keep the relay only if it stays under the rate Task 0 Step 2
-      measured for the green head.
+- [x] **Step 3: Relay `readiness-probe` and extend `rotation-alive` — relay suppressed (ruling R19).**
+      Measured: the inbound probe reaches storage on 97 of 100 idle rounds, so a relayed event per
+      round is one per engine round; but in the conformance lane every relayed diagnostic is a
+      harness bridge round trip, and relaying the probe doubled the page's per-operation cost
+      (8.2 → 20.9 ms/op on the same machine) and delayed the sender's RTC signaling dispatches until the
+      lane failed the rtc cells; with the relay suppressed the cell passes at 10.3 ms/op. The inbound
+      runtime therefore keeps dropping `readiness-probe` (the handler's event still carries
+      `durationMs`; the outbound relay is unchanged) and `rotation-alive` gains `longestRoundMs` as
+      the rotation's liveness witness.
 - [ ] **Step 4: Contract doc and commit.** Update `runtime-diagnostic-contract.md` with the new fields
       and events and what each answers. Record in it that `commit-phases.transportSettleDurationMs` is
       never emitted, so no reader may depend on it.
