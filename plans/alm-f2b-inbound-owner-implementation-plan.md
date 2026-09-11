@@ -408,8 +408,8 @@ rotation never reaches — 0 events in every observation run.
       rtc-with-ws-fallback 6.89 ms/op; the relayed-probe build had failed the two RTC cells — see Task 4 Step 3.) `npm run test:rallar:full-stack:memory:alm`. Expected: three cells
       pass and each writes `test-results/alm-observation/<carrier>-smoke.json` plus its snapshot.
       Read the new `effect-drain` phase split from the snapshot and record the local medians.
-- [ ] **Step 2: Push and let the observation job run.** Download `alm-conformance-lane-<sha>`.
-- [ ] **Step 3: Classify before judging.** Read `regime` in every cell's
+- [x] **Step 2: Push and let the observation job run.** Download `alm-conformance-lane-<sha>`.
+- [x] **Step 3: Classify before judging.** Read `regime` in every cell's
       `alm-observation/<carrier>-smoke.json`. Take the **rtc** cell's regime as the runner's verdict;
       a `normal` regime on ws or fallback is unattributed (too few opening-window samples). Rules, from
       `packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`: both `normal` → a red is a
@@ -417,17 +417,31 @@ rotation never reaches — 0 events in every observation run.
       verdict; either `unclassified` → no regime evidence, rerun. The thresholds
       (`ALM_OBSERVATION_NORMAL_REGIME_MAX_MS_PER_OPERATION` 30,
       `ALM_OBSERVATION_SLOW_REGIME_MIN_MS_PER_OPERATION` 35) are constants, not knobs.
-- [ ] **Step 4: The acceptance figures.** Record, against the run-7 slow-regime baseline: inbound
+- [x] **Step 4: The acceptance figures.** Record, against the run-7 slow-regime baseline: inbound
       `effect-drain` median per cell and per page; the `selectionDurationMs` / `runDurationMs` split;
       the pending share of `admission-outcome`; the ws `delivery-baseline` end-to-end latency and the
       window left at arrival; whether the RTC receiver emitted an answer. **Acceptance:** in a `slow`
       regime the receiver's inbound median is at or below the outbound owner's for the same cell
       (run 7: inbound 5.1–14.1 s against outbound 1.4–1.8 s), and the ws cell delivers. Two
       iterations are allowed before the maintainer is asked again.
-- [ ] **Step 5: A red you cannot attribute.** If a cell reds in an `unclassified` or `slow` regime
+- [x] **Step 5: A red you cannot attribute.** If a cell reds in an `unclassified` or `slow` regime
       with no same-regime green baseline, rerun once. If it reds again, write the diagnosis as a
       session record in the shape of the earlier ones and route it to the maintainer
       rather than tuning a budget.
+
+**Task 5 outcome (2026-09-11, head `80d017d24`):** every cell ran in a `slow` regime — rtc 48.2 ms/op,
+rtc-with-ws-fallback 54.7, ws unclassified (4 samples) — the slowest regime yet and one without a
+same-regime green baseline (run 7 was 36 ms/op). All three cells red with the baseline signature. The
+phase split now attributes the inbound batches (sender / receiver medians): rtc 14.0 / 10.5 s of which
+run 9.0 / 4.6, release 4.0 / 2.3, claim 1.6 / 1.7, selection 0.15 / 0.53, queue wait 18.3 / 24.5 s;
+fallback 9.1 / 6.4 s; ws 5.3 / 8.9 s; outbound batches 1.3–2.4 s. Pending share: rtc 77 / 76 %,
+fallback 69 / 73 %, ws 45 / 43 %. Acceptance ("inbound median at or below the outbound owner's") is
+not met in this regime. What the numbers say: the claims' own work dominates because every pending
+replay is a full attempt at ~50 ms per operation, and the conflict rate feeds it — the inbound fence
+re-reads the whole decision surface, so each concurrent control or ACK commit conflicts the data
+admission in flight. Narrowing the fence and batching releases are admission-design changes outside
+this slice's tasks; routed to the maintainer (ruling R20). Locally the lane passes 3 of 3 in a normal
+regime at 7–13 ms/op.
 
 ### Task 6: Final gates and the PR
 
