@@ -1677,6 +1677,51 @@ discarded without retention and the sender's retry never fires; S2), the harness
 readiness, 10 s non-expiring send) sitting inside the runner's speed spread, and the readiness-scan
 rate rising back to 11.3 per second in one run (the `readiness-probe` cause event now names it).
 
+### Task 14: Pin the runner regime in every observation artifact
+
+Added 2026-09-11 (maintainer decision): the harness budgets stay as they are (`CONNECT_READINESS_TIMEOUT_MS`
+30 000, the receiver window derived from the 18 000 ms scenario deadline, `NON_EXPIRING_SEND_TIMEOUT_MS`
+10 000), the ALM lane stays the Release Gate's non-blocking observation job, and a red is read as a
+regression only when the run's runner regime matches a green baseline. Seven observation runs put the
+rtc cell's boundary at roughly 30–35 ms per IndexedDB operation on the hosted runner, and a same-day
+re-execution of a green head failed identically in the slow regime.
+
+**Files:**
+
+- Create: `packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts`
+- Modify: `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`,
+  `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md` (or a sibling lane doc),
+  `.github/workflows/release-gate.yml` (only if the upload path must change)
+- Test: `packages/tests/shared-test/alm-observation-regime.test.ts`
+
+**Interfaces:**
+
+- Consumes: the lane's run snapshot (both agents' recorded events: `commit-phases`, `storage.counters`,
+  `rallar.browser.rtc.lifecycle`, the recipe command results with their durations).
+- Produces: `ALMObservationRegime` — `{ regime: 'normal' | 'slow' | 'unclassified', perOperationMs,
+  readinessMs per peer, sendMs per scenario, workPagePerSecond, cellOutcome }` written as
+  `alm-observation/<carrier>-<scope>.json` under the Playwright output root for every cell, pass or fail.
+
+- [ ] **Step 1: The pure computation** — `computeALMObservationRegime(snapshot)` derives the per-operation
+      cost (readDurationMs over readOperationCount, p50 across `commit-phases`), the readiness time per peer
+      from the lifecycle witness, each scenario's send wall clock from the command results, and the
+      `work-page` rate from the two `storage.counters` readings; classifies `normal` below 30 ms per
+      operation, `slow` at or above 35, `unclassified` between or when fewer than five commit phases exist
+      (the thresholds are named constants with the seven-run evidence in one comment). Unit-test it from a
+      fixture snapshot with known figures, including the `unclassified` band.
+- [ ] **Step 2: Written for every cell** — the spec writes the regime file for every cell in a
+      `finally`, into a directory Playwright does not delete for passing tests (outside `testInfo.outputPath`,
+      under the configured output root so the observation job's existing `apps/rallar-black-box/test-results`
+      upload carries it); the per-cell run snapshot is written beside it for the same reason, so a green cell's
+      evidence is no longer lost. The spec also prints one line per cell to the job log: the regime, the
+      per-operation cost, and the outcome.
+- [ ] **Step 3: How to read a red** — a short section in the lane's doc: the budgets and why they stay,
+      the regime file's fields, the rule (compare against the green baseline of the same regime; a slow-regime
+      red is a measurement, not a verdict), and the pointer to the F2 PR body's runner table.
+- [ ] **Step 4: Gates and commit** — the focused Vitest, the four typechecks, `check-tests-typecheck`,
+      dprint on touched files, `check:repo-style:changed`, coupling, the ws ALM lane locally (the regime file
+      must appear for the passing cell), then commit.
+
 ---
 
 ## Self-review

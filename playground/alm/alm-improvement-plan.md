@@ -286,14 +286,14 @@ storage snapshot for the standard workload is recorded.
   identified room snapshot. ACKs carry origin and logical recipient; relays forward far ACKs toward
   the origin; the WS server aggregates broadcast ACKs and routes them to the origin connection.
   `receiver` is a logical ACK algorithm distinct from `hop`. Retry targets only missing recipients.
-  Incompatible browser schema; reset via F2. API recipe for the server path.
+  Incompatible browser schema; reset via F2. API recipe for the server path. **Carried in from F2 (PR #559, maintainer-approved 2026-09-11):** an RTC message a receiver admits as `pending` (`not-yet-in-sync`) is retained until its snapshot refresh lands or the message expires, instead of being discarded, and the sender's `not-yet-in-sync` retry fires on the NACK — on the hosted runner the receiver rejected a message whose sender sat at the same snapshot version, dropped it, and the retry never ran (diagnoses `alm-observation-04f0f70a1` and `-902fa30a7` in the F2 session record; the inbound `admission-outcome` event now names the denial).
 - **S3 Defaults, fallback, volatile path, consumer proofs.** Purpose at the channel with the D2
   default; carrier-aware capabilities installed in the browser composition; one memory and one
   IndexedDB backend per carrier runtime with each channel routed to one; fallback on a declared
   retryable outcome or receipt timeout within the deadline; aggregate memory, track, and intake
   budgets; zero AL-owned IndexedDB operations proven per volatile scenario. The authority client
   awaits receipts and consumes the handle; Relic snapshots move to the durable outbox with
-  receipts.
+  receipts. **Carried in from F2:** delivery-level fallback for `rtc-with-ws-fallback` — today the carrier falls back only when the RTC admission itself is refused (`no-route`, `circuit-open`); an admitted RTC send that is later dropped, rejected `not-yet-in-sync`, or never receipted is never retried over WS. The rule above (a declared retryable outcome or a receipt timeout within the deadline) needs S1's handle first.
 
 ### Releases 4 to 7: outcomes and exit evidence
 
@@ -324,6 +324,8 @@ identity and receipts with three peers, relay changes, join and leave, lost ACK,
 across carriers, both fallback orders; S3 volatile counters, fallback within the deadline, budgets;
 R1 and R2 arbitration and fencing; A1 and A2 audiences, leader, claims; V1 scale; I1 and I2
 correlation and lifetime.
+
+**Observation status (2026-09-11, maintainer decision).** The lane runs as the Release Gate's non-blocking observation job with its budgets unchanged (`CONNECT_READINESS_TIMEOUT_MS` 30 s, the receiver window from the 18 s scenario deadline, a 10 s non-expiring send). The hosted runner's IndexedDB speed varies by about two between runs, and the rtc cell passes below roughly 30 ms per operation and fails above 35, so every artifact carries a runner-regime summary (F2 Task 14) and a red counts as a regression only against a green baseline of the same regime. **Follow-up slice, F2b — the inbound owner on slow storage:** in the slow regime the receiver's inbound drain runs 5–14 s per batch (0.3–1.1 s otherwise), pending admission doubles the work, a ws message admitted as pending is not dispatched before its window closes, and an RTC receiver admits an offer and emits no answer for 20 s; it needs the same treatment F2 Task 13 gave the outbound owner (one transaction per decision surface, the two-phase cost, drain-latency instrumentation) before the lane can return to `test:ci`.
 
 ## Storage, cutover, reset, and rollback
 
@@ -465,3 +467,4 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-07: first-release merge boundary and fresh-session guidance for PR #521.
 - 2026-09-08: re-baselined on `a28e61b61`; decision record D1 to D8; release map, conformance lane,
   storage and cutover, governance, consumer proofs, and refreshed matrix.
+- 2026-09-11: F2 (PR #559) findings carried into S2 (pending-frame retention and the sender's `not-yet-in-sync` retry), S3 (delivery-level fallback), a follow-up slice F2b (the inbound owner on slow storage), and the lane's observation status with the runner-regime rule (F2 Task 14).
