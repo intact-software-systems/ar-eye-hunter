@@ -845,7 +845,13 @@ async function runDeliveryCase(
         ? input.run.agents.filter((agent) => agent.agentId !== sender.agentId)
         : firstHopReceivers;
     const startedAtMs = performance.now();
-    const commandId = await sendMatrixPayload(runtime, {
+    const receiptDurationsPromise = waitForDeliveryReceipts({
+        run: input.run,
+        deliveryCase: input.deliveryCase,
+        receivers,
+        startedAtMs
+    });
+    const sendCommandIdPromise = sendMatrixPayload(runtime, {
         ...input.run,
         sender,
         deliveryMode,
@@ -854,17 +860,25 @@ async function runDeliveryCase(
             ? undefined
             : firstHopReceivers.map((receiver) => input.sessions[receiver.prefix])
     });
-    const durations = await waitForDeliveryReceipts({
-        run: input.run,
-        deliveryCase: input.deliveryCase,
-        receivers,
-        startedAtMs
-    });
+    const [receiptDurationsResult, sendCommandIdResult] = await Promise.allSettled([
+        receiptDurationsPromise,
+        sendCommandIdPromise
+    ]);
+    if (sendCommandIdResult.status === 'rejected') {
+        throw sendCommandIdResult.reason;
+    }
+    if (receiptDurationsResult.status === 'rejected') {
+        throw receiptDurationsResult.reason;
+    }
     const receiverAgentIds = receivers.map((receiver) => receiver.agentId);
     return {
-        commandId,
+        commandId: sendCommandIdResult.value,
         scenario: toDeliveryScenario(input, receiverAgentIds, roomAudience),
-        timing: toDeliveryTiming(input, receiverAgentIds, durations)
+        timing: toDeliveryTiming(
+            input,
+            receiverAgentIds,
+            receiptDurationsResult.value
+        )
     };
 }
 
