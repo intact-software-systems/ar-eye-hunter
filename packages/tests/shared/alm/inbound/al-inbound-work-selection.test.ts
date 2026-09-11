@@ -1,11 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
+import type { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -16,7 +15,6 @@ import {
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     afterEach,
     describe,
@@ -110,30 +108,11 @@ function createSelectorFixture(): SelectorFixture {
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    const delivery = new ALInboundAdmittedDelivery({
-        admissionStore,
-        planIncomingMessage: (msg, source, observations) =>
-            planALMessageHandling(msg, {
-                selfPeerId: 'self',
-                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
-                ...observations
-            }),
-        dispatchInboxEntry: async () => {},
-        sendControlMessage: async () => {},
-        clock: { nowMs: () => NOW_MS },
-        effectPreparation: {
-            newControlId: () => 'selector-control',
-            selfPeerId: 'self',
-            createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
-        }
-    });
+    const stores = { admissionStore, workQueue: state.workQueue };
+    const delivery = createInboundTestDispatch(stores, () => NOW_MS).delivery;
     return {
         namespace,
-        port: createTestALInboundWorkPort({
-            admissionStore,
-            workQueue: state.workQueue,
-            nowMs: () => NOW_MS
-        }),
+        port: createTestALInboundWorkPort({ ...stores, nowMs: () => NOW_MS }),
         selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS })
     };
 }
@@ -177,7 +156,7 @@ async function createDispatchPageFixture(): Promise<DispatchPageFixture> {
     expect(await stores.workQueue.getAllKeys(), 'one dispatch-local row per admission').toHaveLength(
         DISPATCH_PAGE_ROWS
     );
-    const delivery = createInboundTestDispatch(stores).delivery;
+    const delivery = createInboundTestDispatch(stores, Date.now).delivery;
     return {
         delivery,
         port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),

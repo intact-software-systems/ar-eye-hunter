@@ -20,10 +20,14 @@ export interface InboundTestDispatch {
 }
 
 /**
- * The admitted delivery the runtime composes, over the caller's own stores, so a pin can drive one
- * row from its readiness read through its dispatch without a rotation around it.
+ * The admitted delivery the runtime composes, over the caller's own stores and on the caller's own
+ * clock, so a pin can drive one row from its readiness read through its dispatch without a rotation
+ * around it.
  */
-export function createInboundTestDispatch(stores: ALInboundRuntimeStores): InboundTestDispatch {
+export function createInboundTestDispatch(
+    stores: ALInboundRuntimeStores,
+    nowMs: () => number
+): InboundTestDispatch {
     const dispatched: string[] = [];
     const delivery = new ALInboundAdmittedDelivery({
         admissionStore: stores.admissionStore,
@@ -32,7 +36,7 @@ export function createInboundTestDispatch(stores: ALInboundRuntimeStores): Inbou
             dispatched.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
         sendControlMessage: async () => {},
-        clock: { nowMs: Date.now },
+        clock: { nowMs },
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION
     });
     onTestFinished(() => delivery.dispose());

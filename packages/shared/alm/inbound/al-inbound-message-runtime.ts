@@ -331,14 +331,26 @@ export class ALInboundMessageRuntime {
         this.work.committed();
     }
 
+    /**
+     * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
+     * batch already read. Announcing it here is what gives that work the batch this batch's end runs,
+     * instead of the next round the rotation happens to reach.
+     */
     private async runInboundClaim(claim: ALWorkClaim): Promise<ALWorkOutcome> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
-            return this.toReplayedAdmissionOutcome(await this.admission.replay(payload));
+            const replayed = await this.admission.replay(payload);
+            if (replayed.wroteWork) {
+                this.commitWork();
+            }
+            return toALInboundReplayOutcome(replayed.outcome, this.dependencies.clock.nowMs());
         }
         if (payload.kind === 'admit-control') {
             const replayed = await this.controlAdmission.replay(payload);
+            if (replayed.wroteWork) {
+                this.commitWork();
+            }
             if (replayed.acceptance !== undefined && !this.disposed) {
                 await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
             }
@@ -348,22 +360,16 @@ export class ALInboundMessageRuntime {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         };
     }
+}
 
-    /**
-     * A replay commits inside the batch that claimed it, so the work it wrote is behind the page
-     * that batch already read. Announcing it here is what gives that work the batch this batch's end
-     * runs, instead of the next round the rotation happens to reach.
-     */
-    private toReplayedAdmissionOutcome(replayed: ALInboundMessageAdmission.ReplayResult): ALWorkOutcome {
-        if (replayed.wroteWork) {
-            this.commitWork();
-        }
-        const outcome = replayed.outcome;
-        if (typeof outcome === 'string') {
-            return { status: outcome };
-        }
-        return outcome.kind === 'not-ready'
-            ? { status: 'not-ready', readyAtMs: this.dependencies.clock.nowMs() + outcome.retryAfterMs }
-            : { status: 'non-retryable' };
+function toALInboundReplayOutcome(
+    outcome: ALInboundMessageAdmission.ReplayOutcome,
+    nowMs: number
+): ALWorkOutcome {
+    if (typeof outcome === 'string') {
+        return { status: outcome };
     }
+    return outcome.kind === 'not-ready'
+        ? { status: 'not-ready', readyAtMs: nowMs + outcome.retryAfterMs }
+        : { status: 'non-retryable' };
 }

@@ -86,6 +86,16 @@ const RETAIN_THEN_REPLAY: readonly IDBTransactionMode[] = [
  */
 const ONE_DISPATCHED_MESSAGE: readonly IDBTransactionMode[] = ['readonly', 'readonly'];
 
+/**
+ * The same round for a claim that carries nothing, which is what every claim behind a replay's commit
+ * gets: the replay restarts the scan, so the dispatch reads the surface its own eligibility read took.
+ */
+const DISPATCH_WITHOUT_ITS_OBSERVATION: readonly IDBTransactionMode[] = [
+    ...ONE_DISPATCHED_MESSAGE,
+    'readonly',
+    'readonly'
+];
+
 async function createAdmissionFixture(): Promise<ALInboundRuntimeStores> {
     const stores = createInboundTestStores({
         namespace: TRANSACTION_NAMESPACE,
@@ -343,7 +353,7 @@ it('retains and replays a conflicted admission in 1 guarded row and 1 second att
 
 it('dispatches the unordered row its readiness read cleared', async () => {
     const stores = await createAdmissionFixture();
-    const dispatch = createInboundTestDispatch(stores);
+    const dispatch = createInboundTestDispatch(stores, Date.now);
     const effect = await readInboundTestDispatchEffect(
         stores,
         createInboundTestMessage({ msgId: 'ready-then-dispatched' })
@@ -358,7 +368,7 @@ it('dispatches the unordered row its readiness read cleared', async () => {
 
 it('reads one message and one planning surface from readiness through dispatch', async () => {
     const stores = await createAdmissionFixture();
-    const dispatch = createInboundTestDispatch(stores);
+    const dispatch = createInboundTestDispatch(stores, Date.now);
     const effect = await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: 'dispatch-cost' }));
 
     const recorded = recordIndexedDbTransactions();
@@ -368,9 +378,37 @@ it('reads one message and one planning surface from readiness through dispatch',
     expect(recorded.modes(), 'readReadiness then deliver').toEqual(ONE_DISPATCHED_MESSAGE);
 });
 
+it('dispatches a row whose claim carries no observation', async () => {
+    const stores = await createAdmissionFixture();
+    const dispatch = createInboundTestDispatch(stores, Date.now);
+    const effect = await readInboundTestDispatchEffect(
+        stores,
+        createInboundTestMessage({ msgId: 'dispatched-unobserved' })
+    );
+    await dispatch.delivery.readReadiness(effect, Date.now());
+
+    expect(await dispatch.delivery.deliver(effect, undefined)).toBe('completed');
+
+    expect(dispatch.dispatched).toEqual(['dispatched-unobserved']);
+});
+
+it('reads the message and its planning surface twice when the claim carries no observation', async () => {
+    const stores = await createAdmissionFixture();
+    const dispatch = createInboundTestDispatch(stores, Date.now);
+    const effect = await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: 'unobserved-cost' }));
+
+    const recorded = recordIndexedDbTransactions();
+    await dispatch.delivery.readReadiness(effect, Date.now());
+    await dispatch.delivery.deliver(effect, undefined);
+
+    expect(recorded.modes(), 'readReadiness then deliver without its observation').toEqual(
+        DISPATCH_WITHOUT_ITS_OBSERVATION
+    );
+});
+
 it('reads the ordering track again at the dispatch its readiness read already cleared', async () => {
     const stores = await createAdmissionFixture();
-    const dispatch = createInboundTestDispatch(stores);
+    const dispatch = createInboundTestDispatch(stores, Date.now);
     const message = createInboundTestMessage({ msgId: 'ordered-dispatch', seq: 1 });
     const effect = await readInboundTestDispatchEffect(stores, message);
     const readiness = await dispatch.delivery.readReadiness(effect, Date.now());

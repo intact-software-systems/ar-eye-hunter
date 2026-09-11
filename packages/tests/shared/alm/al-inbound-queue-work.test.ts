@@ -229,7 +229,8 @@ it.each([
     vi.spyOn(resources.workQueue, 'reserveEntries').mockImplementation(async (request) => {
         const claimed = await reserve(request);
         if (claimed.size > 0) {
-            // The claim is the one gap the eligibility read that cleared this row cannot see across.
+            // The eligibility read cleared this row before the claim; of everything it decided, only
+            // the message's deadline is decided again, against the clock this moves.
             vi.setSystemTime(admittedAt + readDelayMs);
         }
         return claimed;

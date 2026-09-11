@@ -14,6 +14,7 @@ import type {
     ALInboundAdmissionStore
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundWorkKey
@@ -546,6 +547,44 @@ describe('inbound durable effect worker lifecycle', () => {
         await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
     });
 
+    it('sends the control a replayed admission commits in the batch its own commit schedules', async () => {
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: new InboxOutboxEngine(),
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (msg) => {
+                controls.push(msg);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        const tracked = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'retained-control', contextId: 'room' },
+            'receiver',
+            'chat',
+            {}
+        );
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked);
+        await resources.workQueue.enqueueIfAbsent(
+            toRetainedControlAdmission(resources.admissionStore.namespace, tracked)
+        );
+
+        await runtime.ready();
+
+        // The replay runs inside a claim of the page that batch already read, so the acknowledgement
+        // it commits is behind that page. The engine is never started and no round is ever executed
+        // here: the batch this commit schedules for the end of the replaying one is the only thing
+        // that can have claimed the send.
+        await expect.poll(() => controls.map((control) => control.payload.typeId)).toHaveLength(1);
+    });
+
     it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
@@ -902,6 +941,25 @@ function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: numbe
         value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message, retainUntilMs: expireAtTimestamp },
         expireAtTimestamp
     };
+}
+
+/** A retained `admit-control` row for the acknowledgement that completes a tracked message's pending ack. */
+function toRetainedControlAdmission(namespace: string, tracked: ALMessage): ResourceEntry {
+    const expiresAtMs = Date.now() + 60_000;
+    const ack = newALAckControlMessage({ v: 2, msgId: 'retained-control-ack', ts: 1, senderId: 'sender' }, {
+        ackedMsgId: tracked.id.msgId,
+        fromPeerId: 'sender',
+        toPeerId: 'receiver',
+        status: 'accepted',
+        observedAtEpochMs: 1
+    });
+    return computeALInboundWorkEntry({
+        namespace,
+        effectId: toALInboundPendingControlId(ack),
+        observedAtMs: Date.now(),
+        expireAtTimestamp: expiresAtMs,
+        payload: { kind: 'admit-control', msg: ack, expiresAtMs }
+    }).entry;
 }
 
 /** The provenance an inbound acknowledgement needs: this peer forwarded the message and owes an ack. */

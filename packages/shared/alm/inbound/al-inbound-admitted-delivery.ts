@@ -141,14 +141,20 @@ export class ALInboundAdmittedDelivery {
     }
 
     /**
-     * `observed` is the eligibility read's own surface for this row, so a claim that carries one
-     * re-reads only what the claim window can still change: the entry's expiry and the plan's retry
-     * intent, both against a fresh clock reading, and an ordered message's predecessor.
+     * `observed` is the eligibility read's own surface for this row. What that read decided stands as
+     * of the page it was taken from; only the two things that must be decided later than it are
+     * decided again -- every expiry, against a fresh clock reading, and an ordered message's
+     * predecessor, which can land after the page was read. A claim carrying no observation reads the
+     * surface for itself, and the plan's retry intent is gated below for it, where the eligibility
+     * read would have gated a carried one.
      */
     async deliver(
         effect: ALPersistedInboundEffect,
         observed: ALInboundDeliveryObservation | undefined
     ): Promise<'completed' | 'retry'> {
+        if (this.shutdown.signal.aborted) {
+            return 'retry';
+        }
         const nowMs = this.dependencies.clock.nowMs();
         if (effect.expireAtTimestamp <= nowMs) {
             throw new NonRetryableException('Inbound work expired before delivery');
