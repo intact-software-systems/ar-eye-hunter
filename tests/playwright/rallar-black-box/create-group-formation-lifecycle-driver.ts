@@ -2,6 +2,7 @@ import { expect } from '@playwright/test';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
@@ -73,6 +74,7 @@ export interface LiveRtcControlPort extends
         | 'executeResult'
         | 'resultValue'
         | 'requireSessionId'
+        | 'recordReadinessFailure'
         | 'waitForPeerReadiness'
         | 'waitForPeerAbsence'
         | 'waitForMessage'
@@ -775,6 +777,19 @@ async function waitForCanonicalFormationReadiness(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: WaitForCanonicalFormationReadinessInput
 ): Promise<number> {
+    try {
+        return await readCanonicalFormationReadiness(config, input);
+    }
+    catch (cause) {
+        await recordCanonicalReadinessFailure(input);
+        throw cause;
+    }
+}
+
+async function readCanonicalFormationReadiness(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: WaitForCanonicalFormationReadinessInput
+): Promise<number> {
     const readiness = await config.formation.readiness({
         control: input.control,
         runId: input.runId,
@@ -803,6 +818,27 @@ async function waitForCanonicalFormationReadiness(
     ).toEqual(expectedPeerIds);
 
     return performance.now() - input.startedAtMs;
+}
+
+async function recordCanonicalReadinessFailure(
+    input: WaitForCanonicalFormationReadinessInput
+): Promise<void> {
+    try {
+        await input.control.recordReadinessFailure({
+            runId: input.runId,
+            agent: input.agent,
+            expectedPeerIds: input.expectedPeerIds,
+            suffix: input.suffix,
+            startedAtMs: input.startedAtMs,
+            attempt: 0
+        });
+    }
+    catch (diagnosticCause) {
+        console.error(
+            'Failed to record RTC readiness diagnostics',
+            toError(diagnosticCause)
+        );
+    }
 }
 
 function topologyReadCommand(

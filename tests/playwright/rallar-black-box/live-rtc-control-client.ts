@@ -180,6 +180,10 @@ export namespace LiveRtcControlClient {
         startedAtMs: number;
     }
 
+    export interface RecordReadinessFailureInput extends WaitForRtcReadinessInput {
+        readonly attempt: number;
+    }
+
     export interface CaptureAttemptFailureInput {
         readonly runId: string;
     }
@@ -451,23 +455,34 @@ export class LiveRtcControlClient {
         input: LiveRtcControlClient.WaitForMessageInput
     ): Promise<Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>> {
         const agentIds = [...new Set([input.senderAgentId, input.agentId])];
+        const receiverOrdinal = Math.max(
+            0,
+            this.#firstMessageFailureCase?.possibleReceiverAgentIds.indexOf(
+                input.agentId
+            ) ?? 0
+        ) + 1;
         const healthEntries = await Promise.all(
-            agentIds.map((agentId) => this.#captureMessageFailureAgentHealth(input, agentId))
+            agentIds.map((agentId, index) =>
+                this.#captureMessageFailureAgentHealth(
+                    input,
+                    agentId,
+                    `health-message-failure-${safeFileName(input.matrixId)}-${receiverOrdinal}-${index + 1}`
+                )
+            )
         );
         return Object.fromEntries(healthEntries);
     }
 
     async #captureMessageFailureAgentHealth(
         input: LiveRtcControlClient.WaitForMessageInput,
-        agentId: string
+        agentId: string,
+        commandId: string
     ): Promise<readonly [string, LiveRtcMessageFailureAgentHealth]> {
         try {
             const health = await this.executeResult({
                 runId: input.runId,
                 agentId,
-                commandId: `health-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}-${
-                    safeFileName(agentId)
-                }`,
+                commandId,
                 command: { kind: 'health', includeRtcDiagnostics: true },
                 timeoutMs: 15_000
             });
@@ -525,7 +540,7 @@ export class LiveRtcControlClient {
         }
         catch (cause) {
             try {
-                await this.#recordReadinessFailure(input, attempt);
+                await this.recordReadinessFailure({ ...input, attempt });
             }
             catch (diagnosticCause) {
                 console.error(
@@ -576,9 +591,8 @@ export class LiveRtcControlClient {
         return input.expectedPeerIds.every((peerId) => readyPeerIds.includes(peerId));
     }
 
-    async #recordReadinessFailure(
-        input: LiveRtcControlClient.WaitForRtcReadinessInput,
-        attempt: number
+    async recordReadinessFailure(
+        input: LiveRtcControlClient.RecordReadinessFailureInput
     ): Promise<void> {
         if (!this.#diagnosticsOutDir) {
             return;
@@ -592,8 +606,17 @@ export class LiveRtcControlClient {
         const failedAgentReference = toCausalAgentReference(input.agent.agentId, 1);
         const healthByAgentId = Object.fromEntries(
             await Promise.all(
-                [...agentReferences].map(async ([agentId, agentReference]) =>
-                    [agentReference, await this.#readReadinessFailureHealth(input, agentId, attempt)] as const
+                [...agentReferences].map(async ([agentId, agentReference], index) =>
+                    [
+                        agentReference,
+                        await this.#readReadinessFailureHealth(
+                            input,
+                            agentId,
+                            `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${input.attempt}-${
+                                index + 1
+                            }`
+                        )
+                    ] as const
                 )
             )
         );
@@ -629,15 +652,13 @@ export class LiveRtcControlClient {
     async #readReadinessFailureHealth(
         input: LiveRtcControlClient.WaitForRtcReadinessInput,
         agentId: string,
-        attempt: number
+        commandId: string
     ): Promise<LiveRtcReadinessAgentHealth> {
         try {
             const health = await this.executeResult({
                 runId: input.runId,
                 agentId,
-                commandId: `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt}-${
-                    safeFileName(agentId)
-                }`,
+                commandId,
                 command: { kind: 'health', includeRtcDiagnostics: true },
                 timeoutMs: 15_000
             });
@@ -880,20 +901,27 @@ export class LiveRtcControlClient {
     ): Promise<Readonly<Record<string, LiveRtcFailureAgentHealth>>> {
         const agentIds = [...new Set([input.senderAgentId, input.targetAgentId])];
         const entries = await Promise.all(
-            agentIds.map((agentId) => this.#captureNackAgentHealth(input, agentId))
+            agentIds.map((agentId, index) =>
+                this.#captureNackAgentHealth(
+                    input,
+                    agentId,
+                    `health-nack-failure-${safeFileName(input.commandId)}-${index + 1}`
+                )
+            )
         );
         return Object.fromEntries(entries);
     }
 
     async #captureNackAgentHealth(
         input: LiveRtcControlClient.CaptureNackFailureInput,
-        agentId: string
+        agentId: string,
+        commandId: string
     ): Promise<readonly [string, LiveRtcFailureAgentHealth]> {
         try {
             const health = await this.executeResult({
                 runId: input.runId,
                 agentId,
-                commandId: `health-nack-failure-${safeFileName(input.commandId)}-${safeFileName(agentId)}`,
+                commandId,
                 command: { kind: 'health', includeRtcDiagnostics: true },
                 timeoutMs: 15_000
             });

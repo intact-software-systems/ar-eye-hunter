@@ -23,6 +23,7 @@ describe('live RTC control client', () => {
     let healthValues: Record<string, LiveRtcJsonRecord>;
     let runAgentIds: string[];
     let readinessHealthAgents: string[];
+    let failureHealthCommandIds: string[];
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
@@ -39,6 +40,7 @@ describe('live RTC control client', () => {
         healthValues = {};
         runAgentIds = ['agent-a'];
         readinessHealthAgents = [];
+        failureHealthCommandIds = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
                 const chunks: Buffer[] = [];
@@ -62,6 +64,9 @@ describe('live RTC control client', () => {
                 if (command.commandId.startsWith('health-readiness-failure-')) {
                     readinessHealthAgents.push(agentId ?? 'missing-agent');
                 }
+                if (/^health-(message|readiness|nack)-failure-/u.test(command.commandId)) {
+                    failureHealthCommandIds.push(command.commandId);
+                }
                 if (
                     healthCommandFailure &&
                     agentId === healthCommandFailure.agentId &&
@@ -73,29 +78,31 @@ describe('live RTC control client', () => {
                 if (holdHealthCommand && /health-(message|readiness)-failure-/.test(command.commandId)) {
                     await holdHealthCommand(agentId ?? 'missing-agent');
                 }
-                results.push({
-                    agentId,
-                    commandId: command.commandId,
-                    ok: true,
-                    result: {
-                        value: healthValues[agentId ?? ''] ?? {
-                            rallar: {
-                                rtcStatus: {
-                                    activePeerIds: readyPeerIds,
-                                    readyPeerIds
-                                },
-                                rtcDiagnostics: {
-                                    sessionId: 'health-session',
-                                    generatedAtEpochMs: 0,
-                                    peerCount: 0,
-                                    connectedPeerCount: 0,
-                                    relayPeerCount: 0,
-                                    peers: []
+                if (!results.some((result) => result.commandId === command.commandId)) {
+                    results.push({
+                        agentId,
+                        commandId: command.commandId,
+                        ok: true,
+                        result: {
+                            value: healthValues[agentId ?? ''] ?? {
+                                rallar: {
+                                    rtcStatus: {
+                                        activePeerIds: readyPeerIds,
+                                        readyPeerIds
+                                    },
+                                    rtcDiagnostics: {
+                                        sessionId: 'health-session',
+                                        generatedAtEpochMs: 0,
+                                        peerCount: 0,
+                                        connectedPeerCount: 0,
+                                        relayPeerCount: 0,
+                                        peers: []
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                }
                 response.writeHead(202).end('{}');
                 return;
             }
@@ -664,6 +671,45 @@ describe('live RTC control client', () => {
         expect(readinessHealthAgents).toEqual(['agent-a']);
     });
 
+    it('uses collision-free bounded command identities for concurrent readiness health', async () => {
+        runAgentIds = ['agent-a'];
+        healthValues['agent:a'] = {
+            rallar: { session: { sessionId: 'session-colon' } }
+        };
+        healthValues['agent-a'] = {
+            rallar: { session: { sessionId: 'session-hyphen' } }
+        };
+        const failure = new Error('readiness failed');
+        refreshRoom.mockRejectedValue(failure);
+
+        await expect(
+            control.waitForPeerReadiness({
+                runId: 'run-readiness-command-collision',
+                agent: { ...agent, agentId: 'agent:a' },
+                expectedPeerIds: ['session-hyphen'],
+                suffix: 'command-collision',
+                startedAtMs: 100
+            })
+        ).rejects.toBe(failure);
+
+        const sidecar = JSON.parse(
+            readFileSync(
+                path.join(
+                    diagnosticsRoot,
+                    'live-rtc-readiness-failure-agent-a-command-collision.json'
+                ),
+                'utf8'
+            )
+        );
+        expect(sidecar.healthByAgentId).toMatchObject({
+            'agent:a': { localSessionId: 'session-colon' },
+            'agent-a': { localSessionId: 'session-hyphen' }
+        });
+        expect(failureHealthCommandIds).toHaveLength(2);
+        expect(new Set(failureHealthCommandIds).size).toBe(2);
+        expect(failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
+    });
+
     it('retains sender and receiver health when message delivery times out', async () => {
         results.push({
             agentId: 'agent-a',
@@ -905,6 +951,91 @@ describe('live RTC control client', () => {
         });
     });
 
+    it('uses collision-free bounded command identities for concurrent message-failure health', async () => {
+        healthValues['agent:a'] = rtcHealthValue('session-colon', 1);
+        healthValues['agent-a'] = rtcHealthValue('session-hyphen', 2);
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-command-collision',
+                senderAgentId: 'agent:a',
+                agentId: 'agent-a',
+                transport: 'messages.rtc',
+                matrixId: 'message-command-collision',
+                deliveryMode: 'direct',
+                possibleReceiverAgentIds: ['agent-a'],
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('message-command-collision');
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-message-command-collision' });
+        expect(attemptFailure.messageFailures[0]?.healthByAgentId).toMatchObject({
+            'agent:a': { peerCount: 1 },
+            'agent-a': { peerCount: 2 }
+        });
+        expect(failureHealthCommandIds).toHaveLength(2);
+        expect(new Set(failureHealthCommandIds).size).toBe(2);
+        expect(failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
+    });
+
+    it('separates colliding receiver identities across retained message-failure captures', async () => {
+        healthValues['sender'] = rtcHealthValue('session-sender', 1);
+        healthValues['agent:a'] = rtcHealthValue('session-colon', 2);
+        healthValues['agent-a'] = rtcHealthValue('session-hyphen', 3);
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+        const possibleReceiverAgentIds = ['agent:a', 'agent-a'];
+
+        for (const receiverAgentId of possibleReceiverAgentIds) {
+            await expect(
+                controlWithoutDiagnosticsDirectory.waitForMessage({
+                    runId: 'run-receiver-command-collision',
+                    senderAgentId: 'sender',
+                    agentId: receiverAgentId,
+                    transport: 'messages.rtc',
+                    matrixId: 'receiver-command-collision',
+                    deliveryMode: 'multicast',
+                    possibleReceiverAgentIds,
+                    startedAtMs: 100,
+                    timeoutMs: 10
+                })
+            ).rejects.toThrow('receiver-command-collision');
+        }
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-receiver-command-collision' });
+        expect(attemptFailure.messageFailures).toMatchObject([
+            {
+                receiverAgentId: 'agent:a',
+                healthByAgentId: {
+                    sender: { peerCount: 1 },
+                    'agent:a': { peerCount: 2 }
+                }
+            },
+            {
+                receiverAgentId: 'agent-a',
+                healthByAgentId: {
+                    sender: { peerCount: 1 },
+                    'agent-a': { peerCount: 3 }
+                }
+            }
+        ]);
+        expect(failureHealthCommandIds).toHaveLength(4);
+        expect(new Set(failureHealthCommandIds).size).toBe(4);
+    });
+
     it('waits for both first-case receiver captures before returning attempt failure evidence', async () => {
         const releaseDelayedHealth = Promise.withResolvers<void>();
         const delayedHealthStarted = Promise.withResolvers<void>();
@@ -1129,4 +1260,51 @@ describe('live RTC control client', () => {
             ok: true
         });
     });
+
+    it('uses collision-free bounded command identities for concurrent NACK health', async () => {
+        healthValues['agent:a'] = rtcHealthValue('session-colon', 1);
+        healthValues['agent-a'] = rtcHealthValue('session-hyphen', 2);
+
+        const diagnostic = await control.captureNackFailure({
+            runId: 'run-nack-command-collision',
+            senderAgentId: 'agent:a',
+            targetAgentId: 'agent-a',
+            commandId: 'nack-command-collision',
+            stage: 'receive',
+            messageId: 'message',
+            senderSessionId: 'session-colon',
+            targetSessionId: 'session-hyphen',
+            frames: []
+        });
+
+        expect(diagnostic.healthByAgentId).toMatchObject({
+            'agent:a': { peerCount: 1 },
+            'agent-a': { peerCount: 2 }
+        });
+        expect(failureHealthCommandIds).toHaveLength(2);
+        expect(new Set(failureHealthCommandIds).size).toBe(2);
+        expect(failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
+    });
 });
+
+function rtcHealthValue(
+    sessionId: string,
+    peerCount: number
+): LiveRtcJsonRecord {
+    return {
+        rallar: {
+            rtcStatus: {
+                activePeerIds: [],
+                readyPeerIds: []
+            },
+            rtcDiagnostics: {
+                sessionId,
+                generatedAtEpochMs: 0,
+                peerCount,
+                connectedPeerCount: 0,
+                relayPeerCount: 0,
+                peers: []
+            }
+        }
+    };
+}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     createGroupFormationLifecycleDriver,
@@ -6,7 +6,10 @@ import {
 } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
-import type { LiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
+import {
+    createLiveRtcFormationOperations,
+    type LiveRtcFormationOperations
+} from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
 function createAgent(
     prefix: LiveRtcControlClient.FormationAgent['prefix']
@@ -49,6 +52,38 @@ function readResultValue(
     return typeof value === 'object' && value !== null && !Array.isArray(value)
         ? value
         : {};
+}
+
+function canonicalFormationReadinessValue(
+    agentId: string,
+    omitExpectedPeer: boolean
+): LiveRtcJsonRecord {
+    const expectedPeerIdsByAgentId: Readonly<Record<string, readonly string[]>> = {
+        'agent-a': ['session-b', 'session-c-next'],
+        'agent-b': ['session-a', 'session-c-next'],
+        'agent-c': ['session-a', 'session-b']
+    };
+    const desiredPeerIds = [...(expectedPeerIdsByAgentId[agentId] ?? [])];
+    const readyPeerIds = omitExpectedPeer
+        ? desiredPeerIds.slice(0, -1)
+        : desiredPeerIds;
+    return {
+        readyAtEpochMs: 1,
+        formation: {
+            stage: 'active',
+            room: {
+                state: 'open',
+                desiredPeerIds,
+                readyPeerIds,
+                acceptedLayoutIdentity: {
+                    groupRevision: 1,
+                    presenceRevision: 1,
+                    version: 1,
+                    state: 'active'
+                }
+            }
+        }
+    };
 }
 
 describe('group formation lifecycle driver', () => {
@@ -131,6 +166,7 @@ describe('group formation lifecycle driver', () => {
                 return sessionId;
             },
             readyPeerIds: () => [],
+            recordReadinessFailure: async () => undefined,
             waitForMessage: async () => 1,
             waitForPeerAbsence: async () => undefined,
             waitForPeerReadiness: async (input) => {
@@ -237,5 +273,168 @@ describe('group formation lifecycle driver', () => {
             'agent-b',
             'agent-c'
         ]);
+    });
+
+    it.each([
+        { failureKind: 'command' as const, failure: new Error('canonical readiness command failed') },
+        { failureKind: 'refresh' as const, failure: new Error('canonical readiness refresh failed') },
+        { failureKind: 'peer-proof' as const, failure: undefined }
+    ])('records $failureKind failures before reconnect lifecycle cleanup', async ({ failureKind, failure }) => {
+        const operationOrder: string[] = [];
+        const recordReadinessFailure = vi.fn(
+            async (
+                _input: LiveRtcControlClient.RecordReadinessFailureInput
+            ) => {
+                operationOrder.push('capture');
+            }
+        );
+        const agentA = {
+            ...createAgent('A'),
+            refreshRoom: async () => {
+                if (failureKind === 'refresh') {
+                    throw failure;
+                }
+            }
+        };
+        const agents = [agentA, createAgent('B'), createAgent('C')] as const;
+        const control = {
+            executeOk: async (
+                input: LiveRtcControlClient.ExecuteInput
+            ): Promise<LiveRtcControlClient.Result> => {
+                if (input.command.kind === 'rtc.connect') {
+                    return successfulResult(input, { sessionId: 'session-c-next' });
+                }
+                if (
+                    input.command.kind === 'formation.readiness' &&
+                    input.agentId === 'agent-a' &&
+                    failureKind === 'command'
+                ) {
+                    throw failure;
+                }
+                if (input.command.kind === 'formation.readiness') {
+                    return successfulResult(
+                        input,
+                        canonicalFormationReadinessValue(
+                            input.agentId,
+                            input.agentId === 'agent-a' && failureKind === 'peer-proof'
+                        )
+                    );
+                }
+                return successfulResult(input, {});
+            },
+            executeResult: async (input: LiveRtcControlClient.ExecuteInput) => successfulResult(input, {}),
+            resultValue: readResultValue,
+            requireSessionId: (result: LiveRtcControlClient.Result) => {
+                const sessionId = readResultValue(result).sessionId;
+                if (typeof sessionId !== 'string') {
+                    throw new Error('Expected reconnect session.');
+                }
+                return sessionId;
+            },
+            readyPeerIds: () => [],
+            waitForMessage: async () => 1,
+            waitForPeerAbsence: async () => undefined,
+            waitForPeerReadiness: async () => 1,
+            recordReadinessFailure
+        };
+        const driver = createGroupFormationLifecycleDriver({
+            apiBaseUrl: 'http://api.test',
+            applicationId: 'application',
+            workspaceId: 'workspace',
+            messagesRtcTypeId: 'type',
+            messagesRtcTopicId: 'topic',
+            formation: createLiveRtcFormationOperations()
+        });
+
+        const reconnect = driver.reconnectAndWaitForPeerReadiness({
+            control,
+            runId: 'run-canonical-failure',
+            reconnectingAgent: agents[2],
+            survivingAgents: [agents[0], agents[1]],
+            survivingSessionIds: ['session-a', 'session-b'],
+            transport: 'realtime',
+            groupId: 'group',
+            suffix: `canonical-${failureKind}`
+        });
+        try {
+            if (failure) {
+                await expect(reconnect).rejects.toBe(failure);
+            }
+            else {
+                await expect(reconnect).rejects.toThrow('exact ready peers');
+            }
+        }
+        finally {
+            operationOrder.push('cleanup');
+        }
+
+        expect(recordReadinessFailure).toHaveBeenCalledTimes(1);
+        expect(recordReadinessFailure).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runId: 'run-canonical-failure',
+                agent: expect.objectContaining({ agentId: 'agent-a', prefix: 'A' }),
+                expectedPeerIds: ['session-b', 'session-c-next'],
+                suffix: `canonical-${failureKind}`,
+                attempt: 0
+            })
+        );
+        expect(operationOrder).toEqual(['capture', 'cleanup']);
+    });
+
+    it('preserves the canonical lifecycle error when failure capture also fails', async () => {
+        const lifecycleFailure = new Error('canonical readiness command failed');
+        const diagnosticFailure = new Error('diagnostic capture failed');
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const control = {
+            executeOk: async (
+                input: LiveRtcControlClient.ExecuteInput
+            ): Promise<LiveRtcControlClient.Result> => {
+                if (input.command.kind === 'rtc.connect') {
+                    return successfulResult(input, { sessionId: 'session-c-next' });
+                }
+                throw lifecycleFailure;
+            },
+            executeResult: async (input: LiveRtcControlClient.ExecuteInput) => successfulResult(input, {}),
+            resultValue: readResultValue,
+            requireSessionId: () => 'session-c-next',
+            readyPeerIds: () => [],
+            waitForMessage: async () => 1,
+            waitForPeerAbsence: async () => undefined,
+            waitForPeerReadiness: async () => 1,
+            recordReadinessFailure: async () => {
+                throw diagnosticFailure;
+            }
+        };
+        const agents = [createAgent('A'), createAgent('B'), createAgent('C')] as const;
+        const driver = createGroupFormationLifecycleDriver({
+            apiBaseUrl: 'http://api.test',
+            applicationId: 'application',
+            workspaceId: 'workspace',
+            messagesRtcTypeId: 'type',
+            messagesRtcTopicId: 'topic',
+            formation: createLiveRtcFormationOperations()
+        });
+
+        try {
+            await expect(
+                driver.reconnectAndWaitForPeerReadiness({
+                    control,
+                    runId: 'run-capture-failure',
+                    reconnectingAgent: agents[2],
+                    survivingAgents: [agents[0], agents[1]],
+                    survivingSessionIds: ['session-a', 'session-b'],
+                    transport: 'realtime',
+                    groupId: 'group',
+                    suffix: 'capture-failure'
+                })
+            ).rejects.toBe(lifecycleFailure);
+            expect(errorLog).toHaveBeenCalledWith(
+                'Failed to record RTC readiness diagnostics',
+                diagnosticFailure
+            );
+        }
+        finally {
+            errorLog.mockRestore();
+        }
     });
 });
