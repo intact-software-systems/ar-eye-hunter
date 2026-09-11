@@ -148,9 +148,9 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
 
 export async function readInboundTestDecisionSurface(
     admissionStore: ALInboundAdmissionStore,
-    msg: ALMessage
+    msg: ALMessage,
+    nowMs = Date.now()
 ): Promise<ALInboundAdmissionRead> {
-    const nowMs = Date.now();
     return await admissionStore.readIncomingMessage({
         msg,
         source: INBOUND_TEST_SOURCE,
@@ -163,18 +163,21 @@ export async function readInboundTestDecisionSurface(
     });
 }
 
-/** The real compute path's own bundle, so every row an admission leaves behind is a real one. */
-export async function computeInboundTestAdmission(
+/**
+ * The real admission path's own bundle, so every row it leaves behind is a real one: one clock
+ * reading threaded through the read, the plan it feeds, and the effect facts, exactly as
+ * `ALInboundMessageAdmission.attempt` threads its own.
+ */
+export async function readInboundTestAdmission(
     admissionStore: ALInboundAdmissionStore,
     msg: ALMessage
 ): Promise<ALInboundCommitBundle> {
     const nowMs = Date.now();
-    const read = await readInboundTestDecisionSurface(admissionStore, msg);
+    const read = await readInboundTestDecisionSurface(admissionStore, msg, nowMs);
     const plan = planALMessageHandling(msg, {
         ...computeALInboundPlanningObservations(read),
         selfPeerId: INBOUND_TEST_SELF_PEER_ID,
-        fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
-        nowMs
+        fromPeerId: INBOUND_TEST_SENDER_PEER_ID
     });
     const facts = readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),

@@ -119,26 +119,23 @@ export class ALInboundControlAdmission {
         ack: ALAckPayload,
         nowMs: number
     ): Promise<ALInboundControlAdmissionRead | undefined> {
-        const controlOwners = await this.admissionStore.readControlOwnerIndex(ack.ackedMsgId);
-        const senderId = controlOwners?.values.find((value) => value.peerId === ack.fromPeerId)?.senderId;
-        if (controlOwners === undefined || controlOwners.ambiguous || senderId === undefined || senderId === null) {
+        const surface = await this.admissionStore.readControlDecisionSurface(ack);
+        if (surface === undefined) {
             return undefined;
         }
-        const owner = await this.admissionStore.readMessageOwnerRecord(ack.ackedMsgId, senderId);
-        const { pendingAck, acks } = await this.admissionStore.readAcknowledgementState(ack.ackedMsgId, senderId);
-        if (owner === undefined) {
+        if (surface.messageOwner === undefined) {
             throw new ALAdmissionCorruptionError(
-                toALInboundMessageOwnerKey(this.admissionStore.namespace, ack.ackedMsgId, senderId),
+                toALInboundMessageOwnerKey(this.admissionStore.namespace, ack.ackedMsgId, surface.senderId),
                 new TypeError('Retained inbound acknowledgement state has no message provenance')
             );
         }
         return {
             namespace: this.admissionStore.namespace,
             ack,
-            controlOwners,
-            owner,
-            pending: pendingAck,
-            acks,
+            controlOwners: surface.controlOwners,
+            owner: surface.messageOwner,
+            pending: surface.pendingAck,
+            acks: surface.acks,
             nowMs,
             controlMsgId: this.newControlId()
         };

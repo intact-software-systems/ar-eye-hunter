@@ -16,10 +16,10 @@ import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-mess
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
-    computeInboundTestAdmission,
     createInboundTestMessage,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
+    readInboundTestAdmission,
     readInboundTestDecisionSurface
 } from '../inbound-runtime-test-fixture.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
@@ -32,7 +32,10 @@ const TRANSACTION_NAMESPACE = 'inbound-admission-transactions';
 const SUPERSEDENCE_KEY = 'shared-topic';
 const ACKNOWLEDGING_PEER_ID = 'downstream';
 
-/** One readonly session per decision surface: what Tasks 1-3 owe every read below. */
+/**
+ * One readonly session per decision surface. Each surface below opened between 3 and 12 transactions
+ * before the inbound owner read its whole chain from one session; that is what these pins guard.
+ */
 const ONE_DECISION_SURFACE: readonly IDBTransactionMode[] = ['readonly'];
 
 /**
@@ -54,7 +57,7 @@ async function createAdmissionFixture(): Promise<ALInboundRuntimeStores> {
 }
 
 async function admitIncomingMessage(admissionStore: ALInboundAdmissionStore, msg: ALMessage): Promise<void> {
-    expect(await admissionStore.commitBundle(await computeInboundTestAdmission(admissionStore, msg))).toBe('committed');
+    expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, msg))).toBe('committed');
 }
 
 /** Two messages past the gap the track opens at seq 1: both are buffered, neither is released. */
@@ -130,13 +133,13 @@ function newAcknowledgement(message: ALMessage): ALMessage {
     );
 }
 
-it.fails('reads a first inbound decision surface in 1 readonly transaction, not the 5 it opens today', async () => {
+it('reads a first inbound decision surface in 1 readonly transaction', async () => {
     const { admissionStore } = await createAdmissionFixture();
 
     const recorded = recordIndexedDbTransactions();
     await readInboundTestDecisionSurface(admissionStore, createInboundTestMessage({ msgId: 'first-ingress' }));
 
-    expect(recorded.modes(), 'readIncomingMessage, first ingress: 5 transactions today').toEqual(ONE_DECISION_SURFACE);
+    expect(recorded.modes(), 'readIncomingMessage, first ingress').toEqual(ONE_DECISION_SURFACE);
 });
 
 it('reads both buffered rows and the supersedence pair of an ordered, tracked surface', async () => {
@@ -151,15 +154,14 @@ it('reads both buffered rows and the supersedence pair of an ordered, tracked su
     expect(read.supersedence.key).toBe(SUPERSEDENCE_KEY);
 });
 
-it.fails('reads an ordered, supersedence-tracked surface in 1 readonly transaction, not the 12 it opens today', async () => {
+it('reads an ordered, supersedence-tracked surface in 1 readonly transaction', async () => {
     const { admissionStore } = await createAdmissionFixture();
     await bufferTwoOrderedMessages(admissionStore);
 
     const recorded = recordIndexedDbTransactions();
     await readInboundTestDecisionSurface(admissionStore, createOrderedIngressMessage());
 
-    expect(recorded.modes(), 'readIncomingMessage, ordered and tracked: 12 transactions today, 10 plus one per buffered row')
-        .toEqual(ONE_DECISION_SURFACE);
+    expect(recorded.modes(), 'readIncomingMessage, ordered and tracked').toEqual(ONE_DECISION_SURFACE);
 });
 
 it('reads the buffered message a release surface is asked for', async () => {
@@ -175,7 +177,7 @@ it('reads the buffered message a release surface is asked for', async () => {
     expect(read?.snapshot.msg.id.msgId).toBe('buffered-2');
 });
 
-it.fails('reads a buffered release surface in 1 readonly transaction, not the 7 it opens today', async () => {
+it('reads a buffered release surface in 1 readonly transaction', async () => {
     const { admissionStore } = await createAdmissionFixture();
     await bufferTwoOrderedMessages(admissionStore);
     const trackKey = toALOrderingTrackKey(createInboundTestMessage({ msgId: 'buffered-2', seq: 2 }))!;
@@ -183,7 +185,7 @@ it.fails('reads a buffered release surface in 1 readonly transaction, not the 7 
     const recorded = recordIndexedDbTransactions();
     await admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() });
 
-    expect(recorded.modes(), 'readBufferedRelease: 7 transactions today').toEqual(ONE_DECISION_SURFACE);
+    expect(recorded.modes(), 'readBufferedRelease').toEqual(ONE_DECISION_SURFACE);
 });
 
 it('reads the supersedence key an admitted message was stored under', async () => {
@@ -196,7 +198,7 @@ it('reads the supersedence key an admitted message was stored under', async () =
     expect(read.supersedenceKey).toBe(SUPERSEDENCE_KEY);
 });
 
-it.fails('reads a stored planning surface in 1 readonly transaction, not the 3 it opens today', async () => {
+it('reads a stored planning surface in 1 readonly transaction', async () => {
     const { admissionStore } = await createAdmissionFixture();
     const message = createInboundTestMessage({ msgId: 'stored-planning', supersedenceKey: SUPERSEDENCE_KEY });
     await admitIncomingMessage(admissionStore, message);
@@ -204,7 +206,7 @@ it.fails('reads a stored planning surface in 1 readonly transaction, not the 3 i
     const recorded = recordIndexedDbTransactions();
     await admissionStore.readStoredPlanningState({ msg: message, nowMs: Date.now() });
 
-    expect(recorded.modes(), 'readStoredPlanningState: 3 transactions today').toEqual(ONE_DECISION_SURFACE);
+    expect(recorded.modes(), 'readStoredPlanningState').toEqual(ONE_DECISION_SURFACE);
 });
 
 it('commits the acknowledgement its control owner index resolves to a tracked message', async () => {
@@ -215,7 +217,7 @@ it('commits the acknowledgement its control owner index resolves to a tracked me
     expect((await control.admit(newAcknowledgement(message))).kind).toBe('committed');
 });
 
-it.fails('admits a control message in 1 surface, 1 fence and 1 write, not the 6 transactions today', async () => {
+it('admits a control message in 1 surface, 1 fence and 1 write', async () => {
     const stores = await createAdmissionFixture();
     const message = await seedAcknowledgeableMessage(stores.admissionStore);
     const control = createTestALInboundControlAdmission({ ...stores, nowMs: Date.now, newControlId: () => 'control' });
@@ -224,13 +226,12 @@ it.fails('admits a control message in 1 surface, 1 fence and 1 write, not the 6 
     const recorded = recordIndexedDbTransactions();
     await control.admit(ack);
 
-    expect(recorded.modes(), 'readControlAdmission: 6 transactions today, 4 of them the decision surface')
-        .toEqual(COMMITTING_CONTROL_ADMISSION);
+    expect(recorded.modes(), 'ALInboundControlAdmission.admit').toEqual(COMMITTING_CONTROL_ADMISSION);
 });
 
 it('commits one bundle with one fence snapshot and one write, neither queued behind the other', async () => {
     const { admissionStore } = await createAdmissionFixture();
-    const bundle = await computeInboundTestAdmission(
+    const bundle = await readInboundTestAdmission(
         admissionStore,
         createInboundTestMessage({ msgId: 'commit-bundle' })
     );

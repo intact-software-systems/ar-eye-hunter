@@ -22,11 +22,11 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    computeInboundTestAdmission,
     createInboundTestMessage,
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
+    readInboundTestAdmission,
     type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
 
@@ -234,7 +234,7 @@ async function readDrainedInboundRotation(): Promise<DrainedInboundRotation> {
     await fixture.runtime.ready();
     const admissionStore = fixture.stores.admissionStore;
     const message = createInboundTestMessage({ msgId: 'rotation-drain' });
-    const committed = await admissionStore.commitBundle(await computeInboundTestAdmission(admissionStore, message));
+    const committed = await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, message));
     observer.reset();
 
     await runInboundRotationUntilSettled(fixture);
