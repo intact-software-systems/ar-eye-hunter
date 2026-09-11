@@ -537,6 +537,35 @@ describe('live RTC delivery owner', () => {
         ]);
     });
 
+    it('preserves the first receiver rejection after every receiver settles', async () => {
+        const recording = new RecordingLiveRtcControl();
+        const firstReceiverFailure = new Error('Room relay did not reach C first');
+        const laterReceiverFailure = new Error('Room relay did not reach B later');
+        let laterReceiverSettled = false;
+        vi.spyOn(recording, 'waitForMessage').mockImplementation(
+            async ({ agentId }) => {
+                if (agentId === 'C') {
+                    throw firstReceiverFailure;
+                }
+                await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                laterReceiverSettled = true;
+                throw laterReceiverFailure;
+            }
+        );
+
+        await expect(
+            createLiveRtcDeliveryOperations(config).runAllDeliveryPermutations({
+                control: recording,
+                runId: 'run',
+                agents: recording.agents,
+                transport: 'messages.rtc',
+                groupId: 'room',
+                suffix: 'first-rejection'
+            })
+        ).rejects.toBe(firstReceiverFailure);
+        expect(laterReceiverSettled).toBe(true);
+    });
+
     it('propagates captured NACK evidence when reading the browser wire fails', async () => {
         const recording = new RecordingLiveRtcControl();
         const operations = createLiveRtcDeliveryOperations(config);

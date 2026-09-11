@@ -17,6 +17,8 @@ describe('live RTC control client', () => {
     let diagnosticsRoot: string;
     let results: LiveRtcControlClient.Result[];
     let events: LiveRtcControlClient.Event[];
+    let healthCommandFailure: { agentId: string; body: string; } | undefined;
+    let holdHealthCommand: ((agentId: string) => Promise<void>) | undefined;
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
@@ -28,6 +30,8 @@ describe('live RTC control client', () => {
         );
         results = [];
         events = [];
+        healthCommandFailure = undefined;
+        holdHealthCommand = undefined;
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
                 const chunks: Buffer[] = [];
@@ -46,7 +50,20 @@ describe('live RTC control client', () => {
                     response.writeHead(400).end();
                     return;
                 }
+                const agentId = incoming.url?.split('/')[4];
+                if (
+                    healthCommandFailure &&
+                    agentId === healthCommandFailure.agentId &&
+                    command.commandId.startsWith('health-message-failure-')
+                ) {
+                    response.writeHead(500).end(healthCommandFailure.body);
+                    return;
+                }
+                if (holdHealthCommand && command.commandId.startsWith('health-message-failure-')) {
+                    await holdHealthCommand(agentId ?? 'missing-agent');
+                }
                 results.push({
+                    agentId,
                     commandId: command.commandId,
                     ok: true,
                     result: {
@@ -179,6 +196,7 @@ describe('live RTC control client', () => {
         ).toEqual({
             kind: 'control-result-failures',
             runCaptureSucceeded: true,
+            messageFailures: [],
             failedResults: [
                 {
                     agentId: 'agent-a',
@@ -314,8 +332,8 @@ describe('live RTC control client', () => {
             receiverAgentId: 'agent-b',
             matrixId: 'direct-timeout',
             healthByAgentId: {
-                'agent-a': { ok: true },
-                'agent-b': { ok: true }
+                'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                'agent-b': { captureSucceeded: true, commandSucceeded: true }
             }
         });
         expect(artifact.recentResults).toEqual(
@@ -328,13 +346,11 @@ describe('live RTC control client', () => {
             ])
         );
         expect(artifact.sendResult).toEqual({
-            agentId: 'agent-a',
-            commandId: 'send-direct-timeout',
             ok: true,
             runtimeStatus: 'sent',
             admissionStatus: 'pending-admission',
-            reason: 'awaiting a durable admission retry',
-            messageId: 'message-direct-timeout',
+            reason: 'other',
+            messageIdPresent: true,
             entryCount: 1,
             entryStatuses: ['NEW']
         });
@@ -348,6 +364,188 @@ describe('live RTC control client', () => {
                 deliveryMode: 'direct'
             }
         ]);
+    });
+
+    it('retains a sanitized message delivery failure without a diagnostics directory', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true,
+            result: {
+                value: {
+                    status: 'sent',
+                    message: {
+                        status: 'pending-admission',
+                        reason: 'awaiting a durable admission retry',
+                        message: {
+                            id: { msgId: 'message-direct-timeout' },
+                            payload: { resource: 'must-not-be-retained' }
+                        },
+                        entries: [{ status: 'NEW', resource: 'must-not-be-retained' }]
+                    },
+                    credential: 'must-not-be-retained'
+                }
+            }
+        });
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'direct-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('direct-timeout');
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-b',
+                agentId: 'agent-c',
+                transport: 'messages.rtc',
+                matrixId: 'cleanup-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('cleanup-timeout');
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-message-timeout' });
+        expect(JSON.stringify(attemptFailure)).not.toContain('must-not-be-retained');
+        expect(attemptFailure).toMatchObject({
+            kind: 'control-result-failures',
+            runCaptureSucceeded: true,
+            messageFailures: [
+                {
+                    kind: 'message-delivery-failure',
+                    senderAgentId: 'agent-a',
+                    receiverAgentId: 'agent-b',
+                    transport: 'messages.rtc',
+                    matrixId: 'direct-timeout',
+                    deliveryMode: 'direct',
+                    healthByAgentId: {
+                        'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                        'agent-b': { captureSucceeded: true, commandSucceeded: true }
+                    },
+                    sendResult: {
+                        runtimeStatus: 'sent',
+                        admissionStatus: 'pending-admission',
+                        reason: 'other',
+                        messageIdPresent: true,
+                        entryCount: 1,
+                        entryStatuses: ['NEW']
+                    }
+                }
+            ]
+        });
+    });
+
+    it('does not retain a failed health-command response body in message failure evidence', async () => {
+        healthCommandFailure = {
+            agentId: 'agent-b',
+            body: `credential=must-not-be-retained ${'x'.repeat(10_000)}`
+        };
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-health-failure',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'health-failure',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('health-failure');
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-health-failure' });
+        expect(JSON.stringify(attemptFailure)).not.toContain('must-not-be-retained');
+        expect(attemptFailure.messageFailures[0]).toMatchObject({
+            failure: {
+                name: 'message-delivery-failed',
+                message: 'RTC message delivery observation failed.'
+            },
+            healthByAgentId: {
+                'agent-b': {
+                    captureSucceeded: false,
+                    commandSucceeded: null,
+                    captureFailure: {
+                        name: 'health-capture-failed',
+                        message: 'RTC health diagnostic capture failed.'
+                    }
+                }
+            }
+        });
+    });
+
+    it('waits for both first-case receiver captures before returning attempt failure evidence', async () => {
+        const releaseDelayedHealth = Promise.withResolvers<void>();
+        const delayedHealthStarted = Promise.withResolvers<void>();
+        holdHealthCommand = async (agentId) => {
+            if (agentId === 'agent-c') {
+                delayedHealthStarted.resolve();
+                await releaseDelayedHealth.promise;
+            }
+        };
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+        const waitForAgentB = controlWithoutDiagnosticsDirectory.waitForMessage({
+            runId: 'run-two-receiver-timeout',
+            senderAgentId: 'agent-a',
+            agentId: 'agent-b',
+            transport: 'messages.rtc',
+            matrixId: 'two-receiver-timeout',
+            deliveryMode: 'multicast',
+            possibleReceiverAgentIds: ['agent-b', 'agent-c'],
+            startedAtMs: 100,
+            timeoutMs: 10
+        }).catch(() => undefined);
+        const waitForAgentC = controlWithoutDiagnosticsDirectory.waitForMessage({
+            runId: 'run-two-receiver-timeout',
+            senderAgentId: 'agent-a',
+            agentId: 'agent-c',
+            transport: 'messages.rtc',
+            matrixId: 'two-receiver-timeout',
+            deliveryMode: 'multicast',
+            possibleReceiverAgentIds: ['agent-b', 'agent-c'],
+            startedAtMs: 100,
+            timeoutMs: 10
+        }).catch(() => undefined);
+
+        await delayedHealthStarted.promise;
+        const attemptFailure = controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-two-receiver-timeout' });
+        releaseDelayedHealth.resolve();
+
+        await expect(attemptFailure).resolves.toMatchObject({
+            messageFailures: [
+                { receiverAgentId: 'agent-b' },
+                { receiverAgentId: 'agent-c' }
+            ]
+        });
+        await Promise.all([waitForAgentB, waitForAgentC]);
     });
 
     it('reads the sent message identity from the RTC send-result envelope, not the command ID', () => {

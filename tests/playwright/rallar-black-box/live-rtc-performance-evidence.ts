@@ -132,7 +132,7 @@ export type LiveRtcNackProbeStage =
     | 'receive'
     | 'record-receipt';
 
-export interface LiveRtcNackAgentHealth {
+export interface LiveRtcFailureAgentHealth {
     readonly captureSucceeded: boolean;
     readonly commandSucceeded: boolean | null;
     readonly settledPeerCount: number | null;
@@ -146,7 +146,7 @@ export interface LiveRtcNackAgentHealth {
     readonly relayPeerCount: number | null;
 }
 
-export interface LiveRtcNackSendResultSummary {
+export interface LiveRtcSendResultSummary {
     readonly ok: boolean;
     readonly runtimeStatus: 'sent' | 'other' | 'missing';
     readonly admissionStatus:
@@ -165,7 +165,6 @@ export interface LiveRtcNackSendResultSummary {
         | 'missing';
     readonly reason: 'not-yet-in-sync' | 'other' | 'missing';
     readonly messageIdPresent: boolean;
-    readonly messageIdMatchesProbe: boolean | null;
     readonly entryCount: number;
     readonly entryStatuses: readonly (
         | 'NEW'
@@ -179,6 +178,10 @@ export interface LiveRtcNackSendResultSummary {
         | 'MERGED'
         | 'other'
     )[];
+}
+
+export interface LiveRtcNackSendResultSummary extends LiveRtcSendResultSummary {
+    readonly messageIdMatchesProbe: boolean | null;
 }
 
 export interface LiveRtcNackEventClassification {
@@ -208,7 +211,7 @@ export interface LiveRtcNackFailureDiagnostic {
     readonly targetSessionId: string;
     readonly capturedAtEpochMs: number;
     readonly failureMessage: string;
-    readonly healthByAgentId: Readonly<Record<string, LiveRtcNackAgentHealth>>;
+    readonly healthByAgentId: Readonly<Record<string, LiveRtcFailureAgentHealth>>;
     readonly runCaptureSucceeded: boolean;
     readonly sendResult: LiveRtcNackSendResultSummary | null;
     readonly wireObservation: LiveRtcNackWireObservationSummary;
@@ -232,6 +235,48 @@ export interface LiveRtcAttemptFailureDiagnostic {
     readonly kind: 'control-result-failures';
     readonly runCaptureSucceeded: boolean;
     readonly failedResults: readonly LiveRtcFailedControlResult[];
+    readonly messageFailures: readonly LiveRtcMessageFailureDiagnostic[];
+}
+
+export interface LiveRtcMessageFailureDiagnostic {
+    readonly kind: 'message-delivery-failure';
+    readonly runId: string;
+    readonly senderAgentId: string;
+    readonly receiverAgentId: string;
+    readonly transport: 'realtime' | 'messages.rtc';
+    readonly matrixId: string;
+    readonly deliveryMode: string;
+    readonly capturedAtEpochMs: number;
+    readonly failure: LiveRtcDiagnosticFailure;
+    readonly healthByAgentId: Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>;
+    readonly runCaptureSucceeded: boolean;
+    readonly sendResult: LiveRtcSendResultSummary | null;
+    readonly recentResults: readonly LiveRtcMessageFailureResultSummary[];
+    readonly recentEvents: readonly LiveRtcMessageFailureEventSummary[];
+}
+
+export interface LiveRtcDiagnosticFailure {
+    readonly name: string;
+    readonly message: string;
+}
+
+export interface LiveRtcMessageFailureAgentHealth extends LiveRtcFailureAgentHealth {
+    readonly captureFailure: LiveRtcDiagnosticFailure | null;
+}
+
+export interface LiveRtcMessageFailureResultSummary {
+    readonly agentId: string | null;
+    readonly commandId: string;
+    readonly ok: boolean;
+}
+
+export interface LiveRtcMessageFailureEventSummary {
+    readonly agentId: string | null;
+    readonly kind: string | null;
+    readonly transport: string | null;
+    readonly topic: string | null;
+    readonly matrixId: string | null;
+    readonly deliveryMode: string | null;
 }
 
 export interface LiveRtcFailedControlResult {
