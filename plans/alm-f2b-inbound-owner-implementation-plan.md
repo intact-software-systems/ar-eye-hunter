@@ -314,27 +314,27 @@ the same shape one stage earlier — admitted, never handed to the code that wou
 - Consumes: `ALWorkReadySelection.claims` — the selection already knows which entries it claimed, so
   the observation is keyed by the entry it was read for.
 
-- [ ] **Step 1: Pin the double read (RED).** In the transaction test, assert the readonly-transaction
+- [x] **Step 1: Pin the double read (RED).** In the transaction test, assert the readonly-transaction
       count for one unordered `dispatch-local` row taken from `readReadiness` through `deliver`.
       Target: the readiness read and the dispatch share one snapshot for the message and its planning
       state. Expected RED at today's count.
-- [ ] **Step 2: Carry the observation.** `readALInboundWorkSelection` keeps the
+- [x] **Step 2: Carry the observation.** `readALInboundWorkSelection` keeps the
       `ALInboundDeliveryObservation` it read per claimable entry; `selectReady` passes it with the
       claim; `runInboundClaim` passes it to `deliver`, which re-validates only what the claim window
       could have changed (the entry's expiry and `shouldRetryALInboundDelivery(plan)` against a fresh
       `clock.nowMs()`) and re-reads nothing else. The ordering readiness stays a fresh read for an
       ordered message — a predecessor can land between the two — and the test says so.
-- [ ] **Step 3: Do not read readiness for rows the page will not claim.** `readALInboundWorkSelection`
+- [x] **Step 3: Do not read readiness for rows the page will not claim.** `readALInboundWorkSelection`
       currently calls `readReadiness` for every entry on the page before `port.claim` bounds it to
       `pageSize`. Bound the readiness reads to the entries the batch can actually claim, in
       observation order, and stop at the bound. Pin the admission-read count per rotation round over
       a page of 16 rows with `pageSize` 16 and with a smaller bound.
-- [ ] **Step 4: The witness for the gap this slice cannot close.** A committed `dispatch-local` that
+- [x] **Step 4: The witness for the gap this slice cannot close.** A committed `dispatch-local` that
       the window outlives must still be visible. Add nothing new here — Task 4's
       `admission-outcome` → `dispatch` correlation covers it — but assert in
       `al-inbound-effect-worker-lifecycle.test.ts` that a message admitted `pending` and then
       committed by a replay is dispatched inside the same batch when the owner is idle.
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
       `npx vitest run packages/tests/shared/alm/inbound packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
 
 ### Task 4: Drain-latency instrumentation in the inbound diagnostics
