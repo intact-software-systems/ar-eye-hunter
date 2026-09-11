@@ -62,18 +62,22 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-10
+**Updated:** 2026-09-11
 
 **Status:** `origin/main` is
-`aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`. PRs #556 and #557 are merged;
-PR #558 merged the 2026-09-10 B05 observation on that same main snapshot.
-The repository has 12 B05 rows, all `passed` with `acceptedMetrics: true`, and
-11 B06 rows, all `failed` with `acceptedMetrics: false`. Publish run
-34524003896 passed source, tooling, capture recovery, archive verification, and
-publication; its six default attempts passed, then its first all-scenarios
-warmup timed out waiting for agent B to receive sender A's `messages.rtc`
-broadcast. No repeat is required. PR #560 is mergeable with green checks and
-awaits human review to merge that verified failed ZIP/index row unchanged.
+`48717845a287ab2d009b36639d2e2c6abe9911aa`. PR #560 merged the verified
+failed run-34524003896 observation unchanged, and PR #561 merged its bounded
+failure-evidence tooling correction. Publish run 34563664803 then observed that
+moving-main snapshot: source, tooling, capture, archive verification, and
+publication passed; all six default attempts passed; the first all-scenarios
+warmup failed when agent B's `messages.rtc` multicast send returned
+`RALLAR_BB_RTC_NO_ROUTE` with no entries; later attempts did not run and no
+repeat is required. PR #562 awaits human review to merge that verified failed
+ZIP/index row unchanged. An exact-source local default plus all-scenarios run
+passed 2/2 without retry, so the observation does not authorize an RTC product,
+routing, retry, or timeout change. The actionable gap is orchestration: receipt
+observations start only after a successful send and therefore cannot retain
+their existing bounded diagnostics when the sender command fails.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -562,10 +566,10 @@ was ready.
 
 ### Current execution horizon
 
-| Order | Slice                                          | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Merge PR #560 unchanged after human review     | Merge the verified failed run-34524003896 ZIP/index row unchanged. Its 55,063-byte archive has SHA-256 `4411b6cf05decab2e3ac6746487aaa9940fb855a60cf75d93f1113cec9af0bdb`; no failed metric is accepted and no repeat is inferred.                                                                                                                                                                                   |
-| 2     | Complete and merge failure-evidence tooling PR | Retain one bounded, payload-free message-failure diagnostic in normal attempt evidence even when publish mode has no diagnostics output directory; preserve the optional sidecar and generic failed-result facts. Complete focused, type/style/structure, independent-review, local/browser, and branch gates. No RTC product/routing/retry/timeout change, migration, compatibility implementation, or legacy path. |
+| Order | Slice                                                 | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Merge PR #562 unchanged after human review            | Merge the verified failed run-34563664803 ZIP/index row unchanged. The failed primary contributes no accepted metric and requires no repeat.                                                                                                                                                                                                                                                                             |
+| 2     | Complete and merge sender-failure orchestration proof | Start the existing bounded receiver observations before the sender command, settle both sides, preserve sender-failure precedence, and retain receipt-failure precedence when send succeeds. Complete focused, type/style/structure, independent-review, local/browser, and branch gates. Add no diagnostic contract, RTC product/routing/retry/timeout change, migration, compatibility implementation, or legacy path. |
 
 After this two-slice horizon is complete, manually dispatch
 `RTC-B06 Performance Observation` in `publish` mode from the then-current
@@ -4359,24 +4363,28 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains 11 failed B06 primaries archived on `main` and no
-accepted metrics. PRs #556 and #557 are merged. Publish run 34524003896
-observed `aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`: source, tooling, capture
-recovery, archive verification, and publication passed; six default attempts
-passed; then the first all-scenarios warmup timed out waiting for agent B to
-receive sender A's `messages.rtc` broadcast. No repeat is required. PR #560 is
-mergeable with green checks and awaits human review to merge that failed ZIP and
-index row unchanged (55,063 bytes; SHA-256
-`4411b6cf05decab2e3ac6746487aaa9940fb855a60cf75d93f1113cec9af0bdb`).
+Current evidence contains 12 failed B06 primaries archived on `main` and no
+accepted metrics. PR #560 merged the verified run-34524003896 failure unchanged,
+and PR #561 merged the bounded, payload-free failure-evidence tooling
+correction. Publish run 34563664803 observed
+`48717845a287ab2d009b36639d2e2c6abe9911aa`: source, tooling, capture, archive
+verification, and publication passed; all six default attempts passed; then the
+first all-scenarios warmup failed when agent B's `messages.rtc` multicast send
+returned `RALLAR_BB_RTC_NO_ROUTE` with no entries. Later attempts did not run,
+and no repeat is required. PR #562 awaits human review to merge that verified
+failed ZIP and index row unchanged.
 
-The failure-evidence tooling correction retains one bounded, payload-free
-diagnostic in the normal attempt archive even when publish mode deliberately
-has no diagnostics output directory. The same constructed object still feeds
-the optional sidecar, while generic failed-control-result facts remain present.
-It adds no product behavior, routing, retry, timeout, migration, compatibility
-implementation, or legacy path. An exact-source local default plus
-all-scenarios run passed without retry, so the failed observation does not
-authorize an RTC behavior change.
+The finalized attempt retained the generic failed control result but no
+`messageFailures`. The delivery owner starts receiver receipt observations only
+after `sendMatrixPayload` succeeds, so a sender-command rejection bypasses the
+existing bounded, payload-free first-case diagnostic capture. An exact-source
+local default plus all-scenarios run passed 2/2 without retry, so the failed
+observation does not authorize an RTC behavior, routing, retry, or timeout
+change. The current correction starts all receiver observations before send,
+settles both sides, preserves the sender rejection when both fail, and preserves
+the temporally first receipt rejection when send succeeds. It reuses the
+existing diagnostic path and adds no diagnostic contract, sidecar, retry,
+delay, timeout, migration, compatibility implementation, or legacy path.
 
 **Historical provenance:** The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
@@ -4547,11 +4555,19 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Dispatch run 34524003896 from moving `main`; preserve its verified failed
       primary with six passing default attempts and its first all-scenarios
       warmup broadcast timeout. Do not accept metrics or run a repeat.
-- [ ] Merge PR #560's verified failed ZIP/index row unchanged after human review.
-- [ ] Complete and merge the bounded failure-evidence tooling correction after
+- [x] Merge PR #560's verified failed ZIP/index row unchanged after human review.
+- [x] Merge PR #561's bounded failure-evidence tooling correction after focused,
+      type/style/structure, independent-review, local/browser, and branch gates.
+- [x] Dispatch run 34563664803 from moving `main`; preserve its verified failed
+      primary with six passing default attempts and its first all-scenarios
+      warmup sender-side `RALLAR_BB_RTC_NO_ROUTE`. Do not accept metrics or run
+      a repeat.
+- [ ] Merge PR #562's verified failed ZIP/index row unchanged after human review.
+- [ ] Complete and merge the sender-failure orchestration correction after
       focused, type/style/structure, independent-review, local/browser, and
-      branch gates. Preserve the sidecar and generic failed-result facts; add
-      no RTC product/routing/retry/timeout, migration, compatibility, or legacy path.
+      branch gates. Reuse the existing bounded receipt diagnostic; add no RTC
+      product/routing/retry/timeout, diagnostic contract, migration,
+      compatibility, or legacy path.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.
@@ -5009,6 +5025,22 @@ Until every source/publication bullet above is evidenced, report only an
 incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
+
+**2026-09-11 reconciliation:** `origin/main` is
+`48717845a287ab2d009b36639d2e2c6abe9911aa`; PRs #560 and #561 are merged.
+Run 34563664803 completed source, tooling, capture, archive verification, and
+publication on that moving-main snapshot. All six default attempts passed; the
+first all-scenarios warmup failed when agent B's `messages.rtc` multicast send
+returned `RALLAR_BB_RTC_NO_ROUTE` with no entries, so later attempts did not run
+and no repeat is required. PR #562 awaits human review to merge the verified
+failed archive unchanged. The exact-source local default plus all-scenarios
+reproduction passed 2/2 without retry, ruling out a product correction from this
+evidence. The proven orchestration gap is that receiver observations begin only
+after send succeeds, bypassing their bounded diagnostics on sender rejection.
+The next two slices are the unchanged PR #562 merge and the focused
+sender-failure orchestration correction; after both merge, dispatch a fresh B06
+publish from then-current moving `main`. B07 remains held and E4-pg remains
+conditional for Task 12.
 
 **2026-09-10 reconciliation:** `origin/main` is
 `aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`; PRs #556 and #557 are merged, and
