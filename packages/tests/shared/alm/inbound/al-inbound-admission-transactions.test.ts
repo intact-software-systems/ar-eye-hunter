@@ -18,6 +18,10 @@ import type { ALInboundPendingAdmission } from '@shared/alm/inbound/al-inbound-p
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
+    createInboundTestDispatch,
+    readInboundTestDispatchEffect
+} from '../create-inbound-test-dispatch.ts';
+import {
     createInboundTestAdmission,
     createInboundTestMessage,
     createInboundTestStores,
@@ -74,6 +78,13 @@ const RETAIN_THEN_REPLAY: readonly IDBTransactionMode[] = [
     'readwrite',
     ...COMMITTING_ADMISSION_ATTEMPT
 ];
+
+/**
+ * What one unordered `dispatch-local` row owes from the readiness read that clears it to the page
+ * it reaches: the one retained message and the one stored planning surface both of them decide on.
+ * The claim the rotation takes between them is the only thing that ever separated the two.
+ */
+const ONE_DISPATCHED_MESSAGE: readonly IDBTransactionMode[] = ['readonly', 'readonly'];
 
 async function createAdmissionFixture(): Promise<ALInboundRuntimeStores> {
     const stores = createInboundTestStores({
@@ -309,7 +320,8 @@ it('retains a conflicted admission and replays it to completion', async () => {
     );
 
     expect(await admission.retainPending(pending)).toEqual({ kind: 'pending-admission' });
-    expect(await admission.replay(pending)).toBe('completed');
+    // The replay's own commit wrote the dispatch its batch's page read could not see.
+    expect(await admission.replay(pending)).toEqual({ outcome: 'completed', wroteWork: true });
 });
 
 it('retains and replays a conflicted admission in 1 guarded row and 1 second attempt', async () => {
@@ -324,7 +336,49 @@ it('retains and replays a conflicted admission in 1 guarded row and 1 second att
     const recorded = recordIndexedDbTransactions();
     await admission.retainPending(pending);
     // Inside the measured window, and opening nothing: the count below is a successful replay's.
-    expect(await admission.replay(pending), 'the measured replay').toBe('completed');
+    expect(await admission.replay(pending), 'the measured replay').toEqual({ outcome: 'completed', wroteWork: true });
 
     expect(recorded.modes(), 'retainPending then replay').toEqual(RETAIN_THEN_REPLAY);
+});
+
+it('dispatches the unordered row its readiness read cleared', async () => {
+    const stores = await createAdmissionFixture();
+    const dispatch = createInboundTestDispatch(stores);
+    const effect = await readInboundTestDispatchEffect(
+        stores,
+        createInboundTestMessage({ msgId: 'ready-then-dispatched' })
+    );
+
+    const readiness = await dispatch.delivery.readReadiness(effect, Date.now());
+
+    expect(readiness.ready).toBe(true);
+    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
+    expect(dispatch.dispatched).toEqual(['ready-then-dispatched']);
+});
+
+it('reads one message and one planning surface from readiness through dispatch', async () => {
+    const stores = await createAdmissionFixture();
+    const dispatch = createInboundTestDispatch(stores);
+    const effect = await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: 'dispatch-cost' }));
+
+    const recorded = recordIndexedDbTransactions();
+    const readiness = await dispatch.delivery.readReadiness(effect, Date.now());
+    await dispatch.delivery.deliver(effect, readiness.observed);
+
+    expect(recorded.modes(), 'readReadiness then deliver').toEqual(ONE_DISPATCHED_MESSAGE);
+});
+
+it('reads the ordering track again at the dispatch its readiness read already cleared', async () => {
+    const stores = await createAdmissionFixture();
+    const dispatch = createInboundTestDispatch(stores);
+    const message = createInboundTestMessage({ msgId: 'ordered-dispatch', seq: 1 });
+    const effect = await readInboundTestDispatchEffect(stores, message);
+    const readiness = await dispatch.delivery.readReadiness(effect, Date.now());
+
+    const ordered = vi.spyOn(stores.admissionStore, 'readOrderedDelivery');
+    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
+
+    // A predecessor can land inside the claim window, so this is the one decision no claim carries.
+    expect(ordered.mock.calls[0], 'the dispatch asks the track again').toEqual([toALOrderingTrackKey(message), 1]);
+    expect(dispatch.dispatched).toEqual(['ordered-dispatch']);
 });

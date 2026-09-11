@@ -190,11 +190,11 @@ describe('inbound work owner IndexedDB scan volume', () => {
         expect(drained.delivered).toEqual(['dispatched']);
     });
 
-    it.fails('drains one dispatch-local row in 2 admission operations, not the 4 it spends today', async () => {
+    it('drains one dispatch-local row in 2 admission operations', async () => {
         expect(
             (await readDrainedInboundRotation()).admissionOperations,
-            'inbound rotation over one dispatch-local row: 4 operations today, the readiness read and the ' +
-                'dispatch each reading the message and its planning state'
+            'inbound rotation over one dispatch-local row: the readiness read takes the message and its ' +
+                'planning state, and the dispatch that read cleared reads neither of them again'
         ).toBe(2);
     });
 
@@ -205,11 +205,10 @@ describe('inbound work owner IndexedDB scan volume', () => {
         expect(admitted.delivered).toEqual(['dispatched']);
     });
 
-    it.fails('admits and delivers one unordered message in 8 admission operations, not the 10 today', async () => {
+    it('admits and delivers one unordered message in 8 admission operations', async () => {
         expect(
             (await readAdmittedInboundDelivery()).admissionOperations,
-            'inbound admit to deliver: 10 operations today. The target assumes the admission keeps its 6 ' +
-                'and the drain falls from 4 to 2.'
+            'inbound admit to deliver: 6 operations for the admission, and 2 for the drain that dispatches it'
         ).toBe(8);
     });
 });

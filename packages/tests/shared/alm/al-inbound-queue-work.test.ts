@@ -213,7 +213,7 @@ it.each([
     { toPeerId: 'next-hop', readDelayMs: 999, delivered: ['forward:message-1'] },
     { toPeerId: 'next-hop', readDelayMs: 1_000, delivered: [] },
     { toPeerId: 'next-hop', readDelayMs: 1_001, delivered: [] }
-])('enforces the message deadline for $toPeerId after a $readDelayMs ms delivery read', async ({ toPeerId, readDelayMs, delivered }) => {
+])('enforces the message deadline for $toPeerId after $readDelayMs ms inside the claim window', async ({ toPeerId, readDelayMs, delivered }) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     onTestFinished(() => {
         vi.restoreAllMocks();
@@ -225,21 +225,14 @@ it.each([
         queueEngine: new InboxOutboxEngine(),
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
     });
-    const store = resources.admissionStore;
     const reserve = resources.workQueue.reserveEntries.bind(resources.workQueue);
-    let reserved = false;
     vi.spyOn(resources.workQueue, 'reserveEntries').mockImplementation(async (request) => {
         const claimed = await reserve(request);
-        reserved = claimed.size > 0;
-        return claimed;
-    });
-    const read = store.readStoredPlanningState.bind(store);
-    vi.spyOn(store, 'readStoredPlanningState').mockImplementation(async (input) => {
-        const snapshot = await read(input);
-        if (reserved) {
+        if (claimed.size > 0) {
+            // The claim is the one gap the eligibility read that cleared this row cannot see across.
             vi.setSystemTime(admittedAt + readDelayMs);
         }
-        return snapshot;
+        return claimed;
     });
     const deliveries: string[] = [];
     const runtime = new ALInboundMessageRuntime({

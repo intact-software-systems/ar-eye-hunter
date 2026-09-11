@@ -4,7 +4,10 @@ import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.t
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
-import type { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
+import type {
+    ALInboundAdmittedDelivery,
+    ALInboundDeliveryObservation
+} from './al-inbound-admitted-delivery.ts';
 import { decodeALInboundWorkEntry, resolveALInboundWorkReadyAt } from './al-inbound-work-entry.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
@@ -29,6 +32,8 @@ interface ALInboundWorkSelectionReadInput {
 interface ALInboundWorkSelection {
     /** Entries the port may reserve, in observation order. */
     readonly claimable: readonly ResourceEntry[];
+    /** The surface the eligibility read took for each claimable row, by effect id. */
+    readonly observations: ReadonlyMap<string, ALInboundDeliveryObservation>;
     /** Reservations without a lease start: timeout reservation can never reach them, so they are released as observed. */
     readonly unleasedReservations: readonly ALWorkClaim[];
     readonly scan: ALInboundWorkScan;
@@ -40,6 +45,13 @@ interface ALInboundWorkSelection {
      * lets the engine's own pass rate carry it to the next status.
      */
     readonly nextReadyAtMs: number | undefined;
+}
+
+/** What the eligibility read decided about one page, before the port reserves anything from it. */
+interface ALInboundPageEligibility
+    extends Pick<ALInboundWorkSelection, 'claimable' | 'observations' | 'unleasedReservations'> {
+    /** The earliest time a row this page passed over becomes claimable. */
+    readonly readyAtMs: number | undefined;
 }
 
 interface ALInboundWorkSelectorDependencies {
@@ -55,6 +67,12 @@ export interface ALInboundWorkSelector {
      */
     readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined>;
     selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection>;
+    /**
+     * What this batch's own eligibility read observed for the row it claimed, so the delivery that
+     * follows re-reads none of it. Absent for a row the batch claimed without reading a surface for
+     * it, and for every row once the next page or a restarted scan replaces this one.
+     */
+    getDeliveryObservation(effectId: string): ALInboundDeliveryObservation | undefined;
     /** A commit writes new work behind the rotation; the next page read starts over. */
     restartScan(): void;
 }
@@ -69,25 +87,65 @@ async function readALInboundWorkSelection(
         maxToRead: input.pageSize,
         cursor: input.scan.cursor
     });
+    const eligibility = await readALInboundPageEligibility(page.entries, input, delivery);
+    const statusIndex = page.nextCursor === null
+        ? (input.scan.statusIndex + 1) % SCAN_STATUSES.length
+        : input.scan.statusIndex;
+    const continueScan = page.nextCursor !== null || statusIndex !== 0;
+    const readyAtMs = eligibility.readyAtMs;
+    const scannedReadyAtMs = readyAtMs === undefined
+        ? input.scan.nextReadyAtMs
+        : Math.min(input.scan.nextReadyAtMs ?? readyAtMs, readyAtMs);
+    const claimableNow = eligibility.claimable.length > 0 || eligibility.unleasedReservations.length > 0;
+    return {
+        claimable: eligibility.claimable,
+        observations: eligibility.observations,
+        unleasedReservations: eligibility.unleasedReservations,
+        readyNow: claimableNow || continueScan,
+        scan: {
+            cursor: page.nextCursor,
+            statusIndex,
+            nextReadyAtMs: continueScan ? scannedReadyAtMs : undefined
+        },
+        nextReadyAtMs: claimableNow ? input.nowMs : scannedReadyAtMs
+    };
+}
+
+/**
+ * One eligibility read per row the page holds, and the port then reserves at most the same page:
+ * a row this returns as claimable is a row the batch that follows can take, and a row it defers
+ * costs the batch nothing further.
+ */
+async function readALInboundPageEligibility(
+    entries: readonly ResourceEntry[],
+    input: ALInboundWorkSelectionReadInput,
+    delivery: ALInboundAdmittedDelivery
+): Promise<ALInboundPageEligibility> {
     const claimable: ResourceEntry[] = [];
+    const observations = new Map<string, ALInboundDeliveryObservation>();
     const unleasedReservations: ALWorkClaim[] = [];
     let readyAtMs: number | undefined;
-    for (const entry of page.entries) {
+    for (const entry of entries) {
         if (entry.audit.expiryTs.epochMilliseconds <= input.nowMs) {
             continue;
         }
         try {
             const readyAt = resolveALInboundWorkReadyAt(entry);
             if (readyAt > input.nowMs) {
-                // A row that expires before it is ready can never be claimed, so it advertises nothing.
-                if (readyAt < entry.audit.expiryTs.epochMilliseconds) {
-                    readyAtMs = Math.min(readyAtMs ?? readyAt, readyAt);
-                }
+                readyAtMs = resolveALInboundScannedReadyAtMs(entry, readyAt, readyAtMs);
                 continue;
             }
             const effect = decodeALInboundWorkEntry(entry, input.namespace);
-            if (effect.payload.kind === 'admit-message' || await delivery.readReadiness(effect, input.nowMs)) {
+            if (effect.payload.kind === 'admit-message') {
                 claimable.push(entry);
+                continue;
+            }
+            const readiness = await delivery.readReadiness(effect, input.nowMs);
+            if (readiness.ready) {
+                claimable.push(entry);
+                if (readiness.observed !== undefined) {
+                    observations.set(effect.effectId, readiness.observed);
+                }
             }
         }
         catch (error) {
@@ -102,25 +160,16 @@ async function readALInboundWorkSelection(
             }
         }
     }
-    const statusIndex = page.nextCursor === null
-        ? (input.scan.statusIndex + 1) % SCAN_STATUSES.length
-        : input.scan.statusIndex;
-    const continueScan = page.nextCursor !== null || statusIndex !== 0;
-    const scannedReadyAtMs = readyAtMs === undefined
-        ? input.scan.nextReadyAtMs
-        : Math.min(input.scan.nextReadyAtMs ?? readyAtMs, readyAtMs);
-    const claimableNow = claimable.length > 0 || unleasedReservations.length > 0;
-    return {
-        claimable,
-        unleasedReservations,
-        readyNow: claimableNow || continueScan,
-        scan: {
-            cursor: page.nextCursor,
-            statusIndex,
-            nextReadyAtMs: continueScan ? scannedReadyAtMs : undefined
-        },
-        nextReadyAtMs: claimableNow ? input.nowMs : scannedReadyAtMs
-    };
+    return { claimable, observations, unleasedReservations, readyAtMs };
+}
+
+/** A row that expires before it is ready can never be claimed, so it advertises nothing. */
+function resolveALInboundScannedReadyAtMs(
+    entry: ResourceEntry,
+    readyAt: number,
+    scanned: number | undefined
+): number | undefined {
+    return readyAt < entry.audit.expiryTs.epochMilliseconds ? Math.min(scanned ?? readyAt, readyAt) : scanned;
 }
 
 /**
@@ -134,6 +183,7 @@ export function createALInboundWorkSelector(
 ): ALInboundWorkSelector {
     let scan: ALInboundWorkScan = SCAN_START;
     let observed: Promise<ALInboundWorkSelection> | undefined;
+    let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
 
     const readSelection = (port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection> => {
         const scanned = scan;
@@ -181,14 +231,17 @@ export function createALInboundWorkSelector(
             forgetSelection(pending);
             const selection = await pending;
             const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
+            claimedObservations = selection.observations;
             return {
                 claims: [...selection.unleasedReservations, ...claims],
                 nextReadyAtMs: selection.nextReadyAtMs
             };
         },
+        getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         restartScan: () => {
             scan = SCAN_START;
             observed = undefined;
+            claimedObservations = new Map();
         }
     };
 }

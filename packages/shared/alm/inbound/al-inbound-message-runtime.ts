@@ -331,15 +331,11 @@ export class ALInboundMessageRuntime {
         this.work.committed();
     }
 
-    /** A replay writes its own follow-on work; the rotation and the engine's schedule pick it up. */
     private async runInboundClaim(claim: ALWorkClaim): Promise<ALWorkOutcome> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
-            return toALInboundReplayOutcome(
-                await this.admission.replay(payload),
-                this.dependencies.clock.nowMs()
-            );
+            return this.toReplayedAdmissionOutcome(await this.admission.replay(payload));
         }
         if (payload.kind === 'admit-control') {
             const replayed = await this.controlAdmission.replay(payload);
@@ -348,18 +344,26 @@ export class ALInboundMessageRuntime {
             }
             return replayed.outcome;
         }
-        return { status: await this.delivery.deliver(effect) };
+        return {
+            status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
+        };
     }
-}
 
-function toALInboundReplayOutcome(
-    result: ALInboundMessageAdmission.ReplayResult,
-    nowMs: number
-): ALWorkOutcome {
-    if (typeof result === 'string') {
-        return { status: result };
+    /**
+     * A replay commits inside the batch that claimed it, so the work it wrote is behind the page
+     * that batch already read. Announcing it here is what gives that work the batch this batch's end
+     * runs, instead of the next round the rotation happens to reach.
+     */
+    private toReplayedAdmissionOutcome(replayed: ALInboundMessageAdmission.ReplayResult): ALWorkOutcome {
+        if (replayed.wroteWork) {
+            this.commitWork();
+        }
+        const outcome = replayed.outcome;
+        if (typeof outcome === 'string') {
+            return { status: outcome };
+        }
+        return outcome.kind === 'not-ready'
+            ? { status: 'not-ready', readyAtMs: this.dependencies.clock.nowMs() + outcome.retryAfterMs }
+            : { status: 'non-retryable' };
     }
-    return result.kind === 'not-ready'
-        ? { status: 'not-ready', readyAtMs: nowMs + result.retryAfterMs }
-        : { status: 'non-retryable' };
 }

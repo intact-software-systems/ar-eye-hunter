@@ -32,11 +32,17 @@ export namespace ALInboundMessageAdmission {
         readonly workPort: ALWorkQueuePort;
     }
 
-    export type ReplayResult =
+    export type ReplayOutcome =
         | 'completed'
         | 'retry'
         | { readonly kind: 'not-ready'; readonly retryAfterMs: number; }
         | { readonly kind: 'non-retryable'; readonly reason: string; };
+
+    export interface ReplayResult {
+        readonly outcome: ReplayOutcome;
+        /** The replay's own commit persisted work behind the page its batch read; nothing else announces it. */
+        readonly wroteWork: boolean;
+    }
 
     export type Attempt =
         | {
@@ -47,6 +53,12 @@ export namespace ALInboundMessageAdmission {
         }
         | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission | undefined; };
 }
+
+/** A replay that never reached a commit wrote nothing, so it has no work to announce. */
+const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
+    outcome: 'completed',
+    wroteWork: false
+};
 
 /** One conditional admission per call; the existing QueueBox worker owns retries. */
 export class ALInboundMessageAdmission {
@@ -156,12 +168,12 @@ export class ALInboundMessageAdmission {
         const authority = await this.dependencies.readPendingAdmissionAuthority?.(pending.msg, pending.source) ??
             { kind: 'authorized', source: pending.source };
         if (pending.msg.constraints.expiresAtMs <= this.dependencies.clock.nowMs()) {
-            return 'completed';
+            return REPLAY_COMPLETED_WITHOUT_WORK;
         }
         if (authority.kind !== 'authorized') {
             return authority.kind === 'retry'
-                ? { kind: 'not-ready', retryAfterMs: authority.retryAfterMs }
-                : 'completed';
+                ? { outcome: { kind: 'not-ready', retryAfterMs: authority.retryAfterMs }, wroteWork: false }
+                : REPLAY_COMPLETED_WITHOUT_WORK;
         }
         const validation = validateALInboundMessage(
             pending.msg,
@@ -169,13 +181,17 @@ export class ALInboundMessageAdmission {
             this.dependencies.effectPreparation.selfPeerId
         );
         if (validation.left) {
-            return { kind: 'non-retryable', reason: validation.left.message };
+            return { outcome: { kind: 'non-retryable', reason: validation.left.message }, wroteWork: false };
         }
         const result = await this.attempt(pending.msg, authority.source, this.dependencies.planIncomingMessage);
         if (result.left) {
-            return { kind: 'non-retryable', reason: result.left.message };
+            return { outcome: { kind: 'non-retryable', reason: result.left.message }, wroteWork: false };
         }
-        return result.right!.kind === 'conflict' || this.shutdown.signal.aborted ? 'retry' : 'completed';
+        const attempt = result.right!;
+        return {
+            outcome: attempt.kind === 'conflict' || this.shutdown.signal.aborted ? 'retry' : 'completed',
+            wroteWork: attempt.kind === 'completed' && attempt.wroteWork
+        };
     }
 }
 

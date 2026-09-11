@@ -45,7 +45,7 @@ export const planInboundTestMessage: ALInboundPlanner = (msg, _source, observati
         fromPeerId: INBOUND_TEST_SENDER_PEER_ID
     });
 
-const INBOUND_TEST_EFFECT_PREPARATION: ALInboundEffectPreparationDependencies = {
+export const INBOUND_TEST_EFFECT_PREPARATION: ALInboundEffectPreparationDependencies = {
     newControlId: crypto.randomUUID.bind(crypto),
     selfPeerId: INBOUND_TEST_SELF_PEER_ID,
     createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
