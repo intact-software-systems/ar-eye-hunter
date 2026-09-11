@@ -171,16 +171,44 @@ Residual structural debt carried into release 2: two admission stores of 1,176 a
 pinned by checker dispositions, control-admission conflicts thrown rather than returned, the
 typed-send default persisting to IndexedDB, and the base Prisma migration edited in place.
 
+## Release 2 delivered: PRs #550 and #559
+
+Release 2 ended with F2 merged on `f8db93762`. What it settled and what it left:
+
+| Commitment                                      | State on `f8db93762`                                                                                                                                                                                                         |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conformance lane and messaging entry point (F1) | Delivered: the `alm-conformance` family over three carriers, `rallar-messages.ts`, the black-box delivery ledger and fault ports. The lane runs as the Release Gate's non-blocking observation job (see "Conformance lane"). |
+| One work owner per side                         | Delivered: `packages/shared/alm/work/` port and generic handler; the legacy `dequeue()` path and the raw `workQueue` exposure removed.                                                                                       |
+| Control admission as values                     | Delivered: `inbound/control/` and `outbound/control/`; every fence aborts with a typed value, pinned over memory, IndexedDB and PGlite.                                                                                      |
+| Split admission stores without pins             | Delivered: `outbound/admission/` split; zero cognitive-load findings at or above the warn tier under `packages/shared/alm`; no new disposition.                                                                              |
+| Indexed reads and key-range cleanup             | Delivered: `by-expiry` and `by-status-end` indexes, owner-keyed rows, a re-arming cleanup budget, one readiness scan per probe.                                                                                              |
+| Schema identity and reset                       | Delivered: `rallar-alm-2026-09-f2`, delete-on-mismatch at open, `alm.storage.reset`.                                                                                                                                         |
+| Outbound owner on slow storage                  | Delivered (F2 Task 13): one readonly session per decision surface, remembered readiness, external-writer wakes; the ws send median on the hosted runner fell from 7.4 s to 1.6 s.                                            |
+| Runner regime in every artifact                 | Delivered (F2 Task 14): `alm-observation/<carrier>-<scope>.json` with `regime: normal / slow / unclassified` beside every cell.                                                                                              |
+| Inbound owner on slow storage                   | Not delivered: the receiver's drain runs 5–14 s per batch in the slow regime; F2b.                                                                                                                                           |
+| Truthful send outcomes                          | Unchanged: the public result is still an admission snapshot; S1.                                                                                                                                                             |
+
+Findings carried forward: the RTC `not-yet-in-sync` delivery loss (S2); delivery-level fallback (S3);
+a handler batch that can outlive `dispose()`; the eviction interval's stop handle is not consumed by
+session teardown; two `'expired'` returns in the outbound commit still commit in one narrow case; the
+terminal sweep's read cost over retained topics (a topic-aware index with the next schema-id move);
+the `boundary.unknown` waivers around `admitIncomingMessage(value: unknown)`; the `pending-admission`
+stall segment is uninstrumented on the server side.
+
 ## Release map
 
-Twelve PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
-not on each other. Only F1 and F2 are file-level concrete; S1 to S3 are named by outcome; later
-releases are outcome-shaped with exit evidence.
+Thirteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
+not on each other. Release 2 is delivered. F2b is file-level concrete
+(`plans/alm-f2b-inbound-owner-implementation-plan.md`); S1's design proposal
+([alm-s1-design-proposal.md](alm-s1-design-proposal.md)) waits on the maintainer's answers to its
+section 4 before its plan is written; S2 and S3 are named by outcome; later releases are
+outcome-shaped with exit evidence.
 
 | Release       | PR                                                    | Size   | Completion criteria served |
 | ------------- | ----------------------------------------------------- | ------ | -------------------------- |
 | 2 Foundation  | F1 Conformance lane and messaging entry point         | medium | 1 (lane), 5 (migration)    |
 | 2 Foundation  | F2 One work owner and split stores                    | large  | 5, 8, 10 (reset)           |
+| 3 Slice 2     | F2b The inbound owner on slow storage                 | small  | 1 (lane), 5                |
 | 3 Slice 2     | S1 Delivery lifecycle and handle                      | large  | 3, 9                       |
 | 3 Slice 2     | S2 One identity and receipted audiences               | large  | 1, 3, 6, 9                 |
 | 3 Slice 2     | S3 Defaults, fallback, volatile path, consumer proofs | medium | 3, 4                       |
@@ -272,6 +300,48 @@ and the diagnostic is emitted; the full checker reports no cognitive-load findin
 warn tier under `packages/shared/alm`; `check-changed-repo-style` passes with no new disposition;
 storage snapshot for the standard workload is recorded.
 
+### Release 3, F2b: the inbound owner on slow storage
+
+**Outcome:** a receiver on slow storage delivers inside the conformance window, and the inbound
+diagnostics say where a batch's seconds went.
+
+**Owners:** [alm/inbound](../../packages/shared/alm/inbound/), [alm/work](../../packages/shared/alm/work/),
+the inbound diagnostics contract in
+[runtime-diagnostic-contract.md](../../packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
+
+**Changes:**
+
+1. Every inbound decision surface (`readIncomingMessage`, `readBufferedRelease`,
+   `readStoredPlanningState`, `readOrderedDelivery`, `readControlAdmission`) reads inside one
+   `readWithin` session; today each `backend.read`/`list` opens its own IndexedDB transaction, 5 to
+   10+ per surface. The commit is already one fence snapshot plus one readwrite and is not where the
+   cost sits.
+2. The pending-admission replay carries the immutable half of the first attempt (decoded message,
+   resolved deadline, validated source, effect facts) and re-reads only the authority-bearing
+   surface; a retained conflict reaches its replay in the same batch when the owner is idle. The
+   persisted pending contract changes, so the ALM schema id moves (D3).
+3. The readiness read and the dispatch of a `dispatch-local` effect share one observation, and
+   readiness is read only for the rows a batch can claim. The undispatched ws message of the
+   slow-regime runs was a committed `dispatch-local` effect that only a later rotation round would
+   have dispatched.
+4. `effect-drain` splits into selection, claim, run, release and queue-wait durations; one
+   `claim-settled` event per claim; `readiness-probe` relayed with its cause; `rotation-alive`
+   reports its longest round.
+5. The rotation keeps `AL_WORK_PROBE_EVERY_ROUND`: it advances one status per probe, so the
+   outbound's remembered readiness does not apply; the inbound README records why.
+
+**Acceptance:** transaction pins per surface at `['readonly']` over IndexedDB and green over memory
+and PGlite; a retained conflict replayed in the same batch when idle; in a `slow` regime the
+receiver's inbound drain median at or below the outbound owner's for the same cell (baseline 5.1–14.1 s
+against 1.4–1.8 s) and the ws cell delivering; no harness budget changed; no new cognitive-load pin;
+the regime rule decides what a red means. The lane's return to `test:ci` is the maintainer's
+decision on this evidence, not part of the slice.
+
+What the measurements corrected in the earlier F2b sentence: the two-phase cost is the pending
+replay plus the readiness/dispatch pair, not the write phase; the RTC answer is emitted by the
+outbound owner (treated in F2 Task 13), so the inbound fix is necessary but not the emitting side;
+the 63–65 % pending share is the RTC cells (47 % on ws); probe-every-round is deliberate.
+
 ### Release 3, Slice 2: outcomes
 
 - **S1 Delivery lifecycle and handle.** An internal per-message lifecycle fed by every RTC and WS
@@ -325,7 +395,7 @@ across carriers, both fallback orders; S3 volatile counters, fallback within the
 R1 and R2 arbitration and fencing; A1 and A2 audiences, leader, claims; V1 scale; I1 and I2
 correlation and lifetime.
 
-**Observation status (2026-09-11, maintainer decision).** The lane runs as the Release Gate's non-blocking observation job with its budgets unchanged (`CONNECT_READINESS_TIMEOUT_MS` 30 s, the receiver window from the 18 s scenario deadline, a 10 s non-expiring send). The hosted runner's IndexedDB speed varies by about two between runs, and the rtc cell passes below roughly 30 ms per operation and fails above 35, so every artifact carries a runner-regime summary (F2 Task 14) and a red counts as a regression only against a green baseline of the same regime. **Follow-up slice, F2b — the inbound owner on slow storage:** in the slow regime the receiver's inbound drain runs 5–14 s per batch (0.3–1.1 s otherwise), pending admission doubles the work, a ws message admitted as pending is not dispatched before its window closes, and an RTC receiver admits an offer and emits no answer for 20 s; it needs the same treatment F2 Task 13 gave the outbound owner (one transaction per decision surface, the two-phase cost, drain-latency instrumentation) before the lane can return to `test:ci`.
+**Observation status (2026-09-11, maintainer decision).** The lane runs as the Release Gate's non-blocking observation job with its budgets unchanged (`CONNECT_READINESS_TIMEOUT_MS` 30 s, the receiver window from the 18 s scenario deadline, a 10 s non-expiring send). The hosted runner's IndexedDB speed varies by about two between runs, and the rtc cell passes below roughly 30 ms per operation and fails above 35, so every artifact carries a runner-regime summary (F2 Task 14) and a red counts as a regression only against a green baseline of the same regime. **Follow-up slice, F2b — the inbound owner on slow storage:** in the slow regime the receiver's inbound drain runs 5–14 s per batch (0.3–1.1 s otherwise), the pending share of inbound admissions rises to 63–65 % on the RTC cells, and a ws message admitted as pending is committed but not dispatched before its window closes; the section "Release 3, F2b" carries the treatment, and the lane returns to `test:ci` only on its evidence. On merged `main` (`f8db93762`) every cell ran in the slow regime and all three failed with that signature.
 
 ## Storage, cutover, reset, and rollback
 
@@ -453,10 +523,10 @@ artifacts in the lanes.
 ## Continuing from a fresh session
 
 Read this roadmap, then the open pull request's Goal, Acceptance, Validation, and Follow-up
-sections, then run `npm run pr:delivery -- status`. The current planning delivery is
-[PR #548](https://github.com/intact-software-systems/ar-eye-hunter/pull/548), which also carries
-the implementation plan for F1 and F2 under `plans/`. Start the next slice from merged `main` on a
-new branch. Recover the current owner, entry,
+sections, then run `npm run pr:delivery -- status`. The current delivery is the open F2b pull
+request from branch `claude/alm-f2b-inbound-owner`; its implementation plan is
+`plans/alm-f2b-inbound-owner-implementation-plan.md`, beside the ticked F1 and F2 plans. Start the
+next slice from merged `main` on a new branch. Recover the current owner, entry,
 dataflow, failure boundary, and tests from the repository before editing; this roadmap is not a
 navigation map. When a release completes, move the next two slices into the concrete horizon here
 and leave the rest outcome-shaped. Do not add pull request status prose to this document.
@@ -468,3 +538,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-08: re-baselined on `a28e61b61`; decision record D1 to D8; release map, conformance lane,
   storage and cutover, governance, consumer proofs, and refreshed matrix.
 - 2026-09-11: F2 (PR #559) findings carried into S2 (pending-frame retention and the sender's `not-yet-in-sync` retry), S3 (delivery-level fallback), a follow-up slice F2b (the inbound owner on slow storage), and the lane's observation status with the runner-regime rule (F2 Task 14).
+- 2026-09-11: Release 2 delivered (F2 merged as `f8db93762`); F2b moved into the concrete horizon with
+  its plan under `plans/` and the measurement corrections folded in; the S1 design proposal recorded
+  beside this roadmap.
