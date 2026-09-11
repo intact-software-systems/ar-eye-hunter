@@ -544,11 +544,11 @@ export class WebRtcOverlayMulticastManager {
         const eligible = msg.id.senderId === this.connectionService.input.sessionId &&
             readALTargetGroupRef(msg) !== undefined &&
             !(msg.targets?.mode === 'broadcast' && msg.targets.recipientPeerIds !== undefined) &&
-            !handling.dropReason && handling.forwarding.persist && handling.forwarding.nextHopPeerIds.length > 0;
+            !handling.dropReason && handling.forwarding.nextHopPeerIds.length > 0;
         if (eligible && alreadyOwned) {
             throw new NotReadyException(50, 'Awaiting the exact accepted RTC overlay cache value');
         }
-        if (!eligible) {
+        if (!eligible || !handling.forwarding.persist) {
             return {
                 msg,
                 persist: false,
@@ -810,7 +810,7 @@ export class WebRtcOverlayMulticastManager {
                     }
                 })
             ],
-            ackTracking: tracking.ackTracking ? { ...tracking.ackTracking, mode: 'replace' } : undefined,
+            ackTracking: { ...tracking.ackTracking, mode: 'replace' },
             repairTracking: repair
         };
     }

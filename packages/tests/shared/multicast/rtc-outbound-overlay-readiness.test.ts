@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import { newALBroadcastMessage, newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALQosEffectivePolicy, ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
@@ -34,6 +35,7 @@ interface OverlayFixture {
     readonly groups: LatestRepository<string, GroupSnapshot>;
     readonly overlays: LatestRepository<string, OverlayInfo>;
     readonly resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
+    readonly qosProvider: ALQosInputProvider | undefined;
 }
 
 beforeEach(() => {
@@ -49,6 +51,60 @@ afterEach(() => {
 });
 
 describe('RTC durable accepted-overlay readiness', () => {
+    it.each([true, false])('retains captured durability and ACK=%s when provider defaults change during the gap', async (acknowledge) => {
+        let defaults: Partial<ALQosEffectivePolicy> = {
+            delivery: { algo: 'at-least-once', opts: {} },
+            durability: { algo: 'local-outbox', opts: {} },
+            ack: { algo: acknowledge ? 'hop' : 'none', opts: { timeoutMs: acknowledge ? 200 : 0 } },
+            retry: { algo: 'exp-backoff', opts: { maxAttempts: 2 } }
+        };
+        const fixture = await createFixture({ defaultsForMessage: () => defaults });
+        const message = { ...createMessage('multicast'), delivery: undefined, qos: undefined };
+        const warnings = vi.spyOn(console, 'warn');
+        const admitted = await fixture.manager.enqueueIfAbsent(message);
+        expect(admitted.status, admitted.reason).toBe('enqueued');
+        expect(admitted.entries).toHaveLength(1);
+        expect(admitted.entries[0].status).toBe(EntityStatus.NEW);
+        const admittedKeys = await fixture.resources.workQueue.getAllKeys();
+        defaults = {
+            delivery: { algo: 'best-effort', opts: {} },
+            durability: { algo: 'volatile', opts: {} },
+            ack: { algo: acknowledge ? 'none' : 'hop', opts: { timeoutMs: acknowledge ? 0 : 300 } },
+            retry: { algo: 'none', opts: { maxAttempts: 0 } }
+        };
+        await vi.advanceTimersByTimeAsync(1_250);
+        const pending = await fixture.resources.workQueue.getItem(admitted.entries[0].key);
+        expect(pending).toMatchObject({ dequeueAudit: { attempts: 0 } });
+        expect(JSON.parse(pending!.resource).constraints.expiresAtMs).toBe(6_000);
+        expect(await fixture.resources.workQueue.getAllKeys()).toEqual(admittedKeys);
+        expect(await fixture.resources.admissionStore.readPendingAck(message.id.msgId)).toBeUndefined();
+        expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+        expect(warnings.mock.calls).toEqual([]);
+
+        fixture.overlays.accept(overlayId, createOverlay(['peer-2']));
+        await vi.advanceTimersByTimeAsync(50);
+        expect(native.createdConnections[0].channels[0].sent).toEqual([]);
+        expect(native.createdConnections[1].channels[0].sent).toHaveLength(1);
+        if (acknowledge) {
+            expect(await fixture.resources.admissionStore.readPendingAck(message.id.msgId)).toMatchObject({
+                expectedPeerIds: ['peer-2'],
+                timeoutMs: 200,
+                maxAttempts: 2,
+                deadlineAtMs: 2_500
+            });
+            await fixture.manager.acceptControlMessage(newALAckControlMessage(
+                { v: 2, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2' },
+                { ackedMsgId: message.id.msgId, fromPeerId: 'peer-2', toPeerId: 'self', status: 'accepted', observedAtEpochMs: Date.now() }
+            ));
+        }
+        else {
+            expect(await fixture.resources.admissionStore.readPendingAck(message.id.msgId)).toBeUndefined();
+        }
+        await vi.advanceTimersByTimeAsync(500);
+        expect(await fixture.resources.admissionStore.readPendingAck(message.id.msgId)).toBeUndefined();
+        expect(native.createdConnections[1].channels[0].sent).toHaveLength(1);
+    });
+
     it.each(['volatile', 'best-effort', 'fixed-audience', 'nonlocal', 'excluded', 'visited', 'hinted-away'] as const)(
         'does not acquire durable absent-cache work for %s',
         async (denial) => {
@@ -409,7 +465,7 @@ function toAuthoritySnapshot(denial: string): GroupSnapshot | undefined {
     }
 }
 
-async function createFixture(): Promise<OverlayFixture> {
+async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayFixture> {
     const connection = new WebRtcConnectionService({ send: async () => {}, connect: async () => {} }, {
         sessionId: 'self',
         token: 'test-token',
@@ -434,8 +490,8 @@ async function createFixture(): Promise<OverlayFixture> {
     const overlays = new LatestRepository<string, OverlayInfo>();
     groups.accept('room', createSnapshot());
     const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, random: () => 0.5 });
-    const manager = createManager({ connection, groups, overlays, resources });
-    return { manager, connection, groups, overlays, resources };
+    const manager = createManager({ connection, groups, overlays, resources, qosProvider });
+    return { manager, connection, groups, overlays, resources, qosProvider };
 }
 
 function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayMulticastManager {
@@ -444,7 +500,7 @@ function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayM
         groupCache: fixture.groups,
         overlayCache: fixture.overlays,
         multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, fixture.connection),
-        qosProvider: undefined,
+        qosProvider: fixture.qosProvider,
         outboundDiagnostics: undefined,
         outboundRuntime: fixture.resources,
         circuitBreaker: toCircuitBreaker(),

@@ -8,7 +8,7 @@ import type {
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 
 interface RtcOutboundTracking {
-    readonly ackTracking: ALOutboundAckTrackingPlan | undefined;
+    readonly ackTracking: ALOutboundAckTrackingPlan;
     readonly retryTracking: ALOutboundRetryTrackingPlan | undefined;
     readonly repairTracking: ALOutboundRepairTrackingPlan | undefined;
     readonly supersedenceTracking: ALOutboundSupersedenceTrackingPlan | undefined;
@@ -20,8 +20,9 @@ export function toRtcOutboundTracking(
     expectedPeerIds: readonly string[]
 ): RtcOutboundTracking {
     return {
-        ackTracking: effective.ack.algo === 'none' ? undefined : {
-            enabled: true,
+        // Recovered recipients remain observable when ALM restores an earlier captured ACK policy.
+        ackTracking: {
+            enabled: effective.ack.algo !== 'none',
             timeoutMs: effective.ack.opts.timeoutMs,
             maxAttempts: effective.retry.algo === 'none' ? 0 : effective.retry.opts.maxAttempts,
             expectedPeerIds: [...new Set(expectedPeerIds)]
