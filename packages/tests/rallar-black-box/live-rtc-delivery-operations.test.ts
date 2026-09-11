@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+
+import { toError } from '@shared/resilience/to-error.ts';
+
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import {
@@ -564,6 +567,61 @@ describe('live RTC delivery owner', () => {
             })
         ).rejects.toBe(firstReceiverFailure);
         expect(laterReceiverSettled).toBe(true);
+    });
+
+    it('settles receiver observations before surfacing a sender rejection', async () => {
+        const recording = new RecordingLiveRtcControl();
+        const senderFailure = new Error('RTC send had no route');
+        const receiverFailure = new Error('Receiver B did not observe the message');
+        const originalExecuteOk = recording.executeOk;
+        const deliveryMilestones: string[] = [];
+        let rejectReceiverB: (() => void) | undefined;
+        let resolveReceiverC: (() => void) | undefined;
+        vi.spyOn(recording, 'executeOk').mockImplementation(async (input) => {
+            if (input.command.kind === 'rtc.send') {
+                deliveryMilestones.push('send');
+                throw senderFailure;
+            }
+            return await originalExecuteOk(input);
+        });
+        vi.spyOn(recording, 'waitForMessage').mockImplementation(
+            async (input) => {
+                recording.messageObservations.push(input);
+                deliveryMilestones.push(`wait:${input.agentId}`);
+                return await new Promise<number>((resolve, reject) => {
+                    if (input.agentId === 'B') {
+                        rejectReceiverB = () => reject(receiverFailure);
+                        return;
+                    }
+                    resolveReceiverC = () => resolve(1);
+                });
+            }
+        );
+
+        let deliverySettled = false;
+        const deliveryOutcome = createLiveRtcDeliveryOperations(
+            config
+        ).runAllDeliveryPermutations({
+            control: recording,
+            runId: 'run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'room',
+            suffix: 'sender-failure'
+        }).then(() => undefined).catch(toError);
+        void deliveryOutcome.finally(() => {
+            deliverySettled = true;
+        });
+
+        await vi.waitFor(() => expect(deliveryMilestones).toContain('send'));
+        expect(deliveryMilestones).toEqual(['wait:B', 'wait:C', 'send']);
+        expect(deliverySettled).toBe(false);
+        rejectReceiverB?.();
+        await Promise.resolve();
+        expect(deliverySettled).toBe(false);
+        resolveReceiverC?.();
+
+        await expect(deliveryOutcome).resolves.toBe(senderFailure);
     });
 
     it('propagates captured NACK evidence when reading the browser wire fails', async () => {
