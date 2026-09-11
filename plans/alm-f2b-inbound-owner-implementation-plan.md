@@ -450,7 +450,7 @@ regime at 7–13 ms/op.
 
 ### Task 6: Final gates and the PR
 
-- [ ] **Step 1: The full local list on the final tree.** `npm run test:unit`;
+- [x] **Step 1: The full local list on the final tree.** `npm run test:unit`;
       `npm run typecheck`; `cd apps/api-v1 && deno task check`, and the same for
       `apps/rallar-black-box-control-server` and `apps/relic-hunter-server-v1`; `npm run test:deno`;
       `npx dprint check`; `npm run check:repo-style:changed -- origin/main HEAD`;
@@ -458,19 +458,20 @@ regime at 7–13 ms/op.
       `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`;
       `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`; `npm run build`;
       `npm run test:ci`. Report which passed, failed, or were skipped, and why.
-- [ ] **Step 2: Postgres lanes.** `npm run db:test:up`, then
+- [x] **Step 2: Postgres lanes.** `npm run db:test:up`, then
       `npm run test:api-v1:black-box:postgres:medium-scale` and
       `npm run test:integration:postgres`. Never weaken their constants or assertions.
-- [ ] **Step 3: Bundle figures.** Record `browser/rallar.ts` and the headless bundle against their
+- [x] **Step 3: Bundle figures.** Record `browser/rallar.ts` and the headless bundle against their
       budgets. A crossed budget is raised to the next whole KiB with the measured figure recorded and
       reported (maintainer ruling 2026-09-05); both figures go in the PR body.
-- [ ] **Step 4: README and PR.** Update `packages/shared/alm/inbound/README.md` with the read-session
+- [x] **Step 4: README and PR.** Update `packages/shared/alm/inbound/README.md` with the read-session
       rule, the pending-admission carry, the readiness/dispatch observation, and the rotation
       conclusion from Task 4 Step 0. PR body in the F2 shape: Goal, Changes, Acceptance (the
       conformance scenarios and the transaction pins), Validation (the artifacts and the commands),
       Risk and rollback (schema-id move discards pending ALM work — list what), Follow-up.
       `pr:delivery status` decides the next action; `ready` and auto-merge are not used.
-- [ ] **Step 5: Branch Release Gate.** Green on the final feature-branch commit before review is
+- [ ] **Step 5: Branch Release Gate.** (The run on the pushed final head is the gate; its result is
+      recorded on the pull request, not here, so that no commit follows a passing gate.) Green on the final feature-branch commit before review is
       requested. Any change after a passing gate invalidates it.
 
 ---
