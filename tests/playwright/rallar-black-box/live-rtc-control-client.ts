@@ -602,7 +602,7 @@ export class LiveRtcControlClient {
             ...Object.values(healthByAgentId).flatMap((health) => health.localSessionId ? [health.localSessionId] : [])
         ]);
         await this.#writeDiagnosticsArtifact(
-            `live-rtc-readiness-failure-${encodeURIComponent(failedAgentReference)}-${safeFileName(input.suffix)}.json`,
+            `live-rtc-readiness-failure-agent-${input.agent.prefix.toLowerCase()}-${safeFileName(input.suffix)}.json`,
             JSON.stringify(
                 {
                     runId: input.runId,

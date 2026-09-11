@@ -592,6 +592,67 @@ describe('live RTC control client', () => {
         expect(readinessHealthAgents).toHaveLength(3);
     });
 
+    it('names the sidecar by harness slot for a maximum-length punctuation identity', async () => {
+        const punctuationAgentId = ':'.repeat(128);
+        runAgentIds = [];
+        healthValues[punctuationAgentId] = { rallar: { session: { sessionId: 'session-c' } } };
+        const failure = new Error('SENTINEL-readiness-error');
+        refreshRoom.mockRejectedValue(failure);
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-punctuation',
+            agent: { ...agent, prefix: 'C', agentId: punctuationAgentId },
+            expectedPeerIds: ['session-b'],
+            suffix: 'punctuation',
+            startedAtMs: 100
+        })).rejects.toBe(failure);
+
+        const fileName = 'live-rtc-readiness-failure-agent-c-punctuation.json';
+        expect(readdirSync(diagnosticsRoot)).toEqual([fileName]);
+        const serialized = readFileSync(path.join(diagnosticsRoot, fileName), 'utf8');
+        expect(serialized).not.toContain('SENTINEL');
+        expect(JSON.parse(serialized)).toMatchObject({
+            agentId: punctuationAgentId,
+            health: { captureSucceeded: true, localSessionId: 'session-c' }
+        });
+    });
+
+    it('keeps separate same-suffix sidecars for hostile identities in different harness slots', async () => {
+        runAgentIds = [];
+        const captures = [
+            { prefix: 'A' as const, agentId: 'credential=SENTINEL-first', sessionId: 'session-a' },
+            { prefix: 'B' as const, agentId: 'credential=SENTINEL-second', sessionId: 'session-b' }
+        ];
+        const failure = new Error('SENTINEL-readiness-error');
+        refreshRoom.mockRejectedValue(failure);
+        for (const capture of captures) {
+            healthValues[capture.agentId] = { rallar: { session: { sessionId: capture.sessionId } } };
+            await expect(control.waitForPeerReadiness({
+                runId: 'run-shared-suffix',
+                agent: { ...agent, prefix: capture.prefix, agentId: capture.agentId },
+                expectedPeerIds: ['session-c'],
+                suffix: 'shared',
+                startedAtMs: 100
+            })).rejects.toBe(failure);
+        }
+
+        const fileNames = readdirSync(diagnosticsRoot).sort();
+        expect(fileNames).toEqual([
+            'live-rtc-readiness-failure-agent-a-shared.json',
+            'live-rtc-readiness-failure-agent-b-shared.json'
+        ]);
+        const sidecars = fileNames.map((fileName) => {
+            expect(fileName.length).toBeLessThan(100);
+            expect(fileName).not.toMatch(/SENTINEL|credential/);
+            const serialized = readFileSync(path.join(diagnosticsRoot, fileName), 'utf8');
+            expect(serialized).not.toMatch(/SENTINEL|credential/);
+            return JSON.parse(serialized);
+        });
+        expect(sidecars).toMatchObject([
+            { agentId: '@causal-agent-1', health: { captureSucceeded: true, localSessionId: 'session-a' } },
+            { agentId: '@causal-agent-1', health: { captureSucceeded: true, localSessionId: 'session-b' } }
+        ]);
+    });
+
     it('retains only a fixed category when readiness health capture fails', async () => {
         healthCommandFailure = { agentId: 'agent-a', body: 'SENTINEL-health-response' };
         refreshRoom.mockRejectedValue(new Error('SENTINEL-readiness-error'));
