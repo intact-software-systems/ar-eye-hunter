@@ -31,7 +31,10 @@ import type {
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type IndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
@@ -62,7 +65,7 @@ it('hands initial control ownership to durable pending work without waiting for 
     const message = createControlMessage('control-handoff');
     const browserLocks = stubImmediateBrowserLock();
     const observer = createCountingIndexedDbOperationObserver();
-    const stores = createControlStores('control-handoff', observer);
+    const stores = createControlStores({ label: 'control-handoff', observer });
     await stores.admissionStore.ready();
     observer.reset();
     const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
@@ -97,11 +100,15 @@ it('hands initial control ownership to durable pending work without waiting for 
 it('converges two runtime handoffs on one pending owner and one eventual transport', async () => {
     const message = createControlMessage('concurrent-handoff');
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores('concurrent-handoff');
-    await stores.admissionStore.ready();
+    const dbName = `outbound-control-concurrent-handoff-${crypto.randomUUID()}`;
+    const firstStores = createControlStores({ label: 'concurrent-handoff', dbName });
+    const secondStores = createControlStores({ label: 'concurrent-handoff', dbName });
+    await Promise.all([firstStores.admissionStore.ready(), secondStores.admissionStore.ready()]);
+    expect(firstStores.admissionStore).not.toBe(secondStores.admissionStore);
+    expect(firstStores.workQueue).not.toBe(secondStores.workQueue);
     let transportCount = 0;
-    const first = createControlRuntime(stores, undefined, () => transportCount += 1);
-    const second = createControlRuntime(stores, undefined, () => transportCount += 1);
+    const first = createControlRuntime(firstStores, undefined, () => transportCount += 1);
+    const second = createControlRuntime(secondStores, undefined, () => transportCount += 1);
 
     const results = await Promise.all([
         first.enqueueIfAbsent(message),
@@ -109,7 +116,7 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     ]);
 
     expect(results.map((result) => result.status)).toEqual(['pending-admission', 'pending-admission']);
-    const retained = await readControlRows(stores);
+    const retained = await readControlRows(firstStores);
     expect(retained.filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'))).toHaveLength(1);
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
@@ -136,7 +143,7 @@ it.each(
 )('does not duplicate a $state control handoff owner', async ({ state, expectedStatus }) => {
     const message = createControlMessage(`repeated-${state.toLowerCase()}`);
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores(`repeated-${state.toLowerCase()}`);
+    const stores = createControlStores({ label: `repeated-${state.toLowerCase()}` });
     await stores.admissionStore.ready();
     const retainPendingAdmission = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
     let retentionCount = 0;
@@ -181,7 +188,7 @@ it.each([
     }
 ])('keeps $case on the serialized admission path', async ({ message }) => {
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores(`serialized-${message.id.msgId}`);
+    const stores = createControlStores({ label: `serialized-${message.id.msgId}` });
     await stores.admissionStore.ready();
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const runtime = createControlRuntime(stores, (event) => diagnostics.push(event));
@@ -199,7 +206,7 @@ it.each([
 it('surfaces a real terminal retention race as a retryable control handoff conflict', async () => {
     const message = createControlMessage('retention-race');
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores('retention-race');
+    const stores = createControlStores({ label: 'retention-race' });
     await stores.admissionStore.ready();
     const retainPendingAdmission = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
     vi.spyOn(stores.admissionStore, 'retainPendingAdmission').mockImplementationOnce(async (input) => {
@@ -260,7 +267,7 @@ async function createInboundControlRetryFixture(): Promise<InboundControlRetryFi
         namespace: 'inbound-control-race',
         nowMs: () => TEST_NOW_MS
     });
-    const outboundStores = createControlStores('inbound-control-race');
+    const outboundStores = createControlStores({ label: 'inbound-control-race' });
     await Promise.all([inboundStores.admissionStore.ready(), outboundStores.admissionStore.ready()]);
     const outbound = createControlRuntime(outboundStores);
     const queueEngine = new InboxOutboxEngine();
@@ -344,15 +351,18 @@ function createReliableControlMessage(msgId: string): ALMessage {
     };
 }
 
-function createControlStores(
-    label: string,
-    observer = createCountingIndexedDbOperationObserver()
-): ALOutboundRuntimeStores<OutboundTestPayload> {
+interface CreateControlStoresInput {
+    readonly label: string;
+    readonly dbName?: string;
+    readonly observer?: IndexedDbOperationObserver;
+}
+
+function createControlStores(input: CreateControlStoresInput): ALOutboundRuntimeStores<OutboundTestPayload> {
     return createDefaultIndexedDbALOutboundRuntimeStores({
-        dbName: `outbound-control-${label}-${crypto.randomUUID()}`,
-        namespace: label,
+        dbName: input.dbName ?? `outbound-control-${input.label}-${crypto.randomUUID()}`,
+        namespace: input.label,
         nowMs: () => TEST_NOW_MS,
-        observer,
+        observer: input.observer,
         decodePrepared: decodeOutboundTestPayload
     });
 }

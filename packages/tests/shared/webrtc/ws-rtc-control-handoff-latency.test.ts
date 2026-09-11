@@ -125,9 +125,15 @@ class HeldOutboundControlLocks {
 }
 
 namespace RtcControlHandoffFixture {
+    export interface ReceiverClock {
+        readonly signalEpochMs: number;
+        readonly startedAtMonotonicMs: number;
+    }
+
     export interface Observations {
         controlSendCount: number;
         readonly controlStatuses: string[];
+        receiverClock: ReceiverClock | undefined;
         rtcDeliveredAtMs: number | undefined;
     }
 
@@ -143,9 +149,9 @@ namespace RtcControlHandoffFixture {
         readonly observations: Observations;
     }
 
-    export interface ConflictedAdmission {
+    export interface ConflictedAdmission extends ReceiverClock {
         readonly signal: ALMessage;
-        readonly peerStartedAtMs: number;
+        readonly peerDeadlineAtMs: number;
     }
 }
 
@@ -177,6 +183,7 @@ class RtcControlHandoffFixture {
         const observations: RtcControlHandoffFixture.Observations = {
             controlSendCount: 0,
             controlStatuses: [],
+            receiverClock: undefined,
             rtcDeliveredAtMs: undefined
         };
         await observeRtcControlTraffic(connected.service, observations);
@@ -243,10 +250,19 @@ class RtcControlHandoffFixture {
             }
             return 'conflict';
         });
+        const receiverClock = {
+            signalEpochMs: Date.now(),
+            startedAtMonotonicMs: performance.now()
+        };
+        this.dependencies.observations.receiverClock = receiverClock;
         const pending = await this.dependencies.service.acceptIncomingMessage(signal);
         conflict.mockRestore();
         expect(pending.right).toEqual({ kind: 'pending-admission' });
-        return { signal, peerStartedAtMs };
+        return {
+            signal,
+            peerDeadlineAtMs: peerStartedAtMs + DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY.timeoutMs,
+            ...receiverClock
+        };
     }
 
     async expectRtcDeliveryBeforeControlLocks(
@@ -257,28 +273,31 @@ class RtcControlHandoffFixture {
             await this.dependencies.queueEngine.executeOnce();
             await Promise.resolve();
         }
-        await expect.poll(
-            async () => {
-                await this.dependencies.queueEngine.executeOnce();
-                return this.hasCompletedAdmission(admission.signal);
-            },
-            { timeout: 10_000 }
-        ).toBe(true);
+        const elapsedBeforeWaitMs = performance.now() - admission.startedAtMonotonicMs;
+        const remainingPeerBudgetMs = Math.floor(
+            admission.peerDeadlineAtMs - admission.signalEpochMs - elapsedBeforeWaitMs
+        );
+        expect(remainingPeerBudgetMs).toBeGreaterThan(0);
         await expect.poll(async () => {
             await this.dependencies.queueEngine.executeOnce();
-            return this.dependencies.observations.rtcDeliveredAtMs;
-        }, { timeout: 10_000 }).toBeDefined();
-        await expect.poll(async () => {
-            await this.dependencies.queueEngine.executeOnce();
-            return this.completedControlCount();
-        }, { timeout: 10_000 }).toBe(BACKGROUND_CONTROL_COUNT);
+            return {
+                admissionCompleted: this.hasCompletedAdmission(admission.signal),
+                rtcDelivered: this.dependencies.observations.rtcDeliveredAtMs !== undefined,
+                completedControlCount: this.completedControlCount()
+            };
+        }, { timeout: remainingPeerBudgetMs }).toEqual({
+            admissionCompleted: true,
+            rtcDelivered: true,
+            completedControlCount: BACKGROUND_CONTROL_COUNT
+        });
         expect(this.dependencies.observations.controlSendCount).toBe(BACKGROUND_CONTROL_COUNT);
         expect(this.dependencies.observations.controlStatuses).toEqual(
             Array.from({ length: BACKGROUND_CONTROL_COUNT }, () => 'pending-admission')
         );
         expect(this.dependencies.locks.count()).toBe(0);
+        expect(this.dependencies.observations.rtcDeliveredAtMs).toBeGreaterThan(admission.signalEpochMs);
         expect(this.dependencies.observations.rtcDeliveredAtMs).toBeLessThanOrEqual(
-            admission.peerStartedAtMs + DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY.timeoutMs
+            admission.peerDeadlineAtMs
         );
     }
 
@@ -399,7 +418,11 @@ async function observeRtcControlTraffic(
             onClose: async () => {},
             onError: async () => {},
             onMessage: async () => {
-                observations.rtcDeliveredAtMs = Date.now();
+                const clock = observations.receiverClock;
+                if (!clock) {
+                    throw new Error('RTC delivery arrived before signal admission timing began');
+                }
+                observations.rtcDeliveredAtMs = clock.signalEpochMs + performance.now() - clock.startedAtMonotonicMs;
             }
         }
     });
