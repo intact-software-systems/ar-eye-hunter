@@ -12,6 +12,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundPendingAdmission } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
@@ -260,20 +261,20 @@ it('reads the supersedence key an admitted message was stored under', async () =
     const message = createInboundTestMessage({ msgId: 'stored-planning', supersedenceKey: SUPERSEDENCE_KEY });
     await admitIncomingMessage(admissionStore, message);
 
-    const read = await admissionStore.readStoredPlanningState({ msg: message, nowMs: Date.now() });
+    const read = await admissionStore.readDeliverySurface(toALInboundMessageReference(message), Date.now());
 
-    expect(read.supersedenceKey).toBe(SUPERSEDENCE_KEY);
+    expect(read?.supersedenceKey).toBe(SUPERSEDENCE_KEY);
 });
 
-it('reads a stored planning surface in 1 readonly transaction', async () => {
+it('reads a delivery surface in 1 readonly transaction', async () => {
     const { admissionStore } = await createAdmissionFixture();
     const message = createInboundTestMessage({ msgId: 'stored-planning', supersedenceKey: SUPERSEDENCE_KEY });
     await admitIncomingMessage(admissionStore, message);
 
     const recorded = recordIndexedDbTransactions();
-    await admissionStore.readStoredPlanningState({ msg: message, nowMs: Date.now() });
+    await admissionStore.readDeliverySurface(toALInboundMessageReference(message), Date.now());
 
-    expect(recorded.modes(), 'readStoredPlanningState').toEqual(ONE_DECISION_SURFACE);
+    expect(recorded.modes(), 'readDeliverySurface').toEqual(ONE_DECISION_SURFACE);
 });
 
 it('commits the acknowledgement its control owner index resolves to a tracked message', async () => {

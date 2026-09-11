@@ -13,6 +13,7 @@ import {
     computeOutboundTestAdmission,
     peekOutboundWorkReadyAt
 } from '../shared/alm/outbound-runtime-test-fixture.ts';
+import { readInboundTestMessageOwner } from '../shared/alm/read-inbound-test-message-owner.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
@@ -196,8 +197,8 @@ describe('PostgreSQL inbound admission', () => {
         expect(admitted).toMatchObject({ kind: 'committed', acceptance: { handled: true } });
         const pending = await repository.findEntry(namespace, `${namespace}:control:pending:msg-1:peer-1`);
         expect(JSON.parse(pending!.value)).toMatchObject({ value: { ackedFromPeerIds: ['peer-2'] } });
-        const owner = await store.readStoredPlanningState({ msg: (await readIncoming(store)).msg, nowMs: Date.now() });
-        expect(owner.source).toEqual({ kind: 'ws-client', peerId: 'peer-1' });
+        const owner = await readInboundTestMessageOwner({ backend, namespace, msgId: 'msg-1', senderId: 'peer-1' });
+        expect(owner?.source).toEqual({ kind: 'ws-client', peerId: 'peer-1' });
 
         const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1:peer-1`);
         expect(ackEntry).toBeDefined();

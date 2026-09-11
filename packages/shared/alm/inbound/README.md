@@ -76,7 +76,7 @@ ownership into QueueBox rows inside the admission transaction and reads ordered-
 evidence; reservation and release belong to the work port alone.
 
 Every inbound decision surface — `readIncomingMessage`, `readBufferedRelease`,
-`readStoredPlanningState`, `readOrderedDelivery` and `readControlDecisionSurface` — reads
+`readDeliverySurface`, `readOrderedDelivery` and `readControlDecisionSurface` — reads
 its whole chain inside one
 [`ALAdmissionWorkBackend.readWithin`](../al-admission-work-backend.ts) session, so a
 surface costs one store snapshot rather than one read per row it needs. On IndexedDB that

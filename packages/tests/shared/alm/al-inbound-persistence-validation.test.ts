@@ -21,6 +21,7 @@ import {
     type ALInboundControlOwnerIndex,
     type ALInboundDurableEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import {
     computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
@@ -34,6 +35,8 @@ import {
     it,
     vi
 } from 'vitest';
+
+import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
 
 const message: ALMessage = {
     id: { v: 2, msgId: 'message', senderId: 'sender:with:delimiter', ts: 1_800_000_000_000 },
@@ -70,6 +73,20 @@ function createFixture() {
             newControlId: () => 'generated-control'
         })
     };
+}
+
+/** The provenance row the store wrote, read back under its own key and decoder. */
+function readOwner(
+    backend: ReturnType<typeof createFixture>['backend'],
+    namespace: string,
+    candidate: ALMessage = message
+) {
+    return readInboundTestMessageOwner({
+        backend,
+        namespace,
+        msgId: candidate.id.msgId,
+        senderId: candidate.id.senderId
+    });
 }
 
 function readIncoming(store: ReturnType<typeof createFixture>['store'], candidate: ALMessage) {
@@ -212,12 +229,11 @@ describe('inbound admission persisted values', () => {
             });
         });
 
-        await expect(store.readStoredPlanningState({ msg: message, nowMs: Date.now() }))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('retains a frozen group audience larger than the wire collection limit', async () => {
-        const { store } = createFixture();
+        const { backend, store } = createFixture();
         const groupRecipientPeerIds = Array.from({ length: 1_500 }, (_, index) => `room-peer-${index}`);
         const expireAtTimestamp = Date.now() + 60_000;
         expect(
@@ -239,7 +255,7 @@ describe('inbound admission persisted values', () => {
             })
         ).toBe('committed');
 
-        await expect(store.readStoredPlanningState({ msg: message, nowMs: Date.now() })).resolves.toMatchObject({
+        await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({
             source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds }
         });
     });
@@ -568,7 +584,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('retains independent provenance for the same message id from distinct senders', async () => {
-        const { state, store } = createFixture();
+        const { backend, state, store } = createFixture();
         const secondMessage = {
             ...message,
             id: { ...message.id, senderId: 'second-sender' }
@@ -608,9 +624,9 @@ describe('inbound admission persisted values', () => {
             })
         ).toBe('committed');
 
-        expect((await store.readStoredPlanningState({ msg: message, nowMs: Date.now() })).source)
+        expect((await readOwner(backend, store.namespace))?.source)
             .toEqual({ kind: 'ws-client', peerId: message.id.senderId });
-        expect((await store.readStoredPlanningState({ msg: secondMessage, nowMs: Date.now() })).source)
+        expect((await readOwner(backend, store.namespace, secondMessage))?.source)
             .toEqual({ kind: 'ws-client', peerId: secondMessage.id.senderId });
         expect([...state.data.keys()].filter((key) => key.startsWith('inbound:msg-owner:')).sort()).toEqual([
             'inbound:msg-owner:message:second-sender',
@@ -761,7 +777,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('round-trips the local-delivery reference and retains the message once', async () => {
-        const { state, store, port, control } = createFixture();
+        const { backend, state, store, port, control } = createFixture();
         const retainUntilMs = Date.now() + 120_000;
         const work = createWork('dispatch', { kind: 'dispatch-local', message: toMessageReference(message) });
         await store.commitBundle({
@@ -777,7 +793,13 @@ describe('inbound admission persisted values', () => {
         });
         const [claimed] = await claimWork(port, store.namespace);
         expect(claimed?.payload).toEqual({ kind: 'dispatch-local', message: toMessageReference(message) });
-        expect(await store.readInboundMessage(toMessageReference(message))).toEqual(message);
+        expect(
+            (await readALInboundStoredMessage({
+                database: backend,
+                namespace: store.namespace,
+                reference: toMessageReference(message)
+            }))?.msg
+        ).toEqual(message);
         expect([...state.data.keys()].filter((key) => key.startsWith('inbound:message:'))).toEqual([
             'inbound:message:sender%3Awith%3Adelimiter:message'
         ]);

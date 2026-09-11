@@ -18,6 +18,7 @@ import {
     type ALInboundAdmissionMutation,
     type ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import {
@@ -40,6 +41,7 @@ const NAMESPACE = 'inbound-canonical';
 
 interface CanonicalRuntimeFixture {
     readonly state: ALAdmissionMemoryState;
+    readonly backend: InMemoryAdmissionBackend;
     readonly runtime: ALInboundMessageRuntime;
     readonly admissionStore: ReturnType<typeof createALInboundAdmissionStore>;
     readonly delivered: string[];
@@ -53,11 +55,12 @@ describe('inbound canonical message ownership', () => {
 
         await fixture.runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
 
-        const stored = await fixture.admissionStore.readInboundMessage({
-            senderId: 'sender',
-            msgId: message.id.msgId
+        const stored = await readALInboundStoredMessage({
+            database: fixture.backend,
+            namespace: NAMESPACE,
+            reference: { senderId: 'sender', msgId: message.id.msgId }
         });
-        expect(stored).toEqual(message);
+        expect(stored?.msg).toEqual(message);
         const rows = await readAllWorkRows(fixture.state.workQueue);
         expect(rows.length).toBeGreaterThan(0);
         for (const row of rows) {
@@ -170,9 +173,10 @@ describe('inbound canonical message ownership', () => {
         expect(bundle.mutations.map((mutation) => mutation.kind)).toContain('set-msg-owner');
         expect(bundle.mutations.map((mutation) => mutation.kind)).not.toContain('set-inbound-message');
         expect(
-            await fixture.admissionStore.readInboundMessage({
-                senderId: bystander.id.senderId,
-                msgId: bystander.id.msgId
+            await readALInboundStoredMessage({
+                database: fixture.backend,
+                namespace: NAMESPACE,
+                reference: { senderId: bystander.id.senderId, msgId: bystander.id.msgId }
             })
         ).toBeUndefined();
     });
@@ -213,6 +217,7 @@ describe('inbound canonical message ownership', () => {
 
 interface RetentionFixture {
     readonly state: ALAdmissionMemoryState;
+    readonly backend: InMemoryAdmissionBackend;
     readonly admissionStore: ReturnType<typeof createALInboundAdmissionStore>;
 }
 
@@ -221,11 +226,13 @@ function createRetentionFixture(
     nowMs: number
 ): RetentionFixture {
     const state = createInMemoryALAdmissionState(new InMemoryQueueBox());
+    const backend = new InMemoryAdmissionBackend(state, () => nowMs);
     return {
         state,
+        backend,
         admissionStore: createALInboundAdmissionStore({
             namespace: NAMESPACE,
-            backend: new InMemoryAdmissionBackend(state, () => nowMs),
+            backend,
             orderingTrackTtlMs: retention.repositoryTtlMs,
             supersedenceTrackTtlMs: retention.repositoryTtlMs,
             retention,
@@ -257,10 +264,11 @@ function newBystanderMessage(resourceId: string): ALMessage {
 
 function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const state = createInMemoryALAdmissionState(new InMemoryQueueBox());
+    const backend = new InMemoryAdmissionBackend(state, () => Date.now());
     const admissionStore = createALInboundAdmissionStore({
         nowMs: Date.now,
         namespace: NAMESPACE,
-        backend: new InMemoryAdmissionBackend(state, () => Date.now()),
+        backend,
         orderingTrackTtlMs: 5 * 60_000,
         supersedenceTrackTtlMs: 5 * 60_000,
         retention: normalizeALRuntimeStoreRetention()
@@ -285,7 +293,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
-    return { state, runtime, admissionStore, delivered, forwarded };
+    return { state, backend, runtime, admissionStore, delivered, forwarded };
 }
 
 async function admitMessage(
