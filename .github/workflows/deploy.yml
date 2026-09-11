@@ -299,12 +299,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Verify checked out commit is current main
+      # Archive commits ("perf(rtc): archive ...") change only performance-observations/**, which the
+      # paths-ignore above excludes from this workflow, so they must not count as a newer deploy of
+      # main: comparing against the raw tip refused the deploy of the code commit underneath them.
+      - name: Verify no newer deployable commit exists on main
         run: |
           git fetch --no-tags origin main
-          remote_main_sha="$(git rev-parse origin/main)"
-          if [ "$GITHUB_SHA" != "$remote_main_sha" ]; then
-            echo "::error::Refusing stale production deploy: workflow commit is no longer main tip"
+          superseding_commit="$(git log -1 --format=%H "$GITHUB_SHA..origin/main" -- . ':(exclude)performance-observations')"
+          if [ -n "$superseding_commit" ]; then
+            echo "::error::Refusing stale production deploy: main has a newer deployable commit $superseding_commit"
             exit 1
           fi
 
@@ -358,12 +361,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Verify checked out commit is current main
+      # Archive commits ("perf(rtc): archive ...") change only performance-observations/**, which the
+      # paths-ignore above excludes from this workflow, so they must not count as a newer deploy of
+      # main: comparing against the raw tip refused the deploy of the code commit underneath them.
+      - name: Verify no newer deployable commit exists on main
         run: |
           git fetch --no-tags origin main
-          remote_main_sha="$(git rev-parse origin/main)"
-          if [ "$GITHUB_SHA" != "$remote_main_sha" ]; then
-            echo "::error::Refusing stale production deploy: workflow commit is no longer main tip"
+          superseding_commit="$(git log -1 --format=%H "$GITHUB_SHA..origin/main" -- . ':(exclude)performance-observations')"
+          if [ -n "$superseding_commit" ]; then
+            echo "::error::Refusing stale production deploy: main has a newer deployable commit $superseding_commit"
             exit 1
           fi
 
@@ -398,12 +404,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Verify checked out commit is current main
+      # Archive commits ("perf(rtc): archive ...") change only performance-observations/**, which the
+      # paths-ignore above excludes from this workflow, so they must not count as a newer deploy of
+      # main: comparing against the raw tip refused the deploy of the code commit underneath them.
+      - name: Verify no newer deployable commit exists on main
         run: |
           git fetch --no-tags origin main
-          remote_main_sha="$(git rev-parse origin/main)"
-          if [ "$GITHUB_SHA" != "$remote_main_sha" ]; then
-            echo "::error::Refusing stale production deploy: workflow commit is no longer main tip"
+          superseding_commit="$(git log -1 --format=%H "$GITHUB_SHA..origin/main" -- . ':(exclude)performance-observations')"
+          if [ -n "$superseding_commit" ]; then
+            echo "::error::Refusing stale production deploy: main has a newer deployable commit $superseding_commit"
             exit 1
           fi
 
