@@ -180,13 +180,13 @@ same rows again before dispatching.
 - Produces: no public surface change. The store's public methods keep their signatures; only their
   bodies move inside a session, exactly as `outbound/admission/al-outbound-admission-store.ts:355-386` does.
 
-- [ ] **Step 1: Thread the session through the private readers.** Every private reader already takes
+- [x] **Step 1: Thread the session through the private readers.** Every private reader already takes
       `database: Pick<ALAdmissionBackend, 'read' | 'list'>` (`readOrderingState`,
       `readStoredMessageOwner`, `readStoredAcknowledgements`, `readSupersedenceState`) — keep that
       shape and widen `readDeliveryProgress`, `readMessageOwner`, `readInboundMessage` and
       `readControlOwnerIndex` to take it too. No behaviour change; typecheck only.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit`
-- [ ] **Step 2: `readIncomingMessage` inside one session.** Wrap the body in
+- [x] **Step 2: `readIncomingMessage` inside one session.** Wrap the body in
       `await this.backend.readWithin(async (session) => …)` and pass `session` to every reader. The
       dependency hops stay in place and stay sequential: `ordering.trackKey` feeds
       `readDeliveryProgress`, `prePlan.supersedence.key` feeds `readSupersedenceState`, and each
@@ -194,13 +194,13 @@ same rows again before dispatching.
       inside the callback — a non-IDB await between requests ends the snapshot
       (`indexed-db-admission-read-session.ts:59-63`, `:188-201`).
       Expected: the plain and ordered pins from Task 0 Step 1 go GREEN at `['readonly']`.
-- [ ] **Step 3: The remaining four surfaces.** Same treatment for `readBufferedRelease`,
+- [x] **Step 3: The remaining four surfaces.** Same treatment for `readBufferedRelease`,
       `readStoredPlanningState`, `readOrderedDelivery` (in the durable effect store, which owns its
       own `backend`), and `readControlAdmission` (which reads through three public store methods —
       add one `readControlDecisionSurface(session, ack)` on the store and have the control admission
       call it inside a single `readWithin`).
       Expected: all five pins GREEN; `recorded.modes()` is `['readonly']` for each.
-- [ ] **Step 4: Fences over all three backends.** Run the inbound suites over memory, IndexedDB and
+- [x] **Step 4: Fences over all three backends.** Run the inbound suites over memory, IndexedDB and
       PGlite. `requireOriginalObservations` (`:648-712`) is unchanged and still re-reads the whole
       surface inside the write — that is the fence, and it must stay.
       Commands:
@@ -208,7 +208,7 @@ same rows again before dispatching.
       `npm run test:integration:postgres -- --grep al-admission` (or the focused PGlite file if the
       Postgres compose is not up: `npx vitest run packages/tests/shared-server/integration/postgres/al-admission-queue-work.test.ts`)
       Expected: green; no test's assertions weakened.
-- [ ] **Step 5: Commit.** One commit with the production change and its tests.
+- [x] **Step 5: Commit.** One commit with the production change and its tests.
       `npx dprint check <touched files>`, `npx tsc -p packages/shared/tsconfig.json --noEmit`,
       focused Vitest.
 
