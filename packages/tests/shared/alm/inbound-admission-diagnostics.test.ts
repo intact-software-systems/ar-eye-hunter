@@ -132,7 +132,8 @@ it.each(['memory', 'indexeddb'] as const)(
         }]);
 
         await expect.poll(() => delivered).toEqual(['dispatched']);
-        const claimed = drainsOf(diagnostics).filter((event) => event.claimedCount > 0);
+        // Only batches that touched work report; the rotation's empty rounds stay silent.
+        const claimed = drainsOf(diagnostics);
         expect(claimed.map((event) => ({
             workerId: event.workerId,
             claimedCount: event.claimedCount,
@@ -193,9 +194,9 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(admitted.right).toEqual({ kind: 'admitted' });
         expect(admissionOutcomesOf(diagnostics).map((event) => event.outcome)).toEqual(['committed']);
 
-        // The ingress committed, so the row exists; no drain ever selects it while the consumer is absent.
-        await expect.poll(() => drainsOf(diagnostics).length).toBeGreaterThan(0);
-        expect(drainsOf(diagnostics).every((event) => event.claimedCount === 0)).toBe(true);
-        expect(delivered).toEqual([]);
+        // The ingress committed, so the row exists; no drain ever selects it while the consumer is
+        // absent, and a batch that touched nothing reports nothing.
+        await expect.poll(() => delivered).toEqual([]);
+        expect(drainsOf(diagnostics)).toEqual([]);
     }
 );

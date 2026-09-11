@@ -196,15 +196,19 @@ independent of any connection. The event's `data` is the event itself:
 - `reason` is the plan's drop reason, the rejection's code, or the acceptance
   kind that carries neither
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
-  `rescheduledCount` and `rejectedCount` for each inbound work batch, the same
-  five fields the outbound topic reports for its own drains
+  `rescheduledCount` and `rejectedCount` for each inbound work batch that
+  touched work, the same five fields the outbound topic reports for its own
+  drains. A batch that claimed and rejected nothing reports nothing: the
+  inbound rotation runs one every engine round, and recording its resting state
+  costs the page hundreds of events per session that say only what the probe
+  already decided — enough, measured, to move the very races this sink exists
+  to explain
 
 The two kinds together discriminate a delivery that never arrives. An
 `unauthorized` outcome is the drop that otherwise leaves no trace at all: it
-writes nothing, sends no NACK and returns no error. A `committed` outcome
-followed only by drains with `claimedCount: 0` is the other shape — the row
-exists and no consumer is registered for its `typeId`, so the rotation never
-selects it.
+writes nothing, sends no NACK and returns no error. A `committed` outcome that
+no `effect-drain` ever follows is the other shape — the row exists and no
+consumer is registered for its `typeId`, so the rotation never selects it.
 
 ## Storage Reset Diagnostics
 

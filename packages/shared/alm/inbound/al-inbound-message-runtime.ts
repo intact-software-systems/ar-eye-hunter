@@ -6,7 +6,11 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import { AL_WORK_PROBE_EVERY_ROUND, ALWorkHandler } from '../work/al-work-handler.ts';
+import {
+    AL_WORK_PROBE_EVERY_ROUND,
+    ALWorkHandler,
+    type ALWorkBatchDiagnostics
+} from '../work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
@@ -142,16 +146,7 @@ export class ALInboundMessageRuntime {
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
             runClaim: (claim) => this.runInboundClaim(claim),
-            diagnostics: (event) =>
-                dependencies.diagnostics?.({
-                    kind: 'effect-drain',
-                    workerId: event.workerId,
-                    durationMs: event.durationMs,
-                    claimedCount: event.claimedCount,
-                    completedCount: event.completedCount,
-                    rescheduledCount: event.rescheduledCount,
-                    rejectedCount: event.rejectedCount
-                })
+            diagnostics: (event) => this.recordWorkBatch(event)
         });
         if (dependencies.ownsQueueEngine) {
             void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
@@ -187,6 +182,27 @@ export class ALInboundMessageRuntime {
         const admitted = await this.admitDecodedMessage(msg, source, planIncomingMessage);
         this.recordAdmissionOutcome(msg, admitted);
         return admitted;
+    }
+
+    /**
+     * The rotation runs a batch every engine round, so an empty one is its normal resting state and
+     * reports nothing the probe did not already decide. Recording those would cost the page hundreds
+     * of relayed events per session for no evidence -- enough, measured, to move the races this sink
+     * exists to explain.
+     */
+    private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
+        if (event.claimedCount === 0 && event.rejectedCount === 0) {
+            return;
+        }
+        this.dependencies.diagnostics?.({
+            kind: 'effect-drain',
+            workerId: event.workerId,
+            durationMs: event.durationMs,
+            claimedCount: event.claimedCount,
+            completedCount: event.completedCount,
+            rescheduledCount: event.rescheduledCount,
+            rejectedCount: event.rejectedCount
+        });
     }
 
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
