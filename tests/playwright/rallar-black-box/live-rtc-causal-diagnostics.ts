@@ -121,7 +121,7 @@ function toCausalEvent(
     if (runtimeEvent.kind !== 'diagnostic') {
         return null;
     }
-    const data = jsonRecord(runtimeEvent.data) ?? {};
+    const data = jsonRecord(jsonRecord(runtimeEvent.payload)?.data) ?? {};
     const topic = runtimeEvent.topic;
     const atEpochMs = numberValue(runtimeEvent.atEpochMs) ?? null;
     if (topic === 'rallar.browser.ws.lifecycle' && (data.kind === 'open' || data.kind === 'close')) {

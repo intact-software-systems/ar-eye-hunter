@@ -408,40 +408,55 @@ describe('live RTC control client', () => {
             { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } },
             { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-established', peerId: 'session-b' } }
         );
-        events = entries.map((entry, index) => ({
-            agentId: entry.agentId,
-            kind: 'runtime-event',
-            payload: {
-                payload: {
-                    kind: 'diagnostic',
-                    topic: entry.topic,
-                    atEpochMs: index,
-                    data: { ...entry.data, payload: sentinel, credentials: sentinel, url: 'https://secret.example.test' }
-                }
-            }
-        }));
         for (let index = 0; index < 230; index += 1) {
-            events.push({ agentId: 'agent-a', payload: { kind: 'diagnostic', topic: 'unrelated', atEpochMs: 999, data: { kind: 'open', payload: sentinel } } });
+            entries.push({
+                agentId: 'agent-a',
+                topic: 'unrelated',
+                data: { kind: 'open', payload: sentinel }
+            });
         }
-        events.push(
+        entries.push(
             {
                 agentId: 'agent-a',
-                payload: {
-                    kind: 'diagnostic',
-                    topic: 'rallar.browser.alm.outbound_diagnostics',
-                    data: { kind: 'commit-phases', typeId: 'application-message', msgId: 'app-1' }
-                }
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { kind: 'commit-phases', typeId: 'application-message', msgId: 'app-1' }
             },
             {
                 agentId: 'agent-b',
-                payload: {
-                    kind: 'diagnostic',
-                    topic: 'rallar.browser.alm.inbound_diagnostics',
-                    data: { kind: 'admission-outcome', typeId: 'application-message', msgId: 'app-1' }
-                }
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { kind: 'admission-outcome', typeId: 'application-message', msgId: 'app-1' }
             },
-            { agentId: 'agent-outside', payload: { kind: 'diagnostic', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } } }
+            { agentId: 'agent-outside', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } }
         );
+        events = entries.map((entry, index) => ({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run-causal',
+            agentId: entry.agentId,
+            atEpochMs: index,
+            eventId: `event-${index}`,
+            payload: {
+                eventId: `event-${index}`,
+                kind: 'diagnostic',
+                topic: entry.topic,
+                atEpochMs: index,
+                severity: 'info',
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: entry.topic,
+                    topic: entry.topic,
+                    severity: 'info',
+                    message: entry.topic,
+                    atEpochMs: index,
+                    data: {
+                        ...entry.data,
+                        payload: sentinel,
+                        credentials: sentinel,
+                        url: 'https://secret.example.test'
+                    }
+                }
+            }
+        }));
         healthValues['agent-a'] = {
             rallar: {
                 session: { sessionId: 'session-a', accessToken: sentinel },
@@ -546,8 +561,28 @@ describe('live RTC control client', () => {
         const selectedAgentIds = [failedAgentId, ...discoveredAgentIds];
         runAgentIds = [...discoveredAgentIds, 'agent-outside'];
         events = [...selectedAgentIds, 'agent-outside'].map((agentId, index) => ({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run-hostile-agents',
             agentId,
-            payload: { kind: 'diagnostic', topic: 'rallar.browser.ws.lifecycle', atEpochMs: index, data: { kind: 'open' } }
+            atEpochMs: index,
+            eventId: `event-${index}`,
+            payload: {
+                eventId: `event-${index}`,
+                kind: 'diagnostic',
+                topic: 'rallar.browser.ws.lifecycle',
+                atEpochMs: index,
+                severity: 'info',
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: 'rallar.browser.ws.lifecycle',
+                    topic: 'rallar.browser.ws.lifecycle',
+                    severity: 'info',
+                    message: 'rallar.browser.ws.lifecycle',
+                    atEpochMs: index,
+                    data: { kind: 'open' }
+                }
+            }
         }));
         selectedAgentIds.forEach((agentId, index) => {
             healthValues[agentId] = { rallar: { session: { sessionId: `session-${index}` } } };
