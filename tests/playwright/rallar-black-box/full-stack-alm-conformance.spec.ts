@@ -1,10 +1,19 @@
 import { expect, test, type TestInfo } from '@playwright/test';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import {
+    computeALMObservationRegime,
+    createUnreadableALMObservationRegime,
+    toALMObservationRegimeSummary,
+    type ALMObservationCellOutcome,
+    type ALMObservationRegime
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -14,6 +23,7 @@ import {
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     uniqueSuffix,
+    type ControlRunSnapshot,
     type TwoAgentRun
 } from './full-stack-helpers.ts';
 
@@ -32,6 +42,13 @@ const CONFORMANCE_DEADLINE_MS = 18_000;
 // 4 scenarios x 18s deadline x 2 (sender+receiver) + 60s RTC readiness = 204s expected; kept at
 // 300s for slow-CI slack rather than rounded down to the expected figure.
 const CARRIER_TEST_TIMEOUT_MS = 300_000;
+
+/**
+ * Playwright clears the output root once at the start of a run and deletes each passing test's own
+ * output directory at the end, so a green cell's evidence only survives beside those directories,
+ * not inside one. The observation job uploads the whole root, which carries this directory with it.
+ */
+const OBSERVATION_DIRECTORY_NAME = 'alm-observation';
 
 /**
  * Every ensure command in the family builds the API mutation requestId
@@ -75,20 +92,21 @@ test.describe('ALM conformance lane', () => {
                 runId: `alm-${carrier}-${uniqueSuffix()}`.slice(0, RUN_ID_BUDGET)
             });
 
+            let scenarioFailed = false;
             try {
                 await runAlmConformanceScenarios(run, carrier);
             }
+            catch (scenarioError) {
+                scenarioFailed = true;
+                throw scenarioError;
+            }
             finally {
-                try {
-                    await attachRunSnapshot(run, testInfo, `alm-${carrier}-${scope}.json`);
-                }
-                catch (attachError) {
-                    console.warn('Failed to attach ALM conformance run snapshot', {
-                        carrier,
-                        runId: run.runId,
-                        attachError
-                    });
-                }
+                await recordObservation({
+                    run,
+                    testInfo,
+                    carrier,
+                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                });
                 await run.close();
             }
         });
@@ -126,12 +144,91 @@ function selectScenarios(
     );
 }
 
+/** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */
+async function recordObservation(
+    cell: Readonly<{
+        run: TwoAgentRun;
+        testInfo: TestInfo;
+        carrier: AlmConformanceCarrier;
+        cellOutcome: ALMObservationCellOutcome;
+    }>
+): Promise<void> {
+    try {
+        const snapshot = await cell.run.readSnapshot();
+        const regime = toObservationRegime(snapshot, cell.carrier, cell.cellOutcome);
+        await writeObservationFiles({
+            testInfo: cell.testInfo,
+            carrier: cell.carrier,
+            regime,
+            snapshot
+        });
+        if (cell.cellOutcome === 'failed') {
+            await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
+        }
+        console.info(toALMObservationRegimeSummary(regime));
+    }
+    catch (observationError) {
+        console.warn('Failed to record the ALM conformance observation', {
+            carrier: cell.carrier,
+            runId: cell.run.runId,
+            observationError
+        });
+    }
+}
+
+function toObservationRegime(
+    snapshot: ControlRunSnapshot,
+    carrier: AlmConformanceCarrier,
+    cellOutcome: ALMObservationCellOutcome
+): ALMObservationRegime {
+    return decodeALMObservationSnapshot(snapshot).fold(
+        (snapshotIssues) => createUnreadableALMObservationRegime({ carrier, scope, cellOutcome, snapshotIssues }),
+        (decoded) => computeALMObservationRegime({ snapshot: decoded, carrier, scope, cellOutcome })
+    );
+}
+
+async function writeObservationFiles(
+    observation: Readonly<{
+        testInfo: TestInfo;
+        carrier: AlmConformanceCarrier;
+        regime: ALMObservationRegime;
+        snapshot: ControlRunSnapshot;
+    }>
+): Promise<void> {
+    const directory = path.join(
+        observation.testInfo.project.outputDir,
+        OBSERVATION_DIRECTORY_NAME
+    );
+    await mkdir(directory, { recursive: true });
+    const fileName = `${observation.carrier}-${scope}`;
+    await writeFile(
+        path.join(directory, `${fileName}.json`),
+        toJsonText(observation.regime),
+        'utf8'
+    );
+    await writeFile(
+        path.join(directory, `${fileName}-snapshot.json`),
+        toJsonText(observation.snapshot),
+        'utf8'
+    );
+}
+
+/** Kept for a failed cell's convenience: the snapshot is one click away in the Playwright report. */
 async function attachRunSnapshot(
-    run: TwoAgentRun,
+    snapshot: ControlRunSnapshot,
     testInfo: TestInfo,
     fileName: string
 ): Promise<void> {
-    const path = testInfo.outputPath(fileName);
-    await writeFile(path, JSON.stringify(await run.readSnapshot(), null, 2), 'utf8');
-    await testInfo.attach(fileName, { path, contentType: 'application/json' });
+    const attachmentPath = testInfo.outputPath(fileName);
+    await writeFile(attachmentPath, toJsonText(snapshot), 'utf8');
+    await testInfo.attach(fileName, { path: attachmentPath, contentType: 'application/json' });
+}
+
+/** Soft assertions record their failures on `testInfo` the moment they fire, before the cell ends. */
+function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservationCellOutcome {
+    return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
+}
+
+function toJsonText(value: ALMObservationRegime | ControlRunSnapshot): string {
+    return JSON.stringify(value, null, 2);
 }
