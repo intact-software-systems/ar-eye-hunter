@@ -372,17 +372,17 @@ rotation never reaches — 0 events in every observation run.
   event rate in the test and keep the suppression if the pin says the relay is too loud.
 - Produces, `rotation-alive` gains `longestRoundMs`, so a slowed non-empty rotation reports.
 
-- [ ] **Step 0: Settle the rotation question in the code, not in prose.** `ALInboundMessageRuntime`
+- [x] **Step 0: Settle the rotation question in the code, not in prose.** `ALInboundMessageRuntime`
       passes `readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND` (0) deliberately: the rotation advances one
       status per probe, so a remembered answer would strand a status. The outbound's
       remembered-readiness treatment is therefore **not** what inbound needs — confirm this by
       measurement in Task 0 Step 2 (`work-page` per idle second is already ~1 per round, 92 ops on the
       receiver page of run 7 against 566 on the green head). Record the conclusion in the inbound
       README. If the measurement contradicts it, stop and route to the maintainer.
-- [ ] **Step 1: Split the batch.** Add the five duration fields to `ALWorkBatchDiagnostics` in
+- [x] **Step 1: Split the batch.** Add the five duration fields to `ALWorkBatchDiagnostics` in
       `al-work-handler.ts` (`runSelectedWork`, `:274-303`) and relay them on `effect-drain`. Pin them
       in `al-work-handler.test.ts` with a fake clock so each phase has a distinct, asserted value.
-- [ ] **Step 2: Per-claim events.** Emit `claim-settled` from `runOne` through the diagnostics sink,
+- [x] **Step 2: Per-claim events.** Emit `claim-settled` from `runOne` through the diagnostics sink,
       with the payload kind decoded by the inbound runtime (the handler is generic and must not decode
       an inbound payload — pass the kind in from `runInboundClaim`). Pin one event per claim with the
       right outcome for completed, retry and non-retryable.
@@ -395,7 +395,7 @@ rotation never reaches — 0 events in every observation run.
       runtime therefore keeps dropping `readiness-probe` (the handler's event still carries
       `durationMs`; the outbound relay is unchanged) and `rotation-alive` gains `longestRoundMs` as
       the rotation's liveness witness.
-- [ ] **Step 4: Contract doc and commit.** Update `runtime-diagnostic-contract.md` with the new fields
+- [x] **Step 4: Contract doc and commit.** Update `runtime-diagnostic-contract.md` with the new fields
       and events and what each answers. Record in it that `commit-phases.transportSettleDurationMs` is
       never emitted, so no reader may depend on it.
       `npx vitest run packages/tests/shared/alm/inbound-admission-diagnostics.test.ts packages/tests/shared/alm/work`
@@ -404,7 +404,8 @@ rotation never reaches — 0 events in every observation run.
 
 **Files:** none in production; the lane's own artifacts.
 
-- [ ] **Step 1: Local lane first.** `npm run test:rallar:full-stack:memory:alm`. Expected: three cells
+- [x] **Step 1: Local lane first.** (3 of 3 cells passed on `2c2733421`, normal regime: ws 10.28, rtc 12.61,
+      rtc-with-ws-fallback 6.89 ms/op; the relayed-probe build had failed the two RTC cells — see Task 4 Step 3.) `npm run test:rallar:full-stack:memory:alm`. Expected: three cells
       pass and each writes `test-results/alm-observation/<carrier>-smoke.json` plus its snapshot.
       Read the new `effect-drain` phase split from the snapshot and record the local medians.
 - [ ] **Step 2: Push and let the observation job run.** Download `alm-conformance-lane-<sha>`.
