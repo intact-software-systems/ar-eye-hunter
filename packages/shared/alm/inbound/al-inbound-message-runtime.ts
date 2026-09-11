@@ -196,12 +196,6 @@ export class ALInboundMessageRuntime {
     }
 
     /**
-     * The rotation runs a batch every engine round, so an empty one is its normal resting state and
-     * reports nothing the probe did not already decide. Recording those would cost the page hundreds
-     * of relayed events per session for no evidence -- enough, measured, to move the races this sink
-     * exists to explain.
-     */
-    /**
      * The rotation's probe reads storage every engine round by construction, so relaying one event
      * per probe would cost this page what the empty batches below already cost it. The outbound
      * owners, whose probes are the invalidations they can name, report theirs.
@@ -212,6 +206,12 @@ export class ALInboundMessageRuntime {
         }
     }
 
+    /**
+     * The rotation runs a batch every engine round, so an empty one is its normal resting state and
+     * reports nothing the probe did not already decide. Recording those would cost the page hundreds
+     * of relayed events per session for no evidence -- enough, measured, to move the races this sink
+     * exists to explain.
+     */
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
         if (event.claimedCount === 0 && event.rejectedCount === 0) {
             this.recordEmptyRotationRound(event);
