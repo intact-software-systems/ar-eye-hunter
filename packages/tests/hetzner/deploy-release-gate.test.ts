@@ -188,7 +188,7 @@ describe('Deploy workflow release gate', () => {
 
         for (const jobName of ['deploy-api', 'deploy-control-server', 'deploy-relic-api']) {
             const jobBlock = getJobBlock(workflow, jobName);
-            const staleGuardIndex = jobBlock.indexOf('Verify checked out commit is current main');
+            const staleGuardIndex = jobBlock.indexOf('Verify no newer deployable commit exists on main');
             const firstMutationIndex = Math.min(
                 ...['Prisma migrate deploy', 'run: deno deploy .']
                     .map((marker) => jobBlock.indexOf(marker))
