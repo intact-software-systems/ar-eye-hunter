@@ -209,8 +209,9 @@ export class ALInboundMessageRuntime {
      * event is a round trip out of the page, so one event per round roughly doubled that page's
      * traffic and with it its measured per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC
      * signaling far enough that the delivery baseline received nothing and the lane failed.
-     * Suppressed, the same cell passes at 10.3 ms/op. The probe's own `durationMs` is still measured
-     * and the outbound owners, whose probes are the invalidations they can name, still report theirs.
+     * Suppressed, the same cell passes at 10-13 ms/op (12.6 measured on the full lane here, 10.3 on
+     * the rtc-only run that isolated this relay). The probe's own `durationMs` is still measured and
+     * the outbound owners, whose probes are the invalidations they can name, still report theirs.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {

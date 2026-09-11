@@ -214,6 +214,38 @@ it.each(
 );
 
 it.each(['memory', 'indexeddb'] as const)(
+    'names an unauthorized drop that writes nothing, sends no NACK and returns no error over %s',
+    async (kind) => {
+        const { runtime, diagnostics, delivered } = createRuntime({
+            kind,
+            plan: (plan) => ({
+                ...plan,
+                dropReason: 'unauthorized',
+                dropReasonCode: 'unauthorized',
+                localDelivery: { enabled: false, persist: false, deferred: false },
+                nack: { enabled: false, reason: 'unauthorized', missingSeqs: [] }
+            })
+        });
+        const message = createInboundTestMessage({ msgId: 'unauthorized-drop' });
+
+        await runtime.ready();
+        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
+
+        // Without this event the drop is indistinguishable from a delivery still on its way.
+        expect(admitted.right).toEqual({ kind: 'not-admitted', reason: 'unauthorized' });
+        expect(admissionOutcomesOf(diagnostics)).toEqual([{
+            kind: 'admission-outcome',
+            workerId: DIAGNOSTICS_WORKER_ID,
+            msgId: message.id.msgId,
+            typeId: 'chat.private-text.v1',
+            outcome: 'unauthorized',
+            reason: 'unauthorized'
+        }]);
+        expect(delivered).toEqual([]);
+    }
+);
+
+it.each(['memory', 'indexeddb'] as const)(
     'separates a committed admission no consumer claims from one that was never admitted over %s',
     async (kind) => {
         const { runtime, diagnostics, delivered, queueEngine } = createRuntime({

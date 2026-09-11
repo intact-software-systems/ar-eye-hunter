@@ -122,8 +122,9 @@ storage and expensive in the conformance lane, where every relayed diagnostic is
 trip out of the page: it roughly doubled the page's event traffic and its measured
 per-operation cost, 8.2 to 20.9 ms/op, which delayed RTC signaling far enough that the
 delivery baseline received nothing and the cell failed. Suppressed, the same cell passes
-at 10.3 ms/op, and `rotation-alive` remains the liveness witness that a scanning rotation
-is still running.
+at 10-13 ms/op — 12.6 measured on the full lane, 10.3 on the rtc-only run that isolated
+this relay — and `rotation-alive` remains the liveness witness that a scanning rotation is
+still running.
 
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
 namespace, full identity, queue slot, and deadline. Malformed claimed work becomes
