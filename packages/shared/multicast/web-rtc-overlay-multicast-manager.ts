@@ -467,10 +467,10 @@ export class WebRtcOverlayMulticastManager {
         }
 
         const admission = this.computeOutboundAuthority(msg, observation);
+        if (alreadyOwned && admission.kind === 'pending') {
+            throw new NotReadyException(50, admission.reason);
+        }
         if ((alreadyOwned || !context) && (admission.kind === 'pending' || admission.kind === 'unauthorized')) {
-            if (alreadyOwned && admission.kind === 'pending') {
-                throw new NotReadyException(50, admission.reason);
-            }
             return {
                 msg,
                 persist: false,
@@ -608,21 +608,21 @@ export class WebRtcOverlayMulticastManager {
             };
         }
 
-        if (!plan.handlingPlan.forwarding.persist) {
-            const missingPeerId = plan.transportMessages
+        const missingPeerId = plan.handlingPlan.forwarding.persist
+            ? undefined
+            : plan.transportMessages
                 .map((message) => message.forwarding?.nextHopPeerIds?.[0])
                 .find((peerId) =>
                     peerId !== undefined &&
                     !this.connectionService.readPeer(peerId)?.channel
                 );
-            if (missingPeerId) {
-                return {
-                    dropReason: `Skipping immediate RTC dispatch without RTC channel for peer ${missingPeerId}`,
-                    persist: false,
-                    msg,
-                    preparedMessages: []
-                };
-            }
+        if (missingPeerId) {
+            return {
+                dropReason: `Skipping immediate RTC dispatch without RTC channel for peer ${missingPeerId}`,
+                persist: false,
+                msg,
+                preparedMessages: []
+            };
         }
 
         return {
@@ -728,9 +728,18 @@ export class WebRtcOverlayMulticastManager {
         message: ALMessage,
         ingressPeerId: string | null,
         recipientPeerId: string | undefined
-    ) {
+    ): RtcRoomSnapshotAdmission {
         const outbound = this.readOutboundObservation(message);
         const logical = this.computeOutboundAuthority(message, outbound);
+        if (
+            logical.kind !== 'not-room' && recipientPeerId !== undefined && outbound.room &&
+            !outbound.room.activeSessions.some((session) => session.sessionId === recipientPeerId)
+        ) {
+            return {
+                kind: 'unauthorized',
+                reason: 'RTC prepared recipient is no longer active'
+            };
+        }
         if (logical.kind === 'pending' || logical.kind === 'unauthorized') {
             return logical;
         }

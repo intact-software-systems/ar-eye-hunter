@@ -107,6 +107,73 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(native.createdConnections[1].channels[0].sent).toEqual([]);
     });
 
+    it.each([false, true])(
+        'never revives prepared traffic after its recipient leaves the authoritative active sessions (sender absent: %s)',
+        async (senderAbsent) => {
+            const fixture = await createFixture();
+            fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+            const snapshot = createFlowingReconfiguration();
+            const sessions = createSnapshot().activeSessions;
+            const removed: GroupSnapshot = {
+                ...snapshot,
+                activeSessions: sessions.filter((session) => session.sessionId !== 'peer-1' && (!senderAbsent || session.sessionId !== 'self')),
+                onlineMemberCount: senderAbsent ? 1 : 2
+            };
+            const restored: GroupSnapshot = {
+                ...snapshot,
+                causalRevision: { groupRevision: 2, presenceRevision: 5 },
+                group: { ...snapshot.group, presenceVersion: 5 },
+                activeSessions: sessions,
+                onlineMemberCount: 3
+            };
+            validateAuthoritativeGroupSnapshot(removed, roomRef);
+            validateAuthoritativeGroupSnapshot(restored, roomRef);
+            const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
+            vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+                const committed = await commit(bundle);
+                expect(committed).toBe('committed');
+                const prepared = await readPreparedEntry(fixture);
+                expect(prepared).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
+                expect(JSON.parse(prepared.resource).payload.prepared.forwarding.nextHopPeerIds).toEqual(['peer-1']);
+                fixture.groups.accept('room', removed);
+                return committed;
+            });
+
+            expect((await fixture.manager.enqueueIfAbsent(createMessage('multicast'))).status).toBe('enqueued');
+            await vi.advanceTimersByTimeAsync(100);
+            const afterRemoval = await readPreparedEntry(fixture);
+            expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+            fixture.groups.accept('room', restored);
+            await vi.advanceTimersByTimeAsync(500);
+
+            expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+            expect(afterRemoval).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+        }
+    );
+
+    it('keeps prepared traffic ready while the room observation is temporarily missing', async () => {
+        const fixture = await createFixture();
+        fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+        const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
+        vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            const committed = await commit(bundle);
+            expect(committed).toBe('committed');
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.NEW });
+            fixture.groups.delete('room');
+            return committed;
+        });
+
+        expect((await fixture.manager.enqueueIfAbsent(createMessage('multicast'))).status).toBe('enqueued');
+        await vi.advanceTimersByTimeAsync(100);
+        expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+        expect(native.createdConnections[0].channels[0].sent).toEqual([]);
+        fixture.groups.accept('room', createSnapshot());
+        await vi.advanceTimersByTimeAsync(100);
+        expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+        expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
+    });
+
     it.each(
         [
             'halted',
