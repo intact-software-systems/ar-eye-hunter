@@ -101,6 +101,10 @@ export interface CreateInboundTestRuntimeInput {
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
     /** Absent leaves the policy's plan as it stands. */
     readonly plan?: (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan;
+    /** Absent lets every dispatch complete; `retry` reschedules the claim that ran it. */
+    readonly dispatchOutcome?: 'completed' | 'retry';
+    /** Absent leaves a retained admission's replay authorized by the source it captured. */
+    readonly readPendingAdmissionAuthority?: ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -120,8 +124,10 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             return input.plan?.(plan) ?? plan;
         },
         canDispatchMessage: input.canDispatchMessage,
+        readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         dispatchInboxEntry: async () => {
             delivered.push('dispatched');
+            return input.dispatchOutcome;
         },
         sendControlMessage: async () => {},
         diagnostics: (event) => diagnostics.push(event),

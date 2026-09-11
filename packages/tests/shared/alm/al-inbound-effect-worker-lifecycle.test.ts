@@ -522,6 +522,72 @@ describe('inbound durable effect worker lifecycle', () => {
         releaseSend.resolve();
     });
 
+    it('leaves retained control work unclaimed when the acknowledgement it admitted wrote no row', async () => {
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: new InboxOutboxEngine(),
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (message) => {
+                controls.push(message);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        await runtime.ready();
+
+        // The same retained row the committing admission above claims, behind the page the bootstrap
+        // batch already read. No engine round is ever driven here, so only a commit's own
+        // announcement can bring the batch that would claim it.
+        const forwarded = computeALInboundWorkEntry({
+            namespace: resources.admissionStore.namespace,
+            effectId: 'unannounced-control',
+            observedAtMs: Date.now(),
+            expireAtTimestamp: Date.now() + 60_000,
+            payload: {
+                kind: 'send-control',
+                msg: newALAckControlMessage({ v: 2, msgId: 'unannounced-ack', ts: 1, senderId: 'receiver' }, {
+                    ackedMsgId: 'tracked-message',
+                    fromPeerId: 'receiver',
+                    toPeerId: 'sender',
+                    status: 'accepted',
+                    observedAtEpochMs: 1
+                })
+            }
+        });
+        await resources.workQueue.enqueueIfAbsent(forwarded.entry);
+        const tracked = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'partially-acknowledged', contextId: 'room' },
+            'receiver',
+            'chat',
+            {}
+        );
+        // Two peers owe this obligation, so one peer's acknowledgement completes none of it and the
+        // commit that admits it moves the acknowledgement history and writes no work row.
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
+        const ack = newALAckControlMessage({ v: 2, msgId: 'partial-ack', ts: 1, senderId: 'sender' }, {
+            ackedMsgId: tracked.id.msgId,
+            fromPeerId: 'sender',
+            toPeerId: 'receiver',
+            status: 'accepted',
+            observedAtEpochMs: 1
+        });
+
+        const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(acceptance.right).toEqual({ kind: 'control', handled: true });
+        expect(controls).toEqual([]);
+        expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
+    });
+
     it('dispatches a replayed admission in the batch its own commit schedules', async () => {
         const fixture = createInboundTestRuntime({
             stores: createInboundTestStores({
@@ -963,7 +1029,11 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage): Reso
 }
 
 /** The provenance an inbound acknowledgement needs: this peer forwarded the message and owes an ack. */
-async function seedTrackedAcknowledgement(store: ALInboundAdmissionStore, message: ALMessage): Promise<void> {
+async function seedTrackedAcknowledgement(
+    store: ALInboundAdmissionStore,
+    message: ALMessage,
+    expectedFromPeerIds: readonly string[] = ['sender']
+): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
     const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
     const read = await readAdmission(store, message);
@@ -985,7 +1055,7 @@ async function seedTrackedAcknowledgement(store: ALInboundAdmissionStore, messag
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
-                    expectedFromPeerIds: ['sender'],
+                    expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
                     expireAtTimestamp
                 }

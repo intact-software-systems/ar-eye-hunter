@@ -136,7 +136,8 @@ every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, or `readiness-probe`
-- `durationMs`: how long that phase took, on every kind but `commit-phases`
+- `durationMs`: how long that phase took, on every kind but `commit-phases` and
+  `readiness-probe`, neither of which carries one here
 - `origin`: which call path asked for the commit — `send` for a caller's own
   `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
   dequeue commits, `repair` for retransmission. It is on all four
@@ -177,9 +178,10 @@ every session the page opens. The event's `data` is the event itself:
   the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and `no-memory` is an owner
   that has not probed yet. `readyAtMs` is the answer: an epoch-ms time work is
   next due, or `none` for no work at all. A probe is not a batch, so it is
-  outside the empty-batch suppression the drains carry; the inbound rotation
-  reports none, because its probe reads storage every engine round by
-  construction and the count would drown the sink
+  outside the empty-batch suppression the drains carry. The inbound rotation
+  reports its own probes on its own topic, with a `durationMs` this one does not
+  carry: its probe reads a page every engine round by construction, and that page
+  is the one its batch then claims from
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
@@ -197,9 +199,10 @@ diagnostics event per emission, recorded the moment the inbound runtime calls
 the sink — the receiving half of the outbound topic above, and, like it,
 independent of any connection. The event's `data` is the event itself:
 
-- `kind`: `admission-outcome` or `effect-drain`
+- `kind`: `admission-outcome`, `effect-drain`, `claim-settled`,
+  `readiness-probe` or `rotation-alive`
 - `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
-  to, on both kinds. One page runs a WS inbound owner and an RTC inbound
+  to, on every kind. One page runs a WS inbound owner and an RTC inbound
   owner, so this says which lane an event came from
 - `admission-outcome` carries `msgId`, `typeId`, `outcome` and `reason` for
   every message that reached ingress with a decodable identity — one event per
@@ -226,21 +229,68 @@ independent of any connection. The event's `data` is the event itself:
   costs the page hundreds of events per session that say only what the probe
   already decided — enough, measured, to move the very races this sink exists
   to explain
+- `effect-drain` also splits that `durationMs` into where the batch spent it, so
+  a drain that takes seconds names the phase that took them rather than one
+  opaque number: `selectionDurationMs` (the page read and every eligibility read
+  it made), `claimDurationMs` (the port's reservation of the rows that read
+  cleared), `runDurationMs` (every claim's own work, summed) and
+  `releaseDurationMs` (every release the batch wrote, summed, the exhaustion
+  sweep's included). `queueWaitMs` is the fifth, and it is not a phase: it is how
+  long the earliest row the batch claimed had already been due when the batch
+  started, so a backlog reads apart from a slow drain
+- the four phases do not sum to `durationMs`. The exhaustion sweep's own read is
+  outside them, and so is the page read the readiness probe paid for: a probe
+  that answers "due now" holds its page for the batch that follows, which reads
+  none of its own and reports a `selectionDurationMs` near zero. That page read
+  is on the `readiness-probe` event instead
+- `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
+  `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
+  so a delivery can be followed from its own `admission-outcome` to the claim
+  that ran it, and one slow claim can be told from a batch of many. `payloadKind`
+  is which effect the row held — `admit-message`, `admit-control`,
+  `dispatch-local`, `forward-message`, `send-control` or `release-buffered`.
+  `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
+  `non-retryable`. `attempts` is how many processing attempts the row has spent,
+  this claim included
+- a `claim-settled` identity is only what its effect retains. A retained
+  admission (`admit-message`, `admit-control`) and a forwarded acknowledgement
+  (`send-control`) keep the message, so both fields are its own; a delivery
+  effect (`dispatch-local`, `forward-message`) keeps a reference, which carries
+  the id and not the type, so `typeId` is `none`; a `release-buffered` effect
+  names a track and a sequence rather than a message, so both are `none`
+- a claim reports nothing when it throws, and when its work row could not be
+  decoded at all: the generic work handler classifies those, and the
+  `effect-drain` beside them still counts them. So `claimedCount` is a ceiling on
+  the `claim-settled` events of one drain, never a guarantee of the count
+- `readiness-probe` carries `workerId`, `cause`, `readyAtMs` and `durationMs`,
+  relayed from the same generic owner the outbound topic reports (the field
+  meanings are in **Outbound Admission Diagnostics** above). The inbound event
+  adds `durationMs`: the rotation's probe is a page read, and it is the read the
+  batch that follows claims from, so this is where a drain whose page read is
+  what crawls shows it. It is bounded by the engine's own pass rate — at most one
+  event per engine round, measured at ten per idle second — because the rotation
+  carries its scan position inside that read and no answer of its own can stand
+- `rotation-alive` carries `workerId`, `emptyRoundCount`, `durationMs` and
+  `longestRoundMs`: one event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds
+  that claimed and rejected nothing, with the wall time those rounds spanned and
+  the slowest single round among them, so one crawling scan is not averaged away
+  by the rest. It is the liveness witness the suppression above costs: without it
+  a rotation that keeps finding nothing and a rotation that stopped running both
+  report nothing at all. An owner whose queue is empty scans nothing and reports
+  none
 
-- `rotation-alive` carries `workerId`, `emptyRoundCount` and `durationMs`: one
-  event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds that claimed and
-  rejected nothing, with the wall time those rounds spanned. It is the liveness
-  witness the suppression above costs: without it a rotation that keeps finding
-  nothing and a rotation that stopped running both report nothing at all. An
-  owner whose queue is empty scans nothing and reports none
-
-The three kinds together discriminate a delivery that never arrives. An
+The kinds together discriminate a delivery that never arrives. An
 `unauthorized` outcome is the drop that otherwise leaves no trace at all: it
 writes nothing, sends no NACK and returns no error. A `committed` outcome that
 no `effect-drain` ever follows is the other shape — the row exists and no
 consumer is registered for its `typeId`, so the rotation never selects it, and
 the `rotation-alive` events beside it are what say the rotation was running
 while that happened.
+
+`commit-phases.transportSettleDurationMs` is **never emitted**. No runtime
+writes that field, on this topic or the outbound one, so no reader may depend on
+it and no analysis may attribute a slow admission to it. The commit's two
+measured halves are `readDurationMs` and `commitDurationMs`.
 
 ## Storage Reset Diagnostics
 

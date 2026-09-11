@@ -13,7 +13,11 @@ import type {
     ALInboundAdmittedDelivery,
     ALInboundDeliveryObservation
 } from './al-inbound-admitted-delivery.ts';
-import { decodeALInboundWorkEntry, resolveALInboundWorkReadyAt } from './al-inbound-work-entry.ts';
+import {
+    decodeALInboundWorkEntry,
+    resolveALInboundWorkDueAtMs,
+    resolveALInboundWorkReadyAt
+} from './al-inbound-work-entry.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
 const SCAN_START = { cursor: null, statusIndex: 0, nextReadyAtMs: undefined } as const;
@@ -50,6 +54,19 @@ interface ALInboundWorkSelection {
      * lets the engine's own pass rate carry it to the next status.
      */
     readonly nextReadyAtMs: number | undefined;
+}
+
+interface ReadALInboundClaimedSelectionInput {
+    readonly page: ALInboundRotationPage;
+    readonly port: ALWorkQueuePort;
+    readonly pageSize: number;
+    readonly nowMs: () => number;
+}
+
+/** What one round claimed, with the eligibility surfaces of exactly the rows the port reserved. */
+interface ALInboundClaimedSelection {
+    readonly selection: ALWorkReadySelection;
+    readonly observations: ReadonlyMap<string, ALInboundDeliveryObservation>;
 }
 
 /** One row's eligibility surface, under the queue slot it was read for, so a claim can be matched to it. */
@@ -209,15 +226,9 @@ export function createALInboundWorkSelector(
     return {
         readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
         selectReady: async (port, pageSize) => {
-            const pending = page.readSelection(port, pageSize);
-            page.forgetSelection(pending);
-            const selection = await pending;
-            const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
-            claimedObservations = toClaimedALInboundObservations(selection.observations, claims);
-            return {
-                claims: [...selection.unleasedReservations, ...claims],
-                nextReadyAtMs: selection.nextReadyAtMs
-            };
+            const claimed = await readALInboundClaimedSelection({ page, port, pageSize, nowMs: dependencies.nowMs });
+            claimedObservations = claimed.observations;
+            return claimed.selection;
         },
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         restartScan: () => {
@@ -253,12 +264,57 @@ async function readALInboundNextReadyAtMs(
     return selection.nextReadyAtMs;
 }
 
+/**
+ * One rotation round's claim, timed in the two halves a slow drain has to be split into: the page
+ * read with its eligibility reads, and the port's reservation of what that read cleared. The wait it
+ * reports is read from the observed page, because the reservation that follows replaces a row's own
+ * due stamp with its lease.
+ */
+async function readALInboundClaimedSelection(
+    input: ReadALInboundClaimedSelectionInput
+): Promise<ALInboundClaimedSelection> {
+    const { page, port, pageSize, nowMs } = input;
+    const selectionStartedAtMs = nowMs();
+    const pending = page.readSelection(port, pageSize);
+    page.forgetSelection(pending);
+    const selection = await pending;
+    const claimStartedAtMs = nowMs();
+    const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
+    const claimedAtMs = nowMs();
+    const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
+    return {
+        selection: {
+            claims: [...selection.unleasedReservations, ...claims],
+            nextReadyAtMs: selection.nextReadyAtMs,
+            selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
+            claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
+            earliestReadyAtMs: computeEarliestALInboundDueAtMs(selection.claimable, claimedKeys)
+        },
+        observations: toClaimedALInboundObservations(selection.observations, claimedKeys)
+    };
+}
+
+/** The earliest a reserved row had been due, over the page read that observed it before the reservation. */
+function computeEarliestALInboundDueAtMs(
+    claimable: readonly ResourceEntry[],
+    claimedKeys: ReadonlySet<ResourceEntryKeyString>
+): number | undefined {
+    let earliest: number | undefined;
+    for (const entry of claimable) {
+        if (!claimedKeys.has(toKeyAsString(entry.key))) {
+            continue;
+        }
+        const dueAtMs = resolveALInboundWorkDueAtMs(entry);
+        earliest = earliest === undefined ? dueAtMs : Math.min(earliest, dueAtMs);
+    }
+    return earliest;
+}
+
 /** A row the page cleared but the port did not reserve is delivered by no one, so its surface is dropped. */
 function toClaimedALInboundObservations(
     observations: ReadonlyMap<string, ALInboundClaimableObservation>,
-    claims: readonly ALWorkClaim[]
+    claimedKeys: ReadonlySet<ResourceEntryKeyString>
 ): ReadonlyMap<string, ALInboundDeliveryObservation> {
-    const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
     const claimed = new Map<string, ALInboundDeliveryObservation>();
     for (const [effectId, observation] of observations) {
         if (claimedKeys.has(observation.key)) {

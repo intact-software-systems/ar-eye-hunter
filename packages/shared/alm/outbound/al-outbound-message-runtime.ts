@@ -426,12 +426,20 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
+    /** The outbound owner reserves straight from the queue, so it reads no page and observes no row's wait. */
     private async selectOutboundWork(
         port: ALWorkQueuePort,
         pageSize: number
     ): Promise<ALWorkReadySelection> {
+        const startedAtMs = this.readNowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
-        return { claims, nextReadyAtMs: undefined };
+        return {
+            claims,
+            nextReadyAtMs: undefined,
+            selectionDurationMs: 0,
+            claimDurationMs: Math.max(0, this.readNowMs() - startedAtMs),
+            earliestReadyAtMs: undefined
+        };
     }
 
     /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */

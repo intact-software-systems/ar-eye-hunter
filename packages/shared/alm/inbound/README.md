@@ -107,6 +107,18 @@ The worker holds one 16-entry observation page. It reads through QueueBox's
 ineligible ordered work before reservation. QueueBox compares the observations
 when claiming and owns reservation timeout, retry, exhaustion, and release.
 
+The rotation reads a page on every engine round, and that read is what advances its
+scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather
+than the remembered readiness the outbound owners use: a remembered answer would skip
+the read and leave the scan where it stood. Measured over a hundred engine passes of an
+idle owner — `al-indexeddb-operation-counts.test.ts`, both an empty queue and one holding
+a row no consumer claims — the probe reaches storage on more than half of them (97 of
+100 as measured, the rest being rounds spent inside the batch the round before started),
+against the 4 of 100 the outbound owner spends answering from memory. The measurement
+agrees with the construction, so the rotation keeps the per-round probe, and the
+`readiness-probe` event the runtime now relays is bounded by that same rate: at most one
+per engine round, and never a cadence the page was not already paying for.
+
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
 namespace, full identity, queue slot, and deadline. Malformed claimed work becomes
 `NON_RETRYABLE`; valid work from the same batch continues. Operational failures

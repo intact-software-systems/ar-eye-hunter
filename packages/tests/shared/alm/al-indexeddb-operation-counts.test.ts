@@ -20,6 +20,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 import {
     createInboundTestMessage,
@@ -35,6 +36,13 @@ const INBOUND_NAMESPACE = 'al-inbound-counts';
 const INBOUND_WORKER_ID = 'al-inbound:counts';
 /** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
 const INBOUND_ROTATION_ROUND_LIMIT = 16;
+/** A hundred engine passes at the engine's fixed 100 ms delay: ten idle seconds of a rotation with nothing to claim. */
+const INBOUND_IDLE_ROUNDS = 100;
+const INBOUND_IDLE_SECONDS = 10;
+/** The ceiling the relay must stay under: the engine's own pass rate, and never a cadence of its own. */
+const INBOUND_IDLE_PROBES_PER_SECOND = INBOUND_IDLE_ROUNDS / INBOUND_IDLE_SECONDS;
+/** Far above the 4 per hundred rounds the outbound owner spends, whose probe answer stands for the idle ceiling. */
+const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
 const NO_DEFERRAL: ALOutboundDequeueDeferral = { types: new Set<string>(), readyAtMs: undefined };
 
@@ -122,10 +130,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, nowMs, NO_DEFERRAL),
-            selectReady: async (claimed, size) => ({
-                claims: await claimed.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (claimed, size) => toTestALWorkReadySelection(await claimed.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -157,10 +162,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, NOW_MS, NO_DEFERRAL),
-            selectReady: async (claimable, size) => ({
-                claims: await claimable.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -211,7 +213,63 @@ describe('inbound work owner IndexedDB scan volume', () => {
             'inbound admit to deliver: 6 operations for the admission, and 2 for the drain that dispatches it'
         ).toBe(8);
     });
+
+    it.each(['empty-queue', 'deferred-row'] as const)(
+        'probes storage on every idle rotation round and relays one event for each, scanning an %s',
+        async (scanned) => {
+            const idle = await readIdleInboundRotation(scanned);
+
+            // The rotation carries its scan position inside the read, so no answer of its own can
+            // stand and every round reaches storage. Relaying one event per probe is therefore the
+            // engine's own pass rate and no cadence of its own.
+            expect(idle.probes).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
+            expect(idle.probes).toBeLessThanOrEqual(INBOUND_IDLE_ROUNDS);
+            expect(idle.probes / INBOUND_IDLE_SECONDS).toBeLessThanOrEqual(INBOUND_IDLE_PROBES_PER_SECOND);
+            // A probe that answers "due now" holds its page for the batch, which reads none of its own.
+            expect(idle.workPages).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
+            expect(idle.workPages).toBeLessThanOrEqual(idle.probes);
+        }
+    );
 });
+
+interface IdleInboundRotation {
+    readonly workPages: number;
+    readonly probes: number;
+}
+
+/** An owner with an empty queue, driven for ten idle seconds of engine passes and nothing else. */
+async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'): Promise<IdleInboundRotation> {
+    const observer = createCountingIndexedDbOperationObserver();
+    const fixture = createInboundTestRuntime({
+        stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
+        effectWorkerId: INBOUND_WORKER_ID,
+        canDispatchMessage: () => false
+    });
+    await fixture.runtime.ready();
+    if (scanned === 'deferred-row') {
+        await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'idle-rotation' }),
+            INBOUND_TEST_SOURCE
+        );
+    }
+    // The batch a commit schedules for itself is not awaited by its caller: let it leave the window.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    observer.reset();
+    const eventsBefore = fixture.diagnostics.length;
+
+    for (let round = 0; round < INBOUND_IDLE_ROUNDS; round += 1) {
+        await fixture.queueEngine.executeOnce();
+        // A round whose task is still in flight asks the owner nothing: let the pass before it end.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    return {
+        workPages: observer.getCounts().byKind['work-page'] ?? 0,
+        probes: fixture.diagnostics
+            .slice(eventsBefore)
+            .filter((event) => event.kind === 'readiness-probe').length
+    };
+}
 
 interface DrainedInboundRotation {
     readonly committed: 'committed' | 'conflict' | 'expired';

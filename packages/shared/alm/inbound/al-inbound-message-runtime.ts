@@ -15,16 +15,23 @@ import {
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
-    ALInboundPlanner
+    ALInboundPlanner,
+    ALPersistedInboundEffect
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
 import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import {
     toALInboundAdmissionDiagnostics,
+    toALInboundClaimIdentity,
     type ALInboundRuntimeDiagnosticsSink
 } from './al-inbound-runtime-diagnostics.ts';
-import { AL_INBOUND_WORK_LEASE_MS, decodeALInboundWorkEntry, toALInboundWorkType } from './al-inbound-work-entry.ts';
+import {
+    AL_INBOUND_WORK_LEASE_MS,
+    decodeALInboundWorkEntry,
+    resolveALInboundWorkDueAtMs,
+    toALInboundWorkType
+} from './al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
     type ALInboundEffectPreparationDependencies
@@ -115,6 +122,7 @@ export class ALInboundMessageRuntime {
     private readonly work: ALWorkHandler;
     private emptyRoundCount = 0;
     private emptyRoundsFromMs: number | undefined;
+    private longestEmptyRoundMs = 0;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -156,7 +164,7 @@ export class ALInboundMessageRuntime {
             // The rotation advances one status per probe, so an answer of its own never stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
-            runClaim: (claim) => this.runInboundClaim(claim),
+            runClaim: (claim, batchStartedAtMs) => this.runInboundClaim(claim, batchStartedAtMs),
             diagnostics: (event) => this.recordWorkDiagnostics(event)
         });
         if (dependencies.ownsQueueEngine) {
@@ -196,14 +204,22 @@ export class ALInboundMessageRuntime {
     }
 
     /**
-     * The rotation's probe reads storage every engine round by construction, so relaying one event
-     * per probe would cost this page what the empty batches below already cost it. The outbound
-     * owners, whose probes are the invalidations they can name, report theirs.
+     * The rotation's probe reads one page every engine round by construction, so one event per probe
+     * is that same cadence and no more: it is the read the batch below then claims from, and without
+     * it a rotation whose page read is what crawls reports a fast batch over a slow round.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
             this.recordWorkBatch(event);
+            return;
         }
+        this.dependencies.diagnostics?.({
+            kind: 'readiness-probe',
+            workerId: event.workerId,
+            cause: event.cause,
+            readyAtMs: event.readyAtMs,
+            durationMs: event.durationMs
+        });
     }
 
     /**
@@ -224,7 +240,12 @@ export class ALInboundMessageRuntime {
             claimedCount: event.claimedCount,
             completedCount: event.completedCount,
             rescheduledCount: event.rescheduledCount,
-            rejectedCount: event.rejectedCount
+            rejectedCount: event.rejectedCount,
+            selectionDurationMs: event.selectionDurationMs,
+            claimDurationMs: event.claimDurationMs,
+            runDurationMs: event.runDurationMs,
+            releaseDurationMs: event.releaseDurationMs,
+            queueWaitMs: event.queueWaitMs
         });
     }
 
@@ -238,6 +259,7 @@ export class ALInboundMessageRuntime {
         const nowMs = this.dependencies.clock.nowMs();
         this.emptyRoundCount += 1;
         this.emptyRoundsFromMs ??= nowMs - event.durationMs;
+        this.longestEmptyRoundMs = Math.max(this.longestEmptyRoundMs, event.durationMs);
         if (this.emptyRoundCount < AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS) {
             return;
         }
@@ -245,10 +267,12 @@ export class ALInboundMessageRuntime {
             kind: 'rotation-alive',
             workerId: event.workerId,
             emptyRoundCount: this.emptyRoundCount,
-            durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs)
+            durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs),
+            longestRoundMs: this.longestEmptyRoundMs
         });
         this.emptyRoundCount = 0;
         this.emptyRoundsFromMs = undefined;
+        this.longestEmptyRoundMs = 0;
     }
 
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
@@ -309,8 +333,9 @@ export class ALInboundMessageRuntime {
 
     private async admitControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
         const admitted = await this.controlAdmission.admit(msg);
-        // A control message the runtime does not handle, or rejects, wrote nothing to announce.
-        if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
+        // A control the runtime does not handle or rejects, and one whose commit wrote no work row,
+        // have nothing for the worker to claim; only retained work and a written row announce one.
+        if (admitted.kind === 'pending-control' || (admitted.kind === 'committed' && admitted.wroteWork)) {
             this.commitWork();
         }
         if (admitted.kind === 'pending-control') {
@@ -332,12 +357,46 @@ export class ALInboundMessageRuntime {
     }
 
     /**
+     * One claim, timed and named: the batch above reports the whole drain, and a drain that crawls is
+     * only readable once each claim says which message it ran and how long that one took. A row that
+     * cannot be decoded, and a claim that throws, name no payload here; the batch still counts them.
+     */
+    private async runInboundClaim(claim: ALWorkClaim, batchStartedAtMs: number): Promise<ALWorkOutcome> {
+        const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
+        const startedAtMs = this.dependencies.clock.nowMs();
+        const outcome = await this.runInboundEffect(effect);
+        this.recordClaimSettled({
+            claim,
+            effect,
+            outcome,
+            durationMs: Math.max(0, this.dependencies.clock.nowMs() - startedAtMs),
+            batchStartedAtMs
+        });
+        return outcome;
+    }
+
+    private recordClaimSettled(settled: ALInboundClaimSettlement): void {
+        this.dependencies.diagnostics?.({
+            kind: 'claim-settled',
+            workerId: this.dependencies.effectWorkerId,
+            ...toALInboundClaimIdentity(settled.effect.payload),
+            payloadKind: settled.effect.payload.kind,
+            durationMs: settled.durationMs,
+            attempts: settled.claim.attempts,
+            outcome: settled.outcome.status,
+            queueWaitMs: Math.max(
+                0,
+                settled.batchStartedAtMs - resolveALInboundWorkDueAtMs(settled.claim.entry)
+            )
+        });
+    }
+
+    /**
      * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
      * batch already read. Announcing it here is what gives that work the batch this batch's end runs,
      * instead of the next round the rotation happens to reach.
      */
-    private async runInboundClaim(claim: ALWorkClaim): Promise<ALWorkOutcome> {
-        const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
+    private async runInboundEffect(effect: ALPersistedInboundEffect): Promise<ALWorkOutcome> {
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
             const replayed = await this.admission.replay(payload);
@@ -360,6 +419,15 @@ export class ALInboundMessageRuntime {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         };
     }
+}
+
+/** One settled claim's measurements, so the event that reports them is built from one input. */
+interface ALInboundClaimSettlement {
+    readonly claim: ALWorkClaim;
+    readonly effect: ALPersistedInboundEffect;
+    readonly outcome: ALWorkOutcome;
+    readonly durationMs: number;
+    readonly batchStartedAtMs: number;
 }
 
 function toALInboundReplayOutcome(
