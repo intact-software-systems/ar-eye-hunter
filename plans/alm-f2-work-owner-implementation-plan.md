@@ -1702,23 +1702,23 @@ re-execution of a green head failed identically in the slow regime.
   readinessMs per peer, sendMs per scenario, workPagePerSecond, cellOutcome }` written as
   `alm-observation/<carrier>-<scope>.json` under the Playwright output root for every cell, pass or fail.
 
-- [ ] **Step 1: The pure computation** — `computeALMObservationRegime(snapshot)` derives the per-operation
+- [x] **Step 1: The pure computation** — `computeALMObservationRegime(snapshot)` derives the per-operation
       cost (readDurationMs over readOperationCount, p50 across `commit-phases`), the readiness time per peer
       from the lifecycle witness, each scenario's send wall clock from the command results, and the
       `work-page` rate from the two `storage.counters` readings; classifies `normal` below 30 ms per
       operation, `slow` at or above 35, `unclassified` between or when fewer than five commit phases exist
       (the thresholds are named constants with the seven-run evidence in one comment). Unit-test it from a
       fixture snapshot with known figures, including the `unclassified` band.
-- [ ] **Step 2: Written for every cell** — the spec writes the regime file for every cell in a
+- [x] **Step 2: Written for every cell** — the spec writes the regime file for every cell in a
       `finally`, into a directory Playwright does not delete for passing tests (outside `testInfo.outputPath`,
       under the configured output root so the observation job's existing `apps/rallar-black-box/test-results`
       upload carries it); the per-cell run snapshot is written beside it for the same reason, so a green cell's
       evidence is no longer lost. The spec also prints one line per cell to the job log: the regime, the
       per-operation cost, and the outcome.
-- [ ] **Step 3: How to read a red** — a short section in the lane's doc: the budgets and why they stay,
+- [x] **Step 3: How to read a red** — a short section in the lane's doc: the budgets and why they stay,
       the regime file's fields, the rule (compare against the green baseline of the same regime; a slow-regime
       red is a measurement, not a verdict), and the pointer to the F2 PR body's runner table.
-- [ ] **Step 4: Gates and commit** — the focused Vitest, the four typechecks, `check-tests-typecheck`,
+- [x] **Step 4: Gates and commit** — the focused Vitest, the four typechecks, `check-tests-typecheck`,
       dprint on touched files, `check:repo-style:changed`, coupling, the ws ALM lane locally (the regime file
       must appear for the passing cell), then commit.
 
