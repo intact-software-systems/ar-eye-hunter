@@ -33,7 +33,7 @@ describe('Rallar middleware queue wake', () => {
 
         // A server mutation writes its WS_OUTBOX row inside its own transaction, so the owner learns
         // of it only from the wake that follows the commit.
-        const entry = toWsOutboxEntry(createOutboundMessage());
+        const entry = createWsOutboxEntry(createOutboundMessage());
         await fixture.outbox.enqueueIfAbsent(entry);
         await queueEngine.executeOnce();
 
@@ -76,7 +76,7 @@ function createOutboundMessage(): ALMessage {
     );
 }
 
-function toWsOutboxEntry(message: ALMessage): ResourceEntry {
+function createWsOutboxEntry(message: ALMessage): ResourceEntry {
     const createdTs = Temporal.Now.plainDateTimeISO('UTC');
     return {
         key: toAppQueueKey({
