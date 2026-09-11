@@ -163,8 +163,8 @@ function newAcknowledgement(message: ALMessage): ALMessage {
     );
 }
 
-/** The pending value one attempt leaves behind when a competing writer beats it to the fence. */
-async function readConflictedPendingAdmission(
+/** Lands the competing row an attempt then loses to, and returns the pending value it left behind. */
+async function writeConflictedPendingAdmission(
     admission: ALInboundMessageAdmission,
     admissionStore: ALInboundAdmissionStore,
     msg: ALMessage
@@ -302,7 +302,7 @@ it('admits one message in 1 surface, 1 fence and 1 write', async () => {
 it('retains a conflicted admission and replays it to completion', async () => {
     const stores = await createAdmissionFixture();
     const admission = createInboundTestAdmission(stores);
-    const pending = await readConflictedPendingAdmission(
+    const pending = await writeConflictedPendingAdmission(
         admission,
         stores.admissionStore,
         createInboundTestMessage({ msgId: 'conflicted-replay' })
@@ -315,7 +315,7 @@ it('retains a conflicted admission and replays it to completion', async () => {
 it('retains and replays a conflicted admission in 1 guarded row and 1 second attempt', async () => {
     const stores = await createAdmissionFixture();
     const admission = createInboundTestAdmission(stores);
-    const pending = await readConflictedPendingAdmission(
+    const pending = await writeConflictedPendingAdmission(
         admission,
         stores.admissionStore,
         createInboundTestMessage({ msgId: 'conflicted-cost' })
@@ -323,7 +323,8 @@ it('retains and replays a conflicted admission in 1 guarded row and 1 second att
 
     const recorded = recordIndexedDbTransactions();
     await admission.retainPending(pending);
-    await admission.replay(pending);
+    // Inside the measured window, and opening nothing: the count below is a successful replay's.
+    expect(await admission.replay(pending), 'the measured replay').toBe('completed');
 
     expect(recorded.modes(), 'retainPending then replay').toEqual(RETAIN_THEN_REPLAY);
 });

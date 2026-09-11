@@ -21,7 +21,7 @@ import {
     vi
 } from 'vitest';
 
-import { setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
+import { createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
 
 const PENDING_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
 
@@ -213,7 +213,7 @@ it('replays a retained conflict in the batch an idle owner runs on its own commi
     await runtime.ready();
 
     setNextInboundCommitConflicted(stores.admissionStore);
-    const acceptance = await runtime.admitIncomingMessage(newPendingMessage('idle-owner'), PENDING_SOURCE);
+    const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'idle-owner' }), PENDING_SOURCE);
 
     expect(acceptance.right).toEqual({ kind: 'pending-admission' });
     // The engine is never started and no round is ever executed here, so the batch the commit itself
@@ -240,12 +240,12 @@ it('replays a retained conflict in the batch that follows the one already runnin
     });
     await runtime.ready();
     // The first message's own commit starts a batch and holds it inside the delivery it claimed.
-    expect((await runtime.admitIncomingMessage(newPendingMessage('running-blocker'), PENDING_SOURCE)).right)
+    expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'running-blocker' }), PENDING_SOURCE)).right)
         .toEqual({ kind: 'admitted' });
     await expect.poll(() => dispatchStarted).toBe(true);
 
     setNextInboundCommitConflicted(stores.admissionStore);
-    const acceptance = await runtime.admitIncomingMessage(newPendingMessage('running-conflict'), PENDING_SOURCE);
+    const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'running-conflict' }), PENDING_SOURCE);
 
     expect(acceptance.right).toEqual({ kind: 'pending-admission' });
     // The running batch claimed its page before this row existed, so nothing has claimed it yet.
@@ -256,16 +256,15 @@ it('replays a retained conflict in the batch that follows the one already runnin
     await expect.poll(() => readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
 });
 
-function newPendingMessage(msgId: string): ALMessage {
-    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: msgId, contextId: 'room' }, 'receiver', 'chat', {}, { ttlMs: 60_000 });
-    return { ...message, id: { ...message.id, msgId } };
-}
-
 /** The retained admission row under whichever key the queue gave it, with the status it now holds. */
 async function readRetainedAdmissionStatus(stores: ALInboundRuntimeStores): Promise<EntityStatus | undefined> {
     for (const key of await stores.workQueue.getAllKeys()) {
         const entry = await stores.workQueue.getItem(key);
-        if (entry !== undefined && decodeALInboundWorkEntry(entry, stores.admissionStore.namespace).payload.kind === 'admit-message') {
+        if (entry === undefined) {
+            continue;
+        }
+        const work = decodeALInboundWorkEntry(entry, stores.admissionStore.namespace);
+        if (work.payload.kind === 'admit-message') {
             return entry.status;
         }
     }
