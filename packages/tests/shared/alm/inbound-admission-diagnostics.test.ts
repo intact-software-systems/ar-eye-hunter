@@ -121,6 +121,19 @@ function rotationsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): 
     return diagnostics.filter((event): event is RotationAliveEvent => event.kind === 'rotation-alive');
 }
 
+/** Runs bounded engine rounds until the rotation reports itself alive, so an absence can be read. */
+async function runRotationUntilAlive(
+    queueEngine: InboxOutboxEngine,
+    diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
+): Promise<void> {
+    const roundLimit = AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS * 8;
+    for (let round = 0; round < roundLimit && rotationsOf(diagnostics).length === 0; round += 1) {
+        await queueEngine.executeOnce();
+        // A round the owner spends inside a batch it started itself reports no work: let it settle.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+}
+
 it.each(['memory', 'indexeddb'] as const)(
     'names the message an ingress committed and the drain that delivered it over %s',
     async (kind) => {
@@ -194,20 +207,27 @@ it.each(['memory', 'indexeddb'] as const)(
 it.each(['memory', 'indexeddb'] as const)(
     'separates a committed admission no consumer claims from one that was never admitted over %s',
     async (kind) => {
-        const { runtime, diagnostics, delivered } = createRuntime({ kind, canDispatchMessage: () => false });
+        const { runtime, diagnostics, delivered, queueEngine } = createRuntime({
+            kind,
+            canDispatchMessage: () => false
+        });
         const message = createIncomingMessage('no-inbox-consumer');
 
         await runtime.ready();
         const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: SENDER_PEER_ID });
+        await runRotationUntilAlive(queueEngine, diagnostics);
 
         expect(admitted.right).toEqual({ kind: 'admitted' });
         expect(admissionOutcomesOf(diagnostics).map((event) => event.outcome)).toEqual(['committed']);
 
-        // The ingress committed, so the row exists; no drain ever selects it while the consumer is
-        // absent, and a batch that touched nothing reports nothing.
-        await expect.poll(() => delivered).toEqual([]);
+        // The rotation ran over the committed row often enough to report itself alive, so this is the
+        // absence of a claim rather than the absence of a rotation: no drain ever selects the row
+        // while the consumer is missing, and a batch that touched nothing reports nothing.
+        expect(rotationsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
+        expect(delivered).toEqual([]);
         expect(drainsOf(diagnostics)).toEqual([]);
-    }
+    },
+    30_000
 );
 
 it.each(['memory', 'indexeddb'] as const)(
