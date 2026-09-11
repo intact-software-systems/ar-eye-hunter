@@ -312,21 +312,23 @@ the inbound diagnostics contract in
 **Changes:**
 
 1. Every inbound decision surface (`readIncomingMessage`, `readBufferedRelease`,
-   `readStoredPlanningState`, `readOrderedDelivery`, `readControlAdmission`) reads inside one
+   `readStoredPlanningState`, `readOrderedDelivery`, `readControlDecisionSurface`) reads inside one
    `readWithin` session; today each `backend.read`/`list` opens its own IndexedDB transaction, 5 to
    10+ per surface. The commit is already one fence snapshot plus one readwrite and is not where the
    cost sits.
-2. The pending-admission replay carries the immutable half of the first attempt (decoded message,
-   resolved deadline, validated source, effect facts) and re-reads only the authority-bearing
-   surface; a retained conflict reaches its replay in the same batch when the owner is idle. The
-   persisted pending contract changes, so the ALM schema id moves (D3).
+2. The pending-admission replay re-reads its authority-bearing surface (a conflict means an
+   observation moved) and re-derives only pure work from the message and source the retention
+   already persists — measured, the carry would have saved no storage, so the persisted pending
+   contract and the ALM schema id stay unchanged; a retained conflict reaches its replay in the
+   batch the owner's own commit runs when idle, or the follow-up batch when busy.
 3. The readiness read and the dispatch of a `dispatch-local` effect share one observation, and
    readiness is read only for the rows a batch can claim. The undispatched ws message of the
    slow-regime runs was a committed `dispatch-local` effect that only a later rotation round would
    have dispatched.
-4. `effect-drain` splits into selection, claim, run, release and queue-wait durations; one
-   `claim-settled` event per claim; `readiness-probe` relayed with its cause; `rotation-alive`
-   reports its longest round.
+4. `effect-drain` reports its selection, claim, run, release and queue-wait durations; one
+   `claim-settled` event per claim that ran to an outcome; `rotation-alive` reports its longest
+   round. `readiness-probe` is not relayed on the inbound topic: one relayed event per engine round
+   doubled the page's per-operation cost in the lane through the harness bridge.
 5. The rotation keeps `AL_WORK_PROBE_EVERY_ROUND`: it advances one status per probe, so the
    outbound's remembered readiness does not apply; the inbound README records why.
 

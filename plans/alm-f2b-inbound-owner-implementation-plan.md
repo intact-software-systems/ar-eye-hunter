@@ -324,7 +324,9 @@ the same shape one stage earlier — admitted, never handed to the code that wou
       could have changed (the entry's expiry and `shouldRetryALInboundDelivery(plan)` against a fresh
       `clock.nowMs()`) and re-reads nothing else. The ordering readiness stays a fresh read for an
       ordered message — a predecessor can land between the two — and the test says so.
-- [x] **Step 3: Do not read readiness for rows the page will not claim.** `readALInboundWorkSelection`
+- [x] **Step 3: Do not read readiness for rows the page will not claim — measured, no selection change
+      (ruling R14).** The page read is already bounded by the page size; eligibility reads equal the
+      claimable count (16 of 16, 4 of 4), pinned in `al-inbound-work-selection.test.ts`. `readALInboundWorkSelection`
       currently calls `readReadiness` for every entry on the page before `port.claim` bounds it to
       `pageSize`. Bound the readiness reads to the entries the batch can actually claim, in
       observation order, and stop at the bound. Pin the admission-read count per rotation round over
@@ -424,7 +426,10 @@ rotation never reaches — 0 events in every observation run.
       regime the receiver's inbound median is at or below the outbound owner's for the same cell
       (run 7: inbound 5.1–14.1 s against outbound 1.4–1.8 s), and the ws cell delivers. Two
       iterations are allowed before the maintainer is asked again.
-- [x] **Step 5: A red you cannot attribute.** If a cell reds in an `unclassified` or `slow` regime
+- [x] **Step 5: A red you cannot attribute — rerun = the final commit's gate observation (ruling R22).** The
+      80d017d24 read is the first run; the observation job on the final commit is the rerun; the diagnosis
+      is the "Task 5 outcome" paragraph below and the PR body's Acceptance section, routed to the
+      maintainer (R20). If a cell reds in an `unclassified` or `slow` regime
       with no same-regime green baseline, rerun once. If it reds again, write the diagnosis as a
       session record in the shape of the earlier ones and route it to the maintainer
       rather than tuning a budget.
