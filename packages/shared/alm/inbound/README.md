@@ -17,10 +17,14 @@ RTC ingress is wired by
 [`WebRtcRxStreamerService`](../../services/web-rtc-rx-streamer-service.ts).
 These composition owners supply the planner, delivery, forwarding, and control ports.
 
-The runtime constructs
+The runtime constructs its [`ALWorkQueuePort`](../work/al-work-queue-port.ts),
 [`ALInboundMessageAdmission`](./al-inbound-message-admission.ts) and
-[`ALInboundAdmittedDelivery`](./al-inbound-admitted-delivery.ts) before passing
-them to [`ALInboundWorkHandler`](./al-inbound-work-handler.ts). The worker registers
+[`ALInboundAdmittedDelivery`](./al-inbound-admitted-delivery.ts) before passing them to
+[`ALWorkHandler`](../work/al-work-handler.ts) — the same worker the outbound runtime
+uses, with `maxConcurrency` fixed at one task. The inbound half of that worker is
+[`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts): it owns the rotating
+new/retry/reserved page scan that answers the handler's readiness probe and turns one observed
+page into claims. The worker registers
 with [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts); registration does
 not invoke admission or delivery. Storage readiness precedes the first work scan.
 Disposal prevents further local work and unregisters the task. A runtime-owned
@@ -28,22 +32,50 @@ engine stops; a supplied shared engine remains available to its other tasks.
 
 ## Admission and invocation paths
 
-| Entry                           | Decision and durable result                                                                                                                                                                                                                                                 | Subsequent execution                                                                                                                                                                                 |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together. | The runtime wakes the existing worker after commit.                                                                                                                                                  |
-| Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline. Retention checks exact content and identity on reuse.                                                                               | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. No success receipt is earned by pending storage.                                           |
-| Control ingress                 | The admission store reads the tracked message and expected control peer, validates the control, and conditionally commits its state and effects. Unknown controls cannot create a pending data message.                                                                     | The runtime wakes effects and invokes the configured control callback. A control commit conflict currently returns `not-admitted`; dependable control recovery remains part of the delivery roadmap. |
-| Admitted delivery               | `ALInboundAdmittedDelivery` rereads stored message authority/planning observations, checks ordering and expiry, then dispatches locally or forwards through the supplied port.                                                                                              | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                      |
-| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                             | Local dispatch occurs only after the required release decision; later work becomes eligible through the same worker.                                                                                 |
+| Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | The runtime wakes the existing worker after commit.                                                                                                                                                                              |
+| Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline. Retention checks exact content and identity on reuse.                                                                                                                                                                                                                                                              | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. No success receipt is earned by pending storage.                                                                       |
+| Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | The runtime wakes the worker and invokes the configured control callback. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
+| Admitted delivery               | `ALInboundAdmittedDelivery` rereads stored message authority/planning observations, checks ordering and expiry, then dispatches locally or forwards through the supplied port.                                                                                                                                                                                                                                                                             | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                  |
+| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; later work becomes eligible through the same worker.                                                                                                             |
 
-The pure decision owners are
-[`computeALInboundAdmission`](./compute-al-inbound-admission.ts) and
-[`validateALInboundCommitBundle`](./validate-al-inbound-commit-bundle.ts).
+`validateALInboundControlAdmission` returns every reason an acknowledgement is
+inadmissible; the caller joins them into one rejection reason. Only an absent pending
+obligation short-circuits, because the remaining checks read that obligation.
+
+## The admission directory
+
+[`admission/`](./admission) holds the pure inbound admission decision.
+[`computeALInboundAdmission`](./admission/compute-al-inbound-admission.ts) turns one
+read plus its handling plan into the mutations and effect intents an admitted message
+owns, delegating the dedup/ordering half to
+[`al-inbound-delivery-mutations.ts`](./admission/al-inbound-delivery-mutations.ts).
+[`validateALInboundCommitBundle`](./admission/validate-al-inbound-commit-bundle.ts)
+checks the bundle as a whole — its limits, effect writes, provenance lifetimes and
+canonical messages — and
+[`validateALInboundAdmissionMutation`](./admission/validate-al-inbound-admission-mutation.ts)
+reports every reason one mutation may not be committed, including whether it writes
+outside the original observations the read captured.
+
 [`ALInboundAdmissionStore`](./al-inbound-admission-store.ts) owns persisted
 observations and conditional admission; its private provider-backed implementation
 writes through [`ALAdmissionWorkBackend`](../al-admission-work-backend.ts).
-[`ALInboundDurableEffectStore`](./al-inbound-durable-effect-store.ts) translates
-effect ownership into QueueBox rows, claims, and releases.
+[`ALInboundDurableEffectStore`](./al-inbound-durable-effect-store.ts) writes effect
+ownership into QueueBox rows inside the admission transaction and reads ordered-delivery
+evidence; reservation and release belong to the work port alone.
+
+Every stored key is `topicId/resourceId/contextId`, and inbound work is
+`AL_INBOUND/<namespace>/<effectId>` so one session's rows are a bounded key range.
+An admitted message writes two provenance rows: the message owner row, keyed by
+namespace, message id and sender id, which retains the validated ingress source and
+supersedence key ([`al-inbound-source-validation.ts`](./al-inbound-source-validation.ts)),
+and the canonical inbound message row
+([`al-inbound-canonical-message.ts`](./al-inbound-canonical-message.ts)), which retains the
+envelope until the `retainUntilMs` its own row states — the latest deadline of the effects
+and slots that bundle owns, so a bundle owning neither writes no canonical row. Both must
+outlive the owned work the same bundle writes; a bundle whose provenance expires first is
+rejected.
 
 ## Replay authority and deadlines
 
@@ -71,7 +103,7 @@ terminal bookkeeping can omit an execution deadline without authorizing another 
 
 The worker holds one 16-entry observation page. It reads through QueueBox's
 `readWorkPage` port and
-[`readALInboundWorkSelection`](./read-al-inbound-work-selection.ts) skips known
+[`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts) skips known
 ineligible ordered work before reservation. QueueBox compares the observations
 when claiming and owns reservation timeout, retry, exhaustion, and release.
 
@@ -83,12 +115,18 @@ successful finalization.
 
 Browser expiry and session cleanup are owned by
 [`browser-al-work-cleanup.ts`](../../../shared-web/browser/al-runtime/browser-al-work-cleanup.ts)
-in the shared admission database. Session selection preserves unrelated work;
-the scan currently visits the AL work range before filtering by session.
+in the shared admission database. Because every AL-owned key leads with its owner,
+cleanup deletes one bounded key range per owned `AL_INBOUND`/`AL_OUTBOUND` namespace
+and per owned canonical scope, and each range ends its `resourceId` with the `/`
+delimiter so a neighbouring owner whose id is a string prefix is never pulled in.
+Unrelated work is preserved.
 
-Current inbound effects can still contain envelope copies. The outbound canonical
-storage cutover does not establish a single inbound payload owner or the roadmap's
-zero-IndexedDB volatile path.
+A browser database whose stores or recorded schema identity do not match is deleted
+and recreated once and the reset is reported through the required `onStorageReset`
+port; the details are in the
+[outbound navigation map](../outbound/README.md#atomic-indexeddb-work-storage).
+The outbound canonical storage cutover does not establish the roadmap's
+zero-IndexedDB volatile path for inbound work.
 
 Semantic evidence starts with
 [`al-inbound-pending-admission.test.ts`](../../../tests/shared/alm/al-inbound-pending-admission.test.ts),

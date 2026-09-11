@@ -132,7 +132,17 @@ function toMissingRtcPeerStatus(peerId: string): RallarRtcPeerStatus {
             makingOffer: false,
             ignoreOffer: false,
             iceCandidateQueueSize: 0,
-            remoteStreamIds: []
+            remoteStreamIds: [],
+            signaling: {
+                outboundOfferCount: 0,
+                outboundAnswerCount: 0,
+                outboundIceCandidateCount: 0,
+                inboundOfferCount: 0,
+                inboundAnswerCount: 0,
+                inboundIceCandidateCount: 0,
+                outboundSignalingErrorCount: 0,
+                inboundSignalingErrorCount: 0
+            }
         },
         lanes: [],
         isActive: false,

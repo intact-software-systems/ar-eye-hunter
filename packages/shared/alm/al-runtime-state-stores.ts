@@ -86,8 +86,8 @@ export class PersistentALInboundRuntimeStateStore implements ALInboundRuntimeSta
 export interface ALOutboundSentMessageSnapshot {
     readonly msgId: string;
     readonly msg: ALMessage;
-    readonly outboxKey?: Key;
-    readonly supersedenceKey?: string;
+    readonly outboxKey: Key | null;
+    readonly supersedenceKey: string | null;
 }
 
 export interface ALOutboundPendingAckSnapshot {

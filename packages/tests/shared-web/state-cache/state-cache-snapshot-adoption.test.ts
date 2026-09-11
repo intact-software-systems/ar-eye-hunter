@@ -17,15 +17,9 @@ import {
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 const repository = vi.hoisted(() => ({
-    findGroupStateSnapshotByRef: vi.fn<
-        typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef
-    >(),
-    replaceGroupStateSnapshotIfUnchanged: vi.fn<
-        typeof GroupStateSnapshotsRepositoryModule.replaceGroupStateSnapshotIfUnchanged
-    >(),
-    setGroupStateSnapshots: vi.fn<
-        typeof GroupStateSnapshotsRepositoryModule.setGroupStateSnapshots
-    >()
+    findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
+    replaceGroupStateSnapshotIfUnchanged: vi.fn<typeof GroupStateSnapshotsRepositoryModule.replaceGroupStateSnapshotIfUnchanged>(),
+    setGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.setGroupStateSnapshots>()
 }));
 
 vi.mock(

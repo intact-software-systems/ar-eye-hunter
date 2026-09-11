@@ -87,7 +87,7 @@ export type WsDeliveryDiagnosticsEvent =
 export type WsDeliveryDiagnosticsSink = (event: WsDeliveryDiagnosticsEvent) => void;
 
 export type WsServerInboundAuthorization =
-    | Readonly<{ authorized: true; roomRecipientPeerIds?: readonly string[]; }>
+    | Readonly<{ authorized: true; groupRecipientPeerIds?: readonly string[]; }>
     | Readonly<{
         authorized: false;
         reason: ALNackReason;

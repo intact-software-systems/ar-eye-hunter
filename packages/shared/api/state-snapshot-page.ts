@@ -37,7 +37,7 @@ export interface StateSnapshotPublication {
     readonly revision: string;
     readonly resource: string;
     readonly unicastPeerIds?: readonly string[];
-    readonly roomRecipientPeerIds?: readonly string[];
+    readonly groupRecipientPeerIds?: readonly string[];
 }
 
 export interface StateSnapshotPage {
@@ -171,8 +171,8 @@ function materializeSnapshotPageEnvelopes(
     const messages: ALMessage[] = [];
     const envelope = publication.envelope;
     const roomTargets = envelope.targets?.mode === 'broadcast' && envelope.targets.scope === 'room' &&
-            publication.roomRecipientPeerIds?.length
-        ? computeSnapshotAudienceBatches({ ...envelope.targets, recipientPeerIds: publication.roomRecipientPeerIds })
+            publication.groupRecipientPeerIds?.length
+        ? computeSnapshotAudienceBatches({ ...envelope.targets, recipientPeerIds: publication.groupRecipientPeerIds })
         : [];
     const targets = [
         ...computeSnapshotAudienceBatches(envelope.targets),

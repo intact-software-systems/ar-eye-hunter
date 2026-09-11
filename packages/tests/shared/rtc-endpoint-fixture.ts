@@ -1,6 +1,6 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { vi } from 'vitest';
 
-import { Temporal } from '@js-temporal/polyfill';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -8,15 +8,17 @@ import {
     createDefaultInMemoryALInboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { CircuitBreakerPolicy, toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import {
@@ -30,6 +32,8 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -40,7 +44,9 @@ interface RtcMessageCallbackRegistry {
 export class RtcEndpointFixture {
     readonly groups = new LatestRepository<string, GroupSnapshot>();
     readonly overlays = new LatestRepository<string, OverlayInfo>();
-    readonly outbound = createDefaultInMemoryALOutboundRuntimeStores();
+    readonly outbound = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeALOutboundTransportMessage
+    });
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];
     readonly peer: QRtcPeerDto;
@@ -81,9 +87,10 @@ export class RtcEndpointFixture {
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: this.outbound }),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: this.outbound }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
@@ -123,23 +130,19 @@ export class RtcEndpointFixture {
     }
 
     async waitForDeliveries(): Promise<void> {
-        while (this.pendingDeliveries.length > 0) {
+        do {
             await Promise.all(this.pendingDeliveries.splice(0));
+            await waitForALInboundWork();
         }
+        while (this.pendingDeliveries.length > 0);
     }
 
     private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
         this.received.push(message);
         await this.messageCallbacks.get(senderId)!.receive(message);
-        const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResourceInboxResilience.createDefault({
-            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
-            initialRate: 1,
-            maxRate: 10,
-            concurrencyIncreaseStep: 1,
-            concurrencyReduceStep: 1
-        });
-        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
+        // A reply the received message triggers is enqueued by the callback above without being
+        // awaited; this settles that owner's batch before the caller observes the outcome.
+        await settleCommittedOutboundBatch();
     }
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {

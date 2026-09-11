@@ -1,3 +1,5 @@
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     describe,
     expect,
@@ -15,6 +17,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundAdmissionRead, ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
@@ -39,6 +42,7 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:inbound:apply-conflict';
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
@@ -69,6 +73,7 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:inbound:apply-error';
         const store = createALInboundAdmissionStore({
+            nowMs: Date.now,
             namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
@@ -98,13 +103,14 @@ describe('PSql admission optimistic retry', () => {
         const storage = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:runtime-retry';
         const options = { namespace, repository: storage.repository };
-        const store = createDefaultPSqlALInboundRuntimeStores(options).admissionStore;
+        const stores = createDefaultPSqlALInboundRuntimeStores(options);
+        const store = stores.admissionStore;
         const deliveredMessageIds: string[] = [];
         const controls: ALMessage[] = [];
-        const runtime = createInboundTestRuntime(store, deliveredMessageIds, controls);
+        const runtime = createInboundTestRuntime(stores, deliveredMessageIds, controls);
         await runtime.ready();
-        const retain = store.workQueue.enqueueIfAbsent.bind(store.workQueue);
-        const retention = vi.spyOn(store.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+        const retain = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+        const retention = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
             const observed = await retain(entry);
             runtime.dispose(); // Stop after durable retention, before its first worker claim.
             return observed;
@@ -113,13 +119,13 @@ describe('PSql admission optimistic retry', () => {
         conflictNextInboundCommit({ storage, namespace: store.namespace, msg, nowMs: Date.now });
         const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
 
-        const conflicted = await runtime.handleIncomingMessage(msg, source);
+        const conflicted = await runtime.admitIncomingMessage(msg, source);
 
         expect(conflicted.right).toEqual({ kind: 'pending-admission' });
         expect(deliveredMessageIds).toEqual([]);
         expect(controls).toEqual([]);
         expect((await readIncoming(store, msg, Date.now())).dedupExpiresAt).toBeUndefined();
-        const page = await store.workQueue.readWorkPage({
+        const page = await stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(store.namespace),
             status: EntityStatus.NEW,
             maxToRead: 2,
@@ -131,12 +137,13 @@ describe('PSql admission optimistic retry', () => {
         expect(pending.expireAtTimestamp).toBe(msg.constraints?.expiresAtMs);
         retention.mockRestore();
 
-        const restartedStore = createDefaultPSqlALInboundRuntimeStores(options).admissionStore;
-        const restarted = createInboundTestRuntime(restartedStore, deliveredMessageIds, controls);
+        const restartedStores = createDefaultPSqlALInboundRuntimeStores(options);
+        const restartedStore = restartedStores.admissionStore;
+        const restarted = createInboundTestRuntime(restartedStores, deliveredMessageIds, controls);
         await restarted.ready();
         await expect.poll(() => deliveredMessageIds).toEqual([msg.id.msgId]);
         expect((await readIncoming(restartedStore, msg, Date.now())).dedupExpiresAt).toBeGreaterThan(Date.now());
-        expect((await restarted.handleIncomingMessage(msg, source)).right).toEqual({ kind: 'duplicate' });
+        expect((await restarted.admitIncomingMessage(msg, source)).right).toEqual({ kind: 'duplicate' });
         expect(deliveredMessageIds).toEqual([msg.id.msgId]);
     });
 
@@ -144,9 +151,13 @@ describe('PSql admission optimistic retry', () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-conflict';
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace),
+            canonicalScope: namespace,
+            backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -161,29 +172,39 @@ describe('PSql admission optimistic retry', () => {
                 senderId: 'self'
             }],
             durableEffects: []
-        }, decodeALOutboundPreparedMessage)).resolves.toBe('conflict');
+        })).resolves.toBe('conflict');
     });
 
     it('translates an outbound retry-schedule CAS loss to the owner conflict result', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { sql } = storage;
         const namespace = 'psql-test:outbound:retry-apply-conflict';
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace),
+            canonicalScope: namespace,
+            backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         conflictNextAdmissionCommit(storage, { namespace, senderId: 'self' }, Date.now);
 
-        await expect(store.scheduleNotYetInSyncRetry({
+        const control = createTestALOutboundControlAdmission({
+            admissionStore: store,
+            workQueue: backend.workQueue,
+            nowMs: Date.now
+        });
+
+        await expect(control.scheduleNotYetInSyncRetry({
             senderId: 'self',
             expectedVersion: undefined,
             msgId: 'outbound-retry-conflict',
             maxAttempts: 1,
             expireAtTimestamp: Date.now() + 60_000,
             retryAtMs: Date.now()
-        }, decodeALOutboundPreparedMessage)).resolves.toEqual({ status: 'conflict' });
+        })).resolves.toEqual({ status: 'conflict' });
     });
 
     it('does not translate an unexpected outbound apply failure into a conflict', async () => {
@@ -191,7 +212,10 @@ describe('PSql admission optimistic retry', () => {
         const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-error';
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
@@ -207,19 +231,23 @@ describe('PSql admission optimistic retry', () => {
                 senderId: 'self'
             }],
             durableEffects: []
-        }, decodeALOutboundPreparedMessage)).rejects.toThrow('outbound storage unavailable');
+        })).rejects.toThrow('outbound storage unavailable');
     });
 
     it('retains a post-read outbound conflict and activates its canonical row after restart', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { repository } = storage;
-        const options = { namespace: 'psql-test:outbound:runtime-conflict', repository };
+        const options = {
+            namespace: 'psql-test:outbound:runtime-conflict',
+            repository,
+            decodePrepared: decodeALOutboundPreparedMessage
+        };
         const stores = createDefaultPSqlALOutboundRuntimeStores(options);
         const store = stores.admissionStore;
         const runtime = createOutboxOnlyTestRuntime(stores);
         await runtime.ready();
         const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (candidate, decodePrepared) => {
+        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (candidate) => {
             expect(candidate.expectedVersion).toBeUndefined();
             await repository.upsert(
                 store.namespace,
@@ -227,7 +255,7 @@ describe('PSql admission optimistic retry', () => {
                 JSON.stringify({ senderId: 'self', version: 1 }),
                 Date.now() + 60_000
             );
-            return await commit(candidate, decodePrepared);
+            return await commit(candidate);
         });
         const retain = store.retainPendingAdmission.bind(store);
         vi.spyOn(store, 'retainPendingAdmission').mockImplementationOnce(async (input) => {
@@ -241,10 +269,10 @@ describe('PSql admission optimistic retry', () => {
 
         expect(result).toMatchObject({ status: 'pending-admission', message });
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
-        const canonical = await store.workQueue.getItem(result.entries[0].key);
+        const canonical = await stores.workQueue.getItem(result.entries[0].key);
         expect(canonical?.status).toBe(EntityStatus.COMPLETED);
         expect(decodePersistedALMessage(canonical!.resource)).toEqual(JSON.parse(JSON.stringify(message)));
-        const page = await store.workQueue.readWorkPage({
+        const page = await stores.workQueue.readWorkPage({
             typeId: toALOutboundWorkType(store.namespace),
             status: EntityStatus.NEW,
             maxToRead: 2,
@@ -259,21 +287,21 @@ describe('PSql admission optimistic retry', () => {
         const restarted = createOutboxOnlyTestRuntime(restartedStores);
         await restarted.ready();
         await expect.poll(() => restartedStores.admissionStore.readSentMessage(message.id.msgId)).toMatchObject({ msg: JSON.parse(JSON.stringify(message)) });
-        const activated = await restartedStores.admissionStore.workQueue.getItem(canonical!.key);
+        const activated = await restartedStores.workQueue.getItem(canonical!.key);
         expect(activated?.status).toBe(EntityStatus.NEW);
         expect((await restarted.enqueueIfAbsent(message)).status).toBe('duplicate');
-        expect(await restartedStores.admissionStore.workQueue.getItem(canonical!.key)).toEqual(activated);
+        expect(await restartedStores.workQueue.getItem(canonical!.key)).toEqual(activated);
     });
 });
 
 function createInboundTestRuntime(
-    store: ALInboundAdmissionStore,
+    stores: ALInboundRuntimeStores,
     deliveredMessageIds: string[],
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
-        stores: { admissionStore: store },
+        stores,
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
@@ -283,22 +311,24 @@ function createInboundTestRuntime(
                 overlayNeighborPeerIds: [],
                 ...observations
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry) => {
             deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
         sendControlMessage: async (msg) => {
             controls.push(msg);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return runtime;
 }
 
-function createOutboxOnlyTestRuntime(stores: ALOutboundRuntimeStores): ALOutboundMessageRuntime<ALMessage> {
+function createOutboxOnlyTestRuntime(
+    stores: ALOutboundRuntimeStores<ALMessage>
+): ALOutboundMessageRuntime<ALMessage> {
     const runtime = createDefaultALOutboundMessageRuntime({
-        outbox: stores.admissionStore.workQueue,
+        outbox: stores.workQueue,
         stores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),

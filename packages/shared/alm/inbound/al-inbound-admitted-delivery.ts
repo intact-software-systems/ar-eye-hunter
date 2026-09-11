@@ -1,12 +1,14 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type {
     ALInboundAdmissionStore,
     ALPersistedInboundEffect
 } from './al-inbound-admission-store.ts';
+import type { ALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
+import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
 import {
@@ -20,7 +22,6 @@ export namespace ALInboundAdmittedDelivery {
             ALInboundMessageRuntime.Dependencies,
             | 'admissionStore'
             | 'planIncomingMessage'
-            | 'readStoredEntry'
             | 'dispatchInboxEntry'
             | 'canDispatchMessage'
             | 'sendControlMessage'
@@ -57,7 +58,7 @@ export class ALInboundAdmittedDelivery {
             return false;
         }
         const payload = effect.payload;
-        if (payload.kind === 'send-control' || payload.kind === 'admit-message') {
+        if (payload.kind === 'send-control' || payload.kind === 'admit-message' || payload.kind === 'admit-control') {
             return true;
         }
         if (payload.kind === 'release-buffered') {
@@ -76,7 +77,7 @@ export class ALInboundAdmittedDelivery {
             );
             return !shouldRetryALInboundDelivery(plan) && await this.isLocalDeliveryReady(read.snapshot.msg, plan);
         }
-        const msg = payload.kind === 'dispatch-local' ? this.dependencies.readStoredEntry(payload.entry) : payload.msg;
+        const msg = await this.readAdmittedMessage(payload.message);
         const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs });
         const plan = this.dependencies.planIncomingMessage(
             msg,
@@ -106,14 +107,16 @@ export class ALInboundAdmittedDelivery {
         switch (effect.payload.kind) {
             case 'admit-message':
                 throw new NonRetryableException('Pending admission must run before admitted delivery');
+            case 'admit-control':
+                throw new NonRetryableException('Pending control admission must run before admitted delivery');
             case 'dispatch-local':
-                return await this.dispatchAdmittedEntry(effect.payload.entry);
+                return await this.dispatchAdmittedMessage(effect.payload.message, effect.expireAtTimestamp);
             case 'send-control':
                 await this.dependencies.sendControlMessage(effect.payload.msg);
                 return 'completed';
             case 'forward-message':
                 return await this.forwardAdmittedMessage(
-                    effect.payload.msg,
+                    await this.readAdmittedMessage(effect.payload.message),
                     effect.payload.fromPeerId,
                     effect.expireAtTimestamp
                 );
@@ -129,16 +132,36 @@ export class ALInboundAdmittedDelivery {
                 if (this.shutdown.signal.aborted) {
                     return 'retry';
                 }
-                return await this.dispatchAdmittedEntry(release.entry);
+                return await this.dispatchAdmittedMessage(release.message, effect.expireAtTimestamp);
             }
         }
     }
 
-    private async dispatchAdmittedEntry(entry: ResourceEntry): Promise<'completed' | 'retry'> {
+    /** Delivery reads the one retained copy; a missing owner row is storage corruption, not a retry. */
+    private async readAdmittedMessage(reference: ALInboundMessageReference): Promise<ALMessage> {
+        const msg = await this.admissionStore.readInboundMessage(reference);
+        if (msg === undefined) {
+            throw new ALAdmissionCorruptionError(
+                JSON.stringify(reference),
+                new TypeError('Inbound message owner row is missing')
+            );
+        }
+        return msg;
+    }
+
+    private async dispatchAdmittedMessage(
+        reference: ALInboundMessageReference,
+        expireAtTimestamp: number
+    ): Promise<'completed' | 'retry'> {
         if (this.shutdown.signal.aborted) {
             return 'retry';
         }
-        const msg = this.dependencies.readStoredEntry(entry);
+        const msg = await this.readAdmittedMessage(reference);
+        const entry = toALInboundDispatchEntry(
+            this.dependencies.effectPreparation.createInboxEntry(msg),
+            msg,
+            expireAtTimestamp
+        );
         const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs: this.dependencies.clock.nowMs() });
         const source = read.source;
         const plan = this.dependencies.planIncomingMessage(

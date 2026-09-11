@@ -1,26 +1,32 @@
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import {
     describe,
     expect,
     it
 } from 'vitest';
-import { createOutboundCanonicalEntry } from './outbound-runtime-test-fixture.ts';
+import {
+    createOutboundCanonicalEntry,
+    peekOutboundWorkReadyAt
+} from './outbound-runtime-test-fixture.ts';
 
-import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createDefaultOutboundTestAdmissionStore, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import { createDefaultOutboundTestStores, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound dispatch value ownership', () => {
     it('rejects a mismatched queue resource before admitting message ownership or work', async () => {
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const message = createOutboundMessage('intended-message');
         const wrongEntry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage('other-message'), 'outbox');
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             admissionStore: store,
+            workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             toOutboxEntry: () => wrongEntry,
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
@@ -33,6 +39,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({ msg: message, persist: true, preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {}
         });
 
@@ -40,12 +47,13 @@ describe('outbound dispatch value ownership', () => {
         expect(result.computed.reason).toBe('Outbound queue candidate differs from its message');
         expect(result.committed).toBe(false);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, store.namespace)).toBeUndefined();
         admission.dispose();
     });
 
     it('computes from captured values and preserves the candidate through a real successful and conflicting commit', async () => {
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const message = createOutboundMessage('immutable-dispatch');
         const read = await store.readOutgoingMessage({
             msg: message,
@@ -90,8 +98,8 @@ describe('outbound dispatch value ownership', () => {
         };
         expect(validateALOutboundDispatch(read, tampered).left).toContainEqual(expect.objectContaining({ code: 'malformed' }));
 
-        expect(await store.commitBundle(computed.bundle, decodeOutboundTestPayload)).toBe('committed');
-        expect(await store.commitBundle(computed.bundle, decodeOutboundTestPayload)).toBe('conflict');
+        expect(await store.commitBundle(computed.bundle)).toBe('committed');
+        expect(await store.commitBundle(computed.bundle)).toBe('conflict');
         expect(JSON.stringify(computed)).toBe(beforeCommit);
         const stored = await store.readSentMessage(message.id.msgId);
         expect(JSON.stringify(stored?.msg)).toBe(JSON.stringify(message));
@@ -99,11 +107,13 @@ describe('outbound dispatch value ownership', () => {
     });
 
     it.each(['enqueue', 'dequeue'] as const)('retains the observed outbox entry instead of rebuilding it during %s', async (intent) => {
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const message = createOutboundMessage('observed-outbox');
         const observedOutboxEntry = freezeValues(QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'));
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             admissionStore: store,
+            workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             toOutboxEntry: () => {
                 throw new Error('Captured entries must not be rebuilt');
             },
@@ -117,6 +127,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({ msg: message, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
+            origin: intent === 'enqueue' ? 'send' : 'drain',
             options: { observedOutboxEntry }
         });
         expect(result.committed).toBe(true);
@@ -130,7 +141,8 @@ describe('outbound dispatch value ownership', () => {
     });
 
     it('uses the fresh repair count to stop an exhausted repair without creating work', async () => {
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const message = createOutboundMessage('exhausted-repair');
         const observed = await store.readOutgoingMessage({
             msg: message,

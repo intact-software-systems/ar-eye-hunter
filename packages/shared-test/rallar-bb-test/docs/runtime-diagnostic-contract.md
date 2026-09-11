@@ -88,6 +88,26 @@ diagnostics while the runtime is active:
 This bridge is intentionally scoped to known WS/RTC warning patterns so the
 runtime does not turn arbitrary console output into test evidence.
 
+## RTC Lifecycle Diagnostics
+
+`rallar.browser.rtc.lifecycle` carries one RTC lifecycle event per emission. Its
+`kind` is `snapshot`, `connected`, `disconnected`, `peer-created`,
+`peer-established`, `peer-deleted`, `peer-timeout`, `lane-open`, `lane-close`,
+`lane-error`, or `signaling-failed`.
+
+`signaling-failed` is the only kind that carries `signaling`, the handshake
+signal this browser could not hand to the transport:
+
+- `peerId` and `signalKind` (`offer`, `answer` or `candidate`) name the hop
+- `admission` is the transport's verdict: `{ "outcome": "rejected", "status",
+  "messageId" }` for a signal admission refused, or
+  `{ "outcome": "never-admitted" }` when the hop failed before admission saw it
+- `reason` is the failure text the hop carried
+
+A lost offer strands its peer in `have-local-offer`, where
+`onnegotiationneeded` cannot fire again, so this event is the evidence that a
+handshake stopped rather than timed out.
+
 ## Formation Diagnostics
 
 A connection that resolves a room ref installs the room formation stream beside
@@ -106,6 +126,147 @@ bare room id resolves no ref and installs nothing.
 The summary is a projection, not a pass-through. It drops the peers array, the
 lane id, the reason and the read-time clock the room status carries, so a pin
 never asserts on a value that changes with every read.
+
+## Outbound Admission Diagnostics
+
+`rallar.browser.alm.outbound_diagnostics` carries one AL outbound runtime
+diagnostics event per emission, recorded the moment the outbound runtime calls
+the sink — independent of any connection, so it observes admission work for
+every session the page opens. The event's `data` is the event itself:
+
+- `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
+  `commit-phases`, `effect-drain`, or `readiness-probe`
+- `durationMs`: how long that phase took, on every kind but `commit-phases`
+- `origin`: which call path asked for the commit — `send` for a caller's own
+  `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
+  dequeue commits, `repair` for retransmission. It is on all four
+  commit-scoped kinds, so a hold is charged to the work behind it rather than
+  guessed at from a duration
+- the phase's own identity fields: `senderId`, `queued` and
+  `queuedBehindOrigin` for `sender-queue-wait`; `senderId`, `lockName` and
+  `available` for the two `browser-lock-*` phases; `workerId`,
+  `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
+  for `effect-drain`
+- `queuedBehindOrigin` is the origin of the commit already at the end of that
+  sender's queue, or `none` when the queue was empty. A drain's own commits
+  re-enter the same per-sender queue, so this says when a send's wait is the
+  batch it caused rather than another send
+- `commit-phases` also carries `msgId` and `typeId`, so one message -- an RTC
+  offer, say -- can be followed from the commit that admitted it to the drain
+  that sent it, and a lane's commits can be counted apart from the rest
+- `commit-phases` splits what `browser-lock-hold` measures as one number:
+  `readDurationMs` and `readOperationCount` for the admission read chain
+  (`readOutgoingMessage` plus the pending-admission probe, and the
+  admission-store round trips observed while they ran), then
+  `commitDurationMs` and `commitOutcome` for the write transaction —
+  `committed`, `conflict`, `expired`, or `not-attempted` when the admission
+  settled before opening one
+- `readOperationCount` counts read **operations**, not transactions: several
+  keys read from one storage transaction are several operations. It is also an
+  upper bound rather than an exact per-call count, because the commit samples a
+  store-level counter before and after its own chain and reports the window
+  delta — a concurrent commit on the same store (another sender, or the same
+  sender's drain) lands in that window and is counted too
+
+- `readiness-probe` carries `workerId`, `cause` and `readyAtMs`: one event for
+  every storage read an owner spends deciding whether it has work, which is the
+  read the page's `work-page` and `work-reserve` counters charge. `cause` is why
+  the owner had no remembered answer to give -- `own-commit`, `batch` and
+  `retained-release` are this owner's own progress, `external-wake` is the
+  announcement another writer made to every owner on the engine, `age-bound` is
+  the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and `no-memory` is an owner
+  that has not probed yet. `readyAtMs` is the answer: an epoch-ms time work is
+  next due, or `none` for no work at all. A probe is not a batch, so it is
+  outside the empty-batch suppression the drains carry; the inbound rotation
+  reports none, because its probe reads storage every engine round by
+  construction and the count would drown the sink
+
+Together they separate a page that reads storage more often because it is less
+blocked from one that reads it more often because more wakes reach more owners:
+the same probe count is benign under `own-commit` and a fan-out regression under
+`external-wake`.
+
+This is the evidence a `deadline-expiry` conformance run uses to attribute a
+slow admission (the serialized IndexedDB chain a typed send commits through)
+to a phase instead of a single opaque send latency.
+
+## Inbound Admission Diagnostics
+
+`rallar.browser.alm.inbound_diagnostics` carries one AL inbound runtime
+diagnostics event per emission, recorded the moment the inbound runtime calls
+the sink — the receiving half of the outbound topic above, and, like it,
+independent of any connection. The event's `data` is the event itself:
+
+- `kind`: `admission-outcome` or `effect-drain`
+- `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
+  to, on both kinds. One page runs a WS inbound owner and an RTC inbound
+  owner, so this says which lane an event came from
+- `admission-outcome` carries `msgId`, `typeId`, `outcome` and `reason` for
+  every message that reached ingress with a decodable identity — one event per
+  `admitIncomingMessage` call. A value that never decoded has no identity to
+  report and emits nothing
+- `outcome` is where the message stopped: `committed` (admitted, or a control
+  the runtime handled — the only ending that leaves durable work behind),
+  `pending` (held for an asynchronous authority recheck), `unauthorized`
+  (ingress authority or the plan refused it), `rejected` (decode, validation,
+  expiry, or a plan drop that is not an authority refusal), or `not-handled`
+  (duplicate, resync-required, disposed, or an unhandled control)
+- `reason` is the plan's drop reason, the rejection's code, or the acceptance
+  kind that carries neither. A drop the RTC room-snapshot admission decided
+  carries the drop code at the head of that reason and the denial that fired
+  after it -- `not-yet-in-sync: Awaiting the required room snapshot version`,
+  and likewise for the missing observation, the missing session, the missing
+  member and the missing server relay authority -- so an RTC delivery lost at
+  ingress names which of the five room-authority branches held it
+- `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
+  `rescheduledCount` and `rejectedCount` for each inbound work batch that
+  touched work, the same five fields the outbound topic reports for its own
+  drains. A batch that claimed and rejected nothing reports nothing: the
+  inbound rotation runs one every engine round, and recording its resting state
+  costs the page hundreds of events per session that say only what the probe
+  already decided — enough, measured, to move the very races this sink exists
+  to explain
+
+- `rotation-alive` carries `workerId`, `emptyRoundCount` and `durationMs`: one
+  event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds that claimed and
+  rejected nothing, with the wall time those rounds spanned. It is the liveness
+  witness the suppression above costs: without it a rotation that keeps finding
+  nothing and a rotation that stopped running both report nothing at all. An
+  owner whose queue is empty scans nothing and reports none
+
+The three kinds together discriminate a delivery that never arrives. An
+`unauthorized` outcome is the drop that otherwise leaves no trace at all: it
+writes nothing, sends no NACK and returns no error. A `committed` outcome that
+no `effect-drain` ever follows is the other shape — the row exists and no
+consumer is registered for its `typeId`, so the rotation never selects it, and
+the `rotation-alive` events beside it are what say the rotation was running
+while that happened.
+
+## Storage Reset Diagnostics
+
+`rallar.browser.alm.storage_reset` carries an `ALStorageResetEvent` recorded
+the moment `openIndexedDbAdmissionDatabase` deletes and reopens a database
+whose stores or schema identity no longer match. This is not one event per
+delete-and-recreate cutover: every opener racing the same mismatched database
+detects it independently and emits its own event, so a single cutover can
+leave behind N events, one per concurrent opener. The event's `data` is the
+event itself:
+
+- `dbName`: the IndexedDB database that was reset
+- `previousSchemaId`: the schema id read back before the reset, or `undefined`
+  either when the store set itself did not match (so no schema id could be
+  read) or when the stores matched but the database carried no schema record
+  at all (an undecodable or absent schema row is treated as a mismatch, not a
+  hard failure)
+- `schemaId`: the current `AL_ADMISSION_SCHEMA_ID` the database now carries
+- `reason`: `schema-id-mismatch` when the stores matched but the stored
+  schema id was missing, undecodable, or differed, or `store-schema-mismatch`
+  when the store set, key path, auto-increment, or index set did not match
+
+This is the evidence an incompatible browser cutover (new indexes, new key
+layouts, new stored fields) leaves behind: it confirms the old database was
+discarded rather than left mismatched underneath a client that assumes the
+current shape.
 
 ## Compatibility
 

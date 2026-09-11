@@ -20,19 +20,24 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import {
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_WORK_STORE_NAME,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { waitForSettledOutboundWork } from '../wait-for-al-outbound-work.ts';
 import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
-    createFlakyOutboundAdmissionStore,
-    createOutboundMessage
+    createOutboundMessage,
+    holdOutboundClaims
 } from './outbound-runtime-test-fixture.ts';
 
 describe('canonical outbound payload storage', () => {
@@ -44,6 +49,8 @@ describe('canonical outbound payload storage', () => {
         vi.setSystemTime(1_000);
         const dbName = `canonical-cleanup-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -51,13 +58,16 @@ describe('canonical outbound payload storage', () => {
             observer: createPassThroughIndexedDbOperationObserver()
         });
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'canonical-cleanup',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'canonical-cleanup',
             backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
@@ -68,6 +78,8 @@ describe('canonical outbound payload storage', () => {
             throw new Error('Expected canonical admission');
         }
         const restarted = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -75,13 +87,16 @@ describe('canonical outbound payload storage', () => {
             observer: createPassThroughIndexedDbOperationObserver()
         });
         const otherStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'another-session:rtc',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'another-session:rtc',
             backend: restarted,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         const otherRuntime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: otherStore },
+            stores: { admissionStore: otherStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
@@ -104,6 +119,8 @@ describe('canonical outbound payload storage', () => {
         expect((await store.readSentMessage(message.id.msgId))?.msg).toEqual(message);
         vi.setSystemTime(2_000);
         const expiryQueue = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
@@ -122,6 +139,8 @@ describe('canonical outbound payload storage', () => {
         const backend = storage === 'memory'
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
             : new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: `canonical-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: Date.now,
@@ -129,6 +148,9 @@ describe('canonical outbound payload storage', () => {
                 observer: createPassThroughIndexedDbOperationObserver()
             });
         const admissionStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'canonical-test',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'canonical-test',
             backend,
             supersedenceTrackTtlMs: 60_000,
@@ -139,7 +161,7 @@ describe('canonical outbound payload storage', () => {
         const message = { ...original, payload: { ...original.payload, resource: JSON.stringify({ marker }) } };
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
-            stores: { admissionStore },
+            stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({
                 msg,
                 persist: true,
@@ -163,16 +185,20 @@ describe('canonical outbound payload storage', () => {
             vi.useRealTimers();
         });
         vi.setSystemTime(1_000);
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'expired-admission',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'expired-admission',
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
         let selectedDeadline = 1_010;
         const sends: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
                 persist: false,
@@ -185,6 +211,7 @@ describe('canonical outbound payload storage', () => {
         });
         const original = createOutboundMessage('shorter-admission', { ttlMs: 1_000 });
         const first = await runtime.enqueueIfAbsent(original);
+        await waitForSettledOutboundWork(backend.workQueue, store.namespace);
         expect(first.status).toBe('accepted');
         expect(first.message.constraints?.expiresAtMs).toBe(1_010);
         vi.setSystemTime(1_010);
@@ -192,7 +219,7 @@ describe('canonical outbound payload storage', () => {
         const duplicate = await runtime.enqueueIfAbsent(original);
         expect(duplicate.status).toBe('expired');
         expect(sends).toEqual(['sent']);
-        expect(await store.workQueue.getItem(first.entry!.key)).toBeUndefined();
+        expect(await backend.workQueue.getItem(first.entry!.key)).toBeUndefined();
     });
 
     it.each([
@@ -210,22 +237,32 @@ describe('canonical outbound payload storage', () => {
         vi.setSystemTime(1_000);
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'cross-deadline',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'cross-deadline',
             backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: createFlakyOutboundAdmissionStore(store, { claimReadyEffects: async () => [] }) },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
-            sendPreparedMessage: async () => {
-                throw new Error('Expired work must never send');
-            }
-        });
+        const stores = { admissionStore: store, workQueue: backend.workQueue };
+        const createRuntime = () =>
+            createDefaultOutboundTestRuntime({
+                stores,
+                planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+                sendPreparedMessage: async () => {
+                    throw new Error('Expired work must never send');
+                }
+            });
+        // The admitting runtime commits its work but never drains it, so the crossing read below is
+        // the first one the deadline can catch.
+        const claims = holdOutboundClaims(stores);
+        const runtime = createRuntime();
         const message = createOutboundMessage('crossing-deadline', { ttlMs: 10 });
         const candidate = operation === 'commit' ? await computeOutboundTestAdmission(store, message) : undefined;
         const admission = await runtime.enqueueIfAbsent(message);
         runtime.dispose();
+        await claims.release();
         const crossedKey = crossedAt === 'payload' ? admission.entry!.key : toALOutboundIdentityKey(admission.entry!.key);
         const getItem = backend.workQueue.getItem.bind(backend.workQueue);
         vi.spyOn(backend.workQueue, 'getItem').mockImplementation(async (key) => {
@@ -238,11 +275,12 @@ describe('canonical outbound payload storage', () => {
             expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         }
         else if (operation === 'commit') {
-            expect(await store.commitBundle(candidate!, decodeOutboundTestPayload)).toBe('expired');
+            expect(await store.commitBundle(candidate!)).toBe('expired');
         }
         else {
             const release = vi.spyOn(backend.workQueue, 'releaseEntries');
-            expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+            const draining = createRuntime();
+            await draining.ready();
             expect(release).toHaveBeenCalledWith(expect.any(Array), { status: EntityStatus.COMPLETED, delayMs: null });
         }
     });
@@ -250,6 +288,9 @@ describe('canonical outbound payload storage', () => {
     it('rejects concurrent different senders reusing the globally addressed message id', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'sender-collision',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'sender-collision',
             backend,
             supersedenceTrackTtlMs: 60_000,
@@ -259,8 +300,8 @@ describe('canonical outbound payload storage', () => {
         const second = { ...first, id: { ...first.id, senderId: 'different-sender' } };
         const firstAdmission = await computeOutboundTestAdmission(store, first);
         const secondAdmission = await computeOutboundTestAdmission(store, second);
-        expect(await store.commitBundle(firstAdmission, decodeOutboundTestPayload)).toBe('committed');
-        await expect(store.commitBundle(secondAdmission, decodeOutboundTestPayload)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await store.commitBundle(firstAdmission)).toBe('committed');
+        await expect(store.commitBundle(secondAdmission)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await store.readSentMessage(first.id.msgId))?.msg.id.senderId).toBe(first.id.senderId);
         expect(await backend.read(`sender-collision:msg-owner:${first.id.msgId}`, (value) => value)).toBe(first.id.senderId);
         expect(await backend.workQueue.getItem(secondAdmission.canonicalEntry!.key)).toBeUndefined();
@@ -269,6 +310,8 @@ describe('canonical outbound payload storage', () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const canonicalScope = 'local/session/' + 'scope-'.repeat(100);
         const admissionStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'long-identity',
             canonicalScope,
             backend,
@@ -283,7 +326,7 @@ describe('canonical outbound payload storage', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
-            stores: { admissionStore },
+            stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -291,6 +334,7 @@ describe('canonical outbound payload storage', () => {
             }
         });
         const admitted = await runtime.enqueueIfAbsent(message);
+        await waitForSettledOutboundWork(backend.workQueue, admissionStore.namespace);
         const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
         const identity = rows.find((row) => row?.typeId === 'AL_OUTBOUND_IDENTITY');
         expect(identity).toBeDefined();
@@ -336,6 +380,8 @@ describe('canonical outbound payload storage', () => {
         const message = createOutboundMessage('cross-carrier');
         const makeRuntime = (namespace: string, canonicalScope: string) => {
             const admissionStore = createALOutboundAdmissionStore({
+                nowMs: Date.now,
+                decodePrepared: decodeOutboundTestPayload,
                 namespace,
                 canonicalScope,
                 backend,
@@ -344,7 +390,7 @@ describe('canonical outbound payload storage', () => {
             });
             const runtime = createDefaultOutboundTestRuntime({
                 queueEngine: new InboxOutboxEngine(),
-                stores: { admissionStore },
+                stores: { admissionStore, workQueue: backend.workQueue },
                 planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: namespace }] }),
                 sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
             });
@@ -374,7 +420,12 @@ async function readStoredRows(backend: ALAdmissionWorkBackend): Promise<readonly
 }
 
 async function readRawCanonicalWorkKeys(dbName: string): Promise<readonly string[]> {
-    const db = await openIndexedDbAdmissionDatabase(dbName, 'entries');
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName: dbName,
+        storeName: 'entries',
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     try {
         const transaction = db.transaction(AL_ADMISSION_WORK_STORE_NAME, 'readonly');
         const keys = await readIndexedDbTransaction(

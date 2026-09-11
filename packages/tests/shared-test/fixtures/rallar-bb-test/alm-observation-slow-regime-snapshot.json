@@ -1,0 +1,417 @@
+{
+  "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+  "createdAtEpochMs": 1789096609558,
+  "updatedAtEpochMs": 1789096749716,
+  "results": [
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "commandId": "reset-control-1",
+      "ok": true,
+      "result": {
+        "commandId": "reset-control-1",
+        "kind": "reset",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 267
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "commandId": "configure-control-1",
+      "ok": true,
+      "result": {
+        "commandId": "configure-control-1",
+        "kind": "configure",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 28
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "commandId": "alm-rtc-bounded-rejection-receiver-run",
+      "ok": false,
+      "error": {
+        "code": "RALLAR_BLACK_BOX_RECIPE_FAILED",
+        "message": "Recipe failed at command alm-rtc-bounded-rejection-receiver-connect.",
+        "details": {
+          "code": "RALLAR_BB_RTC_READY_TIMEOUT"
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "commandId": "alm-rtc-bounded-rejection-sender-run",
+      "ok": false,
+      "error": {
+        "code": "RALLAR_BLACK_BOX_RECIPE_FAILED",
+        "message": "Recipe failed at command alm-rtc-bounded-rejection-sender-connect.",
+        "details": {
+          "code": "RALLAR_BB_RTC_READY_TIMEOUT"
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "commandId": "alm-rtc-deadline-expiry-receiver-run",
+      "ok": false,
+      "error": {
+        "code": "RALLAR_BLACK_BOX_RECIPE_FAILED",
+        "message": "Recipe failed at command alm-rtc-deadline-expiry-receiver-connect.",
+        "details": {
+          "code": "RALLAR_BB_RTC_READY_TIMEOUT"
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "commandId": "alm-rtc-deadline-expiry-sender-run",
+      "ok": false,
+      "error": {
+        "code": "RALLAR_BLACK_BOX_RECIPE_FAILED",
+        "message": "Recipe failed at command alm-rtc-deadline-expiry-sender-connect.",
+        "details": {
+          "code": "RALLAR_BB_RTC_READY_TIMEOUT"
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "commandId": "alm-rtc-delivery-baseline-receiver-run",
+      "ok": false,
+      "error": {
+        "code": "RALLAR_BLACK_BOX_RECIPE_FAILED",
+        "message": "Recipe failed at command alm-rtc-delivery-baseline-receiver-connect.",
+        "details": {
+          "code": "RALLAR_BB_RTC_READY_TIMEOUT"
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789096607797-ec084e03-cd8e-4134-9f",
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "commandId": "alm-rtc-delivery-baseline-sender-run",
+      "ok": false,
+      "error": {
+        "code": "RALLAR_BLACK_BOX_RECIPE_FAILED",
+        "message": "Recipe failed at command alm-rtc-delivery-baseline-sender-connect.",
+        "details": {
+          "code": "RALLAR_BB_RTC_READY_TIMEOUT"
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "kind": "event",
+      "atEpochMs": 1789096609472,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-3",
+      "payload": {
+        "topic": "rallar.bb.command.result",
+        "payload": {
+          "data": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096612380,
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "eventId": "event-20",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "snapshot",
+            "atEpochMs": 1789096612380,
+            "status": {
+              "sessionId": "session-fdhLjp3ROMaZM4094_EqKXIj",
+              "knownPeerIds": [],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096615797,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-20",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "snapshot",
+            "atEpochMs": 1789096615796,
+            "status": {
+              "sessionId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+              "knownPeerIds": [],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096618502,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-44",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "peer-created",
+            "atEpochMs": 1789096618499,
+            "status": {
+              "sessionId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+              "knownPeerIds": [
+                "session-fdhLjp3ROMaZM4094_EqKXIj"
+              ],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096620612,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-56",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+            "msgId": "3f87e8c3-d83d-4cab-ab3b-f62e68a624a4",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 324,
+            "readOperationCount": 9,
+            "commitDurationMs": 655,
+            "commitOutcome": "conflict"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096620953,
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "eventId": "event-67",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-fdhLjp3ROMaZM4094_EqKXIj",
+            "msgId": "27b21587-45ad-4d8e-a651-17543da0c8ec:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 223,
+            "readOperationCount": 9,
+            "commitDurationMs": 8,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096621501,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-60",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+            "msgId": "78eba750-3736-4ff0-8a57-e9ad492a845e",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 280,
+            "readOperationCount": 9,
+            "commitDurationMs": 15,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096622252,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-64",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+            "msgId": "3f87e8c3-d83d-4cab-ab3b-f62e68a624a4",
+            "typeId": "rtc-signaling",
+            "origin": "drain",
+            "readDurationMs": 145,
+            "readOperationCount": 9,
+            "commitDurationMs": 15,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096626450,
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "eventId": "event-81",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-fdhLjp3ROMaZM4094_EqKXIj",
+            "msgId": "490b185b-cc68-4e19-81da-394e48f9509a:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 457,
+            "readOperationCount": 9,
+            "commitDurationMs": 787,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096627022,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-76",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+            "msgId": "3099e92e-8818-4a68-b583-712c30f31c66:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 509,
+            "readOperationCount": 9,
+            "commitDurationMs": 423,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096628461,
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "eventId": "event-86",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-fdhLjp3ROMaZM4094_EqKXIj",
+            "msgId": "cdfa900c-7a19-4da3-bd44-88f654214ddb:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 386,
+            "readOperationCount": 9,
+            "commitDurationMs": 715,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096628530,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-81",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+            "msgId": "f8ed574d-118c-42d7-825b-17c96efe7d3b:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 170,
+            "readOperationCount": 9,
+            "commitDurationMs": 482,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096630676,
+      "agentId": "alm-sender-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096607798-d454dac5-5cc8-40f7-aa1b-c695cd4d0c0f",
+      "eventId": "event-88",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-jb-m4rPdSss2NYRn7HpXys0u",
+            "msgId": "3099e92e-8818-4a68-b583-712c30f31c66:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 614,
+            "readOperationCount": 9,
+            "commitDurationMs": 567,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789096634834,
+      "agentId": "alm-receiver-chromium-w1-alm-conformance-lane-baseline-family-ove-1789096609624-f5be92ef-a888-48eb-988a-53e1b76e9966",
+      "eventId": "event-102",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "peer-created",
+            "atEpochMs": 1789096634829,
+            "status": {
+              "sessionId": "session-fdhLjp3ROMaZM4094_EqKXIj",
+              "knownPeerIds": [
+                "session-jb-m4rPdSss2NYRn7HpXys0u"
+              ],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    }
+  ]
+}

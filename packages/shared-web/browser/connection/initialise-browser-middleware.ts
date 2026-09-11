@@ -1,8 +1,4 @@
-import {
-    newALRoute,
-    newALUntargetedMessage
-} from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -11,8 +7,8 @@ import type {
     RttMeasurementInfo
 } from '@shared/api/api-config.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -73,7 +69,6 @@ export interface MiddlewareInitOptions {
     readonly bootstrapDegree?: number;
     readonly scope?: StateScope;
     readonly onAuthInvalid?: (error: Error) => void | Promise<void>;
-    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }
 
 export interface ToCreateWsUrlInput {
@@ -124,8 +119,7 @@ export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
 ): void {
-    const peerIsInCurrentLayout = (peerId: string): boolean =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId);
+    const peerIsInCurrentLayout = (peerId: string): boolean => webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId);
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
         peerIsInCurrentLayout(peerId)
             ? { decision: 'allow' }
@@ -216,7 +210,7 @@ function initialiseBrowserRuntimeStores(
 ): void {
     initialiseBrowserCacheRepositories();
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    initBrowserALRuntimeExpiryEviction().catch((error) =>
+    initBrowserALRuntimeExpiryEviction({ onStorageReset: diagnosticsPorts.onStorageReset }).catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
 }
@@ -238,7 +232,8 @@ async function initialiseBrowserWebSocketTransport(
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
         newConnectionRequestId: () => crypto.randomUUID(),
-        outboundDiagnostics: input.options.outboundDiagnostics
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
     }).catch((caught) => {
         const error = toError(caught);
         console.error('Failed to connect WebSocket client:', error);
@@ -286,7 +281,7 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcConnectionService,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            outboundDiagnostics: input.options.outboundDiagnostics
+            outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
         }
     );
     const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
@@ -294,7 +289,8 @@ async function initialiseBrowserRtcTransport(
             webRtcOverlayMulticastManager,
             qboxEngine: input.webSocketTransport.qboxEngine,
             clientData: input.clientData,
-            roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input)
+            roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
+            inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
         }
     );
     registerBrowserRttEgress(input, rtcRxStreamer);
@@ -320,18 +316,19 @@ function createBrowserRtcGroupSnapshotRefresh(
             assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
             const scope = toStateScope(roomRef);
             const { snapshot } = await new Command(
-                async (commandSignal) => await readStateGroupSnapshot(
-                    roomRef.groupId,
-                    scope,
-                    {
-                        authSession: input.session,
-                        signal: commandSignal,
-                        minCausalRevision: {
-                            groupRevision: minSnapshotVersion,
-                            presenceRevision: 0
+                async (commandSignal) =>
+                    await readStateGroupSnapshot(
+                        roomRef.groupId,
+                        scope,
+                        {
+                            authSession: input.session,
+                            signal: commandSignal,
+                            minCausalRevision: {
+                                groupRevision: minSnapshotVersion,
+                                presenceRevision: 0
+                            }
                         }
-                    }
-                ),
+                    ),
                 { signal, timeoutMs: input.options.timeoutMs }
             ).run();
             assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
@@ -339,17 +336,17 @@ function createBrowserRtcGroupSnapshotRefresh(
                 snapshot,
                 scope,
                 {
-                    assertCanMutate: () =>
-                        assertRtcGroupSnapshotRefreshIsCurrent(input, signal),
+                    assertCanMutate: () => assertRtcGroupSnapshotRefreshIsCurrent(input, signal),
                     rereadGroupSnapshots: async (refreshScope) => {
                         const groups = await new Command(
-                            async (commandSignal) => await listStateGroups(
-                                refreshScope,
-                                {
-                                    authSession: input.session,
-                                    signal: commandSignal
-                                }
-                            ),
+                            async (commandSignal) =>
+                                await listStateGroups(
+                                    refreshScope,
+                                    {
+                                        authSession: input.session,
+                                        signal: commandSignal
+                                    }
+                                ),
                             { signal, timeoutMs: input.options.timeoutMs }
                         ).run();
                         assertRtcGroupSnapshotRefreshIsCurrent(input, signal);

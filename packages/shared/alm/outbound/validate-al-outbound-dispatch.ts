@@ -8,7 +8,7 @@ import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
-import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './al-outbound-admission-store.ts';
+import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 /** Checks the candidate against its captured read; never repairs or rewrites it. */
@@ -48,7 +48,7 @@ export function validateALOutboundDispatch<TPrepared>(
 
 export function validateALOutboundPlannedMessage(
     original: ALMessage,
-    planned: unknown
+    planned: ALMessage
 ): readonly ALMessageRejection[] {
     const decoded = decodeALMessageValue(planned);
     if (decoded.left) {
@@ -87,6 +87,8 @@ function validateDispatchEffects<TPrepared>(
         const messageMatches = (payload.kind === 'send-prepared' || payload.kind === 'admit-message')
             ? payload.message.msgId === msg.id.msgId && payload.message.senderId === msg.id.senderId &&
                 payload.message.expiresAtMs === resolveALMessageExpireAtMs(msg)
+            : (payload.kind === 'admit-control' || payload.kind === 'dequeue-message')
+            ? false
             : payload.msgId === msg.id.msgId;
         if (
             (payload.kind === 'send-prepared' || payload.kind === 'admit-message') &&

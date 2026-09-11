@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -16,6 +15,9 @@ import {
     ConnectionContext,
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
+import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it.each([
@@ -96,7 +98,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -149,7 +151,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -240,7 +242,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             { groupRef: groupRef('room-1') }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('no-route');
         expect(result.entries).toEqual([]);
@@ -281,7 +283,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await enqueueOutboxAndDrain(service, msg);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-2']);
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
@@ -321,7 +323,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await enqueueOutboxAndDrain(service, msg);
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;
@@ -346,7 +348,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await expect(service.enqueueOutboxIfAbsent(invalidRoomMessage))
+        await expect(enqueueOutboxAndDrain(service, invalidRoomMessage))
             .rejects.toThrow(/room broadcast group ref/i);
         expect(await outbox.getAllKeys()).toEqual(keysBeforeInvalidMessage);
         expect(await outbox.getItem(invalidRoomMessage.route)).toBeUndefined();
@@ -377,7 +379,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('no-route');
         expect(result.reason).toContain('without explicit targets');
@@ -388,11 +390,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('drops unresolved queued outbound messages', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
+        const engine = new shared.InboxOutboxEngine();
         const service = shared.createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: socket,
             name: 'server-1',
-            targetResolver: createTargetResolver()
+            targetResolver: createTargetResolver(),
+            queueEngine: engine
         });
         onTestFinished(() => service.dispose());
 
@@ -425,10 +429,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             )
         );
 
-        await service.dequeueOutbox(
-            shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await drainEngine(engine);
 
         expect(socket.sent).toHaveLength(0);
     });
@@ -467,11 +468,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
-        await service.dequeueOutbox(
-            shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await enqueueOutboxAndDrain(service, msg);
+        await settleCommittedOutboundBatch();
         await socket.receive(
             shared.newALRepairControlMessage(
                 { v: 2, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
@@ -767,6 +765,7 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
             throw new TypeError(`Unknown test connection: ${connectionId}`);
         }
         await socket.receive(message);
+        await waitForALInboundWork();
     }
 }
 
@@ -872,17 +871,12 @@ function groupRef(groupId: string) {
     };
 }
 
-function createResourceInboxResilience() {
-    return shared.ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
-            10,
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 })
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
+async function enqueueOutboxAndDrain(
+    service: shared.WsQueueBoxServerService,
+    msg: shared.ALMessage
+): Promise<shared.ALOutboundEnqueueResult> {
+    const result = await service.enqueueOutboxIfAbsent(msg);
+    await settleCommittedOutboundBatch();
+    return result;
 }

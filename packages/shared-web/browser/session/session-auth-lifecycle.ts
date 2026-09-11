@@ -6,6 +6,10 @@ import type {
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
@@ -90,7 +94,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             sessionId: session.sessionId,
             scope,
             operationOptions,
-            diagnosticsPorts: this.input.connectionRuntime.readDefaults()?.diagnosticsPorts,
+            diagnosticsPorts: this.readDiagnosticsPorts(),
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
             isSessionCurrent: () => readSession()?.sessionId === session.sessionId,
             onAuthInvalid: async (error) => await this.handleAuthInvalidError(error)
@@ -265,7 +269,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             ? await captureError(() => revokeAuthSession(session, this.input.newRequestId(), options.operationOptions))
             : undefined;
         const dataCleanupError = session
-            ? await this.cleanupEndedSession(session)
+            ? await this.cleanupEndedSession(session, this.readDiagnosticsPorts())
             : undefined;
         // Listeners learn the session ended only from emitAuthState, so a failing
         // state emit must not stand between them and that notification.
@@ -278,10 +282,20 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
     }
 
-    private async cleanupEndedSession(session: AuthSession): Promise<Error | undefined> {
+    /** Resolved where it is used, so a session that ends without a connect() still reports a reset. */
+    private readDiagnosticsPorts(): RallarDiagnosticsPorts {
+        return toRallarDiagnosticsPorts(this.input.connectionRuntime.readDefaults()?.diagnosticsPorts);
+    }
+
+    private async cleanupEndedSession(
+        session: AuthSession,
+        diagnosticsPorts: RallarDiagnosticsPorts
+    ): Promise<Error | undefined> {
         const dataCleanupError = await captureError(() => this.input.closeDataScopes(session));
         try {
-            await deleteBrowserALRuntimeEntriesForSession(session.sessionId);
+            await deleteBrowserALRuntimeEntriesForSession(session.sessionId, {
+                onStorageReset: diagnosticsPorts.onStorageReset
+            });
         }
         catch {
             // Browser-local AL cleanup is best-effort.

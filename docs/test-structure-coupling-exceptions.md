@@ -1720,6 +1720,59 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-outbound-control-conflict-single-write",
+      "domain": "ALM outbound control admission conflict retention",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control admission that loses its conditional write spends one backend attempt and retains replayable admit-control work instead of retrying inside the owner. Executable assertion: \u201canswers pending-control for a backend conflict without an inner retry\u201d.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#answers pending-control for a backend conflict without an inner retry",
+      "coverageRelation": "The test drives the real control owner over an in-memory admission backend whose write raises the typed conflict, then decodes the work row the owner retained through its queue port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALAdmissionWorkBackend.write called by ALOutboundControlAdmission.admit",
+        "observableEffect": "Each write submits one conditional control-history commit to the authoritative admission backend.",
+        "requiredConstraint": "One admit call spends exactly one backend write; a lost conditional write becomes retained admit-control work rather than an inner retry.",
+        "failureRationale": "The pending-control answer and the retained row are produced identically by an owner that silently retried its write first, so only the count excludes a hidden inner retry that would re-apply an accepted control under a stale fence."
+      }
+    },
+    {
+      "id": "alm-outbound-control-write-free-no-batch",
+      "domain": "ALM outbound control admission work wake",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control message the outbound owner did not handle writes nothing, so it owes no work batch; a committed one does. Executable assertion: \u201cstarts a work batch only for a control admission that wrote\u201d.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#starts a work batch only for a control admission that wrote",
+      "coverageRelation": "The test drives the real outbound runtime over an engine it does not own, so the only claim the queue can see is the one the runtime's own post-commit wake started.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxResourceEntryRepository.reserveEntries called by the outbound work batch",
+        "observableEffect": "Every batch reserves rows, which spends the queue's reservation budget and each row's attempt.",
+        "requiredConstraint": "A not-handled or rejected control starts no batch; a committed control starts one.",
+        "failureRationale": "Both controls end with the same queue contents and the same admission result, so only the reservation call distinguishes the batch a write-free control must not start from the batch a commit owes."
+      }
+    },
+    {
+      "id": "alm-outbound-held-claim-quiescence",
+      "domain": "ALM outbound held-claim test fixture",
+      "owner": "Rallar shared maintainers",
+      "summary": "The held-claim fixture restores real queue reservations only once no owner batch is still asking for work, so a disposed runtime cannot strand rows in a reservation nobody releases. Executable assertion: \u201clets only one runtime claim the same committed send effect\u201d.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect",
+      "coverageRelation": "The named test holds every claim while a first runtime commits send work, disposes that runtime, releases the hold, and proves a second runtime claims and sends the row exactly once; the fixture wait is the precondition that the release never lands inside a batch."
+    },
+    {
+      "id": "alm-outbound-runtime-control-conflict-retention",
+      "domain": "ALM outbound runtime control admission recovery",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control message accepted through the runtime whose admission loses its conditional write spends one backend attempt and leaves replayable admit-control work for the outbound worker. Executable assertion: \u201cretains a control admission conflict as replayable work without an inner retry\u201d.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#retains a control admission conflict as replayable work without an inner retry",
+      "coverageRelation": "The test admits a real message through the outbound runtime, fails the next backend write with the typed conflict, and reads the pending-control answer together with the runtime's own retained work kinds.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALAdmissionWorkBackend.write reached through ALOutboundMessageRuntime.acceptControlMessage",
+        "observableEffect": "Each write submits one conditional control-history commit for the accepted control message.",
+        "requiredConstraint": "One acceptControlMessage call spends exactly one backend write; the conflict is handed to retained queue work rather than retried in place.",
+        "failureRationale": "A runtime that retried the write internally would still answer pending-control and still leave the retained row, so the state readback alone cannot exclude the duplicate commit attempt the one-attempt retry contract forbids."
+      }
+    },
+    {
       "id": "queuebox-mixed-outcome-adaptive-feedback",
       "domain": "QueueBox readiness and adaptive processing feedback",
       "owner": "Rallar shared maintainers",
@@ -1945,6 +1998,36 @@ moved or changed test.
       }
     },
     {
+      "id": "resource-inbox-reservation-bounded-indexed-read",
+      "domain": "IndexedDB queue box bounded reservation reads",
+      "owner": "Rallar shared maintainers",
+      "summary": "A per-type reservation read is a bounded index query, never a whole-store scan. Executable assertion: “reserveEntries for one type never returns another type and stays within the requested bound”.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound",
+      "coverageRelation": "The test reserves one type through the public reserveEntries API and inspects the IDBIndex.getAll calls that read produced; the spy is the only way to observe whether the read touched a bounded index range instead of the whole object store.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "IDBIndex.prototype.getAll",
+        "observableEffect": "Every getAll call the reservation read issues carries an explicit count no larger than the caller's maxToReserve.",
+        "requiredConstraint": "A reservation for one type must read through a bounded index range; it must never fall back to an unbounded whole-store scan.",
+        "failureRationale": "An unbounded or over-large getAll call defeats the purpose of the indexed rewrite: it would silently degrade back into the whole-store scan this task replaced, reintroducing the cost the index exists to avoid."
+      }
+    },
+    {
+      "id": "resource-inbox-terminal-sweep-page-budget",
+      "domain": "IndexedDB queue box terminal-sweep page budget",
+      "owner": "Rallar shared maintainers",
+      "summary": "One opportunistic cleanup run reads a fixed number of terminal-index pages, so a queue crowded with retained rows keeps the sweep bounded instead of paging forever. Executable assertion: \u201cbounds one cleanup run by its page budget\u201d.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget",
+      "coverageRelation": "The test seeds one row more than the run's page budget can reach, runs cleanupAsync through the public API, and counts the IDBIndex.getAll calls that run issued; the surviving row proves the run stopped early and the call count proves how much reading it did before stopping.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "IDBIndex.prototype.getAll",
+        "observableEffect": "One cleanup run issues at most one expiry read plus eight terminal-sweep page reads, whatever the store holds.",
+        "requiredConstraint": "Paging past retained rows must stay bounded per run: an opportunistic sweep may not read the whole terminal range in one pass.",
+        "failureRationale": "Without the page cap a store holding a large retained backlog would make every cleanup pass walk the entire terminal index, turning an opportunistic background sweep into an unbounded read on the browser's main storage path."
+      }
+    },
+    {
       "id": "rtc-group-refresh-skips-admitted-messages",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
@@ -1957,6 +2040,21 @@ moved or changed test.
         "observableEffect": "A successfully admitted RTC message produces no authoritative point read, cache adoption, or QueueBox wake.",
         "requiredConstraint": "Only a not-yet-in-sync admission result may request current group authority.",
         "failureRationale": "Refreshing after ordinary successful delivery would add an HTTP read and cache reconciliation to every room message and wake QueueBox without retained work to recover."
+      }
+    },
+    {
+      "id": "rtc-group-refresh-reads-the-code-not-the-detail",
+      "domain": "Browser RTC group authority recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "The recovery reads the drop code at the head of an inbound denial's reason, so a denial carrying another code requests nothing however its detail reads. Executable assertion: \u201cdoes not read authority after a denial the refresh cannot repair\u201d.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after a denial the refresh cannot repair",
+      "coverageRelation": "The test reports an unauthorized denial through the public recovery callback and observes the injected authoritative group-refresh port remain unused, beside the sibling test that reports a not-yet-in-sync denial whose reason names the branch after the code.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
+        "observableEffect": "A denial that is not not-yet-in-sync produces no authoritative point read, cache adoption, or QueueBox wake.",
+        "requiredConstraint": "Only the not-yet-in-sync code may request current group authority; the detail after it never widens that set.",
+        "failureRationale": "The reason is matched by its head rather than compared whole, so a match that is too loose would send every unauthorized RTC drop to the authority endpoint, and no returned value distinguishes that from the drop itself."
       }
     },
     {
@@ -1988,9 +2086,94 @@ moved or changed test.
         "requiredConstraint": "A settled failed refresh must not leave the scoped group permanently marked active.",
         "failureRationale": "A retained failed task would suppress every later QueueBox recovery attempt and strand messages behind stale room authority."
       }
+    },
+    {
+      "id": "rtc-signaling-failure-report-not-a-log",
+      "domain": "RTC peer signaling failure reporting",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A terminal signaling admission is reported to the session as a typed failure per lost hop instead of being written to the console and dropped. Executable assertion: “reports the hop a terminal signaling failure lost, instead of logging and dropping it”.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#reports the hop a terminal signaling failure lost, instead of logging and dropping it",
+      "coverageRelation": "The named test drives both outbound hops through a rejecting signaler and observes the failure callback the peer owns; the console absence is what separates a reported hop from the log-and-drop behaviour it replaced.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Console error port of the outbound signaling chain",
+        "observableEffect": "No console record for a hop that was reported through onSignalingFailed.",
+        "requiredConstraint": "An outbound hop lost to a terminal admission produces the typed failure and nothing on the console port.",
+        "failureRationale": "A console line beside the report would mean the outbound chain still swallows the hop into a log, which is precisely the behaviour the typed failure exists to replace, and no failure value distinguishes the two."
+      }
+    },
+    {
+      "id": "queuebox-pubsub-requeue-announces-external-write",
+      "domain": "QueueBox pub/sub outbox requeue",
+      "owner": "Rallar server maintainers",
+      "summary": "A row the bridge requeues after a failed remote delivery is announced to the engine as an external write, because the requeue runs outside every ALM runtime. Executable assertion: “announces a requeued row as an external write, because the requeue runs outside every runtime”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime",
+      "coverageRelation": "The named test drives a failed remote delivery through the bridge and observes both the requeued row in the outbox and the engine-wake port the bridge owns; the row state alone says nothing about whether an owner was told.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Engine external-write wake port supplied to the bridge",
+        "observableEffect": "One announcement for the one row the requeue put back in the queue.",
+        "requiredConstraint": "A requeue that replaced the row announces exactly once; one that wrote nothing announces not at all.",
+        "failureRationale": "Without the announcement the requeued row waits out the owner idle ceiling instead of being claimed, and a second announcement per row would make every owner on the engine drop its remembered readiness twice for one write."
+      }
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-8476c70422e7a937",
+      "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-control-write-free-no-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent reservation is the only witness that a write-free control started no batch; the queue contents and the admission result are identical either way.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#starts a work batch only for a control admission that wrote"
+    },
+    {
+      "id": "test-structure-coupling-715d3806644feb6a",
+      "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-control-write-free-no-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The paired positive count is what makes the preceding absence a statement about this control rather than about a runtime that never batches at all.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#starts a work batch only for a control admission that wrote"
+    },
+    {
+      "id": "test-structure-coupling-d58f46e97b581e00",
+      "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-control-conflict-single-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single write invocation is what forbids an inner optimistic retry; the pending-control answer and the retained work row both hold either way.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#answers pending-control for a backend conflict without an inner retry"
+    },
+    {
+      "id": "test-structure-coupling-3cf15c4dbe54dee4",
+      "path": "packages/tests/shared/al-outbound-durable-effects.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-runtime-control-conflict-retention",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "One backend write per accepted control is the property under test at the runtime boundary; the retained admit-control row is the recovery it hands off, not evidence that no second commit was attempted.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#retains a control admission conflict as replayable work without an inner retry"
+    },
+    {
+      "id": "test-structure-coupling-11102ca02776726f",
+      "path": "packages/tests/shared/alm/outbound-runtime-test-fixture.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-held-claim-quiescence",
+      "disposition": "temporary-ratchet",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The spied claim count is the polled condition of a bounded wait rather than a product property: it is the only observable of \u201cno batch is still asking for work\u201d available to a fixture that receives stores and not a runtime, and the assertion is that wait's budget, failing loudly instead of restoring real claims inside a batch.",
+      "removalCondition": "Remove once the outbound owner exposes batch quiescence to a fixture, so holdOutboundClaims awaits an owner-side idle signal instead of polling the queue spy's call count.",
+      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect"
+    },
     {
       "id": "test-structure-coupling-1c06d83399d28d75",
       "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
@@ -4522,6 +4705,39 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#sends the agent.reload result before reloading and persists the resume record"
     },
     {
+      "id": "test-structure-coupling-368712d4f142c268",
+      "path": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-reservation-bounded-indexed-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The call count and each call's bounded count argument are the only observable proof that reserveEntries reads through the bounded by-type-status-key index instead of falling back to a whole-store scan; the reserved-entry assertions above it prove correctness but not boundedness.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound"
+    },
+    {
+      "id": "test-structure-coupling-0d8fac5ef56252fe",
+      "path": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-reservation-bounded-indexed-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "Absence at the object-store read port is the only witness that no whole-store scan happened at all; the bounded index-call assertions beside it constrain the index reads but say nothing about a second, unindexed read alongside them.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound"
+    },
+    {
+      "id": "test-structure-coupling-493125af62d6381d",
+      "path": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-terminal-sweep-page-budget",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The surviving unretained row proves the run stopped before reaching it, but only the index-read count separates a run that stopped on its page budget from one that stopped for any other reason, such as a mis-sized page or an exhausted range.",
+      "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget"
+    },
+    {
       "id": "test-structure-coupling-8e9755e2fc1d5b45",
       "path": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -4531,6 +4747,17 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The absent refresh call proves successful message admission does not add an authoritative read and QueueBox wake to the normal RTC delivery path.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after successful admission"
+    },
+    {
+      "id": "test-structure-coupling-189d9f62c9fbd148",
+      "path": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-group-refresh-reads-the-code-not-the-detail",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The refresh returns nothing either way; the untouched authority port is the only witness that a denial carrying another code did not reach it.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after a denial the refresh cannot repair"
     },
     {
       "id": "test-structure-coupling-c7847aaa460d293a",
@@ -4553,6 +4780,28 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The two-call assertion proves the failed first refresh released its group slot and the next retained recovery report reached the authority port.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry"
+    },
+    {
+      "id": "test-structure-coupling-f5fc95d6dae01a59",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-signaling-failure-report-not-a-log",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The failure list alone cannot say the hop stopped being logged; only the untouched console port shows the report replaced the log rather than joining it.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#reports the hop a terminal signaling failure lost, instead of logging and dropping it"
+    },
+    {
+      "id": "test-structure-coupling-1ae3fa894e872390",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queuebox-pubsub-requeue-announces-external-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The requeued row is durable state either way; the wake count is the only witness that the owner which must claim it was actually told, and told once.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime"
     }
   ]
 }

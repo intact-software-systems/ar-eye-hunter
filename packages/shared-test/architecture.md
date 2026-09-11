@@ -105,6 +105,9 @@ Command/schema ownership is described in
 [schemas and capabilities](./rallar-bb-test/docs/schema-and-capabilities.md);
 observable event fields are defined by the
 [runtime diagnostic contract](./rallar-bb-test/docs/runtime-diagnostic-contract.md).
+The ALM conformance lane's own evidence — the per-cell runner regime and how to
+read a red against it — is described by the
+[ALM observation artifact](./rallar-bb-test/docs/alm-observation-artifact.md).
 These maps keep the independent command, control and analysis families directly
 locatable without moving unrelated owners merely to change a directory count.
 

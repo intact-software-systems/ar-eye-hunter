@@ -1,8 +1,9 @@
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import { decodeALOutboundSentMessage } from '@shared/alm/outbound/al-outbound-admission-validation.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { decodeALOutboundSentMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { computeALOutboundControlAdmission, type ALControlAdmissionRead } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 import { validateALOutboundControlAdmission } from '@shared/alm/outbound/validate-al-outbound-control-admission.ts';
 import {
@@ -21,13 +22,16 @@ describe('outbound control version candidate', () => {
     it('computes and validates the ready version from frozen observations', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'control-values',
+            decodePrepared: decodeOutboundTestPayload,
             backend,
             namespace: 'control-values',
             retention: normalizeALRuntimeStoreRetention(),
             supersedenceTrackTtlMs: 60_000
         });
         const message = createOutboundMessage('control-version');
-        await store.commitBundle(await computeOutboundTestAdmission(store, message), decodeOutboundTestPayload);
+        await store.commitBundle(await computeOutboundTestAdmission(store, message));
         const sent = await backend.read(`control-values:sent:${message.id.msgId}`, (value) => decodeALOutboundSentMessage(value, message.id.msgId));
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
@@ -61,9 +65,22 @@ describe('outbound control version candidate', () => {
     it('rejects a changed owner version before installing control history and accepts a fresh observation', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const namespace = 'control-version-test';
-        const store = createALOutboundAdmissionStore({ backend, namespace, retention: normalizeALRuntimeStoreRetention(), supersedenceTrackTtlMs: 60_000 });
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
+            backend,
+            namespace,
+            canonicalScope: namespace,
+            retention: normalizeALRuntimeStoreRetention(),
+            supersedenceTrackTtlMs: 60_000
+        });
+        const controlAdmission = createTestALOutboundControlAdmission({
+            admissionStore: store,
+            workQueue: backend.workQueue,
+            nowMs: Date.now
+        });
         const message = createOutboundMessage('control-version-race');
-        await store.commitBundle(await computeOutboundTestAdmission(store, message), decodeOutboundTestPayload);
+        await store.commitBundle(await computeOutboundTestAdmission(store, message));
         const control = newALNackControlMessage({ v: 2, msgId: 'nack-race', senderId: 'peer-1', ts: Date.now() }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
@@ -80,10 +97,11 @@ describe('outbound control version candidate', () => {
             injected = true;
             return await write(apply);
         });
-        await expect(store.acceptControlMessage(control, decodeOutboundTestPayload)).rejects.toThrow('version changed');
+        // The changed version is a conflict, so the admission retains replayable work instead of committing.
+        expect(await controlAdmission.admit(control)).toEqual({ kind: 'pending-control' });
         expect(injected).toBe(true);
         expect(await backend.read(`${namespace}:control:nacks:${message.id.msgId}`, (value) => value)).toBeUndefined();
-        await expect(store.acceptControlMessage(control, decodeOutboundTestPayload)).resolves.toEqual({ handled: true });
+        expect(await controlAdmission.admit(control)).toEqual({ kind: 'committed' });
         expect(await backend.read(`${namespace}:version:self`, (value) => value)).toEqual({ senderId: 'self', version: 3 });
     });
 });

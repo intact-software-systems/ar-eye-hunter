@@ -15,7 +15,7 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
 
-import type { ALOutboundVersionedClientRecord } from './outbound/al-outbound-admission-store.ts';
+import type { ALOutboundVersionedClientRecord } from './outbound/admission/al-outbound-admission-store.ts';
 
 export function decodeALAdmissionString(value: unknown): string {
     if (typeof value !== 'string' || value.length === 0) {

@@ -38,14 +38,18 @@ export function createRallarMiddlewareInfrastructure(
         targetResolver,
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
+        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
+        outboundDiagnostics: options.wsOutboundDiagnostics,
+        inboundDiagnostics: options.wsInboundDiagnostics,
         validateInboundMessage: validateMiddlewareALIngress,
         forwardsRoomScopedMessages: false
     });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
-            wsQBoxServerService
+            wsQBoxServerService,
+            wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
 
@@ -59,7 +63,7 @@ export function createRallarMiddlewareInfrastructure(
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
-        wakeQueueEngine: () => queueEngine.wake()
+        wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
 }
 

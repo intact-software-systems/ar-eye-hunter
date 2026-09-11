@@ -201,6 +201,9 @@ class BlackBoxRallarConnectionRuntime {
             laneIdOf: resolveBlackBoxRallarLaneId,
             scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf
         });
+        this.#installOutboundDiagnosticsRecorder();
+        this.#installInboundDiagnosticsRecorder();
+        this.#installStorageResetDiagnosticsRecorder();
         this.#lifecycle = createBlackBoxRallarLifecycleController<
             BlackBoxRallarConnectionConfig,
             LoginResponse | AuthSession,
@@ -299,6 +302,39 @@ class BlackBoxRallarConnectionRuntime {
         });
         return { crdt, director, formation, messaging };
     }
+    /**
+     * The AL outbound runtime is wired to `diagnostics.outboundDiagnostics.sink` on every connect
+     * (see `#configureRallarConnection`), well before this fires, but that sink only forwards to
+     * whatever recorder is attached — so this attaches the one and only recorder, once, here.
+     */
+    #installOutboundDiagnosticsRecorder = (): void => {
+        this.#rallar.diagnostics.outboundDiagnostics.setRecorder((event) => {
+            this.#runtimeDiagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { ...event }
+            });
+        });
+    };
+    /** The inbound runtime reports here; without it a delivery lost after admission leaves no trace. */
+    #installInboundDiagnosticsRecorder = (): void => {
+        this.#rallar.diagnostics.inboundDiagnostics.setRecorder((event) => {
+            this.#runtimeDiagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { ...event }
+            });
+        });
+    };
+    #installStorageResetDiagnosticsRecorder = (): void => {
+        this.#rallar.diagnostics.storageReset.setRecorder((event) => {
+            this.#runtimeDiagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.storage_reset',
+                data: { ...event }
+            });
+        });
+    };
     #configureRallarConnection = (
         config: BlackBoxRallarConnectionConfig
     ): Parameters<BlackBoxBrowserRallarRuntimeDependency['setDefaults']>[0] => {
@@ -312,7 +348,10 @@ class BlackBoxRallarConnectionRuntime {
                     ...defaults,
                     diagnosticsPorts: {
                         transportFaultPort: this.#rallar.diagnostics.faults,
-                        indexedDbOperationObserver: this.#rallar.diagnostics.storage
+                        indexedDbOperationObserver: this.#rallar.diagnostics.storage,
+                        outboundDiagnostics: this.#rallar.diagnostics.outboundDiagnostics.sink,
+                        inboundDiagnostics: this.#rallar.diagnostics.inboundDiagnostics.sink,
+                        onStorageReset: this.#rallar.diagnostics.storageReset.sink
                     }
                 }
         );

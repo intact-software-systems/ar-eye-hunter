@@ -10,7 +10,7 @@ import {
     type CreateAlmConformanceRecipesInput
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 
-const MINIMUM_DEADLINE_MS = 14_500;
+const MINIMUM_DEADLINE_MS = 17_000;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
 
 function conformanceInput(
@@ -30,9 +30,11 @@ function conformanceInput(
 describe('ALM conformance deadline expiry', () => {
     it('rejects a deadline that cannot contain the worst-case fault and expiry windows', () => {
         expect(() => createAlmConformanceRecipes(conformanceInput('rtc', MINIMUM_DEADLINE_MS - 1)))
-            .toThrow(new RangeError(
-                `createAlmConformanceRecipes requires deadlineMs of at least ${MINIMUM_DEADLINE_MS}.`
-            ));
+            .toThrow(
+                new RangeError(
+                    `createAlmConformanceRecipes requires deadlineMs of at least ${MINIMUM_DEADLINE_MS}.`
+                )
+            );
         expect(() => createAlmConformanceRecipes(conformanceInput('rtc'))).not.toThrow();
     });
 
@@ -44,25 +46,26 @@ describe('ALM conformance deadline expiry', () => {
             const senderCommands = deadline?.sender.commands ?? [];
             const send = senderCommands.find((command) => command.kind === 'messages.send');
             const faultBudgetMs = senderCommands.reduce(
-                (total, command) => command.kind === 'fault.inject'
-                    ? total + (command.timeoutMs ?? 0)
-                    : total,
+                (total, command) =>
+                    command.kind === 'fault.inject'
+                        ? total + (command.timeoutMs ?? 0)
+                        : total,
                 0
             );
             const received = deadline?.receiver.commands.find(
                 (command) => command.kind === 'messages.received'
             );
 
-            expect(send).toMatchObject({ timeoutMs: 5_000, ttlMs: 5_000 });
+            expect(send).toMatchObject({ timeoutMs: 7_500, ttlMs: 7_500 });
             expect(received?.windowMs).toBeGreaterThanOrEqual(
-                faultBudgetMs + 5_000 + MINIMUM_POST_EXPIRY_OBSERVATION_MS
+                faultBudgetMs + 7_500 + MINIMUM_POST_EXPIRY_OBSERVATION_MS
             );
         }
     });
 
     it('expands only the non-expiring send budget', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const scenarios = createAlmConformanceRecipes(conformanceInput(carrier, 15_000));
+            const scenarios = createAlmConformanceRecipes(conformanceInput(carrier, 18_000));
             const baselineCommands = scenarios
                 .find((scenario) => scenario.scenarioId === 'delivery-baseline')
                 ?.sender.commands ?? [];
@@ -77,7 +80,7 @@ describe('ALM conformance deadline expiry', () => {
                 .toMatchObject({ timeoutMs: 10_000 });
             expect(baselineCommands.find((command) => command.kind === 'messages.receipts'))
                 .toMatchObject({ timeoutMs: 5_000 });
-            expect(baselineReceived).toMatchObject({ windowMs: 24_000, timeoutMs: 25_000 });
+            expect(baselineReceived).toMatchObject({ windowMs: 27_000, timeoutMs: 28_000 });
             expect(rejectionCommands.find((command) => command.kind === 'messages.cancel'))
                 .toMatchObject({ timeoutMs: 5_000 });
         }

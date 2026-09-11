@@ -1,8 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-breaker.ts';
 import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
+import { toError } from '../resilience/to-error.ts';
 
 const NOT_SET = -1;
+
+/**
+ * The longest the engine waits between passes once nothing creates work: its idle ceiling, and the
+ * horizon within which anything it did not itself schedule is discovered.
+ */
+export const INBOX_OUTBOX_ENGINE_MAX_IDLE_MS = 3_000;
 
 export class InboxOutboxEngine {
     private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ milliseconds: 100 });
@@ -12,7 +19,9 @@ export class InboxOutboxEngine {
     private static readonly FIXED_DELAY_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({
         milliseconds: 100
     });
-    private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ seconds: 3 });
+    private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({
+        milliseconds: INBOX_OUTBOX_ENGINE_MAX_IDLE_MS
+    });
     private static readonly SCHEDULE_JITTER_RATIO = 0.2;
 
     private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 });
@@ -36,6 +45,7 @@ export class InboxOutboxEngine {
 
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
     private readonly readyAtByTask = new Map<string, number>();
+    private readonly wakeListeners = new Map<string, () => void>();
 
     includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
         this.readyAtByTask.delete(id);
@@ -46,6 +56,23 @@ export class InboxOutboxEngine {
     excludeTask(id: string): boolean {
         this.readyAtByTask.delete(id);
         return this.tasks.delete(id);
+    }
+
+    /**
+     * Registers a listener for every external-write wake. Such a wake is the announcement that a
+     * writer this engine does not own may have written work its tasks own, so a task that answers
+     * readiness from memory drops that memory here instead of waiting out the idle ceiling. The
+     * owners' own progress reaches `wake` instead and notifies nobody. A listener runs synchronously
+     * during the wake and must not wake the engine. One that throws is reported and skipped: the
+     * announcement is one every other owner still needs.
+     */
+    includeWakeListener(id: string, listener: () => void): InboxOutboxEngine {
+        this.wakeListeners.set(id, listener);
+        return this;
+    }
+
+    excludeWakeListener(id: string): boolean {
+        return this.wakeListeners.delete(id);
     }
 
     wakeAt(taskId: string, readyAtMs: number | undefined): void {
@@ -86,7 +113,27 @@ export class InboxOutboxEngine {
         this.scheduledAtMs = undefined;
     }
 
+    /**
+     * Brings the next pass forward and tells no one. This is the owners' own progress -- a batch that
+     * ended, a commit an owner made itself, a retained claim settling, the first start -- and every
+     * such path already invalidated the memory its own write staled. Announcing it here would instead
+     * make each owner drop the answers of every other owner sharing the engine.
+     */
     wake(): void {
+        this.rescheduleNow();
+    }
+
+    /**
+     * The announcement that a writer this engine does not own put work in a queue: a server AppInbox
+     * transaction, a pub/sub requeue, another tab. Such a writer cannot say which owner the row
+     * belongs to, so every owner drops its remembered readiness and re-reads storage once.
+     */
+    wakeAfterExternalWrite(): void {
+        this.notifyWake();
+        this.rescheduleNow();
+    }
+
+    private rescheduleNow(): void {
         if (!this.running) {
             return;
         }
@@ -136,6 +183,17 @@ export class InboxOutboxEngine {
                 }
             });
         return this.execution;
+    }
+
+    private notifyWake(): void {
+        for (const [id, listener] of this.wakeListeners) {
+            try {
+                listener();
+            }
+            catch (error) {
+                console.error('TaskEngine wake listener error', id, toError(error));
+            }
+        }
     }
 
     private scheduleEngine(delayMs: number): void {

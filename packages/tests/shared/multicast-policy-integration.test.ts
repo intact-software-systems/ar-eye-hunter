@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -8,7 +9,10 @@ import {
     vi
 } from 'vitest';
 
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -20,8 +24,14 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
-import { computeOutboundTestAdmission, createOutboundMessage } from './alm/outbound-runtime-test-fixture.ts';
+import {
+    captureOutboundWorkRunnable,
+    computeOutboundTestAdmission,
+    createOutboundMessage,
+    peekOutboundWorkReadyAt
+} from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 interface CapturedRtcConnection extends shared.WebRtcConnectionService {
     readonly sendByPeerId: ReadonlyMap<string, readonly object[]>;
@@ -40,16 +50,16 @@ describe('multicast QoS integration', () => {
             const groups = createReadableCache({ 'group-1': createGroupSnapshot(['self', 'origin', 'relay', 'peer-2', 'peer-3']) });
             const overlays = createReadableCache({ 'group-1': createOverlayInfo(['relay', 'peer-2']) });
             const engine = new InboxOutboxEngine();
-            const resources = createDefaultALOutboundRuntimeResources({ queueEngine: engine });
+            const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine });
             const store = resources.admissionStore;
             const competitorMessage = createOutboundMessage('forward-competitor');
             const competitor = await computeOutboundTestAdmission(store, { ...competitorMessage, id: { ...competitorMessage.id, senderId: 'origin' } });
             const commit = store.commitBundle.bind(store);
-            vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, decode) => {
-                expect(await commit(competitor, decodeOutboundTestPayload)).toBe('committed');
-                return await commit(bundle, decode);
+            vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
+                expect(await commit(competitor)).toBe('committed');
+                return await commit(bundle);
             });
-            const holdClaims = vi.spyOn(store, 'claimReadyEffects').mockResolvedValue([]);
+            const holdClaims = vi.spyOn(resources.workQueue, 'reserveEntries').mockResolvedValue(new Map());
             const dependencies: shared.WebRtcOverlayMulticastManager.Dependencies = {
                 connectionService,
                 groupCache: groups,
@@ -59,7 +69,8 @@ describe('multicast QoS integration', () => {
                 outboundDiagnostics: undefined,
                 outboundRuntime: resources,
                 circuitBreaker: toCircuitBreaker(),
-                rateLimiter: toRateLimiter()
+                rateLimiter: toRateLimiter(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
             };
             const initial = new shared.WebRtcOverlayMulticastManager(dependencies);
             const message = shared.newALMulticastMessage(
@@ -92,7 +103,7 @@ describe('multicast QoS integration', () => {
             onTestFinished(() => restarted.dispose());
             await vi.waitFor(async () => {
                 await engine.executeOnce();
-                expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+                expect(await peekOutboundWorkReadyAt(resources.workQueue, store.namespace)).toBeUndefined();
             });
             expect(connectionService.sendByPeerId.get('peer-2') ?? []).toHaveLength(authority === 'current' ? 1 : 0);
             expect(connectionService.sendByPeerId.get('peer-3') ?? []).toEqual([]);
@@ -115,6 +126,10 @@ describe('multicast QoS integration', () => {
 
         const groups = createReadableCache<GroupSnapshot>({});
         const overlays = createReadableCache<OverlayInfo>({});
+        const base = createResourceInboxResilience();
+        const resilience = new shared.ResourceInboxResilience({ ...base, retryPolicy: { ...base.retryPolicy, maxAttempts: 1 } });
+        const engine = new InboxOutboxEngine();
+        const drainOnce = captureOutboundWorkRunnable(engine);
         const manager = new shared.WebRtcOverlayMulticastManager({
             connectionService,
             groupCache: groups,
@@ -122,9 +137,10 @@ describe('multicast QoS integration', () => {
             multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: resilience
         });
         onTestFinished(() => manager.dispose());
         const message = shared.newALMulticastMessage(
@@ -137,12 +153,10 @@ describe('multicast QoS integration', () => {
         );
         const entry = shared.QueueBoxUtilities.toResourceEntryFromMsg(message, shared.EnqueuedType.RTC_OUTBOX);
         await manager.outbox.enqueue(entry);
-        const base = createResourceInboxResilience();
-        const resilience = new shared.ResourceInboxResilience({ ...base, retryPolicy: { ...base.retryPolicy, maxAttempts: 1 } });
         const failure = vi.spyOn(resilience, 'failure');
         const success = vi.spyOn(resilience, 'success');
         for (let cycle = 0; cycle < 25; cycle += 1) {
-            await manager.dequeue(shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
+            await drainOnce();
             const waiting = await manager.outbox.getItem(entry.key);
             expect(waiting?.dequeueAudit.attempts).toBe(0);
             expect(waiting?.status).toBe(shared.EntityStatus.RETRY);
@@ -157,7 +171,9 @@ describe('multicast QoS integration', () => {
         }
         groups.set('group-1', createGroupSnapshot(['self', 'peer-1']));
         overlays.set('group-1', createOverlayInfo(['peer-1']));
-        await manager.dequeue(shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, resilience);
+        // The first drain admits the row; the send it commits runs on the owner's follow-up batch.
+        await drainOnce();
+        await drainOnce();
         expect(connectionService.sendByPeerId.get('peer-1') ?? []).toHaveLength(atExpiry ? 0 : 1);
         expect(success).toHaveBeenCalledTimes(atExpiry ? 0 : 1);
         expect(failure).not.toHaveBeenCalled();
@@ -249,9 +265,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -276,7 +293,7 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        const result = await manager.enqueueIfAbsent(msg);
+        const result = await enqueueRtcAndDrain(manager, msg);
         const reserved = await manager.outbox.reserveEntries({
             typeIds: new Set([shared.EnqueuedType.RTC_OUTBOX]),
             statusIds: new Set([shared.EntityStatus.NEW]),
@@ -307,9 +324,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -331,7 +349,7 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        const result = await manager.enqueueIfAbsent(msg);
+        const result = await enqueueRtcAndDrain(manager, msg);
         const reserved = await manager.outbox.reserveEntries({
             typeIds: new Set([shared.EnqueuedType.RTC_OUTBOX]),
             statusIds: new Set([shared.EntityStatus.NEW]),
@@ -362,9 +380,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -386,11 +405,8 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        await manager.enqueueIfAbsent(msg);
-        await manager.dequeue(
-            shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await enqueueRtcAndDrain(manager, msg);
+        await settleCommittedOutboundBatch();
 
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
     });
@@ -416,9 +432,10 @@ describe('multicast QoS integration', () => {
                     ),
                 qosProvider: undefined,
                 outboundDiagnostics: undefined,
-                outboundRuntime: createDefaultALOutboundRuntimeResources(),
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
                 circuitBreaker: toCircuitBreaker(),
-                rateLimiter: toRateLimiter()
+                rateLimiter: toRateLimiter(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
             });
             onTestFinished(() => manager.dispose());
 
@@ -470,11 +487,8 @@ describe('multicast QoS integration', () => {
                 }
             );
 
-            await manager.enqueueIfAbsent(msg);
-            await manager.dequeue(
-                shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-                createResourceInboxResilience()
-            );
+            await enqueueRtcAndDrain(manager, msg);
+            await settleCommittedOutboundBatch();
 
             expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
             expect(connectionService.sendByPeerId.get('peer-2')).toBeUndefined();
@@ -511,9 +525,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -540,11 +555,8 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        await manager.enqueueIfAbsent(msg);
-        await manager.dequeue(
-            shared.WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
+        await enqueueRtcAndDrain(manager, msg);
+        await settleCommittedOutboundBatch();
         if (authority === 'missing') {
             groups.clearAll();
         }
@@ -590,9 +602,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -610,7 +623,7 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        const result = await manager.enqueueIfAbsent(msg);
+        const result = await enqueueRtcAndDrain(manager, msg);
         const reserved = await manager.outbox.reserveEntries({
             typeIds: new Set([shared.EnqueuedType.RTC_OUTBOX]),
             statusIds: new Set([shared.EntityStatus.NEW]),
@@ -639,9 +652,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -666,7 +680,7 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        await manager.enqueueIfAbsent(msg);
+        await enqueueRtcAndDrain(manager, msg);
 
         expect(connectionService.sendByPeerId.get('peer-1')).toBeUndefined();
     });
@@ -685,9 +699,10 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources(),
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter()
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
 
@@ -727,7 +742,7 @@ describe('multicast QoS integration', () => {
             }
         );
 
-        const result = await manager.enqueueIfAbsent(msg);
+        const result = await enqueueRtcAndDrain(manager, msg);
         const reserved = await manager.outbox.reserveEntries({
             typeIds: new Set([shared.EnqueuedType.RTC_OUTBOX]),
             statusIds: new Set([shared.EntityStatus.NEW]),
@@ -740,6 +755,16 @@ describe('multicast QoS integration', () => {
         expect(reserved.size).toBe(0);
     });
 });
+
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
+async function enqueueRtcAndDrain(
+    manager: shared.WebRtcOverlayMulticastManager,
+    msg: shared.ALMessage
+): Promise<shared.ALOutboundEnqueueResult> {
+    const result = await manager.enqueueIfAbsent(msg);
+    await settleCommittedOutboundBatch();
+    return result;
+}
 
 function createConnectionService(connectedPeerIds: readonly string[], readyStates: Readonly<Record<string, RTCDataChannelState>> = {}): CapturedRtcConnection {
     const sendByPeerId = new Map<string, object[]>();

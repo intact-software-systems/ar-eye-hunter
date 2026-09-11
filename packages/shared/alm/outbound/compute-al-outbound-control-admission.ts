@@ -12,8 +12,8 @@ import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfi
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
-} from './al-outbound-admission-store.ts';
-import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+} from './admission/al-outbound-admission-store.ts';
+import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,

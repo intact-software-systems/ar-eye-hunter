@@ -51,10 +51,32 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // The maintainer approved the necessary browser-agent growth. Canonical
-        // room readiness measures 253.10546875 KiB Brotli; keep the smallest
-        // strict whole-KiB limit while preserving every dependency exclusion.
-        expect(result.brotliKiB).toBeLessThan(254);
+        // The maintainer approved necessary ALM and formation-command growth.
+        // Keep the smallest whole-KiB strict limit containing the measured
+        // behavior, with all operator dependency exclusions intact.
+        // Measured 252.87 KiB brotli after the inbound runtime composed on the generic work
+        // handler (F2 Task 5); the limit was raised to the next whole KiB at 252.02 (R22/R24).
+        // Measured 253.03 KiB brotli after wiring outbound admission diagnostics through the
+        // browser composition and middleware (F2 Task 6b); the limit was raised to 254.
+        // Measured 254.40 KiB brotli after adding the ALM storage schema identity and
+        // delete-on-mismatch reset, including its black-box diagnostic relay (F2 Task 10); the
+        // limit was raised to 255.
+        // Main measured 252.37 KiB brotli for the RTC authority recovery and live
+        // durable-admission observation (#554) against a 253 limit; merging both lines
+        // measured 255.46 KiB, so the limit was raised to 256.
+        // Measured 256.19 KiB brotli after splitting the outbound commit hold into its read and
+        // write phases and attributing each commit to its origin; the limit was raised to 257.
+        // Measured 257.34 KiB brotli after cutting the readiness scan volume and naming the hop
+        // that drops an RTC offer (F2 Task 13 Step 4); the limit was raised to 258.
+        // Main's canonical room readiness (#557) measures 253.10546875 KiB brotli on its own;
+        // merging it with the ALM line measures 257.9580078125 KiB, so the 258 limit still holds.
+        // Measured 258.2626953125 KiB brotli after the Task 13 fix round -- the engine's wake
+        // listeners, the typed RTC signaling failure and its lifecycle forwarding; the limit was
+        // raised to 259.
+        // Measured 259.0634765625 KiB brotli after the Task 13 evidence round -- the named
+        // room-authority denial, the outbound readiness probe and the inbound rotation's liveness
+        // witness; the limit was raised to 260.
+        expect(result.brotliKiB).toBeLessThan(260);
     });
 });
 

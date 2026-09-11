@@ -65,6 +65,15 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         return await this.resourceInbox.reservations.readWorkPage(request);
     }
 
+    /** SQL owns no snapshot across statements here, so the pages are read in order on one connection. */
+    async readWorkPages(requests: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
+        const pages: ResourceInboxWorkPage[] = [];
+        for (const request of requests) {
+            pages.push(await this.readWorkPage(request));
+        }
+        return pages;
+    }
+
     async isAnyEntryToLock(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions

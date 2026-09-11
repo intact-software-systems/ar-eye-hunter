@@ -2,7 +2,9 @@ import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-store
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
     AL_ADMISSION_REVISION_KEY,
-    openIndexedDbAdmissionDatabase
+    AL_ADMISSION_SCHEMA_ID,
+    openIndexedDbAdmissionDatabase,
+    type ALStorageResetEvent
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
 import {
@@ -17,14 +19,16 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import {
     computeBrowserALWorkCleanupMutations,
-    readBrowserALWorkCleanupRows
+    readBrowserALWorkCleanupRows,
+    writeBrowserALWorkExpiryCleanup
 } from './browser-al-work-cleanup.ts';
 
 import {
     BROWSER_AL_RUNTIME_DB_NAME,
     BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX,
     BROWSER_AL_RUNTIME_STORE_NAME,
-    toBrowserSessionALRuntimeEntryKeyPrefixes
+    toBrowserSessionALRuntimeEntryKeyPrefixes,
+    toBrowserSessionALRuntimeWorkNamespaces
 } from './browser-al-runtime-identity.ts';
 
 export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
@@ -76,26 +80,32 @@ export interface BrowserALRuntimeCleanupResult {
 }
 
 export interface DeleteExpiredBrowserALRuntimeEntriesOptions {
+    readonly onStorageReset: (event: ALStorageResetEvent) => void;
     readonly nowMs?: number;
     readonly keyPrefixes?: readonly string[];
 }
 
-let browserALRuntimeExpiryEvictionPromise: Promise<void> | undefined;
-
 export async function deleteExpiredBrowserALRuntimeEntries(
-    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {}
+    options: DeleteExpiredBrowserALRuntimeEntriesOptions
 ): Promise<BrowserALRuntimeCleanupResult> {
     const nowMs = options.nowMs ?? Date.now();
 
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: options.keyPrefixes ?? [BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX],
-        deletionPolicy: { kind: 'expired', nowMs }
+        deletionPolicy: { kind: 'expired', nowMs },
+        onStorageReset: options.onStorageReset
     });
 }
 
+/**
+ * Deletes this session's expired KV admission-metadata rows only. AL work-row expiry is a side
+ * effect of every call here, and it is store-wide (see `writeBrowserALWorkExpiryCleanup`): other
+ * sessions' expired AL work rows are removed too, while their live rows and their expired KV rows
+ * are untouched.
+ */
 export async function deleteExpiredBrowserALRuntimeEntriesForSession(
     sessionId: string,
-    options: Omit<DeleteExpiredBrowserALRuntimeEntriesOptions, 'keyPrefixes'> = {}
+    options: Omit<DeleteExpiredBrowserALRuntimeEntriesOptions, 'keyPrefixes'>
 ): Promise<BrowserALRuntimeCleanupResult> {
     return await deleteExpiredBrowserALRuntimeEntries({
         ...options,
@@ -104,16 +114,20 @@ export async function deleteExpiredBrowserALRuntimeEntriesForSession(
 }
 
 export async function deleteBrowserALRuntimeEntriesForSession(
-    sessionId: string
+    sessionId: string,
+    options: Readonly<{ onStorageReset: (event: ALStorageResetEvent) => void; }>
 ): Promise<BrowserALRuntimeCleanupResult> {
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
-        deletionPolicy: { kind: 'all' }
+        workNamespaces: toBrowserSessionALRuntimeWorkNamespaces(sessionId),
+        canonicalScopes: [`browser-session:${sessionId}`],
+        deletionPolicy: { kind: 'all' },
+        onStorageReset: options.onStorageReset
     });
 }
 
 export async function evictExpiredBrowserALRuntimeEntries(
-    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {}
+    options: DeleteExpiredBrowserALRuntimeEntriesOptions
 ): Promise<BrowserALRuntimeCleanupResult> {
     const result = await deleteExpiredBrowserALRuntimeEntries(options);
     if (result.deleted > 0) {
@@ -123,48 +137,97 @@ export async function evictExpiredBrowserALRuntimeEntries(
     return result;
 }
 
-export async function initBrowserALRuntimeExpiryEviction(
-    intervalMs: number = BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS
-): Promise<void> {
-    if (!browserALRuntimeExpiryEvictionPromise) {
-        const promise = tryRunInIntervals(
-            async () => {
-                await evictExpiredBrowserALRuntimeEntries();
-            },
-            intervalMs
-        )
-            .then(() => undefined)
-            .catch((error) => {
-                if (browserALRuntimeExpiryEvictionPromise === promise) {
-                    browserALRuntimeExpiryEvictionPromise = undefined;
-                }
-                throw error;
-            });
-        browserALRuntimeExpiryEvictionPromise = promise;
-    }
+export interface InitBrowserALRuntimeExpiryEvictionInput {
+    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    readonly intervalMs?: number;
+}
 
-    return await browserALRuntimeExpiryEvictionPromise;
+let browserALRuntimeExpiryEvictionStarting: Promise<() => void> | undefined;
+let browserALRuntimeExpiryEvictionGeneration = 0;
+
+/**
+ * Starts the recurring eviction of expired browser AL runtime rows, sharing one interval across
+ * callers, and returns a `stop()` to silence it. Resolves once the first eviction cycle completes.
+ */
+export async function initBrowserALRuntimeExpiryEviction(
+    input: InitBrowserALRuntimeExpiryEvictionInput
+): Promise<() => void> {
+    browserALRuntimeExpiryEvictionStarting ??= startBrowserALRuntimeExpiryEviction(input);
+    return await browserALRuntimeExpiryEvictionStarting;
+}
+
+/**
+ * `tryRunInIntervals` offers no external cancellation, so a stopped loop cannot clear its own
+ * timer; `stop()` instead silences future ticks and clears the shared singleton so the next
+ * `initBrowserALRuntimeExpiryEviction` call starts a fresh loop. The generation guard keeps a
+ * stale `stop()` from clearing a newer instance's singleton entry.
+ */
+function startBrowserALRuntimeExpiryEviction(
+    input: InitBrowserALRuntimeExpiryEvictionInput
+): Promise<() => void> {
+    const generation = ++browserALRuntimeExpiryEvictionGeneration;
+    let stopped = false;
+    const stop = (): void => {
+        stopped = true;
+        if (browserALRuntimeExpiryEvictionGeneration === generation) {
+            browserALRuntimeExpiryEvictionStarting = undefined;
+        }
+    };
+    return tryRunInIntervals(
+        async () => {
+            if (!stopped) {
+                await evictExpiredBrowserALRuntimeEntries({ onStorageReset: input.onStorageReset });
+            }
+        },
+        input.intervalMs ?? BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS
+    )
+        .then(() => stop)
+        .catch((error) => {
+            stop();
+            throw error;
+        });
+}
+
+function openBrowserALRuntimeDatabase(
+    onStorageReset: (event: ALStorageResetEvent) => void
+): Promise<IDBDatabase> {
+    return openIndexedDbAdmissionDatabase({
+        dbName: BROWSER_AL_RUNTIME_DB_NAME,
+        storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset
+    });
 }
 
 async function deleteBrowserALRuntimeEntriesMatching(
     options: Readonly<{
         keyPrefixes: readonly string[];
+        workNamespaces?: readonly string[];
+        canonicalScopes?: readonly string[];
         deletionPolicy: BrowserALRuntimeDeletionPolicy;
+        onStorageReset: (event: ALStorageResetEvent) => void;
     }>
 ): Promise<BrowserALRuntimeCleanupResult> {
     const keyPrefixes = [...new Set(options.keyPrefixes)].filter((prefix) => prefix.length > 0);
+    const workNamespaces = options.workNamespaces ?? [];
+    const canonicalScopes = options.canonicalScopes ?? [];
 
     if (keyPrefixes.length === 0 || !isIndexedDbALRuntimeStoreSupported()) {
         return toBrowserALRuntimeCleanupResult(keyPrefixes, 0, 0);
     }
 
-    const db = await openIndexedDbAdmissionDatabase(
-        BROWSER_AL_RUNTIME_DB_NAME,
-        BROWSER_AL_RUNTIME_STORE_NAME
-    );
+    const db = await openBrowserALRuntimeDatabase(options.onStorageReset);
 
     try {
-        const read = await readBrowserALRuntimeCleanup(db, keyPrefixes, options.deletionPolicy);
+        if (options.deletionPolicy.kind === 'expired') {
+            await writeBrowserALWorkExpiryCleanup(db, options.deletionPolicy.nowMs);
+        }
+        const read = await readBrowserALRuntimeCleanup(db, {
+            keyPrefixes,
+            workNamespaces,
+            canonicalScopes,
+            policy: options.deletionPolicy
+        });
         const computed = computeBrowserALRuntimeCleanup(read, options.deletionPolicy);
         const issues = validateBrowserALRuntimeCleanup(read, options.deletionPolicy, computed);
         if (issues.length > 0) {
@@ -184,9 +247,14 @@ async function deleteBrowserALRuntimeEntriesMatching(
 
 async function readBrowserALRuntimeCleanup(
     db: IDBDatabase,
-    keyPrefixes: readonly string[],
-    policy: BrowserALRuntimeDeletionPolicy
+    options: Readonly<{
+        keyPrefixes: readonly string[];
+        workNamespaces: readonly string[];
+        canonicalScopes: readonly string[];
+        policy: BrowserALRuntimeDeletionPolicy;
+    }>
 ): Promise<BrowserALRuntimeCleanupRead> {
+    const { keyPrefixes, workNamespaces, canonicalScopes, policy } = options;
     const readsExpiryIndex = policy.kind === 'expired' &&
         keyPrefixes.length === 1 &&
         keyPrefixes[0] === BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX;
@@ -199,7 +267,10 @@ async function readBrowserALRuntimeCleanup(
     );
     return {
         revision: snapshot.revision,
-        workRows: await readBrowserALWorkCleanupRows(db, keyPrefixes, policy),
+        // The 'expired' policy hands AL work rows to writeBrowserALWorkExpiryCleanup instead.
+        workRows: policy.kind === 'all'
+            ? await readBrowserALWorkCleanupRows(db, { namespacePrefixes: workNamespaces, canonicalScopes })
+            : [],
         rows: snapshot.stored
             .filter((stored) =>
                 stored.key !== AL_ADMISSION_REVISION_KEY &&

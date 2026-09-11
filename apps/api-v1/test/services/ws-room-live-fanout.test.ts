@@ -14,6 +14,8 @@ import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-m
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -41,7 +43,7 @@ interface LiveRoomTestRuntime extends RoomStateTestRuntime {
     readonly socket: JsonWebSocketServer;
     readonly sent: RoomLiveSend[];
     readonly deliveryClock: RoomDeliveryClock;
-    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
 
 for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const) {
@@ -282,7 +284,9 @@ function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
     const socket = new JsonWebSocketServer();
     const sent: RoomLiveSend[] = [];
     const deliveryClock: RoomDeliveryClock = { atEpochMs: nowEpochMs };
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
     for (const sessionId of ['session-1', 'session-2', 'outsider']) {
         const webSocket = createOpenTestWebSocket();
         webSocket.send = (data) => {
@@ -294,7 +298,7 @@ function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
     const service = createDefaultWsQueueBoxServerService({
         name: 'api-live-room-test',
 
-        outbox: outboundStores.admissionStore.workQueue,
+        outbox: outboundStores.workQueue,
         outboundStores,
         socket,
         forwardsRoomScopedMessages: false,

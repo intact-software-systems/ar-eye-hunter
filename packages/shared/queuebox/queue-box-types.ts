@@ -396,4 +396,14 @@ export interface QueueBoxResourceEntryRepository
         EnqueueResourceEntryController,
         PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
     readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage>;
+
+    /**
+     * Answers every request exactly as `readWorkPage` would. A store that can read them together does
+     * so from one snapshot, so a scan across statuses and work types costs one round trip. A store
+     * that cannot -- SQL owns no snapshot across statements -- pays statuses x types statements at
+     * full page size, where the status-by-status walk it replaced could stop at the first full page:
+     * the answer is the same, the batching win is the snapshot store's, and the extra statements are
+     * the price of one contract.
+     */
+    readWorkPages(requests: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]>;
 }

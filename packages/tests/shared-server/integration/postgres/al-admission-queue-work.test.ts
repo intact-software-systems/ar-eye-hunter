@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import {
     describe,
     expect,
@@ -7,13 +8,16 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { peekOutboundWorkReadyAt } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     toALOutboundTransportMessage,
@@ -21,6 +25,8 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createDefaultResourceInboxDequeuer,
     NonRetryableException,
@@ -49,7 +55,10 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const { backend, other, entry } = await createStorage();
         const namespace = entry.key.contextId;
         const store = createALOutboundAdmissionStore({
+            decodePrepared: decodeALOutboundTransportMessage,
+            nowMs: Date.now,
             namespace,
+            canonicalScope: namespace,
             backend,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
@@ -61,7 +70,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
                 effectId: msgId,
                 payload: { kind: 'ack-timeout', msgId }
             }))
-        }, decodeALOutboundTransportMessage);
+        });
         const malformedKey = toALOutboundWorkKey(namespace, 'malformed');
         const original = await other.workQueue.getItem(malformedKey);
         if (original === undefined) {
@@ -70,28 +79,32 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.replaceIfObserved(original, { ...original, resource: '{invalid-json' }))
             .not.toBeNull();
 
-        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage);
+        await runOutboundWorkBatch({ admissionStore: store, workQueue: backend.workQueue });
 
-        expect(claimed.map((effect) => effect.payload)).toEqual([{ kind: 'ack-timeout', msgId: 'valid' }]);
         expect(await other.workQueue.getItem(malformedKey)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             resource: '{invalid-json',
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
-        await other.workQueue.releaseEntries([claimed[0]!.entry], { status: EntityStatus.COMPLETED, delayMs: null });
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
-        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await other.workQueue.getItem(toALOutboundWorkKey(namespace, 'valid')))
+            .toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, namespace)).toBeUndefined();
     });
 
     postgresIt('commits one canonical payload, full identity and compact action, then reloads through another connection', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
         const settings = {
+            nowMs: Date.now,
             namespace: entry.key.contextId,
             canonicalScope: `local-session:${'long-scope/'.repeat(60)}:${entry.key.contextId}`,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         };
-        const first = createALOutboundAdmissionStore({ ...settings, backend });
+        const first = createALOutboundAdmissionStore({
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend
+        });
         const original = createSupersedingMessage('sender', 1);
         const message = {
             ...original,
@@ -107,9 +120,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const canonicalKey = decision.entries[0].key;
         const identityKey = toALOutboundIdentityKey(canonicalKey);
         ownedKeys.push(canonicalKey, identityKey);
-        expect(await first.commitBundle(decision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
+        expect(await first.commitBundle(decision.bundle!)).toBe('committed');
 
-        const restarted = createALOutboundAdmissionStore({ ...settings, backend: other });
+        const restarted = createALOutboundAdmissionStore({
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend: other
+        });
         expect((await restarted.readSentMessage(message.id.msgId))?.msg).toEqual(message);
         const canonical = await other.workQueue.getItem(canonicalKey);
         const identity = await other.workQueue.getItem(identityKey);
@@ -120,17 +137,18 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             senderId: message.id.senderId
         });
         expect(identity?.audit.expiryTs.epochMilliseconds).toBe(message.constraints?.expiresAtMs);
-        const [action] = await restarted.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage);
-        expect(action.canonicalMessage).toEqual(message);
-        expect(action.entry.resource).not.toContain(message.payload.resource);
-        for (const row of [canonical!, identity!, action.entry]) {
+        const restartedWork = createOutboundWork({ admissionStore: restarted, workQueue: other.workQueue });
+        const [action] = await restartedWork.claim(10);
+        expect(action!.work.canonicalMessage).toEqual(message);
+        expect(action!.claim.entry.resource).not.toContain(message.payload.resource);
+        for (const row of [canonical!, identity!, action!.claim.entry]) {
             expect(row.key.topicId.length).toBeLessThanOrEqual(36);
             expect(row.key.resourceId.length).toBeLessThanOrEqual(128);
             expect(row.key.contextId.length).toBeLessThanOrEqual(128);
         }
-        await restarted.completeEffect(action.entry);
+        await restartedWork.port.release(action!.claim, { status: 'completed' });
         expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).status).toBe('duplicate');
-        expect(await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
         const conflicting = {
             ...identity!,
             resource: JSON.stringify({
@@ -141,12 +159,15 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         expect(await other.workQueue.replaceIfObserved(identity!, conflicting)).not.toBeNull();
         await expect(first.readSentMessage(message.id.msgId)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await other.workQueue.getItem(canonicalKey))?.resource).toBe(canonical?.resource);
-        expect(await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage)).toEqual([]);
+        expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
     });
 
     postgresIt('aborts canonical payload, identity, action and metadata together when the final action slot races', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: entry.key.contextId,
+            decodePrepared: decodeALOutboundTransportMessage,
             namespace: entry.key.contextId,
             backend,
             supersedenceTrackTtlMs: 60_000,
@@ -156,31 +177,49 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const decision = await readSupersedenceDecision({ store, message, nowMs: Date.now });
         const canonicalKey = decision.entries[0].key;
         const identityKey = toALOutboundIdentityKey(canonicalKey);
-        ownedKeys.push(canonicalKey, identityKey);
         const actionKey = toALOutboundWorkKey(store.namespace, decision.bundle!.durableEffects[0].effectId);
+        ownedKeys.push(canonicalKey, identityKey, actionKey);
+        // The racing row outlives the aborted bundle, so it is owned like the rest: the shared
+        // Postgres queue is scanned by suites that decode every row they meet, and this one is
+        // written for its key alone.
+        const independentWinner = JSON.stringify({ marker: 'independent winner' });
         const write = backend.write.bind(backend);
         const race = vi.spyOn(backend, 'write').mockImplementationOnce((operation) =>
             write(async (transaction) => {
                 const result = await operation(transaction);
-                await other.workQueue.enqueue({ ...entry, key: actionKey, resource: 'independent winner' });
+                await other.workQueue.enqueue({ ...entry, key: actionKey, resource: independentWinner });
                 return result;
             })
         );
         onTestFinished(() => race.mockRestore());
 
-        expect(await store.commitBundle(decision.bundle!, decodeALOutboundTransportMessage)).toBe('conflict');
+        expect(await store.commitBundle(decision.bundle!)).toBe('conflict');
         expect(await other.workQueue.getItem(canonicalKey)).toBeUndefined();
         expect(await other.workQueue.getItem(identityKey)).toBeUndefined();
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         expect(await other.read(`${store.namespace}:msg-owner:${message.id.msgId}`, (value) => value)).toBeUndefined();
-        expect((await other.workQueue.getItem(actionKey))?.resource).toBe('independent winner');
+        expect((await other.workQueue.getItem(actionKey))?.resource).toBe(independentWinner);
     });
 
     postgresIt('refuses concurrent conflicting sender reuse of one globally addressed message id without overwriting metadata', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
-        const settings = { namespace: entry.key.contextId, supersedenceTrackTtlMs: 60_000, retention: normalizeALRuntimeStoreRetention() };
-        const first = createALOutboundAdmissionStore({ ...settings, backend });
-        const second = createALOutboundAdmissionStore({ ...settings, backend: other });
+        const settings = {
+            nowMs: Date.now,
+            namespace: entry.key.contextId,
+            canonicalScope: entry.key.contextId,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        };
+        const first = createALOutboundAdmissionStore({
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend
+        });
+        const second = createALOutboundAdmissionStore({
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend: other
+        });
         const original = createSupersedingMessage('sender-a', 1);
         const conflicting = { ...original, id: { ...original.id, senderId: 'sender-b' } };
         const firstDecision = await readSupersedenceDecision({ store: first, message: original, supersedenceKey: 'sender-a', nowMs: Date.now });
@@ -188,8 +227,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         for (const decision of [firstDecision, secondDecision]) {
             ownedKeys.push(decision.entries[0].key, toALOutboundIdentityKey(decision.entries[0].key));
         }
-        expect(await first.commitBundle(firstDecision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
-        await expect(second.commitBundle(secondDecision.bundle!, decodeALOutboundTransportMessage)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await first.commitBundle(firstDecision.bundle!)).toBe('committed');
+        await expect(second.commitBundle(secondDecision.bundle!)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await second.readSentMessage(original.id.msgId))?.msg.id.senderId).toBe('sender-a');
         expect(await other.workQueue.getItem(secondDecision.entries[0].key)).toBeUndefined();
     });
@@ -293,12 +332,22 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
     postgresIt('rejects a cross-sender decision computed before another connection fills its shared slot', async () => {
         const { backend, other, entry, ownedKeys } = await createStorage();
         const settings = {
+            nowMs: Date.now,
             namespace: entry.key.contextId,
+            canonicalScope: entry.key.contextId,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         };
-        const first = createALOutboundAdmissionStore({ ...settings, backend });
-        const second = createALOutboundAdmissionStore({ ...settings, backend: other });
+        const first = createALOutboundAdmissionStore({
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend
+        });
+        const second = createALOutboundAdmissionStore({
+            ...settings,
+            decodePrepared: decodeALOutboundTransportMessage,
+            backend: other
+        });
         const older = createSupersedingMessage('sender-a', 1);
         const newer = createSupersedingMessage('sender-b', 2);
         const oldDecision = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
@@ -310,11 +359,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             toALOutboundIdentityKey(newDecision.entries[0].key)
         );
 
-        expect(await second.commitBundle(newDecision.bundle!, decodeALOutboundTransportMessage)).toBe('committed');
-        expect(await first.commitBundle(oldDecision.bundle!, decodeALOutboundTransportMessage)).toBe('conflict');
+        expect(await second.commitBundle(newDecision.bundle!)).toBe('committed');
+        expect(await first.commitBundle(oldDecision.bundle!)).toBe('conflict');
         expect(await first.readSentMessage(older.id.msgId)).toBeUndefined();
-        const pending = await first.claimReadyEffects({ maxCount: 10 }, decodeALOutboundTransportMessage);
-        expect(pending.map((work) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')).toEqual([newer.id.msgId]);
+        const pending = await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10);
+        expect(
+            pending.map(({ work }) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')
+        ).toEqual([newer.id.msgId]);
         const retried = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
         expect(retried.status).toBe('superseded');
         expect(retried.bundle).toBeUndefined();
@@ -496,6 +547,42 @@ interface AdmissionStorageFixture {
     readonly ownedKeys: Key[];
 }
 
+/** Claims and decodes work the way the owner's batch does, for a store the test built itself. */
+function createOutboundWork(stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>) {
+    const port = createTestALOutboundWorkPort({ ...stores, nowMs: Date.now });
+    return {
+        port,
+        claim: async (maxCount: number) => {
+            const claims = await port.claim({ maxCount, observedEntries: undefined });
+            return await Promise.all(claims.map(async (claim) => ({
+                claim,
+                work: await stores.admissionStore.readWorkSnapshot(claim.entry)
+            })));
+        }
+    };
+}
+
+/** Runs one owner batch: a row it cannot decode is rejected, and a valid sibling still runs. */
+async function runOutboundWorkBatch(
+    stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>
+): Promise<void> {
+    const runtime = createDefaultALOutboundMessageRuntime({
+        stores,
+        outbox: new InMemoryQueueBox(new Map()),
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const })
+    });
+    try {
+        await runtime.ready();
+    }
+    finally {
+        runtime.dispose();
+    }
+}
+
 async function createStorage(
     nowMs: () => number = Date.now,
     namespace: string = crypto.randomUUID()
@@ -553,7 +640,7 @@ function createSupersedingMessage(senderId: string, sequence: number): ALMessage
 }
 
 interface ReadSupersedenceDecisionInput {
-    readonly store: ALOutboundAdmissionStore;
+    readonly store: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
     readonly message: ALMessage;
     readonly supersedenceKey?: string;
     readonly nowMs: () => number;
@@ -594,9 +681,11 @@ interface RemainingStorageRow {
 }
 
 async function cleanupStorage({ sql, namespace, ownedKeys }: CleanupStorageInput): Promise<void> {
-    // The work context is normalized independently of the raw metadata namespace.
-    // Delete by the complete fixture context, including terminal or malformed work.
-    const workContext = toALOutboundWorkKey(namespace, 'cleanup-context').contextId;
+    // Every AL outbound work row this namespace owns shares one topic and resource id and differs
+    // only by the effect id it carries in its context, so the namespace sweep is keyed on that
+    // pair. It names an effect id only because the key builder takes one; the sweep ignores it,
+    // which is what lets it reach terminal or malformed work no test kept a key for.
+    const work = toALOutboundWorkKey(namespace, 'any-effect-id');
     for (const key of ownedKeys) {
         await sql`
             delete from resource_inbox
@@ -612,12 +701,14 @@ async function cleanupStorage({ sql, namespace, ownedKeys }: CleanupStorageInput
     }
     await sql`
         delete from resource_inbox
-        where fk_ext_bank_id = ${namespace} or fk_ext_bank_id = ${workContext}
+        where fk_ext_bank_id = ${namespace}
+            or (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
     `;
     await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
     const remainingWork = await sql<RemainingStorageRow[]>`
         select ri_resource_id as identity from resource_inbox
-        where fk_ext_bank_id = ${namespace} or fk_ext_bank_id = ${workContext}
+        where fk_ext_bank_id = ${namespace}
+            or (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
     `;
     const remainingMetadata = await sql<RemainingStorageRow[]>`
         select store_key as identity from runtime_state_store where store_namespace = ${namespace}

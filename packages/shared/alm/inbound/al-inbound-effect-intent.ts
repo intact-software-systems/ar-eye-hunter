@@ -7,16 +7,12 @@ import type {
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
+import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 
 export interface ALInboundEffectIntent {
     readonly effectId: string;
     readonly expireAtTimestamp: number | undefined;
     readonly payload:
-        | {
-            readonly kind: 'dispatch-local';
-            readonly msg: ALMessage;
-            readonly plan: ALMessageHandlingPlan;
-        }
         | {
             readonly kind: 'send-ack';
             readonly toPeerId: string;
@@ -37,7 +33,10 @@ export interface ALInboundEffectIntent {
             readonly reason: ALRepairReason;
             readonly ordering: ALOrderingObservation;
         }
-        | Extract<ALInboundDurableEffect, { readonly kind: 'forward-message' | 'release-buffered'; }>;
+        | Extract<
+            ALInboundDurableEffect,
+            { readonly kind: 'dispatch-local' | 'forward-message' | 'release-buffered'; }
+        >;
 }
 
 interface ALInboundLocalDeliveryInput {
@@ -64,7 +63,12 @@ export function toALInboundForwardingEffects(
         return [{
             effectId: toEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
             expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
-            payload: { kind: 'forward-message', msg: input.msg, fromPeerId: input.fromPeerId, plan: input.plan }
+            payload: {
+                kind: 'forward-message',
+                message: toALInboundMessageReference(input.msg),
+                fromPeerId: input.fromPeerId,
+                plan: input.plan
+            }
         }];
     }
     return !input.plan.localDelivery.deferred && !input.plan.nack.enabled ? toRepairEffects(input) : [];
@@ -99,8 +103,7 @@ export function toALInboundLocalDeliveryEffects(
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         payload: {
             kind: 'dispatch-local',
-            msg: input.msg,
-            plan: input.plan
+            message: toALInboundMessageReference(input.msg)
         }
     }];
 }
@@ -201,7 +204,7 @@ export function shouldDeferALInboundLocalDelivery(
 }
 
 export function shouldRetryALInboundDelivery(plan: ALMessageHandlingPlan): boolean {
-    return plan.dropReason === 'not-yet-in-sync' ||
+    return plan.dropReasonCode === 'not-yet-in-sync' ||
         (Boolean(plan.dropReason) && plan.nack.reason === 'overloaded') ||
         (!plan.dropReason && shouldDeferALInboundLocalDelivery(plan));
 }

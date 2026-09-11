@@ -2,8 +2,13 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserRtcRxALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type {
     ClientInfo,
     IceConfig,
@@ -50,9 +55,11 @@ export function initialiseRtcOverlayMulticastManager(
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            decodePrepared: decodeALOutboundTransportMessage,
             queueEngine: qboxEngine,
             stores
         }),
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         qosProvider: undefined,
         circuitBreaker: toCircuitBreaker(),
@@ -67,6 +74,7 @@ export interface InitialiseRtcRxStreamerInput {
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
     readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
+    readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
 }
 
 export function initialiseRtcRxStreamer(
@@ -80,7 +88,8 @@ export function initialiseRtcRxStreamer(
         inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
         nowEpochMs: Date.now,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
-        roomAuthorityRefresh: input.roomAuthorityRefresh
+        roomAuthorityRefresh: input.roomAuthorityRefresh,
+        inboundDiagnostics: input.inboundDiagnostics
     });
 }
 

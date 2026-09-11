@@ -95,7 +95,8 @@ export namespace WebRtcOverlayMulticastManager {
         readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
-        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
+        readonly dequeueResilience: ResourceInboxResilience;
         readonly circuitBreaker: CircuitBreaker;
         readonly rateLimiter: RateLimiter;
     }
@@ -122,7 +123,7 @@ export class WebRtcOverlayMulticastManager {
     private readonly clock: ALOutboundMessageRuntime.Clock;
 
     constructor(dependencies: WebRtcOverlayMulticastManager.Dependencies) {
-        this.outbox = dependencies.outboundRuntime.admissionStore.workQueue;
+        this.outbox = dependencies.outboundRuntime.workQueue;
         this.connectionService = dependencies.connectionService;
         this.groupCache = dependencies.groupCache;
         this.overlayCache = dependencies.overlayCache;
@@ -135,6 +136,10 @@ export class WebRtcOverlayMulticastManager {
             {
                 ...dependencies.outboundRuntime,
                 decodePreparedMessage: decodeALOutboundTransportMessage,
+                dequeue: {
+                    types: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
+                    resilience: dependencies.dequeueResilience
+                },
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
@@ -351,17 +356,6 @@ export class WebRtcOverlayMulticastManager {
         return toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
     }
 
-    async dequeue(
-        typesToDequeue: Set<string>,
-        resilience: ResourceInboxResilience
-    ): Promise<void> {
-        if (this.disposed) {
-            return;
-        }
-
-        await this.outboundRuntime.dequeue(typesToDequeue, resilience);
-    }
-
     async acceptControlMessage(msg: ALMessage): Promise<void> {
         if (this.disposed) {
             return;
@@ -490,7 +484,7 @@ export class WebRtcOverlayMulticastManager {
 
     private planDequeuedMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const admissionPlan = this.planIncomingMessage(msg);
-        if (admissionPlan.dropReason === 'not-yet-in-sync') {
+        if (admissionPlan.dropReasonCode === 'not-yet-in-sync') {
             throw new NotReadyException(50, 'Awaiting RTC room authority before dequeuing the transport copy');
         }
         return this.planOutgoingMessage(msg);

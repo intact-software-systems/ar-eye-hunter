@@ -204,6 +204,18 @@ describe('group formation metrics recorder', () => {
             [AppTopics.groupStateSnapshot]: 500
         });
         expect(metrics.wsOutboxNoLocalRecipientCount).toBe(1);
+
+        recorder.outboundWork({
+            kind: 'effect-drain',
+            workerId: 'al-outbound:test',
+            durationMs: 4,
+            claimedCount: 3,
+            completedCount: 1,
+            rescheduledCount: 1,
+            rejectedCount: 1
+        });
+
+        expect(recorder.readMetrics().wsOutboundRejectedWorkCount).toBe(1);
     });
 
     it('routes topic overflow into one bounded bucket', () => {

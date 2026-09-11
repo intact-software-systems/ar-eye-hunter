@@ -13,6 +13,7 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
+    AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
@@ -279,6 +280,8 @@ function createWorkBackend(storage: 'memory' | 'indexeddb'): ALAdmissionWorkBack
     return storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
             dbName: `backend-work-${crypto.randomUUID()}`,
             storeName: admissionStore,
             nowMs: Date.now,
@@ -288,7 +291,12 @@ function createWorkBackend(storage: 'memory' | 'indexeddb'): ALAdmissionWorkBack
 }
 
 async function createStorage(): Promise<AdmissionQueueStorage> {
-    const db = await openIndexedDbAdmissionDatabase(`alm-queue-commit-${crypto.randomUUID()}`, admissionStore);
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName: `alm-queue-commit-${crypto.randomUUID()}`,
+        storeName: admissionStore,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
     onTestFinished(() => db.close());
     const queue = new IndexedDbQueueBox({
         connection: new IndexedDbConnection(async () => db),

@@ -98,8 +98,6 @@ const CONNECT_READINESS_TIMEOUT_MS = 30_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
 /** Hosted conformance may need more than five seconds to admit a non-expiring send. */
 const NON_EXPIRING_SEND_TIMEOUT_MS = 10_000;
-/** Admission must remain possible for every send that finishes inside the command contract. */
-const EXPIRY_TTL_MS = 5_000;
 const MESSAGE_CONTROL_TIMEOUT_MS = 5_000;
 const FAULT_TIMEOUT_MS = 3_000;
 const ASSERT_TIMEOUT_MS = 2_000;
@@ -107,14 +105,19 @@ const STATS_TIMEOUT_MS = 3_000;
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const RESPONSE_MARGIN_MS = 1_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
+// Must clear the slowest observed outbound-admission latency (up to 5s on a loaded CI runner) with
+// margin, and still leave most of the receiver's `deadlineMs - RESPONSE_MARGIN_MS` absence window
+// after expiry, so the absence proves the ttl expired rather than racing the deadline itself. The
+// expiring send's command budget is this ttl, so it also bounds how long admission may take.
+const EXPIRY_TTL_MS = 7_500;
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
 const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
 /** The absence window must contain pre-send faults, the message lifetime, and post-expiry proof. */
-const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS
-    + EXPIRY_TTL_MS
-    + MINIMUM_POST_EXPIRY_OBSERVATION_MS
-    + RESPONSE_MARGIN_MS;
+const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
+    EXPIRY_TTL_MS +
+    MINIMUM_POST_EXPIRY_OBSERVATION_MS +
+    RESPONSE_MARGIN_MS;
 
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
@@ -270,7 +273,7 @@ function toDeliveryBaselineSenderCommands(
         }),
         toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
         toReceiptsCommand({ ...sender, index: 1 }),
-        toStorageCountersCommand(sender),
+        toStorageCountersCommand(sender, 'storage-counters'),
         toStorageCountersAssertCommand(sender)
     ];
 }
@@ -343,6 +346,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             toEnsureGroupCommand(recipe),
             toEnsureMemberCommand(recipe),
             toConnectCommand(recipe),
+            ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
             toStatsCommand(recipe)
         ]
@@ -484,13 +488,24 @@ function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): RallarBlac
     };
 }
 
-function toStorageCountersCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+function toStorageCountersCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
     return {
         kind: 'storage.counters',
-        commandId: toCommandId(step, 'storage-counters'),
+        commandId: toCommandId(step, name),
         reset: false,
         timeoutMs: toBudgetMs(STORAGE_COUNTERS_TIMEOUT_MS, step.input.deadlineMs)
     };
+}
+
+/**
+ * Pre-send evidence. A sender whose send exhausts its budget stops the recipe before the
+ * post-receipts counters run, so this reading is the only IndexedDB operation count a timed-out
+ * scenario leaves behind, and the pair brackets the operations one typed send spends.
+ */
+function toConnectedStorageCountersCommands(
+    step: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected')] : [];
 }
 
 /** The spec's own acceptance criterion: an admitted ALM send leaves AL-owned IndexedDB work behind. */

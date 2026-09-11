@@ -1,7 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '@shared/alm/al-admission-work-backend.ts';
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
+} from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { requireLivePersistenceWrite } from '@shared/persistence/persistence-write-deadline.ts';
 import { toResourceEntrySnapshot } from '@shared/queuebox/resource-entry-observations.ts';
@@ -53,6 +57,21 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 
     async ready(): Promise<void> {}
+
+    /**
+     * Autocommit gives each statement its own snapshot, never one across the chain, so the backend
+     * is its own read session and every read is a fresh query. A chain that deliberately re-reads a
+     * row -- the repair read, after it has captured the sender version that fences it -- must see
+     * the row as it is now, not as some earlier statement found it. It returns the chain's own
+     * promise rather than awaiting it: a session must not cost a caller an extra turn.
+     */
+    readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
+        return read(this);
+    }
+
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        return await this.workQueue.getItem(key);
+    }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
         return await new PSqlAdmissionMutationCollector(

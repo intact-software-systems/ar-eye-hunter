@@ -1,5 +1,7 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -9,6 +11,7 @@ import type {
     WsDeliveryDiagnosticsSink,
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -79,8 +82,10 @@ export interface CreateRallarMiddlewareOptions {
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
     readonly inboundStores?: ALInboundRuntimeStores;
-    readonly outboundStores?: ALOutboundRuntimeStores;
+    readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    readonly wsInboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly createGroupStateInboxService: (
         input: RallarGroupStateInboxServiceFactoryInput
     ) => GroupStateInboxService;

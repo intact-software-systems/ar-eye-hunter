@@ -7,6 +7,7 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -59,6 +60,7 @@ export namespace WebRtcRxStreamerService {
         readonly nowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
         readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
+        readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     }
 
     export interface Dependencies {
@@ -71,6 +73,7 @@ export namespace WebRtcRxStreamerService {
             readonly pingFrequencyMsecs: number;
         };
         readonly roomAuthorityRefresh: RoomAuthorityRefresh | undefined;
+        readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }
 
@@ -114,7 +117,6 @@ export class WebRtcRxStreamerService {
                     return this.multicast.planIncomingMessage(msg, source, observations);
                 },
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
-                readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry, plan) => {
                     return await this.dispatchInboxEntry(entry, plan);
                 },
@@ -126,7 +128,8 @@ export class WebRtcRxStreamerService {
                 },
                 forwardMessage: async (msg, fromPeerId) => {
                     await this.multicast.forwardIfRequired(msg, fromPeerId);
-                }
+                },
+                diagnostics: dependencies.inboundDiagnostics
             }
         );
     }
@@ -154,7 +157,7 @@ export class WebRtcRxStreamerService {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
                     onMessage: async (value) => {
                         const message = decodeALMessageValue(value).right;
-                        const acceptance = await this.inboundRuntime.handleIncomingMessage(value, {
+                        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, {
                             kind: 'rtc-peer',
                             peerId: peerDto.peerId
                         });
@@ -475,6 +478,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
             maxMissedPings: defaultMaxMissedPings,
             pingFrequencyMsecs: defaultPingFrequencyMsecs
         },
-        roomAuthorityRefresh: input.roomAuthorityRefresh
+        roomAuthorityRefresh: input.roomAuthorityRefresh,
+        inboundDiagnostics: input.inboundDiagnostics
     });
 }

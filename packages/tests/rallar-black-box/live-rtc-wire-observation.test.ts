@@ -143,12 +143,13 @@ describe('received not-yet-in-sync NACK proof', () => {
     });
 
     it('bounds retained NACK classifications while counting every observed frame', () => {
-        const frames = Array.from({ length: 25 }, (_, index) => JSON.stringify({
-            payload: {
-                typeId: 'al.control.nack.v1',
-                resource: JSON.stringify({ ...nack, msgId: `other-${index}` })
-            }
-        }));
+        const frames = Array.from({ length: 25 }, (_, index) =>
+            JSON.stringify({
+                payload: {
+                    typeId: 'al.control.nack.v1',
+                    resource: JSON.stringify({ ...nack, msgId: `other-${index}` })
+                }
+            }));
 
         const summary = summarizeLiveRtcNackWireObservation({ ...probe, frames });
 

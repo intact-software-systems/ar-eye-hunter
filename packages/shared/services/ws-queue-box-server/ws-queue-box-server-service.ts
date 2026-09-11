@@ -17,6 +17,7 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
 import type {
@@ -27,7 +28,10 @@ import type {
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { reconstructALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { createDefaultALOutboundRuntimeResources } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -64,8 +68,10 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider?: ALQosInputProvider;
         readonly targetResolver?: WsServerTargetResolver;
         readonly inboundStores?: ALInboundRuntimeStores;
-        readonly outboundStores?: ALOutboundRuntimeStores;
+        readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        readonly dequeueResilience?: ResourceInboxResilience;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
         readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
@@ -86,8 +92,10 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly targetResolver: WsServerTargetResolver;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
-        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
+        readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
@@ -137,7 +145,7 @@ export class WsQueueBoxServerService {
         this.clock = dependencies.outboundRuntime.clock;
         this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
-        this.outbox = dependencies.outboundRuntime.admissionStore.workQueue;
+        this.outbox = dependencies.outboundRuntime.workQueue;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.qosProvider = dependencies.qosProvider;
@@ -173,6 +181,10 @@ export class WsQueueBoxServerService {
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
+            dequeue: {
+                types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
+                resilience: dependencies.dequeueResilience
+            },
             diagnostics: dependencies.outboundDiagnostics,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(
@@ -211,14 +223,14 @@ export class WsQueueBoxServerService {
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.hasInboxConsumer(message),
-            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: (entry, plan, source) => this.dispatchInboxEntry(entry, plan, source),
             sendControlMessage: (message) => this.sendControlMessage(message),
             onControlMessage: async (message) => {
                 await this.outboundRuntime.acceptControlMessage(message);
             },
             forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
-            canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message)
+            canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
+            diagnostics: dependencies.inboundDiagnostics
         });
     }
 
@@ -331,13 +343,6 @@ export class WsQueueBoxServerService {
         return result;
     }
 
-    async dequeueOutbox(
-        typesToDequeue: Set<string>,
-        resilience: ResourceInboxResilience
-    ): Promise<void> {
-        await this.outboundRuntime.dequeue(typesToDequeue, resilience);
-    }
-
     private sendControlMessage(message: ALMessage): Promise<void> {
         const toPeerId = message.targets?.mode === 'unicast'
             ? message.targets.toPeerId
@@ -399,12 +404,12 @@ export class WsQueueBoxServerService {
         if (!authorization.authorized) {
             return await this.rejectIncomingMessage(message, authorization);
         }
-        return await this.inboundRuntime.handleIncomingMessage(message, {
+        return await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
-            ...(authorization.roomRecipientPeerIds === undefined
+            ...(authorization.groupRecipientPeerIds === undefined
                 ? {}
-                : { roomRecipientPeerIds: [...authorization.roomRecipientPeerIds] })
+                : { groupRecipientPeerIds: [...authorization.groupRecipientPeerIds] })
         });
     }
 
@@ -456,7 +461,7 @@ export class WsQueueBoxServerService {
         observations: ALMessagePlanningObservations
     ): ALMessageHandlingPlan {
         const fromPeerId = source.kind === 'trusted-server' ? message.id.senderId : source.peerId;
-        const frozenRecipients = source.kind === 'ws-client' ? source.roomRecipientPeerIds : undefined;
+        const frozenRecipients = source.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
         const recipientPeerIds = this.targetResolution.resolveInboundRecipients(message)
             .map((recipient) => recipient.peerId)
             .filter((peerId) => frozenRecipients === undefined || frozenRecipients.includes(peerId));
@@ -602,7 +607,7 @@ export class WsQueueBoxServerService {
         const nextHopPeerIds = plan.forwarding.nextHopPeerIds
             .filter((peerId) =>
                 peerId !== fromPeerId &&
-                (authority.roomRecipientPeerIds === undefined || authority.roomRecipientPeerIds.includes(peerId))
+                (authority.groupRecipientPeerIds === undefined || authority.groupRecipientPeerIds.includes(peerId))
             );
 
         if (nextHopPeerIds.length === 0) {
@@ -645,15 +650,15 @@ export class WsQueueBoxServerService {
                 ? { kind: 'retry', retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS }
                 : { kind: 'rejected' };
         }
-        if (source.kind !== 'ws-client' || authority.roomRecipientPeerIds === undefined) {
+        if (source.kind !== 'ws-client' || authority.groupRecipientPeerIds === undefined) {
             return { kind: 'authorized', source };
         }
-        const captured = source.roomRecipientPeerIds;
+        const captured = source.groupRecipientPeerIds;
         return {
             kind: 'authorized',
             source: {
                 ...source,
-                roomRecipientPeerIds: authority.roomRecipientPeerIds.filter((peerId) =>
+                groupRecipientPeerIds: authority.groupRecipientPeerIds.filter((peerId) =>
                     captured === undefined || captured.includes(peerId)
                 )
             }
@@ -698,11 +703,14 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
             queueEngine: input.queueEngine
         }),
+        dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
+        inboundDiagnostics: input.inboundDiagnostics,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,

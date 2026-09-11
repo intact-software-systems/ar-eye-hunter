@@ -1,6 +1,9 @@
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
@@ -10,7 +13,12 @@ import {
     it,
     vi
 } from 'vitest';
-import { createDefaultOutboundTestRuntime, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import {
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage,
+    peekOutboundWorkReadyAt
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound admission observation order', () => {
@@ -19,6 +27,9 @@ describe('outbound admission observation order', () => {
     it('keeps the raced normal admission authoritative while recovering its stale same-message enqueue', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'read-race',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'read-race',
             backend,
             supersedenceTrackTtlMs: 300_000,
@@ -27,6 +38,11 @@ describe('outbound admission observation order', () => {
         const admission = () =>
             new ALOutboundDispatchAdmission<OutboundTestPayload>({
                 admissionStore: store,
+                workPort: createTestALOutboundWorkPort({
+                    admissionStore: store,
+                    workQueue: backend.workQueue,
+                    nowMs: Date.now
+                }),
                 toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
@@ -53,6 +69,7 @@ describe('outbound admission observation order', () => {
             msg: message,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {},
             planner: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
         });
@@ -61,6 +78,7 @@ describe('outbound admission observation order', () => {
             msg: message,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {},
             planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
         });
@@ -74,7 +92,7 @@ describe('outbound admission observation order', () => {
         expect(winningSnapshot?.outboxKey).toBeDefined();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore: store },
+            stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'changed' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
@@ -83,14 +101,17 @@ describe('outbound admission observation order', () => {
         });
         await runtime.ready();
         expect(sent).toEqual([]);
-        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
-        expect(await store.workQueue.getItem(winningSnapshot!.outboxKey!)).toMatchObject({ status: 'NEW' });
+        expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
+        expect(await backend.workQueue.getItem(winningSnapshot!.outboxKey!)).toMatchObject({ status: 'NEW' });
         stale.dispose();
         winner.dispose();
     });
     it('rereads repair state after discovering its sender and capturing that sender version', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'repair-race',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'repair-race',
             backend,
             supersedenceTrackTtlMs: 300_000,
@@ -99,6 +120,11 @@ describe('outbound admission observation order', () => {
         const message = createOutboundMessage('repair-read-race');
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             admissionStore: store,
+            workPort: createTestALOutboundWorkPort({
+                admissionStore: store,
+                workQueue: backend.workQueue,
+                nowMs: Date.now
+            }),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
@@ -109,6 +135,7 @@ describe('outbound admission observation order', () => {
             msg: message,
             intent: 'enqueue',
             phase: 'immediate',
+            origin: 'send',
             options: {},
             planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
         });
@@ -133,7 +160,78 @@ describe('outbound admission observation order', () => {
                 expectedVersion: 1,
                 mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
                 durableEffects: []
-            }, decodeOutboundTestPayload)
+            })
+        ).toBe('committed');
+        resume.resolve();
+        const repair = await pending;
+        expect(repair.clientRecord?.version).toBe(2);
+        expect(repair.sentSnapshot).toBeUndefined();
+        expect(repair.plan).toBeUndefined();
+        admission.dispose();
+    });
+    it('rereads repair state from Postgres after capturing that sender version', async () => {
+        const namespace = 'repair-race-psql';
+        const storage = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend(storage.sql, namespace, Date.now);
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: namespace,
+            decodePrepared: decodeOutboundTestPayload,
+            namespace,
+            backend,
+            supersedenceTrackTtlMs: 300_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        const message = createOutboundMessage('repair-read-race-psql');
+        const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            admissionStore: store,
+            workPort: createTestALOutboundWorkPort({
+                admissionStore: store,
+                workQueue: backend.workQueue,
+                nowMs: Date.now
+            }),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            decodePreparedMessage: decodeOutboundTestPayload,
+            clock: { nowMs: Date.now },
+            browserLocks: undefined,
+            diagnostics: undefined
+        });
+        await admission.commit({
+            msg: message,
+            intent: 'enqueue',
+            phase: 'immediate',
+            origin: 'send',
+            options: {},
+            planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
+        });
+        const captured = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<void>();
+        // The SQL read itself is the pause point: a session that answered the second hop from a
+        // cached observation never reaches it twice.
+        const findEntry = PSqlRuntimeStateRepository.prototype.findEntry;
+        let paused = false;
+        vi.spyOn(PSqlRuntimeStateRepository.prototype, 'findEntry').mockImplementation(async function (
+            this: PSqlRuntimeStateRepository,
+            entryNamespace: string,
+            key: string
+        ) {
+            const entry = await findEntry.call(this, entryNamespace, key);
+            if (key === `${namespace}:sent:${message.id.msgId}` && !paused) {
+                paused = true;
+                captured.resolve();
+                await resume.promise;
+            }
+            return entry;
+        });
+        const pending = store.readRepairMessage(message.id.msgId, (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }));
+        await captured.promise;
+        expect(
+            await store.commitBundle({
+                senderId: message.id.senderId,
+                expectedVersion: 1,
+                mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
+                durableEffects: []
+            })
         ).toBe('committed');
         resume.resolve();
         const repair = await pending;

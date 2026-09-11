@@ -102,9 +102,10 @@ export class RealEngineAdminPruneFixture {
         assert.equal(this.activeDequeues.size, 0);
     }
 
+    /** The port it stands in for is the middleware's, which announces an external write. */
     private wake(): void {
         this.wakeCount += 1;
-        this.engine.wake();
+        this.engine.wakeAfterExternalWrite();
     }
 
     private adminAuthority(): {

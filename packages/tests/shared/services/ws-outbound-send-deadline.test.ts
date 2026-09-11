@@ -64,8 +64,9 @@ describe('WS outbound callback deadline', () => {
         }
         release.resolve();
         const result = await pending;
+        // Admission returns before its own send batch; wait for that batch to settle before asserting it.
+        await expect.poll(() => callbacks).toEqual(boundary === 'before' ? ['observer', 'after-native'] : ['observer']);
         expect(native.sent).toHaveLength(boundary === 'before' ? 1 : 0);
-        expect(callbacks).toEqual(boundary === 'before' ? ['observer', 'after-native'] : ['observer']);
         expect(result.message.constraints?.expiresAtMs).toBe(2_000);
         expect(msg.constraints?.expiresAtMs).toBe(2_000);
         if (native.sent[0]) {

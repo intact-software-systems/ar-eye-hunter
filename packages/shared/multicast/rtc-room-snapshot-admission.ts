@@ -102,16 +102,16 @@ export function toRtcRoomSnapshotHandlingPlan(
     admission: RtcRoomSnapshotAdmission,
     fromPeerId: string | undefined
 ): ALMessageHandlingPlan {
-    if (
-        admission.kind === 'authorized' || admission.kind === 'not-room' || plan.dropReason?.includes('expired') ||
-        plan.dropReason === 'duplicate'
-    ) {
+    if (admission.kind === 'authorized' || admission.kind === 'not-room' || plan.dropReasonCode === 'expired') {
         return plan;
     }
     const pending = admission.kind === 'pending';
     return {
         ...plan,
-        dropReason: pending ? 'not-yet-in-sync' : 'unauthorized',
+        // The detail names which denial fired; the code stays at its head because `dropReason` is
+        // what the inbound acceptance carries, and the receiver's room-authority refresh reads it.
+        dropReason: pending ? `not-yet-in-sync: ${admission.reason}` : 'unauthorized',
+        dropReasonCode: pending ? 'not-yet-in-sync' : 'unauthorized',
         localDelivery: { enabled: false, persist: false, deferred: false },
         forwarding: { enabled: false, persist: false, nextHopPeerIds: [] },
         ack: { enabled: false, algo: 'none', deferred: false },

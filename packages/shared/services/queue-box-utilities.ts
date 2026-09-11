@@ -72,6 +72,8 @@ export class QueueBoxUtilities {
             ? Temporal.Instant.fromEpochMilliseconds(expireAtMs)
             : NEVER_EXPIRE_TS;
 
+        // Queue readers reinterpret `createdTs` as UTC wall clock; stamp it from one UTC instant.
+        const createdAt = Temporal.Now.zonedDateTimeISO('UTC');
         return {
             key: {
                 topicId: msg.route.topicId,
@@ -81,9 +83,9 @@ export class QueueBoxUtilities {
             resource: JSON.stringify(msg),
             typeId: typeId,
             audit: {
-                date: Temporal.Now.plainTimeISO(),
+                date: createdAt.toPlainTime(),
                 createdBy: msg.audit?.createdBy ?? 'test',
-                createdTs: Temporal.Now.plainDateTimeISO(),
+                createdTs: createdAt.toPlainDateTime(),
                 expiryTs
             },
             status: EntityStatus.NEW,

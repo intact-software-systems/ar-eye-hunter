@@ -1,3 +1,9 @@
+import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import {
+    createPassThroughALStorageResetSink,
+    type ALStorageResetEvent
+} from '@shared/alm/open-indexed-db-admission-database.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createPassThroughIndexedDbOperationObserver,
     type IndexedDbOperationObserver
@@ -10,11 +16,25 @@ import {
 export interface RallarDiagnosticsPortsInput {
     readonly transportFaultPort?: TransportFaultPort;
     readonly indexedDbOperationObserver?: IndexedDbOperationObserver;
+    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+    readonly onStorageReset?: (event: ALStorageResetEvent) => void;
 }
 
 export interface RallarDiagnosticsPorts {
     readonly transportFaultPort: TransportFaultPort;
     readonly indexedDbOperationObserver: IndexedDbOperationObserver;
+    readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
+    readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink;
+    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+}
+
+export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
+    return () => {};
+}
+
+export function createPassThroughALInboundRuntimeDiagnosticsSink(): ALInboundRuntimeDiagnosticsSink {
+    return () => {};
 }
 
 export function toRallarDiagnosticsPorts(
@@ -23,6 +43,9 @@ export function toRallarDiagnosticsPorts(
     return {
         transportFaultPort: input?.transportFaultPort ?? createPassThroughTransportFaultPort(),
         indexedDbOperationObserver: input?.indexedDbOperationObserver ??
-            createPassThroughIndexedDbOperationObserver()
+            createPassThroughIndexedDbOperationObserver(),
+        outboundDiagnostics: input?.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
+        inboundDiagnostics: input?.inboundDiagnostics ?? createPassThroughALInboundRuntimeDiagnosticsSink(),
+        onStorageReset: input?.onStorageReset ?? createPassThroughALStorageResetSink()
     };
 }

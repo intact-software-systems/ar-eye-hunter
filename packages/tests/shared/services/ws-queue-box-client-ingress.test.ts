@@ -1,3 +1,8 @@
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -6,6 +11,9 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import {
+    peekOutboundWorkReadyAt
+} from '../alm/outbound-runtime-test-fixture.ts';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -17,20 +25,22 @@ import {
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient, type OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
 
+import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 interface ClientIngressFixture {
     readonly service: WsQueueBoxClientService;
     readonly socket: TestWebSocket;
     readonly admissionStore: ALInboundAdmissionStore;
-    readonly outboundStore: ALOutboundAdmissionStore;
+    readonly outboundStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly outbox: InMemoryQueueBox;
     readonly admission: ALAdmissionMemoryState;
     readonly delivered: ALMessage[];
@@ -53,14 +63,14 @@ describe('WS client typed ingress and transport effects', () => {
         expect((await fixture.service.acceptIncomingMessage(malformed)).left?.code).toBe('malformed');
         expect((await fixture.service.acceptIncomingMessage(oversized)).left?.code).toBe('oversized');
         expect(fixture.admission.data.size).toBe(0);
-        expect(await fixture.admissionStore.workQueue.getAllKeys()).toEqual([]);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
         expect(await fixture.outbox.getAllKeys()).toEqual([]);
         expect(fixture.socket.sent).toEqual([]);
         expect(fixture.delivered).toEqual([]);
 
         const accepted = await fixture.service.acceptIncomingMessage(message);
         expect(accepted.right?.kind).toBe('admitted');
-        expect(fixture.delivered).toEqual([message]);
+        await expect.poll(() => fixture.delivered).toEqual([message]);
     });
 
     it.each(['owned', 'shared'] as const)('replays without new ingress when a matching consumer registers with an %s engine', async (ownership) => {
@@ -68,9 +78,9 @@ describe('WS client typed ingress and transport effects', () => {
         fixture.service.removeAnyInboxMessageCallback('test-observer');
         const message = incomingMessage();
         await fixture.service.acceptIncomingMessage(message);
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await fixture.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+        expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
         fixture.service.close();
 
         const engine = new InboxOutboxEngine();
@@ -79,7 +89,7 @@ describe('WS client typed ingress and transport effects', () => {
             outbox: new InMemoryQueueBox(),
             socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
             sessionId: 'self',
-            inboundStores: { admissionStore: fixture.admissionStore },
+            inboundStores: { admissionStore: fixture.admissionStore, workQueue: fixture.admission.workQueue },
             queueEngine: ownership === 'shared' ? engine : undefined
         });
         onTestFinished(() => {
@@ -93,14 +103,14 @@ describe('WS client typed ingress and transport effects', () => {
             }
         });
         await engine.executeOnce();
-        expect(await fixture.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+        expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
         replay.onInboxMessageDo('message.v1', {
             onMessage: async (incoming) => {
                 delivered.push(incoming.id.msgId);
             }
         });
 
-        await expect.poll(() => fixture.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+        await expect.poll(() => fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
         expect(delivered).toEqual([message.id.msgId]);
     });
 
@@ -116,7 +126,7 @@ describe('WS client typed ingress and transport effects', () => {
         const accepted = await fixture.service.acceptIncomingMessage(message);
 
         expect(accepted.right?.kind).toBe('admitted');
-        expect(fixture.delivered).toEqual([message]);
+        await expect.poll(() => fixture.delivered).toEqual([message]);
         expect(fixture.delivered[0].id.senderId).toBe('logical-origin');
     });
 
@@ -142,6 +152,7 @@ describe('WS client typed ingress and transport effects', () => {
 
         await fixture.service.acceptIncomingMessage(message);
 
+        await waitForSettledALInboundWork(fixture.admission.workQueue);
         expect(delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
         expect(fixture.delivered).toEqual(offsetMs < 0 ? [message] : []);
     });
@@ -223,9 +234,13 @@ describe('WS client typed ingress and transport effects', () => {
         };
 
         const result = await fixture.service.enqueueOutboxIfAbsent(message);
+        await vi.advanceTimersByTimeAsync(0);
         expect(result.status).toBe('accepted');
         expect(fixture.socket.sent).toEqual([]);
-        const retryAtMs = await fixture.outboundStore.peekNextEffectReadyAt();
+        const retryAtMs = await peekOutboundWorkReadyAt(
+            fixture.outboundStores.workQueue,
+            fixture.outboundStore.namespace
+        );
         if (retryAtMs === undefined) {
             throw new Error('Expected retained retry work after the failed socket submission');
         }
@@ -252,10 +267,12 @@ describe('WS client typed ingress and transport effects', () => {
         const message = incomingMessage();
 
         expect((await fixture.service.acceptIncomingMessage(message)).right?.kind).toBe('admitted');
+        // The worker owns delivery: flush its first attempt without advancing the retry deadline.
+        await vi.advanceTimersByTimeAsync(0);
         expect(fixture.delivered).toEqual([]);
-        const keys = await fixture.admissionStore.workQueue.getAllKeys();
+        const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        const retry = (await fixture.admissionStore.workQueue.getItem(keys[0]))!;
+        const retry = (await fixture.admission.workQueue.getItem(keys[0]))!;
         expect(retry).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
         available = true;
         await vi.advanceTimersByTimeAsync(retry.dequeueAudit.nextTs!.epochMilliseconds - Date.now());
@@ -303,9 +320,11 @@ async function createClientIngressFixture(
     const outbox = new InMemoryQueueBox(new Map());
     const delivered: ALMessage[] = [];
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
-        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now)
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now),
+        decodePrepared: decodeALOutboundTransportMessage
     });
     const admissionStore = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'ws-client-ingress',
         backend: new InMemoryAdmissionBackend(admission, Date.now),
         orderingTrackTtlMs: 300000,
@@ -316,7 +335,7 @@ async function createClientIngressFixture(
         outbox,
         socket: client,
         sessionId: 'self',
-        inboundStores: { admissionStore },
+        inboundStores: { admissionStore, workQueue: admission.workQueue },
         outboundStores
     }).enableDefaultCallbacks();
     service.onAnyInboxMessageDo('test-observer', {
@@ -325,7 +344,16 @@ async function createClientIngressFixture(
         }
     });
     onTestFinished(() => service.close());
-    return { service, socket, admissionStore, outboundStore: outboundStores.admissionStore, outbox, admission, delivered };
+    return {
+        service,
+        socket,
+        admissionStore,
+        outboundStore: outboundStores.admissionStore,
+        outboundStores,
+        outbox,
+        admission,
+        delivered
+    };
 }
 
 function incomingMessage(): ALMessage {

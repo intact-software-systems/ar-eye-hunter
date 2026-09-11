@@ -5,14 +5,21 @@ import {
     vi
 } from 'vitest';
 
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
+import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_REVISION_KEY, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
+import {
+    AL_ADMISSION_REVISION_KEY,
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_SCHEMA_KEY,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import '../../setup-browser-indexeddb.ts';
@@ -27,6 +34,8 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
             vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
             const dbName = `native-deadline-${crypto.randomUUID()}`;
             const backend = new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
@@ -34,6 +43,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 observer: createPassThroughIndexedDbOperationObserver()
             });
             const store = createALInboundAdmissionStore({
+                nowMs: Date.now,
                 namespace: 'deadline',
                 backend,
                 orderingTrackTtlMs: 60_000,
@@ -48,6 +58,11 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 });
             const admission = new ALInboundMessageAdmission({
                 admissionStore: store,
+                workPort: createTestALInboundWorkPort({
+                    admissionStore: store,
+                    workQueue: backend.workQueue,
+                    nowMs: () => nowMs
+                }),
                 clock: { nowMs: () => nowMs },
                 planIncomingMessage: planner,
                 effectPreparation: {
@@ -82,7 +97,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
             try {
                 const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
                 if (replay) {
-                    expect(await admission.replay({ kind: 'admit-message', msg: message, source })).toBe('completed');
+                    expect(await admission.replay({ kind: 'admit-message', msg: decodeALDeadlinedMessage(message), source })).toBe('completed');
                 }
                 else {
                     const outcome = await admission.attempt(message, source, planner);
@@ -90,19 +105,27 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                         kind: 'completed',
                         acceptance: offset < 0
                             ? { kind: 'admitted' }
-                            : { kind: 'not-admitted', reason: 'expired' }
+                            : { kind: 'not-admitted', reason: 'expired' },
+                        wroteWork: offset < 0
                     });
                 }
                 expect(crossed).toBe(true);
                 requestSpy.mockRestore();
-                const db = await openIndexedDbAdmissionDatabase(dbName, 'entries');
+                const db = await openIndexedDbAdmissionDatabase({
+                    dbName: dbName,
+                    storeName: 'entries',
+                    schemaId: AL_ADMISSION_SCHEMA_ID,
+                    onStorageReset: () => {}
+                });
                 try {
                     const transaction = db.transaction(['entries', 'alm-work'], 'readonly');
                     const [metadata, work] = await Promise.all([
                         readIndexedDbRequest(transaction.objectStore('entries').getAll()),
                         readIndexedDbRequest(transaction.objectStore('alm-work').getAll())
                     ]);
-                    expect(metadata.filter((row) => row.key !== AL_ADMISSION_REVISION_KEY).length > 0).toBe(offset < 0);
+                    expect(
+                        metadata.filter((row) => row.key !== AL_ADMISSION_REVISION_KEY && row.key !== AL_ADMISSION_SCHEMA_KEY).length > 0
+                    ).toBe(offset < 0);
                     expect(work.length > 0).toBe(offset < 0);
                 }
                 finally {

@@ -33,7 +33,12 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 
+import {
+    createOutboundRuntimeWithWorkTask,
+    enqueueOutboundOrThrow
+} from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 interface RetainedAdmissionState {
     readonly admissionState: ALAdmissionMemoryState;
@@ -68,16 +73,17 @@ describe('AL state retained across runtime recreation', () => {
             { ttlMs: 30_000, reliability: 'at-least-once' }
         );
 
-        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
-        expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
+        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         runtime1.dispose();
-        const restartedRuntime = createDefaultInboundRuntime(
-            createRetainedInboundStoreSet(stores),
-            dispatchedMsgIds
-        );
+        const restartedStores = createRetainedInboundStoreSet(stores);
+        const restartedRuntime = createDefaultInboundRuntime(restartedStores, dispatchedMsgIds);
 
-        await restartedRuntime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await restartedRuntime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+
+        // The redelivered duplicate must not dispatch again: settle every retained row before reading.
+        await waitForSettledALInboundWork(restartedStores.runtimeStores.workQueue);
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -90,7 +96,17 @@ describe('AL state retained across runtime recreation', () => {
         const seq2 = createBufferedOrderedMessage(2, 'two');
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
-        await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+
+        // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
+        await waitForSettledALInboundWork(stores.runtimeStores.workQueue);
+        await expect.poll(() =>
+            stores.runtimeStores.admissionStore.readBufferedRelease({
+                trackKey: toALOrderingTrackKey(seq2)!,
+                seq: 2,
+                nowMs: Date.now()
+            })
+        ).toBeDefined();
         expect(dispatchedMsgIds).toEqual([]);
 
         runtime1.dispose();
@@ -100,7 +116,7 @@ describe('AL state retained across runtime recreation', () => {
             controlMessages
         );
 
-        await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
@@ -232,30 +248,21 @@ describe('AL state retained across runtime recreation', () => {
     });
 });
 
-async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
-    msg: ALMessage
-): Promise<readonly ResourceEntry[]> {
-    const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.status === 'failed') {
-        throw new Error(enqueued.reason);
-    }
-
-    return enqueued.entries;
-}
-
 function createRetainedInboundStoreSet(
     existing?: RetainedAdmissionState
 ): RetainedRuntimeStoreSet<ALInboundRuntimeStores> {
     const admissionState = existing?.admissionState ??
         createInMemoryALAdmissionState();
 
+    const backend = new InMemoryAdmissionBackend(admissionState, Date.now);
     return {
         admissionState,
         runtimeStores: {
+            workQueue: backend.workQueue,
             admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
                 namespace: 'durable-test:inbound:admission',
-                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
+                backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
@@ -282,7 +289,6 @@ function createDefaultInboundRuntime(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
@@ -290,7 +296,8 @@ function createDefaultInboundRuntime(
         },
         sendControlMessage: async (msg) => {
             controlMessages.push(msg);
-        }
+        },
+        diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     return runtime;
@@ -298,51 +305,58 @@ function createDefaultInboundRuntime(
 
 function createRetainedOutboundStoreSet(
     existing?: RetainedAdmissionState
-): RetainedRuntimeStoreSet<ALOutboundRuntimeStores> {
+): RetainedRuntimeStoreSet<ALOutboundRuntimeStores<OutboundTestPayload>> {
     const admissionState = existing?.admissionState ??
         createInMemoryALAdmissionState();
+    const outboundBackend = new InMemoryAdmissionBackend(admissionState, Date.now);
 
     return {
         admissionState,
         runtimeStores: {
             admissionStore: createALOutboundAdmissionStore({
+                decodePrepared: decodeOutboundTestPayload,
+                nowMs: Date.now,
                 namespace: 'durable-test:outbound:admission',
-                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
+                canonicalScope: 'durable-test:outbound:admission',
+                backend: outboundBackend,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
-            })
+            }),
+            workQueue: outboundBackend.workQueue
         }
     };
 }
 
 function createDefaultOutboundRuntime(
-    stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores>,
+    stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores<OutboundTestPayload>>,
     sent: OutboundTestPayload[]
 ): ALOutboundMessageRuntime<OutboundTestPayload> {
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        outbox: stores.runtimeStores.admissionStore.workQueue,
-        stores: stores.runtimeStores,
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        decodePreparedMessage: decodeOutboundTestPayload,
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: planOutboundTestMessage,
-        planRepairMessage: async (msg, request) => ({
-            msg: msg,
-            persist: false,
-            preparedMessages: [
-                {
-                    kind: 'repair',
-                    msgId: msg.id.msgId,
-                    trigger: request.trigger
-                }
-            ]
-        }),
-        sendPreparedMessage: async (prepared, phase) => {
-            sent.push({ ...prepared, phase });
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            outbox: stores.runtimeStores.workQueue,
+            stores: stores.runtimeStores,
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            decodePreparedMessage: decodeOutboundTestPayload,
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: planOutboundTestMessage,
+            planRepairMessage: async (msg, request) => ({
+                msg: msg,
+                persist: false,
+                preparedMessages: [
+                    {
+                        kind: 'repair',
+                        msgId: msg.id.msgId,
+                        trigger: request.trigger
+                    }
+                ]
+            }),
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
 
-            return { status: 'sent' as const };
-        }
-    });
+                return { status: 'sent' as const };
+            }
+        })
+    );
     onTestFinished(() => runtime.dispose());
     return runtime;
 }

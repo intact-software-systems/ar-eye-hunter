@@ -14,6 +14,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -103,9 +104,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         const socket = await openSignalingConnection(transport, createSignalingObservations().callbacks);
         const payload = createSignalingPayload();
 
+        // Admission returns before its own send batch; wait for that batch to settle before asserting it.
         await transport.send(payload);
-
-        expect(socket.sent).toHaveLength(1);
+        await expect.poll(() => socket.sent).toHaveLength(1);
         const sent = decodePersistedALMessage(socket.sent[0]);
         expect(sent.payload.typeId).toBe('rtc');
         expect(sent.id.senderId).toBe(payload.fromId);
@@ -114,6 +115,59 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(rows.some((row) => row && isPendingALOutboundWork(row))).toBe(false);
         const canonical = rows.find((row) => row?.key.topicId === 'AL_OUTBOUND_MESSAGE');
         expect(canonical?.resource).toBe(socket.sent[0]);
+        expect(wakes).toBe(0);
+    });
+
+    it('re-admits a rejected signal once, as the same message, and gives up when it never clears', async () => {
+        const service = createSignalingQueueBox();
+        const attempts: ALMessage[] = [];
+        let statuses: readonly ALOutboundEnqueueStatus[] = ['rate-limited', 'enqueued'];
+        vi.spyOn(service, 'enqueueOutboxIfAbsent').mockImplementation(async (message) => {
+            attempts.push(message);
+            return {
+                status: statuses[attempts.length - 1] ?? 'failed',
+                message,
+                entries: [],
+                reason: 'admission-under-test'
+            };
+        });
+        let wakes = 0;
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+            wakes += 1;
+        });
+
+        await transport.send(createSignalingPayload());
+
+        // The retry is the same offer, not a new negotiation: the peer cannot produce another one.
+        expect(attempts).toHaveLength(2);
+        expect(attempts[1].id.msgId).toBe(attempts[0].id.msgId);
+        expect(JSON.parse(attempts[1].payload.resource)).toEqual(JSON.parse(attempts[0].payload.resource));
+        expect(wakes).toBe(1);
+
+        attempts.length = 0;
+        statuses = ['circuit-open', 'circuit-open'];
+
+        await expect(transport.send(createSignalingPayload())).rejects.toThrow('admission-under-test');
+
+        expect(attempts).toHaveLength(2);
+        expect(wakes).toBe(1);
+    });
+
+    it('throws a signal the admission will never clear without spending a retry on it', async () => {
+        const service = createSignalingQueueBox();
+        const attempts: ALMessage[] = [];
+        vi.spyOn(service, 'enqueueOutboxIfAbsent').mockImplementation(async (message) => {
+            attempts.push(message);
+            return { status: 'superseded', message, entries: [], reason: 'newer-signal-won' };
+        });
+        let wakes = 0;
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+            wakes += 1;
+        });
+
+        await expect(transport.send(createSignalingPayload())).rejects.toThrow('newer-signal-won');
+
+        expect(attempts).toHaveLength(1);
         expect(wakes).toBe(0);
     });
 

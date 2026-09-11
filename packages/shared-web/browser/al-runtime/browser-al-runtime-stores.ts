@@ -17,6 +17,10 @@ import {
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 
 import {
     BROWSER_AL_RUNTIME_DB_NAME,
@@ -27,42 +31,9 @@ import {
 
 type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
 
-export interface ConfigureBrowserALRuntimeStoresInput extends Omit<BrowserALRuntimeOptions, 'observer'> {
+export interface ConfigureBrowserALRuntimeStoresInput
+    extends Omit<BrowserALRuntimeOptions, 'observer' | 'onStorageReset'> {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
-}
-
-type RuntimeStoreDirection = 'inbound' | 'outbound';
-
-function createBrowserALRuntimeStores(
-    direction: 'inbound',
-    name: string,
-    options?: BrowserALRuntimeOptions
-): ALInboundRuntimeStores;
-function createBrowserALRuntimeStores(
-    direction: 'outbound',
-    name: string,
-    options?: BrowserALRuntimeOptions
-): ALOutboundRuntimeStores;
-function createBrowserALRuntimeStores(
-    direction: RuntimeStoreDirection,
-    name: string,
-    options: BrowserALRuntimeOptions = {}
-): ALInboundRuntimeStores | ALOutboundRuntimeStores {
-    if (!isIndexedDbALRuntimeStoreSupported()) {
-        return direction === 'inbound'
-            ? createDefaultInMemoryALInboundRuntimeStores({ ...options, namespace: `browser:${name}` })
-            : createDefaultInMemoryALOutboundRuntimeStores({ ...options, namespace: `browser:${name}` });
-    }
-
-    const persistentOptions = {
-        ...options,
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
-        namespace: `browser:${name}`
-    };
-
-    return direction === 'inbound'
-        ? createDefaultIndexedDbALInboundRuntimeStores(persistentOptions)
-        : createDefaultIndexedDbALOutboundRuntimeStores(persistentOptions);
 }
 
 function createBrowserRuntimeStoreFactories(
@@ -72,7 +43,7 @@ function createBrowserRuntimeStoreFactories(
         outbound?: boolean;
     }>,
     options: BrowserALRuntimeOptions
-): ALRuntimeStoreFactories {
+): ALRuntimeStoreFactories<ALOutboundTransportMessage> {
     return {
         createInboundStores: directions.inbound
             ? () => createBrowserALInboundRuntimeStores(name, options)
@@ -86,7 +57,7 @@ function createBrowserRuntimeStoreFactories(
 function toBrowserRuntimeStoreScopes(
     sessionId: string,
     options: BrowserALRuntimeOptions
-): readonly ALRuntimeStoreScope[] {
+): readonly ALRuntimeStoreScope<ALOutboundTransportMessage>[] {
     const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
     const rtcRxId = toBrowserRtcRxALRuntimeStoreId(sessionId);
     const rtcOverlayId = toBrowserRtcOverlayALRuntimeStoreId(sessionId);
@@ -119,40 +90,29 @@ function toBrowserRuntimeStoreScopes(
     ];
 }
 
-function resolveBrowserALRuntimeStores(
-    direction: 'inbound',
-    sessionId: string,
-    toRuntimeStoreId: (sessionId: string) => string
-): ALInboundRuntimeStores;
-function resolveBrowserALRuntimeStores(
-    direction: 'outbound',
-    sessionId: string,
-    toRuntimeStoreId: (sessionId: string) => string
-): ALOutboundRuntimeStores;
-function resolveBrowserALRuntimeStores(
-    direction: RuntimeStoreDirection,
-    sessionId: string,
-    toRuntimeStoreId: (sessionId: string) => string
-): ALInboundRuntimeStores | ALOutboundRuntimeStores {
-    const runtimeStoreId = toRuntimeStoreId(sessionId);
-
-    return direction === 'inbound'
-        ? resolveALInboundRuntimeStores(runtimeStoreId)
-        : resolveALOutboundRuntimeStores(runtimeStoreId);
-}
-
 export function createBrowserALInboundRuntimeStores(
     name: string,
     options: BrowserALRuntimeOptions = {}
 ): ALInboundRuntimeStores {
-    return createBrowserALRuntimeStores('inbound', name, options);
+    const namespace = `browser:${name}`;
+    return isIndexedDbALRuntimeStoreSupported()
+        ? createDefaultIndexedDbALInboundRuntimeStores({
+            ...options,
+            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            namespace
+        })
+        : createDefaultInMemoryALInboundRuntimeStores({ ...options, namespace });
 }
 
 export function createBrowserALOutboundRuntimeStores(
     name: string,
     options: BrowserALRuntimeOptions = {}
-): ALOutboundRuntimeStores {
-    return createBrowserALRuntimeStores('outbound', name, options);
+): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
+    const namespace = `browser:${name}`;
+    const outbound = { ...options, namespace, decodePrepared: decodeALOutboundTransportMessage };
+    return isIndexedDbALRuntimeStoreSupported()
+        ? createDefaultIndexedDbALOutboundRuntimeStores({ ...outbound, dbName: BROWSER_AL_RUNTIME_DB_NAME })
+        : createDefaultInMemoryALOutboundRuntimeStores(outbound);
 }
 
 export function configureBrowserALRuntimeStores(
@@ -163,6 +123,7 @@ export function configureBrowserALRuntimeStores(
     const scoped: BrowserALRuntimeOptions = {
         ...options,
         observer: diagnosticsPorts.indexedDbOperationObserver,
+        onStorageReset: diagnosticsPorts.onStorageReset,
         canonicalScope: `browser-session:${sessionId}`,
         outboundBackend: !isIndexedDbALRuntimeStoreSupported()
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
@@ -174,39 +135,23 @@ export function configureBrowserALRuntimeStores(
 export function resolveBrowserWsClientALInboundRuntimeStores(
     sessionId: string
 ): ALInboundRuntimeStores {
-    return resolveBrowserALRuntimeStores(
-        'inbound',
-        sessionId,
-        toBrowserWsClientALRuntimeStoreId
-    );
+    return resolveALInboundRuntimeStores(toBrowserWsClientALRuntimeStoreId(sessionId));
 }
 
 export function resolveBrowserWsClientALOutboundRuntimeStores(
     sessionId: string
-): ALOutboundRuntimeStores {
-    return resolveBrowserALRuntimeStores(
-        'outbound',
-        sessionId,
-        toBrowserWsClientALRuntimeStoreId
-    );
+): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
+    return resolveALOutboundRuntimeStores(toBrowserWsClientALRuntimeStoreId(sessionId));
 }
 
 export function resolveBrowserRtcRxALInboundRuntimeStores(
     sessionId: string
 ): ALInboundRuntimeStores {
-    return resolveBrowserALRuntimeStores(
-        'inbound',
-        sessionId,
-        toBrowserRtcRxALRuntimeStoreId
-    );
+    return resolveALInboundRuntimeStores(toBrowserRtcRxALRuntimeStoreId(sessionId));
 }
 
 export function resolveBrowserRtcOverlayALOutboundRuntimeStores(
     sessionId: string
-): ALOutboundRuntimeStores {
-    return resolveBrowserALRuntimeStores(
-        'outbound',
-        sessionId,
-        toBrowserRtcOverlayALRuntimeStoreId
-    );
+): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
+    return resolveALOutboundRuntimeStores(toBrowserRtcOverlayALRuntimeStoreId(sessionId));
 }

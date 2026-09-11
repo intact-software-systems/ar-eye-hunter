@@ -10,6 +10,8 @@ import {
 
 import '../../setup-browser-indexeddb.ts';
 
+import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -168,9 +170,11 @@ describe('browser RTC runtime composition', () => {
             }
         }
         expect(fixture.service.readyPeerIdsForLane()).toEqual(['accepted-peer', 'planned-peer']);
+        const qboxEngine = new InboxOutboxEngine();
+        const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             webRtcConnectionService: fixture.service,
-            qboxEngine: new InboxOutboxEngine()
+            qboxEngine
         });
         onTestFinished(() => manager.dispose());
 
@@ -192,6 +196,8 @@ describe('browser RTC runtime composition', () => {
         expect(result).toMatchObject({ status: 'accepted' });
         expect(result.entries).toHaveLength(1);
         expect(result.entry?.status).toBe('COMPLETED');
+        // Admission returns before its own send batch; the transport attempt runs on that batch.
+        await drainOnce();
         const acceptedMessages = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
         const plannedMessages = fixture.nativePeer('planned-peer').channels.flatMap((channel) => channel.sent);
         expect(acceptedMessages).toHaveLength(1);

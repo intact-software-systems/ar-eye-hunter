@@ -33,7 +33,7 @@ export class RtcGroupSnapshotRefresh {
     ): Promise<void> {
         if (
             this.#disposed || acceptance.kind !== 'not-admitted' ||
-            acceptance.reason !== 'not-yet-in-sync'
+            !isNotYetInSyncReason(acceptance.reason)
         ) {
             return;
         }
@@ -72,4 +72,13 @@ export class RtcGroupSnapshotRefresh {
         }
         this.#activeByGroup.clear();
     }
+}
+
+/**
+ * The acceptance carries the plan's drop reason, not its code. A room-authority denial writes the
+ * code at the head of that reason and the denial that fired after it
+ * (`rtc-room-snapshot-admission.ts`); a server-side denial writes the bare code.
+ */
+function isNotYetInSyncReason(reason: string): boolean {
+    return reason === 'not-yet-in-sync' || reason.startsWith('not-yet-in-sync: ');
 }

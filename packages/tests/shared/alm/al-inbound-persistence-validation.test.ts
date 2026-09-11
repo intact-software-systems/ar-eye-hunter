@@ -1,11 +1,19 @@
+import {
+    createTestALInboundControlAdmission,
+    createTestALInboundWorkPort
+} from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionWriteContext
+} from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { encodeALAdmissionResourceEntry } from '@shared/alm/al-admission-resource-entry-validation.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionObservations,
@@ -16,11 +24,10 @@ import {
 import {
     computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
-    toALInboundWorkKey,
-    toALInboundWorkType
+    toALInboundWorkKey
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     describe,
     expect,
@@ -43,13 +50,26 @@ function createFixture() {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALInboundAdmissionStore({
+        nowMs: Date.now,
         namespace: 'inbound',
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    return { state, backend, store };
+    const stores = { admissionStore: store, workQueue: state.workQueue };
+    return {
+        state,
+        backend,
+        store,
+        workQueue: state.workQueue,
+        port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
+        control: createTestALInboundControlAdmission({
+            ...stores,
+            nowMs: Date.now,
+            newControlId: () => 'generated-control'
+        })
+    };
 }
 
 function readIncoming(store: ReturnType<typeof createFixture>['store'], candidate: ALMessage) {
@@ -64,7 +84,25 @@ function readIncoming(store: ReturnType<typeof createFixture>['store'], candidat
 }
 
 function createBufferedSnapshot() {
-    return { trackKey: toALOrderingTrackKey(message)!, seq: 2, msg: message, plan: planMessage(message) };
+    return {
+        trackKey: toALOrderingTrackKey(message)!,
+        seq: 2,
+        message: toMessageReference(message),
+        plan: planMessage(message)
+    };
+}
+
+function toMessageReference(candidate: ALMessage) {
+    return { senderId: candidate.id.senderId, msgId: candidate.id.msgId };
+}
+
+async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candidate: ALMessage = message): Promise<void> {
+    const retainUntilMs = Date.now() + 60_000;
+    await transaction.set(
+        `inbound:message:${encodeURIComponent(candidate.id.senderId)}:${encodeURIComponent(candidate.id.msgId)}`,
+        { msgId: candidate.id.msgId, senderId: candidate.id.senderId, msg: candidate, retainUntilMs },
+        retainUntilMs
+    );
 }
 
 function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
@@ -77,14 +115,22 @@ function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kin
     });
 }
 
-async function claimWork(store: ReturnType<typeof createFixture>['store']) {
-    const page = await store.workQueue.readWorkPage({
-        typeId: toALInboundWorkType(store.namespace),
-        status: EntityStatus.NEW,
-        maxToRead: 10,
-        cursor: null
-    });
-    return await store.claimReadyEffects({ entries: page.entries, maxCount: 10 });
+/** The claim step of the worker: the port reserves what the page observed, corruption is released as observed. */
+async function claimWork(port: ALWorkQueuePort, namespace: string) {
+    const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
+    const claimed: ALPersistedInboundEffect[] = [];
+    for (const claim of await port.claim({ maxCount: 10, observedEntries: page.entries })) {
+        try {
+            claimed.push(decodeALInboundWorkEntry(claim.entry, namespace));
+        }
+        catch (error) {
+            if (!(error instanceof ALAdmissionCorruptionError)) {
+                throw error;
+            }
+            await port.release(claim, { status: 'non-retryable' });
+        }
+    }
+    return claimed;
 }
 
 interface PendingAdmissionBundleInput {
@@ -153,8 +199,8 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        { kind: 'trusted-server', roomRecipientPeerIds: ['receiver'] },
-        { kind: 'rtc-peer', peerId: message.id.senderId, roomRecipientPeerIds: ['receiver'] }
+        { kind: 'trusted-server', groupRecipientPeerIds: ['receiver'] },
+        { kind: 'rtc-peer', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'] }
     ])('rejects room recipient metadata on persisted $kind provenance', async (source) => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
@@ -170,9 +216,9 @@ describe('inbound admission persisted values', () => {
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('retains a frozen room audience larger than the wire collection limit', async () => {
+    it('retains a frozen group audience larger than the wire collection limit', async () => {
         const { store } = createFixture();
-        const roomRecipientPeerIds = Array.from({ length: 1_500 }, (_, index) => `room-peer-${index}`);
+        const groupRecipientPeerIds = Array.from({ length: 1_500 }, (_, index) => `room-peer-${index}`);
         const expireAtTimestamp = Date.now() + 60_000;
         expect(
             await store.commitBundle({
@@ -184,7 +230,7 @@ describe('inbound admission persisted values', () => {
                     value: {
                         msgId: message.id.msgId,
                         senderId: message.id.senderId,
-                        source: { kind: 'ws-client', peerId: message.id.senderId, roomRecipientPeerIds },
+                        source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds },
                         supersedenceKey: null
                     },
                     expireAtTimestamp
@@ -194,7 +240,7 @@ describe('inbound admission persisted values', () => {
         ).toBe('committed');
 
         await expect(store.readStoredPlanningState({ msg: message, nowMs: Date.now() })).resolves.toMatchObject({
-            source: { kind: 'ws-client', peerId: message.id.senderId, roomRecipientPeerIds }
+            source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds }
         });
     });
 
@@ -204,7 +250,7 @@ describe('inbound admission persisted values', () => {
         { lastContiguousSeq: 1, bufferedSeqs: [1], updatedAtMs: 1 },
         { lastContiguousSeq: 1, bufferedSeqs: [2], updatedAtMs: Number.NaN }
     ])('rejects malformed ordering snapshots instead of treating them as expired', async (value) => {
-        const { backend, store } = createFixture();
+        const { state, backend, store } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set(`inbound:ordering:${toALOrderingTrackKey(message)}`, value);
         });
@@ -213,7 +259,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('rejects malformed pending acknowledgement state', async () => {
-        const { backend, store } = createFixture();
+        const { backend, store, control } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:pending:message:sender%3Awith%3Adelimiter', {
                 kind: 'pending',
@@ -228,6 +274,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
@@ -257,6 +304,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
@@ -278,30 +326,60 @@ describe('inbound admission persisted values', () => {
         await expect(readIncoming(store, message)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('rejects a buffered snapshot whose message belongs to another ordering track', async () => {
+    it('rejects a buffered snapshot whose canonical message belongs to another ordering track', async () => {
+        const { backend, store } = createFixture();
+        const snapshot = createBufferedSnapshot();
+        const other: ALMessage = {
+            ...message,
+            id: { ...message.id, msgId: 'other-track-message' },
+            ordering: { orderingKey: 'other-track', seq: 2 }
+        };
+        await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction, other);
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
+                ...snapshot,
+                message: toMessageReference(other)
+            });
+        });
+
+        await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() }))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('rejects a buffered snapshot whose canonical message row is gone on every ordering read', async () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
-            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
-                ...snapshot,
-                msg: { ...message, id: { ...message.id, senderId: 'wrong-sender' } }
-            });
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
         });
 
         await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
+    it('rejects a buffered snapshot whose canonical message row is gone', async () => {
+        const { backend, store } = createFixture();
+        const snapshot = createBufferedSnapshot();
+        await backend.write(async (transaction) => {
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, snapshot);
+        });
+
+        await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() }))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
     it('marks malformed work NON_RETRYABLE while reserving valid siblings', async () => {
-        const { store } = createFixture();
+        const { store, workQueue, port } = createFixture();
         const valid = createWork('valid').entry;
         const malformed = { ...createWork('malformed').entry, resource: '{invalid-json' };
-        await store.workQueue.enqueue(valid);
-        await store.workQueue.enqueue(malformed);
+        await workQueue.enqueue(valid);
+        await workQueue.enqueue(malformed);
 
-        expect((await claimWork(store)).map((effect) => effect.effectId)).toEqual(['valid']);
-        expect(await store.workQueue.getItem(valid.key)).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
-        expect(await store.workQueue.getItem(malformed.key)).toMatchObject({
+        expect((await claimWork(port, store.namespace)).map((effect) => effect.effectId)).toEqual(['valid']);
+        expect(await workQueue.getItem(valid.key)).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
+        expect(await workQueue.getItem(malformed.key)).toMatchObject({
             status: EntityStatus.NON_RETRYABLE,
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
@@ -312,9 +390,10 @@ describe('inbound admission persisted values', () => {
         { effectId: 'owner', inboxKey: { topicId: 'chat', resourceId: 'resource', contextId: 1 } },
         { effectId: 1 }
     ])('rejects malformed buffered delivery ownership before resolving predecessors', async (delivery) => {
-        const { backend, store } = createFixture();
+        const { backend, store, control } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery });
         });
@@ -323,19 +402,19 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        { kind: 'forward-message', msg: message, fromPeerId: 'sender', plan: {} },
+        { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', plan: {} },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
         { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v1', resource: '{}' } } }
     ])('terminalizes corrupt work payloads at observed reservation', async (payload) => {
-        const { store } = createFixture();
+        const { store, workQueue, port } = createFixture();
         const entry = {
             ...createWork().entry,
             resource: JSON.stringify({ namespace: 'inbound', effectId: 'effect', payload })
         };
-        await store.workQueue.enqueue(entry);
-        expect(await claimWork(store)).toEqual([]);
-        expect(await store.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+        await workQueue.enqueue(entry);
+        expect(await claimWork(port, store.namespace)).toEqual([]);
+        expect(await workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
     it.each(
@@ -346,39 +425,49 @@ describe('inbound admission persisted values', () => {
                 name: 'message',
                 payload: {
                     kind: 'dispatch-local',
-                    entry: QueueBoxUtilities.toResourceEntryFromMsg({ ...message, id: { ...message.id, msgId: 'another-message' } }, 'inbox')
+                    message: { senderId: message.id.senderId, msgId: 'another-message' }
                 }
             },
-            { name: 'non-delivery', payload: { kind: 'forward-message', msg: message, plan: planMessage(message), fromPeerId: 'sender' } }
+            {
+                name: 'non-delivery',
+                payload: {
+                    kind: 'forward-message',
+                    message: toMessageReference(message),
+                    plan: planMessage(message),
+                    fromPeerId: 'sender'
+                }
+            }
         ] satisfies readonly { name: string; payload: ALInboundDurableEffect; }[]
     )(
         'rejects a structurally valid effect with a mismatched $name delivery owner',
         async ({ payload }) => {
-            const { backend, store } = createFixture();
+            const { backend, store, workQueue } = createFixture();
             const snapshot = createBufferedSnapshot();
             await backend.write(async (transaction) => {
+                await writeCanonicalMessage(transaction);
                 await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
                 await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
             });
 
-            await store.workQueue.enqueue(createWork('owner', payload).entry);
+            await workQueue.enqueue(createWork('owner', payload).entry);
             await expect(store.readOrderedDelivery(snapshot.trackKey, 3)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         }
     );
 
     it('requires durable delivery progress before a cleaned-up work owner can be skipped', async () => {
-        const { backend, store } = createFixture();
+        const { backend, store, workQueue, port, control } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
             await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
         });
         const work = createWork('owner', { kind: 'release-buffered', trackKey: snapshot.trackKey, seq: 2 });
-        await store.workQueue.enqueue(work.entry);
+        await workQueue.enqueue(work.entry);
         expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 1, predecessor: { kind: 'effect' } });
-        const [reservation] = await claimWork(store);
-        await store.completeEffect(reservation!.entry);
-        await store.workQueue.removeItem(work.entry.key);
+        const [reservation] = await claimWork(port, store.namespace);
+        await workQueue.releaseEntries([reservation!.entry], { status: EntityStatus.COMPLETED, delayMs: null });
+        await workQueue.removeItem(work.entry.key);
         expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 1, predecessor: { kind: 'resync-required' } });
         await backend.write((transaction) =>
             transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 2, expireAtTimestamp: Date.now() + 60_000 })
@@ -387,7 +476,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('rejects control history whose message ID differs from the trusted requested slot', async () => {
-        const { backend, store } = createFixture();
+        const { backend, store, control } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:acks:message:sender%3Awith%3Adelimiter', {
                 kind: 'acks',
@@ -399,46 +488,42 @@ describe('inbound admission persisted values', () => {
     });
 
     it.each([
-        { key: { topicId: 'chat', resourceId: 'other', contextId: 'room' } },
-        { status: 'unknown' },
-        { dequeueAudit: { attempts: 'one' } },
-        { audit: { date: '12:00:00', createdBy: 'sender', createdTs: '2026-08-31T12:00:00', expiryTs: 'not-a-time' } },
-        { resource: '{}' }
-    ])('marks malformed or wrong-route embedded queue entries as NON_RETRYABLE', async (corruption) => {
-        const { store } = createFixture();
+        { senderId: 'sender:with:delimiter' },
+        { senderId: 1, msgId: 'message' },
+        { senderId: 'sender:with:delimiter', msgId: 1 },
+        { senderId: 'sender:with:delimiter', msgId: 'message', route: 'chat' }
+    ])('marks malformed embedded message references as NON_RETRYABLE', async (reference) => {
+        const { store, workQueue, port } = createFixture();
         const entry = {
             ...createWork().entry,
             resource: JSON.stringify({
                 namespace: 'inbound',
                 effectId: 'effect',
-                payload: {
-                    kind: 'dispatch-local',
-                    entry: { ...encodeALAdmissionResourceEntry(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')), ...corruption }
-                }
+                payload: { kind: 'dispatch-local', message: reference }
             })
         };
-        await store.workQueue.enqueue(entry);
-        expect(await claimWork(store)).toEqual([]);
-        expect(await store.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+        await workQueue.enqueue(entry);
+        expect(await claimWork(port, store.namespace)).toEqual([]);
+        expect(await workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
     it.each([
         { namespace: 'wrong-scope', effectId: 'effect' },
         { namespace: 'inbound', effectId: 'prefix:effect' }
     ])('rejects queued work whose stored identity differs from its slot', async (identity) => {
-        const { store } = createFixture();
+        const { store, workQueue, port } = createFixture();
         const work = createWork();
         const entry = { ...work.entry, resource: JSON.stringify({ ...identity, payload: work.payload }) };
         expect(() => decodeALInboundWorkEntry(entry, 'inbound')).toThrow(ALAdmissionCorruptionError);
-        await store.workQueue.enqueue(entry);
-        expect(await claimWork(store)).toEqual([]);
-        expect(await store.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+        await workQueue.enqueue(entry);
+        expect(await claimWork(port, store.namespace)).toEqual([]);
+        expect(await workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
     it('rolls back earlier admission writes when the existing durable effect is corrupt', async () => {
-        const { state, store } = createFixture();
+        const { state, store, workQueue } = createFixture();
         const work = createWork();
-        await store.workQueue.enqueue({ ...work.entry, resource: '{invalid-json' });
+        await workQueue.enqueue({ ...work.entry, resource: '{invalid-json' });
 
         await expect(store.commitBundle({
             admissionExpiresAtMs: null,
@@ -457,7 +542,7 @@ describe('inbound admission persisted values', () => {
             durableEffects: [createWork()]
         })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect([...state.data.keys()]).toEqual([]);
-        expect((await store.workQueue.getItem(work.entry.key))?.resource).toBe('{invalid-json');
+        expect((await workQueue.getItem(work.entry.key))?.resource).toBe('{invalid-json');
     });
 
     it('rejects a durable effect identity reused for different payload ownership', async () => {
@@ -534,7 +619,7 @@ describe('inbound admission persisted values', () => {
     });
 
     it('rejects an ambiguous acknowledgement without narrowing same-ID message admission', async () => {
-        const { state, store } = createFixture();
+        const { state, store, control } = createFixture();
         const expireAtTimestamp = Date.now() + 60_000;
         const firstIndex = {
             ambiguous: false,
@@ -557,10 +642,7 @@ describe('inbound admission persisted values', () => {
             }))
         ).toBe('committed');
 
-        expect(await store.acceptControlMessage(createAcknowledgement('receiver'))).toEqual({
-            handled: false,
-            completedPendingAcks: []
-        });
+        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'not-handled' });
         expect([...state.data.keys()].filter((key) => key.startsWith('inbound:control:pending:')).sort())
             .toEqual([
                 'inbound:control:pending:message:second-sender',
@@ -568,8 +650,8 @@ describe('inbound admission persisted values', () => {
             ]);
     });
 
-    it('reports a typed conflict when pending receipt progress changes after an ACK read', async () => {
-        const { backend, state, store } = createFixture();
+    it('retains admit-control work when pending receipt progress changes after an ACK read', async () => {
+        const { state, backend, store, port, control } = createFixture();
         await seedPendingAcknowledgement(store, ['receiver']);
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation) => {
@@ -593,13 +675,13 @@ describe('inbound admission persisted values', () => {
             return await write(operation);
         });
 
-        await expect(store.acceptControlMessage(createAcknowledgement('receiver')))
-            .rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'pending-control' });
         expect(state.data.has('inbound:control:acks:message:sender%3Awith%3Adelimiter')).toBe(false);
+        expect((await claimWork(port, store.namespace)).map((effect) => effect.payload.kind)).toEqual(['admit-control']);
     });
 
-    it('reports a typed conflict when another sender makes ACK ownership ambiguous after the read', async () => {
-        const { backend, state, store } = createFixture();
+    it('retains admit-control work when another sender makes ACK ownership ambiguous after the read', async () => {
+        const { state, backend, store, port, control } = createFixture();
         await seedPendingAcknowledgement(store, ['receiver']);
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation) => {
@@ -613,14 +695,14 @@ describe('inbound admission persisted values', () => {
             return await write(operation);
         });
 
-        await expect(store.acceptControlMessage(createAcknowledgement('receiver')))
-            .rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'pending-control' });
         expect(state.data.has('inbound:control:acks:message:sender%3Awith%3Adelimiter')).toBe(false);
         expect(state.data.get('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBeDefined();
+        expect((await claimWork(port, store.namespace)).map((effect) => effect.payload.kind)).toEqual(['admit-control']);
     });
 
     it('treats retained ACK state without provenance as typed corruption', async () => {
-        const { backend, store } = createFixture();
+        const { backend, control } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:owners:message', {
                 ambiguous: false,
@@ -638,12 +720,12 @@ describe('inbound admission persisted values', () => {
             });
         });
 
-        await expect(store.acceptControlMessage(createAcknowledgement('receiver')))
+        await expect(control.admit(createAcknowledgement('receiver')))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('caps ACK diagnostics while completing the independent frozen audience snapshot', async () => {
-        const { backend, state, store } = createFixture();
+        const { state, backend, store, control } = createFixture();
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `receiver-${index}`);
         await seedPendingAcknowledgement(store, expectedPeerIds, expectedPeerIds.slice(0, -1));
         const values = [
@@ -670,42 +752,35 @@ describe('inbound admission persisted values', () => {
             )
         );
 
-        expect(await store.acceptControlMessage(createAcknowledgement('receiver-255'))).toMatchObject({
-            handled: true
+        expect(await control.admit(createAcknowledgement('receiver-255'))).toMatchObject({
+            kind: 'committed',
+            acceptance: { handled: true }
         });
         expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(false);
         expect((await readIncoming(store, message)).acks).toHaveLength(256);
     });
 
-    it('round-trips the local-delivery envelope and rejects malformed embedded messages on replay', async () => {
-        const { store } = createFixture();
-        const work = createWork('dispatch', { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') });
+    it('round-trips the local-delivery reference and retains the message once', async () => {
+        const { state, store, port, control } = createFixture();
+        const retainUntilMs = Date.now() + 120_000;
+        const work = createWork('dispatch', { kind: 'dispatch-local', message: toMessageReference(message) });
         await store.commitBundle({
             admissionExpiresAtMs: null,
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
-            mutations: [],
+            mutations: [{
+                kind: 'set-inbound-message',
+                value: { msgId: message.id.msgId, senderId: message.id.senderId, msg: message, retainUntilMs },
+                expireAtTimestamp: retainUntilMs
+            }],
             durableEffects: [work]
         });
-        const [claimed] = await claimWork(store);
-        expect(claimed?.payload).toMatchObject({ kind: 'dispatch-local', entry: { resource: JSON.stringify(message) } });
-        const malformed = {
-            ...createWork('malformed-dispatch').entry,
-            resource: JSON.stringify({
-                namespace: 'inbound',
-                effectId: 'malformed-dispatch',
-                payload: {
-                    kind: 'dispatch-local',
-                    entry: {
-                        ...encodeALAdmissionResourceEntry(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')),
-                        resource: JSON.stringify({ ...message, id: { ...message.id, v: 3 } })
-                    }
-                }
-            })
-        };
-        await store.workQueue.enqueue(malformed);
-        expect(await claimWork(store)).toEqual([]);
-        expect(await store.workQueue.getItem(malformed.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+        const [claimed] = await claimWork(port, store.namespace);
+        expect(claimed?.payload).toEqual({ kind: 'dispatch-local', message: toMessageReference(message) });
+        expect(await store.readInboundMessage(toMessageReference(message))).toEqual(message);
+        expect([...state.data.keys()].filter((key) => key.startsWith('inbound:message:'))).toEqual([
+            'inbound:message:sender%3Awith%3Adelimiter:message'
+        ]);
     });
 });
 

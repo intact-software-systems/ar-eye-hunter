@@ -8,9 +8,14 @@ import {
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_REVISION_KEY, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import { captureALOutboundPolicy } from '@shared/alm/outbound/al-outbound-admission-validation.ts';
+import {
+    AL_ADMISSION_REVISION_KEY,
+    AL_ADMISSION_SCHEMA_ID,
+    AL_ADMISSION_SCHEMA_KEY,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { captureALOutboundCreationExpiry, toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -21,7 +26,7 @@ import {
     createOutboundCanonicalEntry,
     createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -32,6 +37,8 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
             vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
             const dbName = `outbound-write-deadline-${crypto.randomUUID()}`;
             const backend = new IndexedDbAdmissionBackend({
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {},
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
@@ -39,6 +46,9 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
                 observer: createPassThroughIndexedDbOperationObserver()
             });
             const store = createALOutboundAdmissionStore({
+                nowMs: Date.now,
+                canonicalScope: 'outbound',
+                decodePrepared: decodeOutboundTestPayload,
                 namespace: 'outbound',
                 backend,
                 supersedenceTrackTtlMs: 60_000,
@@ -62,18 +72,25 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
             });
             const result = pending
                 ? await store.retainPendingAdmission(input)
-                : await store.commitBundle(bundle, decodeOutboundTestPayload);
+                : await store.commitBundle(bundle);
             expect(result).toBe(offset < 0 ? (pending ? 'pending' : 'committed') : 'expired');
             expect(crossed).toBe(true);
             spy.mockRestore();
-            const db = await openIndexedDbAdmissionDatabase(dbName, 'entries');
+            const db = await openIndexedDbAdmissionDatabase({
+                dbName: dbName,
+                storeName: 'entries',
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {}
+            });
             try {
                 const transaction = db.transaction(['entries', 'alm-work'], 'readonly');
                 const [metadata, work] = await Promise.all([
                     readIndexedDbRequest(transaction.objectStore('entries').getAll()),
                     readIndexedDbRequest(transaction.objectStore('alm-work').getAll())
                 ]);
-                expect(metadata.filter((row) => row.key !== AL_ADMISSION_REVISION_KEY).length > 0).toBe(offset < 0 && !pending);
+                expect(
+                    metadata.filter((row) => row.key !== AL_ADMISSION_REVISION_KEY && row.key !== AL_ADMISSION_SCHEMA_KEY).length > 0
+                ).toBe(offset < 0 && !pending);
                 expect(work.length > 0).toBe(offset < 0);
             }
             finally {
@@ -87,6 +104,9 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
 it.each([EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE])('does not call a terminal %s descriptor pending or reactivate it', async (status) => {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
     const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'terminal',
+        decodePrepared: decodeOutboundTestPayload,
         namespace: 'terminal',
         backend,
         supersedenceTrackTtlMs: 60_000,
@@ -102,7 +122,7 @@ it.each([EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE])('does not call a t
     expect(await store.readSentMessage(input.payload.message.msgId)).toBeUndefined();
 });
 
-function pendingInput(store: ALOutboundAdmissionStore) {
+function pendingInput(store: ALOutboundAdmissionStore<OutboundTestPayload>) {
     const message = createOutboundMessage('pending', { ttlMs: 1_000 });
     const canonicalEntry = createOutboundCanonicalEntry(store, message);
     return {
@@ -123,6 +143,9 @@ it.each([EntityStatus.RETRY, EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE]
     async (status) => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'raced-terminal',
+            decodePrepared: decodeOutboundTestPayload,
             namespace: 'raced-terminal',
             backend,
             supersedenceTrackTtlMs: 60_000,

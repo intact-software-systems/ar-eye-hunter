@@ -12,6 +12,46 @@ afterEach(() => {
 });
 
 describe('engine', () => {
+    it('tells every wake listener that an external writer announced work, until it is excluded', async () => {
+        const engine = new InboxOutboxEngine();
+        const announced: string[] = [];
+        engine.includeWakeListener('owner', () => announced.push('owner'));
+
+        // A stopped engine schedules nothing, but the announcement is still true.
+        engine.wakeAfterExternalWrite();
+        // An owner waking for its own progress reschedules and announces nothing, and so does start().
+        engine.wake();
+        engine.start();
+        expect(announced).toEqual(['owner']);
+
+        engine.excludeWakeListener('owner');
+        engine.wakeAfterExternalWrite();
+
+        expect(announced).toEqual(['owner']);
+        engine.stop();
+    });
+
+    it('keeps one throwing wake listener from stealing the wake from the others', () => {
+        const engine = new InboxOutboxEngine();
+        const announced: string[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        engine.includeWakeListener('first', () => announced.push('first'));
+        engine.includeWakeListener('throws', () => {
+            throw new Error('listener refused the wake');
+        });
+        engine.includeWakeListener('last', () => announced.push('last'));
+
+        engine.wakeAfterExternalWrite();
+
+        // Every owner's remembered readiness is dropped, not just the ones ahead of the failure.
+        expect(announced).toEqual(['first', 'last']);
+        expect(consoleError).toHaveBeenCalledWith(
+            'TaskEngine wake listener error',
+            'throws',
+            expect.objectContaining({ message: 'listener refused the wake' })
+        );
+    });
+
     it('wakes for a registered task deadline before idle backoff elapses', async () => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();

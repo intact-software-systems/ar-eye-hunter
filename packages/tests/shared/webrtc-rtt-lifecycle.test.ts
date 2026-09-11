@@ -1,3 +1,4 @@
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     beforeEach,
@@ -8,7 +9,10 @@ import {
     vi
 } from 'vitest';
 
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createDefaultALOutboundDequeueResilience,
+    createDefaultALOutboundRuntimeResources
+} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -202,9 +206,10 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         },
         qosProvider: undefined,
         outboundDiagnostics: undefined,
-        outboundRuntime: createDefaultALOutboundRuntimeResources(),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter()
+        rateLimiter: toRateLimiter(),
+        dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });
     onTestFinished(() => {

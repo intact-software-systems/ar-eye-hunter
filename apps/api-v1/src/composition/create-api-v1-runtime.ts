@@ -272,6 +272,7 @@ function createSharedMiddleware(
         inboundStores: resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
+        wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
             new TopologyInboxService(

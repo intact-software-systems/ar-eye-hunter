@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import {
+    COMPLETED_STATUSES,
     EntityStatus,
     toKeyAsString,
     type Key,
@@ -21,6 +22,7 @@ export type StoredResourceEntry = Readonly<{
         createdTs: string;
         expiryTs: string;
     }>;
+    expiryEpochMs: number;
     status: EntityStatus;
     dequeueAudit: Readonly<{
         startTs?: string;
@@ -28,6 +30,8 @@ export type StoredResourceEntry = Readonly<{
         nextTs?: string;
         attempts: number;
     }>;
+    /** Null only while unreleased; a completed row with no recorded release defaults to 0 so retention cleanup can still index it. */
+    endEpochMs: number | null;
 }>;
 
 type IndexedDbQueueDataValue =
@@ -52,12 +56,13 @@ export function encodeStoredResourceEntry(
     entry: ResourceEntry,
     revision: number
 ): StoredResourceEntry {
+    const expiryTs = toInstant(entry.audit.expiryTs);
+    const endTs = toOptionalInstant(entry.dequeueAudit.endTs);
+    const nextTs = toOptionalInstant(entry.dequeueAudit.nextTs);
     const stored: StoredResourceEntry = {
         keyString: toKeyAsString(entry.key),
         revision,
-        fairnessDueEpochMs: entry.dequeueAudit.nextTs
-            ? Number(entry.dequeueAudit.nextTs.epochMilliseconds)
-            : undefined,
+        fairnessDueEpochMs: nextTs === undefined ? undefined : Number(nextTs.epochMilliseconds),
         key: { ...entry.key },
         resource: entry.resource,
         typeId: entry.typeId,
@@ -65,17 +70,17 @@ export function encodeStoredResourceEntry(
             date: toPlainTime(entry.audit.date).toString(),
             createdBy: entry.audit.createdBy,
             createdTs: toPlainDateTime(entry.audit.createdTs).toString(),
-            expiryTs: toInstant(entry.audit.expiryTs).toString()
+            expiryTs: expiryTs.toString()
         },
+        expiryEpochMs: Number(expiryTs.epochMilliseconds),
         status: entry.status,
         dequeueAudit: {
             startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
-            endTs: toOptionalInstant(entry.dequeueAudit.endTs)?.toString(),
-            nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString({
-                fractionalSecondDigits: 9
-            }),
+            endTs: endTs?.toString(),
+            nextTs: nextTs?.toString({ fractionalSecondDigits: 9 }),
             attempts: entry.dequeueAudit.attempts
-        }
+        },
+        endEpochMs: toExpectedEndEpochMs(entry.status, endTs)
     };
     validateStoredResourceEntry(stored);
     return stored;
@@ -108,7 +113,18 @@ export function decodeStoredResourceEntry(stored: StoredResourceEntry): Resource
 
 export function decodeStoredResourceEntryValue<Value>(value: Value): StoredResourceEntry {
     const stored = requireDataRecord(value, 'IndexedDB queue row', {
-        required: ['keyString', 'revision', 'key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
+        required: [
+            'keyString',
+            'revision',
+            'key',
+            'resource',
+            'typeId',
+            'audit',
+            'expiryEpochMs',
+            'status',
+            'dequeueAudit',
+            'endEpochMs'
+        ],
         optional: ['fairnessDueEpochMs']
     });
     const key = requireDataRecord(stored.key, 'IndexedDB queue key', {
@@ -145,6 +161,7 @@ export function decodeStoredResourceEntryValue<Value>(value: Value): StoredResou
             createdTs: requireString(audit.createdTs, 'IndexedDB queue creation timestamp'),
             expiryTs: requireString(audit.expiryTs, 'IndexedDB queue expiry timestamp')
         },
+        expiryEpochMs: requireSafeInteger(stored.expiryEpochMs, 'IndexedDB queue expiry timestamp (ms)'),
         status: requireEntityStatus(stored.status),
         dequeueAudit: {
             ...(dequeueAudit.startTs === undefined
@@ -160,7 +177,8 @@ export function decodeStoredResourceEntryValue<Value>(value: Value): StoredResou
                 dequeueAudit.attempts,
                 'IndexedDB queue attempt count'
             )
-        }
+        },
+        endEpochMs: requireSafeIntegerOrNull(stored.endEpochMs, 'IndexedDB queue end timestamp (ms)')
     } satisfies StoredResourceEntry;
     validateStoredResourceEntry(canonical);
     return canonical;
@@ -172,14 +190,36 @@ function validateStoredResourceEntry(stored: StoredResourceEntry): void {
     }
     toPlainTime(stored.audit.date);
     toPlainDateTime(stored.audit.createdTs);
-    toInstant(stored.audit.expiryTs);
+    const expiryTs = toInstant(stored.audit.expiryTs);
+    if (stored.expiryEpochMs !== Number(expiryTs.epochMilliseconds)) {
+        throw new TypeError('IndexedDB queue expiry timestamp (ms) differs from its expiry instant');
+    }
     toOptionalInstant(stored.dequeueAudit.startTs);
-    toOptionalInstant(stored.dequeueAudit.endTs);
+    const endTs = toOptionalInstant(stored.dequeueAudit.endTs);
+    if (stored.endEpochMs !== toExpectedEndEpochMs(stored.status, endTs)) {
+        throw new TypeError('IndexedDB queue end timestamp (ms) differs from its dequeue audit');
+    }
     const next = toOptionalInstant(stored.dequeueAudit.nextTs);
     const expectedFairness = next === undefined ? undefined : Number(next.epochMilliseconds);
     if (stored.fairnessDueEpochMs !== expectedFairness) {
         throw new TypeError('IndexedDB queue fairness timestamp differs from its next timestamp');
     }
+}
+
+/**
+ * A completed row that never passed through release (e.g. a canonical entry admitted
+ * already-COMPLETED) has no dequeueAudit.endTs. Defaulting it to 0 instead of null keeps the
+ * row indexable by `by-status-end`: IndexedDB drops a compound-index record when any key
+ * component is null, which would hide such rows from retention cleanup forever.
+ */
+function toExpectedEndEpochMs(
+    status: EntityStatus,
+    endTs: Temporal.Instant | undefined
+): number | null {
+    if (endTs !== undefined) {
+        return Number(endTs.epochMilliseconds);
+    }
+    return COMPLETED_STATUSES.has(status) ? 0 : null;
 }
 
 function toPlainTime(value: string | Temporal.PlainTime): Temporal.PlainTime {
@@ -248,6 +288,10 @@ function requireSafeInteger(value: IndexedDbQueueDataValue, label: string): numb
         throw new TypeError(`${label} must be a safe integer`);
     }
     return value;
+}
+
+function requireSafeIntegerOrNull(value: IndexedDbQueueDataValue, label: string): number | null {
+    return value === null ? null : requireSafeInteger(value, label);
 }
 
 function requireNonNegativeInteger(value: IndexedDbQueueDataValue, label: string): number {

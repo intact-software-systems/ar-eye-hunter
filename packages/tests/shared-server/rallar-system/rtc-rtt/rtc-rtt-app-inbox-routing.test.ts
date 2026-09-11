@@ -48,7 +48,7 @@ describe('RTC RTT websocket AppInbox routing', () => {
             rtt
         )));
 
-        expect(enqueuedMutations).toEqual([{
+        await expect.poll(() => enqueuedMutations).toEqual([{
             rtt,
             alSenderId: 'session-a',
             capturedAtEpochMs: expect.any(Number)

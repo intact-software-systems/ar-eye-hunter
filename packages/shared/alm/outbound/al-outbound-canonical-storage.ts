@@ -8,7 +8,7 @@ import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
-import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
@@ -21,7 +21,7 @@ import {
 
 export interface ALOutboundCanonicalReadInput {
     readonly nowMs: () => number;
-    readonly queue: QueueBoxResourceEntryRepository;
+    readonly queue: Pick<QueueBoxResourceEntryRepository, 'getItem'>;
     readonly scope: string;
     readonly message: ALMessage;
     readonly stored: ALStoredOutboundMessage | undefined;
@@ -103,7 +103,7 @@ function validateCanonicalReuse(
 }
 
 export interface ALOutboundCanonicalWriteReadInput {
-    readonly queue: QueueBoxResourceEntryRepository;
+    readonly queue: Pick<QueueBoxResourceEntryRepository, 'getItem'>;
     readonly scope: string;
     readonly entry: ResourceEntry | undefined;
     readonly creationExpiry: string;

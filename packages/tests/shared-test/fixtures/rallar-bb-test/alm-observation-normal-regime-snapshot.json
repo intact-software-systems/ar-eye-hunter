@@ -1,0 +1,777 @@
+{
+  "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+  "createdAtEpochMs": 1789077926928,
+  "updatedAtEpochMs": 1789078028459,
+  "results": [
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "commandId": "reset-control-1",
+      "ok": true,
+      "result": {
+        "commandId": "reset-control-1",
+        "kind": "reset",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 268
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "commandId": "configure-control-1",
+      "ok": true,
+      "result": {
+        "commandId": "configure-control-1",
+        "kind": "configure",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 24
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "commandId": "alm-rtc-bounded-rejection-sender-run",
+      "ok": true,
+      "result": {
+        "commandId": "alm-rtc-bounded-rejection-sender-run",
+        "kind": "recipe.run",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 25266,
+        "value": {
+          "recipeId": "alm-rtc-bounded-rejection-sender",
+          "failureCount": 0
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "commandId": "alm-rtc-bounded-rejection-receiver-run",
+      "ok": true,
+      "result": {
+        "commandId": "alm-rtc-bounded-rejection-receiver-run",
+        "kind": "recipe.run",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 43109,
+        "value": {
+          "recipeId": "alm-rtc-bounded-rejection-receiver",
+          "failureCount": 0
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "commandId": "alm-rtc-deadline-expiry-sender-run",
+      "ok": true,
+      "result": {
+        "commandId": "alm-rtc-deadline-expiry-sender-run",
+        "kind": "recipe.run",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 17362,
+        "value": {
+          "recipeId": "alm-rtc-deadline-expiry-sender",
+          "failureCount": 0
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "commandId": "alm-rtc-deadline-expiry-receiver-run",
+      "ok": true,
+      "result": {
+        "commandId": "alm-rtc-deadline-expiry-receiver-run",
+        "kind": "recipe.run",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 24789,
+        "value": {
+          "recipeId": "alm-rtc-deadline-expiry-receiver",
+          "failureCount": 0
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "commandId": "alm-rtc-delivery-baseline-sender-run",
+      "ok": true,
+      "result": {
+        "commandId": "alm-rtc-delivery-baseline-sender-run",
+        "kind": "recipe.run",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 19348,
+        "value": {
+          "recipeId": "alm-rtc-delivery-baseline-sender",
+          "failureCount": 0
+        }
+      }
+    },
+    {
+      "kind": "result",
+      "runId": "alm-rtc-1789077925043-04591945-9cb6-4db4-a5",
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "commandId": "alm-rtc-delivery-baseline-receiver-run",
+      "ok": true,
+      "result": {
+        "commandId": "alm-rtc-delivery-baseline-receiver-run",
+        "kind": "recipe.run",
+        "status": "ok",
+        "ok": true,
+        "durationMs": 30116,
+        "value": {
+          "recipeId": "alm-rtc-delivery-baseline-receiver",
+          "failureCount": 0
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "kind": "event",
+      "atEpochMs": 1789077926835,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-3",
+      "payload": {
+        "topic": "rallar.bb.command.result",
+        "payload": {
+          "data": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077929413,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-20",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "snapshot",
+            "atEpochMs": 1789077929413,
+            "status": {
+              "sessionId": "session-irz4krf9K0CMcvowEz-spCdE",
+              "knownPeerIds": [],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077932800,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-20",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "snapshot",
+            "atEpochMs": 1789077932800,
+            "status": {
+              "sessionId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+              "knownPeerIds": [],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077933109,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-42",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "4ae94fb4-ee2d-494c-a78c-fffb8b7e7731:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 151,
+            "readOperationCount": 9,
+            "commitDurationMs": 75,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077933884,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-47",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "4ae94fb4-ee2d-494c-a78c-fffb8b7e7731:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 58,
+            "readOperationCount": 9,
+            "commitDurationMs": 219,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077934593,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-32",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "0b521b1e-5d8f-4e74-94e4-a139c7cca6f8:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 52,
+            "readOperationCount": 9,
+            "commitDurationMs": 10,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077935619,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-45",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "peer-created",
+            "atEpochMs": 1789077935617,
+            "status": {
+              "sessionId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+              "knownPeerIds": [
+                "session-irz4krf9K0CMcvowEz-spCdE"
+              ],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077936123,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-56",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "691da5f6-302c-4516-b069-15d88e5ae989:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 141,
+            "readOperationCount": 9,
+            "commitDurationMs": 6,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077936130,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-48",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "0b521b1e-5d8f-4e74-94e4-a139c7cca6f8:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 234,
+            "readOperationCount": 9,
+            "commitDurationMs": 24,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077937048,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-61",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "4680aa97-cdc9-46e7-b497-11a89d4dc453:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 131,
+            "readOperationCount": 9,
+            "commitDurationMs": 80,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077937132,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-54",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "78f09016-92f8-49f9-a3d6-af18d1964e7a:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 427,
+            "readOperationCount": 9,
+            "commitDurationMs": 6,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077938027,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-66",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "3e5c8993-71ba-4d95-9d25-36dbe2ae1792:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 460,
+            "readOperationCount": 9,
+            "commitDurationMs": 220,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077938135,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-61",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "980d98eb-d029-47e8-867b-0ddfe716d315:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 415,
+            "readOperationCount": 9,
+            "commitDurationMs": 8,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077938849,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-66",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "c0cd16e2-8a9c-41bd-941d-01f82c024296:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 138,
+            "readOperationCount": 9,
+            "commitDurationMs": 165,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077939112,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-71",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "18476b9d-1254-4a2e-bd59-42e4707c2244:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 566,
+            "readOperationCount": 9,
+            "commitDurationMs": 225,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077939734,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-71",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "980d98eb-d029-47e8-867b-0ddfe716d315:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 199,
+            "readOperationCount": 9,
+            "commitDurationMs": 142,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077940214,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-76",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "376fb87c-4735-42ce-a7c3-b3175886919e:1",
+            "typeId": "al.control.repair.v1",
+            "origin": "send",
+            "readDurationMs": 373,
+            "readOperationCount": 9,
+            "commitDurationMs": 141,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077941342,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-79",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "peer-created",
+            "atEpochMs": 1789077941340,
+            "status": {
+              "sessionId": "session-irz4krf9K0CMcvowEz-spCdE",
+              "knownPeerIds": [
+                "session-2tZv69x9zf99PN5sfpOVy4Mm"
+              ],
+              "readyPeerIds": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077942518,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-85",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "d68aa6cc-dd4f-472b-ab3b-aea835887559",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 599,
+            "readOperationCount": 9,
+            "commitDurationMs": 5,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077943751,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-89",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "341a2bf6-0c4e-4b19-a047-18184ca2ea85:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 488,
+            "readOperationCount": 9,
+            "commitDurationMs": 339,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077943854,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-76",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "08e9c939-f4dc-4b64-92ed-69ed276a41c1",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 151,
+            "readOperationCount": 9,
+            "commitDurationMs": 6,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077944843,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-81",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+            "msgId": "eeeda052-e980-4fbb-bdd7-4f03f564626b",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 154,
+            "readOperationCount": 9,
+            "commitDurationMs": 242,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077945918,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-94",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "2901f283-dff2-481c-9ebc-29cd9b67d6de",
+            "typeId": "rtc-signaling",
+            "origin": "send",
+            "readDurationMs": 327,
+            "readOperationCount": 9,
+            "commitDurationMs": 984,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077947710,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-99",
+      "payload": {
+        "topic": "rallar.browser.alm.outbound_diagnostics",
+        "payload": {
+          "data": {
+            "kind": "commit-phases",
+            "senderId": "session-irz4krf9K0CMcvowEz-spCdE",
+            "msgId": "94b1dac7-ab5d-4db3-9ed9-f6c7b0338b16:0",
+            "typeId": "al.control.nack.v1",
+            "origin": "send",
+            "readDurationMs": 380,
+            "readOperationCount": 10,
+            "commitDurationMs": 669,
+            "commitOutcome": "committed"
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077953499,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-84",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "peer-established",
+            "atEpochMs": 1789077953498,
+            "status": {
+              "sessionId": "session-2tZv69x9zf99PN5sfpOVy4Mm",
+              "knownPeerIds": [
+                "session-irz4krf9K0CMcvowEz-spCdE"
+              ],
+              "readyPeerIds": [
+                "session-irz4krf9K0CMcvowEz-spCdE"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077953702,
+      "agentId": "alm-receiver-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077926958-3f2f5666-050b-4a19-9f54-4d2efc631266",
+      "eventId": "event-114",
+      "payload": {
+        "topic": "rallar.browser.rtc.lifecycle",
+        "payload": {
+          "data": {
+            "kind": "lane-open",
+            "atEpochMs": 1789077953701,
+            "status": {
+              "sessionId": "session-irz4krf9K0CMcvowEz-spCdE",
+              "knownPeerIds": [
+                "session-2tZv69x9zf99PN5sfpOVy4Mm"
+              ],
+              "readyPeerIds": [
+                "session-2tZv69x9zf99PN5sfpOVy4Mm"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077954283,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-92",
+      "payload": {
+        "topic": "rallar.bb.storage.counters",
+        "payload": {
+          "data": {
+            "total": 1168,
+            "byKind": {
+              "work-page": 314
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789077985293,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-161",
+      "payload": {
+        "topic": "rallar.bb.storage.counters",
+        "payload": {
+          "data": {
+            "total": 1743,
+            "byKind": {
+              "work-page": 485
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789078012035,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-236",
+      "payload": {
+        "topic": "rallar.bb.storage.counters",
+        "payload": {
+          "data": {
+            "total": 1962,
+            "byKind": {
+              "work-page": 519
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "atEpochMs": 1789078021576,
+      "agentId": "alm-sender-chromium-w0-alm-conformance-lane-baseline-family-ove-1789077925043-fff0555a-6615-4e8a-90bc-a65a113a7aeb",
+      "eventId": "event-255",
+      "payload": {
+        "topic": "rallar.bb.storage.counters",
+        "payload": {
+          "data": {
+            "total": 2007,
+            "byKind": {
+              "work-page": 526
+            }
+          }
+        }
+      }
+    }
+  ]
+}

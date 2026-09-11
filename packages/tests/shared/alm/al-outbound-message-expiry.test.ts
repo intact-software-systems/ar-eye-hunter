@@ -1,17 +1,16 @@
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
-import type { ALStoredOutboundMessage } from '@shared/alm/outbound/al-outbound-admission-validation.ts';
-import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
@@ -22,8 +21,9 @@ import {
     vi
 } from 'vitest';
 import {
+    claimOutboundTestWork,
     computeOutboundTestAdmission,
-    createDefaultOutboundTestAdmissionStore,
+    createDefaultOutboundTestStores,
     createOutboundCanonicalEntry,
     createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
@@ -46,7 +46,8 @@ describe('outbound message expiry', () => {
         expect(msg.constraints?.expiresAtMs).toBe(31_000);
         expect(msg.qos?.expiry?.algo).toBe('ttl-only');
         vi.setSystemTime(2_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const read = await store.readOutgoingMessage({
             msg: original,
             planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
@@ -62,8 +63,8 @@ describe('outbound message expiry', () => {
             options: {}
         });
         expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
-        expect(await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload)).toBe('committed');
-        const [work] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
+        expect(await store.commitBundle(candidate.bundle!)).toBe('committed');
+        const [work] = await claimOutboundTestWork(stores, 1);
         expect(work.expireAtTimestamp).toBe(31_000);
         expect(work.canonicalMessage).toEqual(JSON.parse(JSON.stringify(msg)));
         expect(work.payload).toMatchObject({ prepared: { message: JSON.stringify(msg) } });
@@ -98,7 +99,8 @@ describe('outbound message expiry', () => {
     it.each([0, 1])('returns expiry at commit without partial state with %s prepared actions', async (preparedCount) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const msg = createOutboundMessage('commit-expiry', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,
@@ -116,9 +118,9 @@ describe('outbound message expiry', () => {
         });
         const before = JSON.stringify(candidate);
         vi.setSystemTime(2_000);
-        expect(await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload)).toBe('expired');
+        expect(await store.commitBundle(candidate.bundle!)).toBe('expired');
         expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await claimOutboundTestWork(stores, 1)).toEqual([]);
         expect(JSON.stringify(candidate)).toBe(before);
     });
 
@@ -127,7 +129,15 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(1_000);
         const state = createInMemoryALAdmissionState();
         const backend = new InMemoryAdmissionBackend(state, Date.now);
+        const decoderObservations: boolean[] = [];
+        let insideWriter = false;
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'held-writer',
+            decodePrepared: (value) => {
+                decoderObservations.push(insideWriter);
+                return decodeOutboundTestPayload(value);
+            },
             backend,
             namespace: 'held-writer',
             supersedenceTrackTtlMs: 60_000,
@@ -151,8 +161,6 @@ describe('outbound message expiry', () => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const write = backend.write.bind(backend);
-        let insideWriter = false;
-        const decoderObservations: boolean[] = [];
         backend.write = async (operation) => {
             entered.resolve();
             await release.promise;
@@ -164,10 +172,7 @@ describe('outbound message expiry', () => {
                 insideWriter = false;
             }
         };
-        const committed = store.commitBundle(candidate.bundle!, (value) => {
-            decoderObservations.push(insideWriter);
-            return decodeOutboundTestPayload(value);
-        });
+        const committed = store.commitBundle(candidate.bundle!);
         await entered.promise;
         vi.setSystemTime(2_000);
         release.resolve();
@@ -181,7 +186,8 @@ describe('outbound message expiry', () => {
     it('retries a conflicting post-deadline acknowledgement cleanup before clearing its retained obligation', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const message = createOutboundMessage('post-deadline-control', { ttlMs: 10 });
         const bundle = await computeOutboundTestAdmission(store, message);
         await store.commitBundle({
@@ -198,29 +204,22 @@ describe('outbound message expiry', () => {
                     maxAttempts: 1
                 }
             }]
-        }, decodeOutboundTestPayload);
+        });
         const clock = { nowMs: Date.now };
+        const workPort = createTestALOutboundWorkPort({ ...stores, nowMs: Date.now });
         const repair = new ALOutboundRepairAdmission({
             admissionStore: store,
             clock,
-            decodePreparedMessage: decodeOutboundTestPayload,
+            controlAdmission: store.createControlAdmission(workPort, clock),
             planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
-            planRepairMessage: undefined,
-            dispatchAdmission: new ALOutboundDispatchAdmission({
-                admissionStore: store,
-                clock,
-                decodePreparedMessage: decodeOutboundTestPayload,
-                toOutboxEntry: (msg) => createOutboundCanonicalEntry(store, msg),
-                browserLocks: undefined,
-                diagnostics: undefined
-            })
+            planRepairMessage: undefined
         });
         vi.setSystemTime(1_050);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         const commit = vi.spyOn(store, 'commitBundle').mockResolvedValueOnce('conflict');
-        await expect(repair.handlePendingAckTimeout(message.id.msgId)).rejects.toBeInstanceOf(RetryableConflictError);
+        await expect(repair.retryPendingAck(message.id.msgId)).rejects.toBeInstanceOf(RetryableConflictError);
         expect(await store.readPendingAck(message.id.msgId)).toBeDefined();
-        await repair.handlePendingAckTimeout(message.id.msgId);
+        await repair.retryPendingAck(message.id.msgId);
         expect(await store.readPendingAck(message.id.msgId)).toBeUndefined();
         commit.mockRestore();
     });
@@ -229,6 +228,9 @@ describe('outbound message expiry', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
+            canonicalScope: 'post-expiry-admission',
             backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
             namespace: 'post-expiry-admission',
             supersedenceTrackTtlMs: 60_000,
@@ -239,7 +241,7 @@ describe('outbound message expiry', () => {
         });
         const message = createOutboundMessage('post-expiry-admission', { ttlMs: 10 });
         const bundle = await computeOutboundTestAdmission(store, message);
-        expect(await store.commitBundle(bundle, decodeOutboundTestPayload)).toBe('committed');
+        expect(await store.commitBundle(bundle)).toBe('committed');
 
         vi.setSystemTime(1_010);
 
@@ -256,6 +258,8 @@ describe('outbound message expiry', () => {
         vi.setSystemTime(1_000);
         const state = createInMemoryALAdmissionState();
         const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            decodePrepared: decodeOutboundTestPayload,
             backend: new InMemoryAdmissionBackend(state, Date.now),
             canonicalScope: 'current-session',
             namespace: 'scoped-admission',
@@ -264,7 +268,7 @@ describe('outbound message expiry', () => {
         });
         const message = createOutboundMessage('foreign-scope-admission');
         const bundle = await computeOutboundTestAdmission(store, message);
-        expect(await store.commitBundle(bundle, decodeOutboundTestPayload)).toBe('committed');
+        expect(await store.commitBundle(bundle)).toBe('committed');
         const sent = state.data.get(`scoped-admission:sent:${message.id.msgId}`);
         if (sent === undefined) {
             throw new Error('Expected a retained sent-message admission fact');
@@ -282,47 +286,11 @@ describe('outbound message expiry', () => {
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('rejects a RESERVED observation without a start timestamp while valid siblings remain claimable', async () => {
-        vi.useFakeTimers({ toFake: ['Date'] });
-        vi.setSystemTime(1_000);
-        const state = createInMemoryALAdmissionState();
-        const backend = new InMemoryAdmissionBackend(state, Date.now);
-        const store = createALOutboundAdmissionStore({
-            backend,
-            namespace: 'malformed-reservation',
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        });
-        for (const name of ['malformed', 'valid']) {
-            const msg = createOutboundMessage(name);
-            const read = await store.readOutgoingMessage({
-                msg: msg,
-                planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
-                observedCanonicalEntry: undefined,
-                intent: 'enqueue'
-            });
-            const candidate = computeALOutboundDispatch({
-                read,
-                outboxEntry: createOutboundCanonicalEntry(store, read.msg),
-                dispatchAtMs: 1_000,
-                intent: 'enqueue',
-                phase: 'immediate',
-                options: {}
-            });
-            await store.commitBundle(candidate.bundle!, decodeOutboundTestPayload);
-        }
-        const [reserved] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
-        const malformed = { ...reserved.entry, dequeueAudit: { ...reserved.entry.dequeueAudit, startTs: undefined } };
-        await backend.workQueue.setItem(malformed.key, malformed, { expireAtTimestamp: reserved.expireAtTimestamp });
-        expect(await store.peekNextEffectReadyAt()).toBe(1_000);
-        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toHaveLength(1);
-        expect(await backend.workQueue.getItem(malformed.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
-    });
-
     it.each(['expires-at', 'fresh-until'] as const)('bounds persisted transport work by the original %s deadline', async (algo) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const msg: ALMessage = Object.freeze({
             ...createOutboundMessage('bounded-work', { ttlMs: 10_000 }),
             qos: Object.freeze({
@@ -354,20 +322,21 @@ describe('outbound message expiry', () => {
             throw new Error('Accepted transport work requires an admission bundle');
         }
         Object.freeze(candidate.bundle);
-        expect(await store.commitBundle(candidate.bundle, decodeOutboundTestPayload)).toBe('committed');
+        expect(await store.commitBundle(candidate.bundle)).toBe('committed');
         expect(JSON.stringify({ read, candidate })).toBe(before);
 
         vi.setSystemTime(1_999);
         expect(await store.readSentMessage(msg.id.msgId)).toBeDefined();
         vi.setSystemTime(2_000);
-        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeOutboundTestPayload)).toEqual([]);
+        expect(await claimOutboundTestWork(stores, 10)).toEqual([]);
         expect(await store.readSentMessage(msg.id.msgId)).toBeUndefined();
     });
 
     it.each(['enqueue', 'dequeue', 'repair'] as const)('rejects expiry during the admission read before %s can create work', async (intent) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const msg = createOutboundMessage('expired-read', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,
@@ -394,7 +363,8 @@ describe('outbound message expiry', () => {
     it('retains one canonical QueueBox row at its logical deadline before physical expansion', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const msg: ALMessage = {
             ...createOutboundMessage('queued-work', { ttlMs: 10_000 }),
             qos: { expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } }
@@ -427,7 +397,8 @@ describe('outbound message expiry', () => {
     it.each([undefined, 3_000])('rejects a transport-work deadline of %s that would remove or extend the message bound', async (expireAtTimestamp) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
-        const store = createDefaultOutboundTestAdmissionStore();
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
         const msg = createOutboundMessage('invalid-work-expiry', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,

@@ -1,12 +1,13 @@
 import type { ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
-import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type {
     ALControlAdmissionCandidate,
     ALControlAdmissionRead
 } from './compute-al-outbound-control-admission.ts';
 
+/** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(
     candidate: ALControlAdmissionCandidate
 ): readonly ALMessageRejection[] {

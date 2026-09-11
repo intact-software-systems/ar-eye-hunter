@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
+import { readIndexedDbRequest, readIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
@@ -9,6 +10,7 @@ import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release
 import { validateResourceInboxReleaseDisposition } from './compute-resource-inbox-release.ts';
 import {
     decodeStoredResourceEntry,
+    decodeStoredResourceEntryValue,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
 import {
@@ -23,11 +25,14 @@ import {
 } from './indexed-db-queue-box-entry.ts';
 import {
     INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
-    readAllStoredQueueEntries,
+    readDeletableCompletedStoredQueueEntries,
+    readExpiredStoredQueueEntries,
     readFairnessStoredQueueEntries,
     readStoredQueueEntries,
+    readStoredQueueEntriesByTypesAndStatuses,
     readStoredQueueEntry,
     readStoredQueueWorkPage,
+    readStoredQueueWorkPages,
     toIndexedDbQueueStoreDefinition
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
@@ -62,12 +67,35 @@ import {
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
-    toKeyAsString
+    toKeyAsString,
+    type ResourceEntryKeyString
 } from './ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 import { writeComputedIndexedDbQueueMutations } from './write-computed-indexed-db-queue-mutations.ts';
 
 export { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
+
+interface IndexedDbReservationCandidateRead {
+    readonly db: IDBDatabase;
+    readonly observations: ReadonlyMap<string, ResourceEntry> | undefined;
+    readonly typeIds: Iterable<string>;
+    readonly statusIds: Iterable<EntityStatus>;
+    readonly maxToReadPerCombination: number;
+}
+
+export interface IndexedDbQueueCleanupResult {
+    readonly deleted: number;
+    /** The pass deleted a whole per-reason budget, so more rows of that kind may remain. */
+    readonly saturated: boolean;
+}
+
+/** Per-run cap on rows an opportunistic cleanupAsync() pass deletes for each reason. */
+export const INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE = 256;
+const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE = 256;
+/** Retained rows spend pages without spending deletions, so one run also gets a page budget. */
+const INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES = 8;
+/** Per-type row budget for advertisement probes and poison-skipping recovery scans. */
+const INDEXED_DB_QUEUE_PROBE_MAX_TO_READ = 64;
 
 interface IndexedDbQueueComputedWrite<Result> {
     readonly mutations: readonly ComputedIndexedDbQueueMutation[];
@@ -138,52 +166,66 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
-        const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
-        const validated = validateResourceInboxWorkPageRequest(request);
-        if (validated.left) {
-            throw validated.left;
-        }
+        const request = toValidatedWorkPageRequest(input);
         const db = await this.#connection.open();
         const stored = await readStoredQueueWorkPage(db, this.#storeName, request);
-        return {
-            entries: stored.map(decodeStoredResourceEntry),
-            nextCursor: stored.length === request.maxToRead
-                ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
-                : null
-        };
+        return toResourceInboxWorkPage(stored, request);
     }
 
+    /** One transaction serves every request, so a readiness scan is one operation, not one per page. */
+    async readWorkPages(inputs: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
+        if (inputs.length === 0) {
+            return [];
+        }
+        this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+        const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
+        const db = await this.#connection.open();
+        const pages = await readStoredQueueWorkPages(db, this.#storeName, requests);
+        return pages.map((stored, index) => toResourceInboxWorkPage(stored, requests[index]));
+    }
+
+    /** The opportunistic sweep hot paths trigger: rate limited, so it runs at most once per window. */
     cleanup(): void {
+        if (!this.#cleanupRateLimiter.allow()) {
+            return;
+        }
         void this.cleanupAsync().catch((e) => {
             console.error('Failed to cleanup IndexedDB queue entries', e);
         });
     }
 
-    async cleanupAsync(): Promise<boolean> {
+    /**
+     * One bounded pass. A pass that deletes a whole per-reason budget reports `saturated`, so a
+     * caller that owns a bound of its own can run the next pass instead of leaving the remainder
+     * until some later trigger.
+     */
+    async cleanupAsync(): Promise<IndexedDbQueueCleanupResult> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
-        return await RateLimiter.tryToExecuteOrDefault(
-            this.#cleanupRateLimiter,
-            async () => {
-                const db = await this.#connection.open();
-                const now = this.#now();
-                const entries = await readAllStoredQueueEntries(db, this.#storeName);
-                const expired = entries.filter(
-                    (stored) =>
-                        isStoredQueueEntryExpired(stored, now) ||
-                        (COMPLETED_STATUSES.has(stored.status) &&
-                            !matchesQueueBoxCompletedRetention(stored, this.#completedRetention))
-                );
-                const removedEntries = await this.#write(db, {
-                    mutations: expired.map(computeIndexedDbQueueDelete),
-                    result: expired.length
-                });
-                if (removedEntries > 0) {
-                    console.log('Removed entries: ', removedEntries);
-                }
-                return removedEntries > 0;
-            },
-            false
+        const db = await this.#connection.open();
+        const now = this.#now();
+        const expired = await this.#readExpiredEntries(db, now);
+        const completed = await readDeletableCompletedStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            statusIds: COMPLETED_STATUSES,
+            endAtOrBeforeEpochMs: Number(now.epochMilliseconds),
+            maxToDelete: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE,
+            maxPages: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES,
+            isDeletable: (stored) => !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
+        });
+        // A row can be expired and terminal at once; a duplicate key rejects the whole write.
+        const toDelete = new Map<ResourceEntryKeyString, StoredResourceEntry>(
+            [...expired, ...completed].map((stored) => [stored.keyString, stored])
         );
+        const deleted = await this.#write(db, {
+            mutations: [...toDelete.values()].map(computeIndexedDbQueueDelete),
+            result: toDelete.size
+        });
+        return {
+            deleted,
+            saturated: expired.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE ||
+                completed.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE
+        };
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
@@ -296,6 +338,27 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         return await this.#write(db, computed.right);
     }
 
+    /** An observed claim reads exactly the rows it observed; an unobserved one reads type/status pages. */
+    async #readReservationCandidates(
+        input: IndexedDbReservationCandidateRead
+    ): Promise<readonly StoredResourceEntry[]> {
+        if (input.observations === undefined) {
+            return await readStoredQueueEntriesByTypesAndStatuses({
+                db: input.db,
+                storeName: this.#storeName,
+                typeIds: input.typeIds,
+                statusIds: input.statusIds,
+                maxToReadPerCombination: input.maxToReadPerCombination
+            });
+        }
+        const observed = await readStoredQueueEntries(
+            input.db,
+            this.#storeName,
+            [...input.observations.values()].map((entry) => toKeyAsString(entry.key))
+        );
+        return [...observed.values()];
+    }
+
     async reserveTimeoutEntries(
         { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
@@ -310,41 +373,24 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
         const db = await this.#connection.open();
         const now = this.#now();
-        const entries = observations === undefined
-            ? await readAllStoredQueueEntries(db, this.#storeName)
-            : (await readStoredQueueEntries(
-                db,
-                this.#storeName,
-                [...observations.values()].map((entry) => toKeyAsString(entry.key))
-            )).values();
-        const reserved = new Map<Key, ResourceEntry>();
-        const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
-            if (reserved.size >= maxToReserve) {
-                break;
-            }
-            if (
-                observations !== undefined &&
-                validateResourceEntryObservation(decodeStoredResourceEntry(stored), observations).left
-            ) {
-                continue;
-            }
-            if (
-                stored.dequeueAudit.attempts >= maxAttempts ||
-                !isStoredQueueEntryTimedOut({
-                    stored,
-                    typeIds,
-                    duration: timeSinceStartTs,
-                    now
-                })
-            ) {
-                continue;
-            }
-            const updated = computeReservedQueueEntry(decodeStoredResourceEntry(stored), now);
-            reserved.set(updated.key, updated);
-            mutations.push(computeIndexedDbQueuePut(stored, updated));
-        }
-        return await this.#write(db, { mutations, result: reserved });
+        const candidates = await this.#readReservationCandidates({
+            db,
+            observations,
+            typeIds,
+            statusIds: [EntityStatus.RESERVED],
+            // Look ahead like the probe: a live RESERVED row sorting first must not hide older timed-out rows.
+            maxToReadPerCombination: Math.max(maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ)
+        });
+        const selection = computeIndexedDbReservation({
+            candidates,
+            observations,
+            maxToReserve,
+            now,
+            isReservable: (stored) =>
+                stored.dequeueAudit.attempts < maxAttempts &&
+                isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
+        });
+        return await this.#write(db, { mutations: selection.mutations, result: selection.reserved });
     }
 
     async reserveEntries(
@@ -361,44 +407,32 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
         const db = await this.#connection.open();
         const now = this.#now();
-        const entries = observations === undefined
-            ? await readAllStoredQueueEntries(db, this.#storeName)
-            : (await readStoredQueueEntries(
-                db,
-                this.#storeName,
-                [...observations.values()].map((entry) => toKeyAsString(entry.key))
-            )).values();
-        const reserved = new Map<Key, ResourceEntry>();
-        const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
-            if (reserved.size >= maxToReserve) {
-                break;
-            }
-            if (
-                observations !== undefined &&
-                validateResourceEntryObservation(decodeStoredResourceEntry(stored), observations).left
-            ) {
-                continue;
-            }
-            if (
-                !isStoredQueueEntryReservable({
-                    stored,
-                    typeIds,
-                    statusIds,
-                    now,
-                    maxAttempts
-                })
-            ) {
-                if (isStoredQueueEntryExpired(stored, now)) {
-                    mutations.push(computeIndexedDbQueueDelete(stored));
-                }
-                continue;
-            }
-            const updated = computeReservedQueueEntry(decodeStoredResourceEntry(stored), now);
-            reserved.set(updated.key, updated);
-            mutations.push(computeIndexedDbQueuePut(stored, updated));
-        }
-        return await this.#write(db, { mutations, result: reserved });
+        // The index pages a claim in keyString order, not in readiness order; overdue rows that
+        // ordering would strand are reached by reserveOverdueRetryEntries' own fairness pass.
+        const candidates = await this.#readReservationCandidates({
+            db,
+            observations,
+            typeIds,
+            statusIds,
+            maxToReadPerCombination: maxToReserve
+        });
+        const selection = computeIndexedDbReservation({
+            candidates,
+            observations,
+            maxToReserve,
+            now,
+            isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
+        });
+        // An unreservable row that is also expired is swept by the write this claim already owes.
+        return await this.#write(db, {
+            mutations: [
+                ...selection.mutations,
+                ...selection.ineligible
+                    .filter((stored) => isStoredQueueEntryExpired(stored, now))
+                    .map(computeIndexedDbQueueDelete)
+            ],
+            result: selection.reserved
+        });
     }
 
     async reserveOverdueRetryEntries(
@@ -456,10 +490,18 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const db = await this.#connection.open();
         const now = this.#now();
         const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
+        // Read past maxToReserve so an exhausted (poison) generation cannot mask a valid sibling.
+        const perTypeMaxToRead = Math.max(options.maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ);
+        const candidates = await readStoredQueueEntriesByTypesAndStatuses({
+            db,
+            storeName: this.#storeName,
+            typeIds,
+            statusIds: [EntityStatus.RESERVED],
+            maxToReadPerCombination: perTypeMaxToRead
+        });
         const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
         const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
+        for (const stored of candidates) {
             if (reserved.size >= options.maxToReserve) {
                 break;
             }
@@ -494,46 +536,81 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
-            toResourceInboxWorkAdvertisementOptions(workInput);
+        const options = toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
         const now = this.#now();
-        const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkTimeout,
-            async () =>
-                entries.some((stored) =>
-                    stored.dequeueAudit.attempts < maxAttempts &&
-                    isStoredQueueEntryTimedOut({
-                        stored,
-                        typeIds,
-                        duration: TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
-                        now
-                    })
-                ),
-            false
-        );
-
-        const newAndRetryEntryToLock = entries.some((stored) =>
-            isStoredQueueEntryReservable({
-                stored,
-                typeIds,
-                statusIds: NEW_AND_RETRY_STATUSES,
-                now,
-                maxAttempts
-            })
-        );
-        const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkFinalization,
-            async () => hasIndexedDbFinalizationWork({ entries, typeIds, now, maxAttempts, finalizationStaleAfterMs }),
-            false
-        );
-
-        void this.cleanupAsync().catch((e) => {
-            console.error('Failed to cleanup entries', e);
+        const anyEntryToLock = await hasIndexedDbEntryToLock({
+            newAndRetryCandidates: [
+                ...await this.#readNewProbeEntries(db, typeIds),
+                ...await this.#readDueRetryProbeEntries(db, typeIds, now)
+            ],
+            reservedCandidates: await this.#readReservedProbeEntries(db, typeIds),
+            options,
+            typeIds,
+            now
         });
 
-        return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
+        this.cleanup();
+
+        return anyEntryToLock;
+    }
+
+    async #readNewProbeEntries(
+        db: IDBDatabase,
+        typeIds: ReadonlySet<string>
+    ): Promise<readonly StoredResourceEntry[]> {
+        return await readStoredQueueEntriesByTypesAndStatuses({
+            db,
+            storeName: this.#storeName,
+            typeIds,
+            statusIds: [EntityStatus.NEW],
+            maxToReadPerCombination: 1
+        });
+    }
+
+    async #readDueRetryProbeEntries(
+        db: IDBDatabase,
+        typeIds: ReadonlySet<string>,
+        now: Temporal.Instant
+    ): Promise<readonly StoredResourceEntry[]> {
+        // maxToScan = typeIds.size reads exactly the earliest due RETRY row per type, with no
+        // cursor continuation: the fairness range's upper bound is the probe's due check.
+        const dueByType = await readFairnessStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
+            typeIds: [...typeIds],
+            overdueBeforeEpochMs: Number(now.epochMilliseconds),
+            maxToScan: typeIds.size
+        });
+        return [...dueByType.values()].flat();
+    }
+
+    async #readReservedProbeEntries(
+        db: IDBDatabase,
+        typeIds: ReadonlySet<string>
+    ): Promise<readonly StoredResourceEntry[]> {
+        return await readStoredQueueEntriesByTypesAndStatuses({
+            db,
+            storeName: this.#storeName,
+            typeIds,
+            statusIds: [EntityStatus.RESERVED],
+            maxToReadPerCombination: INDEXED_DB_QUEUE_PROBE_MAX_TO_READ
+        });
+    }
+
+    /** The millisecond-truncated expiry index can front-run the precise instant by up to 1 ms. */
+    async #readExpiredEntries(
+        db: IDBDatabase,
+        now: Temporal.Instant
+    ): Promise<readonly StoredResourceEntry[]> {
+        const candidates = await readExpiredStoredQueueEntries({
+            db,
+            storeName: this.#storeName,
+            nowEpochMs: Number(now.epochMilliseconds),
+            maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
+        });
+        return candidates.filter((stored) => isStoredQueueEntryExpired(stored, now));
     }
 
     async #write<Result>(
@@ -604,7 +681,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async getAllKeys(): Promise<Key[]> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
         const db = await this.#connection.open();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
+        // Unscoped by type or status: every other read narrows by an index, this one cannot, so
+        // it reads the store directly instead of a single-caller store-module export for it.
+        const transaction = db.transaction(this.#storeName, 'readonly');
+        const rawValues = await readIndexedDbTransaction(
+            transaction,
+            async () => await readIndexedDbRequest(transaction.objectStore(this.#storeName).getAll())
+        );
+        const entries = rawValues.map(decodeStoredResourceEntryValue);
         const now = this.#now();
         const keys: Key[] = [];
         const mutations: ComputedIndexedDbQueueMutation[] = [];
@@ -619,17 +703,60 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         return await this.#write(db, { mutations, result: keys });
     }
 
+    /**
+     * One bounded page per call: a returned count that reaches the per-run budget is the caller's
+     * signal that more expired rows remain, so the bound belongs to the caller and not to a loop here.
+     */
     async deleteExpired(): Promise<number> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
         const db = await this.#connection.open();
-        const now = this.#now();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
-        const expired = entries.filter((stored) => isStoredQueueEntryExpired(stored, now));
+        const expired = await this.#readExpiredEntries(db, this.#now());
         return await this.#write(db, {
             mutations: expired.map(computeIndexedDbQueueDelete),
             result: expired.length
         });
     }
+}
+
+interface IndexedDbReservationSelection {
+    readonly reserved: Map<Key, ResourceEntry>;
+    readonly mutations: readonly ComputedIndexedDbQueueMutation[];
+    /** Rows the predicate refused, in observation order; the caller decides what they still owe. */
+    readonly ineligible: readonly StoredResourceEntry[];
+}
+
+interface ComputeIndexedDbReservationInput {
+    readonly candidates: readonly StoredResourceEntry[];
+    readonly observations: ReadonlyMap<string, ResourceEntry> | undefined;
+    readonly maxToReserve: number;
+    readonly now: Temporal.Instant;
+    readonly isReservable: (stored: StoredResourceEntry) => boolean;
+}
+
+/** Turns one page of candidates into the rows a claim reserves and the rows its predicate refused. */
+function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): IndexedDbReservationSelection {
+    const reserved = new Map<Key, ResourceEntry>();
+    const mutations: ComputedIndexedDbQueueMutation[] = [];
+    const ineligible: StoredResourceEntry[] = [];
+    for (const stored of input.candidates) {
+        if (reserved.size >= input.maxToReserve) {
+            break;
+        }
+        if (
+            input.observations !== undefined &&
+            validateResourceEntryObservation(decodeStoredResourceEntry(stored), input.observations).left
+        ) {
+            continue;
+        }
+        if (!input.isReservable(stored)) {
+            ineligible.push(stored);
+            continue;
+        }
+        const updated = computeReservedQueueEntry(decodeStoredResourceEntry(stored), input.now);
+        reserved.set(updated.key, updated);
+        mutations.push(computeIndexedDbQueuePut(stored, updated));
+    }
+    return { reserved, mutations, ineligible };
 }
 
 function selectRetryExhaustionDueTimestamp(
@@ -650,6 +777,55 @@ function selectRetryExhaustionDueTimestamp(
         return undefined;
     }
     return startTs;
+}
+
+interface IndexedDbEntryToLockInput {
+    readonly newAndRetryCandidates: readonly StoredResourceEntry[];
+    readonly reservedCandidates: readonly StoredResourceEntry[];
+    readonly options: ResourceInboxWorkAdvertisementOptions;
+    readonly typeIds: ReadonlySet<string>;
+    readonly now: Temporal.Instant;
+}
+
+async function hasIndexedDbEntryToLock(input: IndexedDbEntryToLockInput): Promise<boolean> {
+    const { newAndRetryCandidates, reservedCandidates, options, typeIds, now } = input;
+    const { maxAttempts, finalizationStaleAfterMs } = options;
+    const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+        options.checkTimeout,
+        async () =>
+            reservedCandidates.some((stored) =>
+                stored.dequeueAudit.attempts < maxAttempts &&
+                isStoredQueueEntryTimedOut({
+                    stored,
+                    typeIds,
+                    duration: TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    now
+                })
+            ),
+        false
+    );
+    const newAndRetryEntryToLock = newAndRetryCandidates.some((stored) =>
+        isStoredQueueEntryReservable({
+            stored,
+            typeIds,
+            statusIds: NEW_AND_RETRY_STATUSES,
+            now,
+            maxAttempts
+        })
+    );
+    const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+        options.checkFinalization,
+        async () =>
+            hasIndexedDbFinalizationWork({
+                entries: reservedCandidates,
+                typeIds,
+                now,
+                maxAttempts,
+                finalizationStaleAfterMs
+            }),
+        false
+    );
+    return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
 }
 
 interface IndexedDbFinalizationWorkInput {
@@ -674,4 +850,25 @@ function hasIndexedDbFinalizationWork(input: IndexedDbFinalizationWorkInput): bo
             staleBefore
         }) !== undefined
     );
+}
+
+function toValidatedWorkPageRequest(input: ResourceInboxWorkPage.Request): ResourceInboxWorkPage.Request {
+    const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
+    const validated = validateResourceInboxWorkPageRequest(request);
+    if (validated.left) {
+        throw validated.left;
+    }
+    return request;
+}
+
+function toResourceInboxWorkPage(
+    stored: readonly StoredResourceEntry[],
+    request: ResourceInboxWorkPage.Request
+): ResourceInboxWorkPage {
+    return {
+        entries: stored.map(decodeStoredResourceEntry),
+        nextCursor: stored.length === request.maxToRead
+            ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
+            : null
+    };
 }

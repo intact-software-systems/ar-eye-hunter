@@ -40,18 +40,18 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import {
-    CircuitBreakerPolicy,
     EnqueuedType,
-    InMemoryQueueBox,
-    ResourceInboxResilience
+    InMemoryQueueBox
 } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
+import { drainEngine } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
 
@@ -436,17 +436,25 @@ describe('direct resource outbox writes', () => {
                 connectionId: 'session-alice'
             }
         ]);
+        const engine = new InboxOutboxEngine();
         const service = createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: socket,
             name: 'server-1',
-            targetResolver: { resolveBroadcastRecipients }
+            targetResolver: { resolveBroadcastRecipients },
+            queueEngine: engine
         });
         onTestFinished(() => service.dispose());
 
         expect(socket.sent).toEqual([]);
 
-        await outbox.enqueue(entry);
+        // The fixture's own createdTs (CREATED_AT_EPOCH_MS) sits in the future; the engine's isWork()
+        // gate falls back to createdTs when a row carries no nextTs, so without a due nextTs this row
+        // would never look ready to the gate the way an unmocked port.claim never checked before.
+        await outbox.enqueue({
+            ...entry,
+            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
+        });
         const wake = vi.fn(() => {
             throw new Error('wake failed');
         });
@@ -454,7 +462,11 @@ describe('direct resource outbox writes', () => {
         expect(await outbox.getItem(entry.key)).toBeDefined();
         expect(socket.sent).toEqual([]);
 
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+        await drainEngine(engine);
+        await expect.poll(async () => {
+            const status = (await outbox.getItem(entry.key))?.status;
+            return status === EntityStatus.NEW || status === EntityStatus.RESERVED;
+        }).toBe(false);
 
         expect(socket.sent).toEqual(['session-alice']);
     });
@@ -470,16 +482,28 @@ describe('direct resource outbox writes', () => {
         const socket = createSocket();
         const resolveBroadcastRecipients = vi.fn(() => []);
         const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
+        const engine = new InboxOutboxEngine();
         const service = createDefaultWsQueueBoxServerService({
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: { resolveBroadcastRecipients },
-            outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome)
+            outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome),
+            queueEngine: engine
         });
         onTestFinished(() => service.dispose());
-        await outbox.enqueue(entry);
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+        // The fixture's own createdTs (CREATED_AT_EPOCH_MS) sits in the future; the engine's isWork()
+        // gate falls back to createdTs when a row carries no nextTs, so without a due nextTs this row
+        // would never look ready to the gate the way an unmocked port.claim never checked before.
+        await outbox.enqueue({
+            ...entry,
+            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
+        });
+        await drainEngine(engine);
+        await expect.poll(async () => {
+            const status = (await outbox.getItem(entry.key))?.status;
+            return status === EntityStatus.NEW || status === EntityStatus.RESERVED;
+        }).toBe(false);
         vi.useRealTimers();
         expect(socket.sent).toEqual([]);
         expect(deliveryOutcomes).toEqual([
@@ -708,21 +732,6 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
     ): void {
         this.sent.push(connectionId);
     }
-}
-
-function createResilience(): ResourceInboxResilience {
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(
-            10,
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 })
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
 }
 
 function createGroupSnapshot(): GroupSnapshot {

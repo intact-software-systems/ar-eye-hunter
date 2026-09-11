@@ -176,7 +176,7 @@ function toStateSyncEntries(input: ToStateSyncEntryInput): readonly ResourceEntr
             scope: computed.audience,
             revision: causalIdentity,
             resource: JSON.stringify(effect.payload),
-            roomRecipientPeerIds: effect.effectKind === 'principal-state'
+            groupRecipientPeerIds: effect.effectKind === 'principal-state'
                 ? []
                 : computeGroupSnapshotRecipients(effect.payload, computed.createdAtEpochMs),
             unicastPeerIds: effect.effectKind === 'principal-state'

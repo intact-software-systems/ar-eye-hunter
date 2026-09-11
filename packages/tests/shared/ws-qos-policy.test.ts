@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import * as shared from '@shared/mod.ts';
@@ -12,6 +11,8 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -40,7 +41,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -71,8 +72,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
-        const first = await service.enqueueOutboxIfAbsent(msg);
-        const second = await service.enqueueOutboxIfAbsent(msg);
+        const first = await enqueueOutboxAndDrain(service, msg);
+        const second = await enqueueOutboxAndDrain(service, msg);
 
         expect(first.status).toBe('accepted');
         expect(second.status).toBe('duplicate');
@@ -116,7 +117,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await enqueueOutboxAndDrain(service, msg);
 
         expect(result.status).toBe('enqueued');
         expect(result.entries).toHaveLength(1);
@@ -170,11 +171,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 }
             );
 
-            await service.enqueueOutboxIfAbsent(msg);
-            await service.dequeueOutbox(
-                shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                createResourceInboxResilience()
-            );
+            await enqueueOutboxAndDrain(service, msg);
+            await settleCommittedOutboundBatch();
 
             expect(socket.sentJsonStrings).toHaveLength(1);
 
@@ -261,8 +259,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(seq1);
-        await service.enqueueOutboxIfAbsent(seq2);
+        await enqueueOutboxAndDrain(service, seq1);
+        await enqueueOutboxAndDrain(service, seq2);
 
         const repair = shared.newALRepairControlMessage(
             { v: 2, msgId: 'control-repair', ts: 0, senderId: 'peer-1' },
@@ -348,8 +346,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
 
         socket.native.readyState = 3;
-        const firstResult = await service.enqueueOutboxIfAbsent(first);
-        const secondResult = await service.enqueueOutboxIfAbsent(second);
+        const firstResult = await enqueueOutboxAndDrain(service, first);
+        const secondResult = await enqueueOutboxAndDrain(service, second);
 
         expect(firstResult.status).toBe('enqueued');
         expect(secondResult.status).toBe('enqueued');
@@ -358,11 +356,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(socket.sentJsonStrings).toEqual([]);
         socket.native.readyState = 1;
 
-        await service.dequeueOutbox(
-            shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-            createResourceInboxResilience()
-        );
-
+        // The owner's engine retries on its own schedule once the socket is open again; poll for it.
         await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(second.id.msgId);
     });
@@ -561,10 +555,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(msg);
 
         expect(callbackCount).toBe(0);
-        const keys = await stores.admissionStore.workQueue.getAllKeys();
+        const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         await engine.executeOnce();
-        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({
+        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({
             status: shared.EntityStatus.NEW,
             dequeueAudit: { attempts: 0 }
         });
@@ -675,6 +669,7 @@ function createFakeWsSocket() {
             for (const callback of callbacks) {
                 await callback.onMessage(message, new MessageEvent('message', { data: JSON.stringify(message) }));
             }
+            await waitForALInboundWork();
         }
     };
 }
@@ -724,17 +719,12 @@ function groupRef(groupId: string) {
     };
 }
 
-function createResourceInboxResilience() {
-    return shared.ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
-            10,
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 })
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
+/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
+async function enqueueOutboxAndDrain(
+    service: shared.WsQueueBoxClientService,
+    msg: shared.ALMessage
+): Promise<shared.ALOutboundEnqueueResult> {
+    const result = await service.enqueueOutboxIfAbsent(msg);
+    await settleCommittedOutboundBatch();
+    return result;
 }

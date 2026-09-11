@@ -5,12 +5,14 @@ import {
     vi
 } from 'vitest';
 
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
+import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -27,6 +29,7 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
             const state = createInMemoryALAdmissionState();
             const backend = new InMemoryAdmissionBackend(state, Date.now);
             const store = createALInboundAdmissionStore({
+                nowMs: Date.now,
                 namespace: 'deadline',
                 backend,
                 orderingTrackTtlMs: 60_000,
@@ -41,6 +44,11 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 });
             const admission = new ALInboundMessageAdmission({
                 admissionStore: store,
+                workPort: createTestALInboundWorkPort({
+                    admissionStore: store,
+                    workQueue: state.workQueue,
+                    nowMs: Date.now
+                }),
                 clock: { nowMs: Date.now },
                 effectPreparation: {
                     newControlId: crypto.randomUUID.bind(crypto),
@@ -88,13 +96,14 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
             );
             const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
             if (replay) {
-                expect(await admission.replay({ kind: 'admit-message', msg: message, source })).toBe('completed');
+                expect(await admission.replay({ kind: 'admit-message', msg: decodeALDeadlinedMessage(message), source })).toBe('completed');
             }
             else {
                 const outcome = await admission.attempt(message, source, planner);
                 expect(outcome.right).toEqual({
                     kind: 'completed',
-                    acceptance: offset < 0 ? { kind: 'admitted' } : { kind: 'not-admitted', reason: 'expired' }
+                    acceptance: offset < 0 ? { kind: 'admitted' } : { kind: 'not-admitted', reason: 'expired' },
+                    wroteWork: offset < 0
                 });
             }
             expect(state.data.size > 0).toBe(offset < 0);

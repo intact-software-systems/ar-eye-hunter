@@ -4,6 +4,22 @@ import type { WebRtcGroupManagerDiagnostics } from '@shared/services/web-rtc-gro
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
+/**
+ * What this peer has signaled and what has reached it. A handshake that stalls names its own hop:
+ * an offer counted out with no offer counted in on the far side left this browser and never
+ * arrived, and a non-zero `outboundSignalingErrorCount` says the send itself was rejected.
+ */
+export interface RallarRtcPeerSignalingCounts {
+    readonly outboundOfferCount: number;
+    readonly outboundAnswerCount: number;
+    readonly outboundIceCandidateCount: number;
+    readonly inboundOfferCount: number;
+    readonly inboundAnswerCount: number;
+    readonly inboundIceCandidateCount: number;
+    readonly outboundSignalingErrorCount: number;
+    readonly inboundSignalingErrorCount: number;
+}
+
 export interface RallarRtcPeerConnectionStatus {
     readonly state?: string;
     readonly connectionState?: string;
@@ -21,6 +37,7 @@ export interface RallarRtcPeerConnectionStatus {
     readonly iceCandidateQueueSize: number;
     readonly localStreamId?: string;
     readonly remoteStreamIds: readonly string[];
+    readonly signaling: RallarRtcPeerSignalingCounts;
 }
 
 export interface RallarRtcLaneStatus {

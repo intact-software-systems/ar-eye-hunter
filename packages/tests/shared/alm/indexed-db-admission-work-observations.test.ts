@@ -2,12 +2,15 @@ import { expect, it } from 'vitest';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 it('commits queue-only ownership despite an unrelated metadata commit', async () => {
     const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
         dbName: `work-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
@@ -27,6 +30,8 @@ it('commits queue-only ownership despite an unrelated metadata commit', async ()
 
 it.each(['read', 'list'] as const)('guards a metadata %s even when only queue rows are written', async (operation) => {
     const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
         dbName: `metadata-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
@@ -46,6 +51,8 @@ it.each(['read', 'list'] as const)('guards a metadata %s even when only queue ro
 
 it('guards every queue observation and atomically aborts sibling ownership on replacement', async () => {
     const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
         dbName: `queue-race-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
@@ -75,6 +82,8 @@ function workEntry() {
 it('permits post-deadline bookkeeping when no execution admission deadline applies', async () => {
     const nowMs = 1_800_000_001_000;
     const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
         dbName: `late-control-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: () => nowMs,

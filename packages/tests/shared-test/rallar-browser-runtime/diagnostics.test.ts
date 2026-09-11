@@ -283,3 +283,86 @@ it('emits expected-session and duplicate-session diagnostics', async () => {
         'rallar.browser.cleanup.unsubscribe_completed'
     ]));
 });
+
+it('records an AL outbound admission diagnostics event into the agent event log', async () => {
+    // The recorder attaches at construction, independent of any connection.
+    await loadRuntime();
+
+    facade.rallar.diagnostics.outboundDiagnostics.sink({
+        kind: 'sender-queue-wait',
+        senderId: 'sender-1',
+        origin: 'send',
+        queued: true,
+        queuedBehindOrigin: 'drain',
+        durationMs: 42
+    });
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            data: {
+                kind: 'sender-queue-wait',
+                senderId: 'sender-1',
+                origin: 'send',
+                queued: true,
+                queuedBehindOrigin: 'drain',
+                durationMs: 42
+            }
+        })
+    ]));
+});
+
+it('records an AL inbound admission diagnostics event into the agent event log', async () => {
+    // The recorder attaches at construction, independent of any connection.
+    await loadRuntime();
+
+    facade.rallar.diagnostics.inboundDiagnostics.sink({
+        kind: 'admission-outcome',
+        workerId: 'al-inbound:worker-1',
+        msgId: 'msg-7',
+        typeId: 'alm.conformance.delivery-baseline',
+        outcome: 'unauthorized',
+        reason: 'unauthorized'
+    });
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            data: {
+                kind: 'admission-outcome',
+                workerId: 'al-inbound:worker-1',
+                msgId: 'msg-7',
+                typeId: 'alm.conformance.delivery-baseline',
+                outcome: 'unauthorized',
+                reason: 'unauthorized'
+            }
+        })
+    ]));
+});
+
+it('records an AL storage reset diagnostics event into the agent event log', async () => {
+    // The recorder attaches at construction, independent of any connection.
+    await loadRuntime();
+
+    facade.rallar.diagnostics.storageReset.sink({
+        dbName: 'rallar-al-runtime',
+        previousSchemaId: 'rallar-alm-2026-08-f1',
+        schemaId: 'rallar-alm-2026-09-f2',
+        reason: 'schema-id-mismatch'
+    });
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.storage_reset',
+            data: {
+                dbName: 'rallar-al-runtime',
+                previousSchemaId: 'rallar-alm-2026-08-f1',
+                schemaId: 'rallar-alm-2026-09-f2',
+                reason: 'schema-id-mismatch'
+            }
+        })
+    ]));
+});

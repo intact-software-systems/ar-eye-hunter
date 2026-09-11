@@ -38,7 +38,7 @@ function conformanceInput(
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 15_000
+        deadlineMs: 18_000
     };
 }
 
@@ -121,15 +121,17 @@ describe('alm-conformance recipe family', () => {
     it('adds the send budget only to positive receive windows', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const received = receivedCommandsOf(
-                createAlmConformanceRecipes({ ...conformanceInput(carrier), deadlineMs: 15_000 })
+                createAlmConformanceRecipes({ ...conformanceInput(carrier), deadlineMs: 18_000 })
             );
 
             expect(received.length).toBeGreaterThan(0);
             for (const command of received) {
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
-                    .toEqual(command.absent
-                        ? { windowMs: 14_000, timeoutMs: 15_000 }
-                        : { windowMs: 24_000, timeoutMs: 25_000 });
+                    .toEqual(
+                        command.absent
+                            ? { windowMs: 17_000, timeoutMs: 18_000 }
+                            : { windowMs: 27_000, timeoutMs: 28_000 }
+                    );
             }
         }
     });
@@ -182,6 +184,7 @@ describe('alm-conformance recipe family', () => {
             'alm-ws-delivery-baseline-sender-ensure-group',
             'alm-ws-delivery-baseline-sender-ensure-member',
             'alm-ws-delivery-baseline-sender-connect',
+            'alm-ws-delivery-baseline-sender-storage-counters-connected',
             'alm-ws-delivery-baseline-sender-send-1',
             'alm-ws-delivery-baseline-sender-observe-accepted-1',
             'alm-ws-delivery-baseline-sender-receipts-1',

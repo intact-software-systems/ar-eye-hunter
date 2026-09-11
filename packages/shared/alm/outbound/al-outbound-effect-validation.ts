@@ -18,10 +18,14 @@ import type {
     ALOutboundDurableEffect,
     ALOutboundPreparedMessageDecoder,
     ALOutboundRepairHint
-} from './al-outbound-admission-store.ts';
-import { decodeALOutboundCapturedPolicy } from './al-outbound-admission-validation.ts';
+} from './admission/al-outbound-admission-store.ts';
+import { decodeALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
 import { decodeALOutboundMessageReference } from './al-outbound-canonical-message.ts';
-import { toALOutboundPendingAdmissionId, type ALOutboundPendingAdmission } from './al-outbound-pending-admission.ts';
+import {
+    toALOutboundPendingAdmissionId,
+    toALOutboundPendingControlId,
+    type ALOutboundPendingAdmission
+} from './al-outbound-pending-admission.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 
@@ -101,9 +105,13 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         'request',
         'reason',
         'policy',
-        'preparedMessages'
+        'preparedMessages',
+        'msg',
+        'expiresAtMs'
     ]);
     switch (payload.kind) {
+        case 'admit-control':
+            return decodeALOutboundPendingControl(value, effectId);
         case 'admit-message':
             return decodeALOutboundPendingAdmission(value, effectId, preparedRead);
         case 'send-prepared':
@@ -132,6 +140,19 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         default:
             throw new TypeError('Persisted AL outbound effect kind is invalid');
     }
+}
+
+function decodeALOutboundPendingControl(
+    value: unknown,
+    effectId: string
+): Extract<ALOutboundDurableEffect<never>, { kind: 'admit-control'; }> {
+    const pending = decodeALAdmissionRecord(value, ['kind', 'msg', 'expiresAtMs']);
+    const msg = decodePersistedALMessageValue(pending.msg);
+    const expiresAtMs = decodeALAdmissionNumber(pending.expiresAtMs);
+    if (effectId !== toALOutboundPendingControlId(msg)) {
+        throw new TypeError('Pending outbound control identity differs from its queue observation');
+    }
+    return { kind: 'admit-control', msg, expiresAtMs };
 }
 
 function decodeALOutboundPendingAdmission<TPrepared>(

@@ -4,27 +4,42 @@ import { RepositoryToken } from '../cache/RepositoryToken.ts';
 import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
 
-export type ALRuntimeStoreFactories = Readonly<{
+declare const alRuntimeStorePrepared: unique symbol;
+
+/**
+ * A store-scope id that also states the prepared contract its outbound stores produce. The phantom
+ * member is type-only: `toALRuntimeStoreId` is its single producer and returns the id itself, so a
+ * resolve infers `TPrepared` from the id instead of the caller asserting it.
+ */
+export type ALRuntimeStoreId<TPrepared> = string & {
+    readonly [alRuntimeStorePrepared]: TPrepared;
+};
+
+export function toALRuntimeStoreId<TPrepared>(id: string): ALRuntimeStoreId<TPrepared> {
+    return id as ALRuntimeStoreId<TPrepared>;
+}
+
+export type ALRuntimeStoreFactories<TPrepared> = Readonly<{
     createInboundStores?: () => ALInboundRuntimeStores;
-    createOutboundStores?: () => ALOutboundRuntimeStores;
+    createOutboundStores?: () => ALOutboundRuntimeStores<TPrepared>;
 }>;
 
-export type ALRuntimeStoreScope = Readonly<{
-    id: string;
-    factories: ALRuntimeStoreFactories;
+export type ALRuntimeStoreScope<TPrepared> = Readonly<{
+    id: ALRuntimeStoreId<TPrepared>;
+    factories: ALRuntimeStoreFactories<TPrepared>;
 }>;
 
-export function configureALRuntimeStoreFactories(
-    id: string,
-    factories: ALRuntimeStoreFactories,
+export function configureALRuntimeStoreFactories<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>,
+    factories: ALRuntimeStoreFactories<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
-): ALRuntimeStoreFactories {
-    manager.set(toALRuntimeStoreFactoryToken(id), factories);
+): ALRuntimeStoreFactories<TPrepared> {
+    manager.set(toALRuntimeStoreFactoryToken<TPrepared>(id), factories);
     return factories;
 }
 
-export function configureALRuntimeStoreScopes(
-    scopes: readonly ALRuntimeStoreScope[],
+export function configureALRuntimeStoreScopes<TPrepared>(
+    scopes: readonly ALRuntimeStoreScope<TPrepared>[],
     manager: RepositoryManager = defaultRepositoryManager
 ): void {
     for (const scope of scopes) {
@@ -32,15 +47,15 @@ export function configureALRuntimeStoreScopes(
     }
 }
 
-export function resolveALRuntimeStoreFactories(
-    id: string,
+export function resolveALRuntimeStoreFactories<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
-): ALRuntimeStoreFactories {
-    return manager.require(toALRuntimeStoreFactoryToken(id));
+): ALRuntimeStoreFactories<TPrepared> {
+    return manager.require(toALRuntimeStoreFactoryToken<TPrepared>(id));
 }
 
-export function resolveALInboundRuntimeStores(
-    id: string,
+export function resolveALInboundRuntimeStores<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALInboundRuntimeStores {
     const factories = resolveALRuntimeStoreFactories(id, manager);
@@ -52,11 +67,11 @@ export function resolveALInboundRuntimeStores(
     return factories.createInboundStores();
 }
 
-export function resolveALOutboundRuntimeStores(
-    id: string,
+export function resolveALOutboundRuntimeStores<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
-): ALOutboundRuntimeStores {
-    const factories = resolveALRuntimeStoreFactories(id, manager);
+): ALOutboundRuntimeStores<TPrepared> {
+    const factories = resolveALRuntimeStoreFactories<TPrepared>(id, manager);
 
     if (!factories.createOutboundStores) {
         throw new Error(`AL outbound runtime stores are not configured: ${id}`);
@@ -65,9 +80,9 @@ export function resolveALOutboundRuntimeStores(
     return factories.createOutboundStores();
 }
 
-function toALRuntimeStoreFactoryToken(
-    id: string
-): RepositoryToken<ALRuntimeStoreFactories> {
+function toALRuntimeStoreFactoryToken<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>
+): RepositoryToken<ALRuntimeStoreFactories<TPrepared>> {
     return new RepositoryToken(
         `shared.services.al-runtime-stores:${id}`,
         () => {

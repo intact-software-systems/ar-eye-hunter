@@ -50,6 +50,17 @@ import {
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
+/** Admission returns before the inbound worker delivers, so the topic consumer runs on a later batch. */
+async function waitForWsIngressCaptures(captured: readonly number[], expected: number): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (captured.length >= expected) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error(`Timed out waiting for ${expected} inbound WS ingress captures`);
+}
+
 interface NumericCountRow {
     readonly count: string | number;
 }
@@ -537,6 +548,7 @@ Deno.test(
                 await rttPending;
                 await new Promise((resolve) => setTimeout(resolve, 2));
                 await dispatchRtt();
+                await waitForWsIngressCaptures(wsIngressCapturedAt, 2);
                 assert.equal(wsIngressCapturedAt.length, 2);
                 assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
 

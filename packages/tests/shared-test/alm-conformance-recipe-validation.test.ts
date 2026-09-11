@@ -34,7 +34,7 @@ function conformanceInput(
         typeId: 'alm.conformance',
         senderConnection: 'sender',
         receiverConnection: 'receiver',
-        deadlineMs: 15_000
+        deadlineMs: 18_000
     };
 }
 

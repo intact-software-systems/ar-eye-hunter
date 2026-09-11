@@ -507,10 +507,10 @@ describe('IndexedDbQueueBox', () => {
         );
         await queue.enqueue(createEntry(typeId, 'active-1'));
 
-        expect(await queue.cleanupAsync()).toBe(true);
+        expect(await queue.cleanupAsync()).toEqual({ deleted: 1, saturated: false });
 
         const queueAfterCleanup = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
-        expect(await queueAfterCleanup.cleanupAsync()).toBe(false);
+        expect(await queueAfterCleanup.cleanupAsync()).toEqual({ deleted: 0, saturated: false });
 
         const completed = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.COMPLETED]), reservationInput: 10 });
         const active = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
@@ -538,7 +538,7 @@ describe('IndexedDbQueueBox', () => {
             })
         ).toBeUndefined();
         expect(await queue.deleteExpired()).toBe(0);
-        expect(await queue.cleanupAsync()).toBe(false);
+        expect(await queue.cleanupAsync()).toEqual({ deleted: 0, saturated: false });
     });
 
     it('reclaims timed out reserved entries', async () => {

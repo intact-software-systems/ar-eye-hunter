@@ -118,6 +118,11 @@ export class ResourceInboxResilience {
     isNotAllowedThroughToDequeue(): boolean {
         return !this.circuitBreaker.isAllowedThrough();
     }
+
+    /** How long a tripped breaker stays open: the wait a rejected dequeue owes before its next attempt. */
+    toCircuitOpenBackoffMs(): number {
+        return this.circuitBreaker.policy.resetTimeout.total({ unit: 'milliseconds' });
+    }
 }
 
 function createResourceInboxStatusChecks(

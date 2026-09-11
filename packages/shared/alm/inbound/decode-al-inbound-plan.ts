@@ -9,7 +9,7 @@ import {
     type PersistedALRecord,
     type PersistedALValue
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
-import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { AL_MESSAGE_DROP_REASON_CODES, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -49,18 +49,29 @@ const EFFECTIVE_OPTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
 };
 
 export function decodeALInboundPlan(value: unknown): ALMessageHandlingPlan {
-    const plan = decodeALAdmissionRecord(value, PLAN_FIELDS, ['dropReason']);
+    const plan = decodeALAdmissionRecord(value, PLAN_FIELDS, ['dropReason', 'dropReasonCode']);
     assertPersistedALQos(plan.requested);
     assertEffectivePolicy(plan.effective);
     assertNormalizationNotes(plan.notes);
     requireStringArray(plan.unmetRequirements, 'unmet requirements');
     requirePersistedALNonEmptyString(plan.dedupKey, 'dedup key');
     requireOptionalPersistedALNonEmptyString(plan.dropReason, 'drop reason');
+    requireOptionalDropReasonCode(plan.dropReasonCode);
     assertDeliveryAndForwarding(plan);
     assertControlPlan(plan);
     assertSupersedenceAndCongestion(plan);
     assertOrderingObservation(plan.orderingRuntime);
     return value as ALMessageHandlingPlan;
+}
+
+function requireOptionalDropReasonCode(value: PersistedALValue | undefined): void {
+    if (value === undefined) {
+        return;
+    }
+    requirePersistedALNonEmptyString(value, 'drop reason code');
+    if (!AL_MESSAGE_DROP_REASON_CODES.some((code) => code === value)) {
+        throw new TypeError('Persisted AL drop reason code is invalid');
+    }
 }
 
 function assertEffectivePolicy(value: PersistedALValue): void {

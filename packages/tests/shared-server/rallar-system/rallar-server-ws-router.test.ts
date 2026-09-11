@@ -1,3 +1,5 @@
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     describe,
     expect,
@@ -40,6 +42,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { createTestGroup } from '../../create-test-group.ts';
+import { waitForALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
 
 describe('RallarServerWsRouter', () => {
     it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
@@ -106,12 +109,12 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.socket.receive(message);
 
-        const keys = await stores.admissionStore.workQueue.getAllKeys();
+        const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
         available = true;
         await vi.advanceTimersByTimeAsync(1_000);
-        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
+        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
         expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
     });
 
@@ -610,7 +613,7 @@ describe('RallarServerWsRouter', () => {
             { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
         );
 
-        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', roomRecipientPeerIds: ['peer-2', 'departed-peer'] });
+        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', groupRecipientPeerIds: ['peer-2', 'departed-peer'] });
 
         expect(socket.sent.map((entry) => entry.connectionId)).toEqual(['conn-2']);
     });
@@ -847,15 +850,17 @@ interface RouterFixture {
     readonly service: WsQueueBoxServerService;
     readonly socket: RecordingWsServer;
     readonly outbox: QueueBoxResourceEntryRepository;
-    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
 
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ): RouterFixture {
     const socket = createRecordingWsServer();
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
-    const outbox = outboundStores.admissionStore.workQueue;
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+    const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         outboundStores,
@@ -956,6 +961,7 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
                 await listener.handleEvent(event);
             }
         }
+        await waitForALInboundWork();
     }
 }
 
@@ -978,7 +984,7 @@ interface PublicRouterFixture {
     readonly service: WsQueueBoxServerService;
     readonly socket: RecordingWsServer;
     readonly outbox: QueueBoxResourceEntryRepository;
-    readonly outboundStores: ALOutboundRuntimeStores;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly qboxEngine: RouterQueueWakeRecorder;
 }
 
@@ -986,8 +992,10 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     const socket = createRecordingWsServer({
         failingConnectionIds: options.failingConnectionIds
     });
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores();
-    const outbox = outboundStores.admissionStore.workQueue;
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+    const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         outboundStores,

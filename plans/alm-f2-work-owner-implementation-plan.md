@@ -52,6 +52,74 @@ counters.
 - This is an incompatible cutover (decision D6 allows the large PR): browser schema id, inbound work
   key layout, and effect payload shapes change together.
 
+## Execution adjustments (2026-09-09, pre-flight rulings)
+
+- R1/R2: the admission stores stop exposing `workQueue`, but the composition still needs the
+  queue to build the port. `ALInboundRuntimeStores`/`ALInboundMessageRuntime.Resources` (Task 4)
+  and `ALOutboundRuntimeStores`/`ALOutboundMessageRuntime.Resources` (Task 6) carry
+  `readonly workQueue: QueueBoxResourceEntryRepository`; each runtime constructor builds its own
+  `ALWorkQueuePort` from it (inbound `workTypes = {toALInboundWorkType(namespace)}`, outbound
+  `{toALOutboundWorkType(namespace), ...dequeue.types}`) before constructing the control admission
+  and the handler. The outbound type set depends on consumer-specific dequeue types the store
+  factories do not know, so the port is not a resource.
+- R3/R4: Task 6 passes `dequeue` and receives `workQueue` at the three production constructions
+  so every commit typechecks; Task 7 deletes the legacy methods and registrations. The overlay
+  manager's `this.outbox` becomes the stores bundle's `workQueue`.
+- R18: `peekNextReadyAt` reads one fixed 16-entry RETRY page per type (the existing handler's
+  bound); the engine's idle schedule covers an under-report; polling bounds are measured in V1.
+- R22/R24 (Task 3): the owner row carries `retainUntilMs`; every buffered-slot re-extension is
+  clamped to it; every consumer of a buffered slot resolves its owner row.
+- R27 (Task 4/5): a replayed `admit-control` that commits surfaces its acceptance through
+  `onControlMessage`; `replay` returns `{ outcome, acceptance }`.
+- R30/R31 (Task 5): the port's `peekNextReadyAt` advertises NEW work as ready now (one NEW row per
+  type) merged with RETRY readiness; readiness is a handler dependency
+  (`ALWorkHandlerDependencies.readNextReadyAtMs`) — the inbound runtime passes its eligibility-aware
+  selector probe, the outbound runtime passes its own probe (Task 6).
+- R32 (Task 6): the port's peek skips expired rows (`readWorkPage` applies no expiry filter, so an
+  expired NEW row would otherwise read as ready forever); the outbound probe keeps today's
+  semantics (unleased RESERVED rows are ready now, expired rows are skipped).
+- R29 (Task 6/11): warn-tier-or-worse ALM files after Task 4 were compute-al-inbound-admission (64),
+  validate-al-inbound-commit-bundle (58), al-outbound-admission-effect-store (68),
+  al-outbound-message-runtime (55), al-outbound-repair-admission (60), al-outbound-admission-store
+  (124); Task 6 lands the four outbound files under the warn tier, Task 11 splits the rest along
+  real boundaries and makes `validateALInboundControlAdmission` return every issue.
+- H5 (Task 6, from the runner diagnosis of the F1 lane): outbound admission of a typed send is a
+  serialized chain of IndexedDB round trips with the batch awaited inline before and after the
+  commit; Task 6 replaces the awaited `processCommitted()` with the non-blocking
+  `ALWorkHandler.committed()`, wires the existing `outboundDiagnostics` sink
+  (`initialise-browser-middleware.ts`, no caller today) from the black-box composition beside
+  `RallarDiagnosticsPorts`, and raises the conformance `EXPIRY_TTL_MS` above the measured admission
+  latency so `deadline-expiry` asserts what it claims. The lane returns to `test:ci` when Task 12
+  proves it on the runner (observation job). Done in Task 6b (sink topic
+  `rallar.browser.alm.outbound_diagnostics`, `EXPIRY_TTL_MS` 7 500 ms, manifest 18 regenerated).
+- R39/R43 (Task 5 fix round 2): the inbound runtime announces a commit only when it wrote work,
+  and an empty batch stays off the same tick (a zero-mutation duplicate admission had started a
+  fire-and-forget batch that outlived a closing PGlite and spun). A batch can still outlive
+  `dispose()` (uncancellable port operations; lease expiry recovers) — recorded for the final
+  review; `dispose(): void` stays in F2.
+- R46 (Task 7 fix round): every queue-entry writer (`toResourceEntry`, `toResourceEntryWithKey`,
+  `QueueBoxUtilities.toResourceEntryFromMsg`) stamps `date`/`createdTs` from one UTC instant — the
+  readers reinterpret `createdTs` as UTC wall clock, and the old `isAnyEntryToLock` path had masked
+  the local-zone stamp until the handler's probe became the sole cold-discovery path.
+- R47–R51 (Task 8): the completed-retention sweep budgets deletable rows through a cursor-paged
+  `by-status-end` range (`['status', 'endEpochMs', 'keyString']`, 256 per page, 8 pages per run;
+  retained rows never consume the deletion budget — above 2048 retained rows ahead of a deletable
+  one the run deletes nothing, accepted until V1's retention budgets); `reserveTimeoutEntries` reads
+  `max(maxToReserve, 64)` per type so the probe and the reservation agree; the readiness probe is
+  split into one reader per status class; `browser/rallar.ts` budget 202 KiB (201.04 recorded).
+- R52–R55 (Tasks 9–10): every browser cleanup range ends at the key delimiter; AL work expiry is
+  store-wide by construction (only the KV metadata rows are session-scoped) and the contract says
+  so; an undecodable schema row resets like a missing one; the eviction interval returns a stop
+  handle and the tests tear it down — production session teardown does not consume that handle
+  yet (the interval and its `onStorageReset` closure stay pinned to the first session for the
+  tab's lifetime; pre-existing; recorded for the final review and S1).
+- R40 (Task 11): the outbound admission family (`al-outbound-admission-store.ts`, `-reads.ts`,
+  `-keys.ts`, `-effect-store.ts`, `-validation.ts`, plus a `-mutations.ts` split of the store's
+  compute/apply half) moves into `packages/shared/alm/outbound/admission/` in one move with
+  lineage entries; that takes the directory from 23 to 18 direct files (clearing the zero-tolerance
+  layout metrics) and lands the store under the warn tier; `al-outbound-message-runtime.ts` (55)
+  and `al-outbound-repair-admission.ts` (60) are split along a real boundary in the same task.
+
 ---
 
 ## File structure
@@ -79,6 +147,16 @@ counters.
 | Tests                                       | Create `packages/tests/shared/alm/work/al-work-queue-port.test.ts`, `al-work-handler.test.ts`, `packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`, `packages/tests/shared/alm/inbound/al-inbound-canonical-message.test.ts`, `packages/tests/shared/alm/outbound/al-outbound-dequeue-work.test.ts`, `packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts`, `packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts`, `packages/tests/shared/alm/al-storage-snapshot.test.ts`; rewrite the tests the deleted files owned |
 
 ---
+
+## Execution adjustments (2026-09-10, after PR #559's first Release Gate)
+
+- The blocking gate failed at the Postgres shared-server integration step (a lease stamped from the
+  JavaScript clock versus a readiness derived from the row's Postgres `startTs`; a pre-existing ALM
+  race test leaking a non-JSON queue row that the group-state connect test parses first since the
+  Task 9 key layout). The non-blocking observation job showed F2 moved the runner stall rather than
+  removing it (send median 1.9 s → 7.4 s on the runner; RTC readiness 24–40 s through delayed
+  signaling). Maintainer decision: hold #559 and fix inside it (rulings R76, R77). Task 13 below
+  carries both repairs and the throughput fix; the plan stays incomplete until its Step 6.
 
 ### Task 1: The ALM work queue port
 
@@ -182,7 +260,7 @@ and maps each `ResourceEntry` to `{ entry, attempts: entry.dequeueAudit.attempts
 `finalizeExhausted` wraps `reserveRetryExhaustionFinalizations(workTypes, { processingAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts, maxToReserve, staleAfterMs: leaseMs })`.
 `peekNextReadyAt` reads one `RETRY` page and returns the earliest `dequeueAudit.nextTs`, or `undefined`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/work/al-work-queue-port.test.ts` using `InMemoryQueueBox` (see
 `packages/tests/shared/in-memory-queuebox.test.ts` for construction with an injected clock):
@@ -261,12 +339,12 @@ that returns a `ResourceEntry` in status `NEW` with `audit.expiryTs = NEVER_EXPI
 `{ topicId: 'AL_TEST', resourceId: 'ns', contextId: effectId }` (copy the audit fields from
 `QueueBoxUtilities.toResourceEntryFromMsg`).
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-queue-port.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Write the port**
+- [x] **Step 3: Write the port**
 
 Create `packages/shared/alm/work/al-work-queue-port.ts` with the contracts above, the `release`
 shown, and:
@@ -338,12 +416,12 @@ function toClaim(entry: ResourceEntry, leaseUntilMs: number): ALWorkClaim {
 `peekNextReadyAt` iterate every type in that case and merge (`Math.min` for readiness; concatenated
 pages capped at `maxToRead`).
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-queue-port.test.ts`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/alm/work packages/tests/shared/alm/work
@@ -415,7 +493,7 @@ awaited (`al-inbound-message-runtime.ts:151`). Corruption (`ALAdmissionCorruptio
 `NonRetryableException` from `runClaim` release the claim as `non-retryable`; any other thrown error
 releases as `retry`; a `retained` result releases when `settled` resolves.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/work/al-work-handler.test.ts` with a fake port (in-memory arrays)
 and `new InboxOutboxEngine(...)` as `packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
@@ -463,12 +541,12 @@ Write the second test fully with a claim whose `runClaim` throws `new ALAdmissio
 one that throws `new Error('transient')`, and one returning `{ status: 'retained', settled: Promise.resolve({ status: 'completed' }) }`;
 await one macrotask and assert `['c-1:non-retryable', 'c-2:retry', 'c-3:completed']`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-handler.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Write the handler**
+- [x] **Step 3: Write the handler**
 
 Create `packages/shared/alm/work/al-work-handler.ts`:
 
@@ -609,12 +687,12 @@ export class ALWorkHandler {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run packages/tests/shared/alm/work/al-work-handler.test.ts`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/alm/work packages/tests/shared/alm/work
@@ -644,7 +722,7 @@ git commit -m "feat(alm): add the generic ALM work handler"
   - Effect payloads `dispatch-local` and `forward-message` carry `readonly message: ALInboundMessageReference` instead of `entry`/`msg`; `send-control` keeps its small control envelope; buffered snapshots store the reference plus the plan.
   - `ALInboundAdmittedDelivery.deliver` reads the message through the store and builds the dispatch entry with the runtime's existing `toInboxEntry` port; a missing owner row is `ALAdmissionCorruptionError`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/inbound/al-inbound-canonical-message.test.ts` using
 `createDefaultALInboundRuntimeResources` as `al-inbound-effect-worker-lifecycle.test.ts` does:
@@ -674,12 +752,12 @@ it('stores one inbound message owner and references it from every effect and buf
 
 Write `readAllWorkRows` against the in-memory queue's `readWorkPage` for type `toALInboundWorkType(namespace)`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/inbound/al-inbound-canonical-message.test.ts`
 Expected: FAIL, `readInboundMessage` is not a function.
 
-- [ ] **Step 3: Implement the owner row, the references, and the key layout**
+- [x] **Step 3: Implement the owner row, the references, and the key layout**
 
 In `al-inbound-admission-store.ts` add the mutation kind to `ALInboundAdmissionMutation`, the
 `applyMutation` branch (`transaction.set(key, value, expireAtTimestamp)`), the decoder
@@ -709,13 +787,13 @@ and `plan` instead of `msg`.
 Change `toALInboundWorkKey` to the layout above and run
 `rg -n "AL_INBOUND/" packages` to update any literal key-string expectation.
 
-- [ ] **Step 4: Run the inbound suites**
+- [x] **Step 4: Run the inbound suites**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/al-durable-runtime.test.ts packages/tests/shared-web/al-runtime`
 Expected: PASS after rewriting assertions that read `payload.msg` or `payload.entry` to read the
 reference and the owner row.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/alm/inbound packages/tests
@@ -768,13 +846,21 @@ export interface ALInboundPendingControl {
 }
 ```
 
+- `ALInboundRuntimeStores` and `ALInboundMessageRuntime.Resources` gain
+  `readonly workQueue: QueueBoxResourceEntryRepository` (the backend's queue): the store factories in
+  `al-runtime-stores.ts` and `browser-al-runtime-stores.ts` return their backend's queue,
+  `createDefaultALInboundRuntimeResources` returns its local `InMemoryQueueBox`, and the runtime
+  constructor builds `this.workPort = createALWorkQueuePort({ queue: dependencies.workQueue, workTypes: new Set([toALInboundWorkType(namespace)]), leaseMs: AL_INBOUND_WORK_LEASE_MS, nowMs: () => clock.nowMs(), random })`
+  and hands it to `ALInboundControlAdmission` (rulings R1, R2). The admission store keeps
+  `workQueue` until Task 5 removes its last caller (`retainPending`).
+
 `admit` = decode (`decodeALControlMessage`) → read (`readControlAdmission` moved here) →
 `computeALInboundControlAdmission` → `validateALInboundControlAdmission` (returns `Either`) →
 `admissionStore.commitMutations(...)`; when the commit returns `'conflict'` it calls
 `port.retainIfAbsent(computeALInboundWorkEntry({ payload: { kind: 'admit-control', msg, expiresAtMs }, ... }))`
 and returns `{ kind: 'pending-control' }`. Nothing in the file throws for an expected outcome.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts` with three cases:
 a valid ACK for a tracked message commits and returns `committed` with `acceptance.handled === true`;
@@ -784,12 +870,12 @@ backend whose `write` throws `ALAdmissionBackendConflictError` once, as
 `packages/tests/shared/alm/al-admission-backend.test.ts` does) returns `pending-control` and the work
 queue holds one `admit-control` row whose `replay` then commits.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Move the code and change the runtime**
+- [x] **Step 3: Move the code and change the runtime**
 
 Move the three functions and the read/write methods listed above into the new files verbatim,
 then replace `throw new ALAdmissionBackendConflictError(...)` inside the moved write path with a
@@ -803,12 +889,12 @@ block at lines 160-163. Add `admit-control` to `ALInboundDurableEffect` and to
 (`ws-queue-box-server-service.ts:402`, `ws-queue-box-client-service.ts:436`,
 `web-rtc-rx-streamer-service.ts:145`) and every test that names it.
 
-- [ ] **Step 4: Run the inbound suites**
+- [x] **Step 4: Run the inbound suites**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/services packages/tests/shared/webrtc packages/tests/shared/multicast`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/tests
@@ -832,34 +918,40 @@ git commit -m "refactor(alm): lift inbound control admission into its own owner 
 
 **Interfaces:**
 
-- `ALInboundMessageRuntime.Resources` gains `readonly workPort: ALWorkQueuePort` and loses nothing else; `createDefaultALInboundRuntimeResources` builds it with
-  `createALWorkQueuePort({ queue: backend.workQueue, workTypes: new Set([toALInboundWorkType(namespace)]), leaseMs: AL_INBOUND_WORK_LEASE_MS, nowMs: clock.nowMs, random })`.
+- `ALInboundMessageRuntime.Resources` already carries `readonly workQueue` (Task 4); the runtime
+  constructor already builds `this.workPort` from it (ruling R2). This task removes
+  `ALInboundAdmissionStore.workQueue` and the forwarding methods and moves `retainPending` onto the port.
 - The inbound `selectReady(port, pageSize)` keeps the status rotation and readiness probe of the old
   handler (`readALInboundWorkSelection`) but returns `ALWorkReadySelection` and calls `port.claim({ maxCount, observedEntries: claimable })`.
 - `runClaim(claim)` decodes the entry with `decodeALInboundWorkEntry`, dispatches on `payload.kind`:
   `admit-message` → `admission.replay`, `admit-control` → `controlAdmission.replay`, everything else →
   `delivery.deliver(effect)`, mapping `'completed' | 'retry'` and `{ retryAfterMs }` to `ALWorkOutcome`.
 
-- [ ] **Step 1: Rewrite the lifecycle test first**
+- [x] **Step 1: Rewrite the lifecycle test first**
 
 Rewrite `al-inbound-effect-worker-lifecycle.test.ts` so each case retains work through
-`resources.workPort.retainIfAbsent(...)`, drives the engine, and asserts outcomes through
-`resources.workPort.readEntry(key)`. Keep its four behaviors: transient claim failure retries;
+`resources.workQueue.enqueueIfAbsent(...)`, drives the engine, and asserts outcomes through
+`resources.workQueue.getItem(key)`. Keep its four behaviors: transient claim failure retries;
 corruption rejects; disposal stops further batches; a not-ready deferral keeps `attempts` at 0.
+Add the crash-convergence case the spec's F2 acceptance names: a progress commit persisted, the
+claim released as `retry` before the effect completed, and redelivery converging on the next batch
+(ruling R17). Add a case that `committed()` returns synchronously and never awaits delivery (R16).
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
-Expected: FAIL, `workPort` is not a resource.
+Expected: FAIL on the new cases (synchronous `committed()`, crash convergence) while the old handler is still composed.
 
-- [ ] **Step 3: Compose**
+- [x] **Step 3: Compose**
 
-In the runtime constructor replace `new ALInboundWorkHandler({...})` with:
+In the runtime constructor replace `new ALInboundWorkHandler({...})` with (the port is the one
+the constructor already built from `dependencies.workQueue` in Task 4; the inbound `selectReady`
+is a selector created in the constructor that owns the scan state `cursor`/`statusIndex`, ruling R8):
 
 ```ts
 this.work = new ALWorkHandler({
     workerId: dependencies.effectWorkerId,
-    port: dependencies.workPort,
+    port: this.workPort,
     queueEngine: dependencies.queueEngine,
     ownsQueueEngine: dependencies.ownsQueueEngine,
     clock: dependencies.clock,
@@ -877,15 +969,16 @@ this.work = new ALWorkHandler({
 });
 ```
 
-`admitIncomingMessage` ends with `this.work.committed();` (no await). Delete the old handler file
+`admitIncomingMessage` ends with `this.work.committed();` (no await), and so does
+`admitControlMessage` before `onControlMessage` runs (ruling R16). Delete the old handler file
 and every import of it.
 
-- [ ] **Step 4: Run the suites and the typecheck**
+- [x] **Step 4: Run the suites and the typecheck**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/services packages/tests/shared-web/al-runtime && npx tsc -p packages/shared/tsconfig.json --noEmit`
 Expected: PASS and exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/tests
@@ -910,7 +1003,7 @@ git commit -m "refactor(alm): compose the inbound runtime on the work port and t
 - `CreateALOutboundAdmissionStoreInput<TPrepared>` becomes `{ nowMs; canonicalScope; namespace; backend; supersedenceTrackTtlMs; retention; decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared> }` (all required); `createALOutboundAdmissionStore<TPrepared>(input)`; every method loses its `decodePrepared` parameter; `ALOutboundAdmissionStore<TPrepared>` loses `workQueue`, `claimReadyEffects`, `completeEffect`, `rejectEffect`, `rescheduleEffect`, `peekNextEffectReadyAt`, `acceptControlMessage`, `scheduleNotYetInSyncRetry`.
 - `ALOutboundControlAdmission<TPrepared>` (moved store) exposes `admit(msg): Promise<ALOutboundControlAdmissionResult>` with the same result union as the inbound one (`not-handled | committed | pending-control | rejected`) and `scheduleNotYetInSyncRetry(schedule)`; `validateEffects` returns `readonly ALOutboundEffectIssue[]` (`{ code: string; effectId: string; message: string }`), and `assertObservations` becomes `validateObservedWork(...)` returning issues that the commit turns into `'conflict'`.
 - New outbound work payload `{ kind: 'dequeue-message'; queueTypeId: string }` decoded from a foreign queue row (a row whose `typeId` is in `dequeueTypes`): `decodeALOutboundWorkEntry` returns `{ effectId: toKeyAsString(entry.key), payload: { kind: 'dequeue-message', queueTypeId: entry.typeId }, canonicalMessage: readMessageFromEntry(entry), ... }` for those rows.
-- `ALOutboundMessageRuntime.Dependencies` gains `readonly dequeue: { readonly types: ReadonlySet<string>; readonly resilience: ResourceInboxResilience; }` and `readonly workPort: ALWorkQueuePort` (built with `workTypes = new Set([toALOutboundWorkType(namespace), ...dequeue.types])`); `dequeue()` is deleted. `runDurableEffect` gains:
+- `ALOutboundMessageRuntime.Dependencies` gains `readonly dequeue: { readonly types: ReadonlySet<string>; readonly resilience: ResourceInboxResilience; }`; `ALOutboundRuntimeStores` and `ALOutboundMessageRuntime.Resources` gain `readonly workQueue: QueueBoxResourceEntryRepository` (the backend's queue, returned by the store factories and by `createDefaultALOutboundRuntimeResources`); the runtime constructor builds `this.workPort = createALWorkQueuePort({ queue: dependencies.workQueue, workTypes: new Set([toALOutboundWorkType(namespace), ...dequeue.types]), leaseMs, nowMs, random })` (rulings R1, R2); `dequeue()` is deleted. The three production constructions (`ws-queue-box-server-service.ts:173`, `ws-queue-box-client-service.ts:177`, `web-rtc-overlay-multicast-manager.ts:134`) pass `dequeue` and receive `workQueue` from their stores in this task so every commit typechecks; the overlay manager's `this.outbox` reads the stores' `workQueue` (rulings R3, R4). `runDurableEffect` gains:
 
 ```ts
 case 'dequeue-message':
@@ -960,7 +1053,7 @@ private async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>):
 `packages/shared/queuebox/resource-inbox/resource-inbox-resilience.ts` and add it as a pure read of
 the circuit breaker's configured open duration if absent.
 
-- [ ] **Step 1: Write the failing dequeue-work test**
+- [x] **Step 1: Write the failing dequeue-work test**
 
 Create `packages/tests/shared/alm/outbound/al-outbound-dequeue-work.test.ts` using the fixture in
 `outbound-runtime-test-fixture.ts` (extend `OutboundTestRuntimeInput` with `dequeue`):
@@ -994,34 +1087,44 @@ it('keeps a no-route dequeue on the retry budget and a failed admission non-retr
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/alm/outbound/al-outbound-dequeue-work.test.ts`
 Expected: FAIL, `dequeue` is not a fixture option.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create the keys module and replace both stores' private builders. Move the control store to
 `outbound/control/`, rename the class `ALOutboundControlAdmission`, take `decodePrepared` from the
 store input at construction, convert `throw workValidated[0]` and the two conflict throws into returned
 values, and add the `pending-control` retention through the port exactly as Task 4 did inbound.
 Change `CreateALOutboundAdmissionStoreInput` and the interface as listed; delete the per-call
-decoder parameters. Add the `dequeue-message` payload and decoder branch. Add `workPort` and
-`dequeue` to the runtime dependencies, compose `ALWorkHandler` as Task 5 did with
+decoder parameters. Add the `dequeue-message` payload and decoder branch. Add `workQueue` to the
+resources and `dequeue` to the dependencies, build the port in the constructor, compose `ALWorkHandler` as Task 5 did with
 `selectReady: (port, size) => port.claim({ maxCount: size, observedEntries: undefined }).then((claims) => ({ claims, nextReadyAtMs: undefined }))`
-and `runClaim: (claim) => this.runOutboundClaim(claim)` (decode → `runDurableEffect`). Delete
+and `runClaim: (claim) => this.runOutboundClaim(claim)` (decode → `runDurableEffect`), and
+`readNextReadyAtMs: (port) => this.readOutboundReadyAt(port)` keeping the old handler's probe
+semantics (NEW and unleased RESERVED are ready now, RETRY at `nextTs`, expired rows skipped) (R31,
+R32; also make the port's own `peekNextReadyAt` skip expired rows). Delete
 `dequeue()`, rename `handlePendingAckTimeout` → `retryPendingAck` and `executeRepairFromHint` →
-`retransmitFromRepairHint`. Delete `al-outbound-work-handler.ts`. In
-`create-default-al-outbound-message-runtime.ts` build the port from `stores.admissionStore` with
-`createALWorkQueuePort({ queue: backend.workQueue, ... })` (the backend is the composition root's
-own value, so the store no longer exposes the queue).
+`retransmitFromRepairHint`. Delete `al-outbound-work-handler.ts`. The awaited inline
+`processCommitted()` after a send is gone with it: `send`/`admit` end with the synchronous
+`committed()` (H5). Wire the middleware's existing `outboundDiagnostics` sink from the black-box
+page composition (beside the F1 diagnostics ports) so `sender-queue-wait`, `browser-lock-wait`,
+`browser-lock-hold` and `effect-drain` durations land in the agent event log, and raise
+`EXPIRY_TTL_MS` in `create-alm-conformance-recipes.ts` above the admission latency the runner
+measured (1.3–5 s) while staying below the receive window. Land `al-outbound-admission-store.ts`,
+`al-outbound-admission-effect-store.ts`, `al-outbound-message-runtime.ts` and
+`al-outbound-repair-admission.ts` under the cognitive-load warn tier (R29). In
+`create-default-al-outbound-message-runtime.ts` return the stores' `workQueue` as a resource (the
+backend is the composition root's own value, so the store no longer exposes the queue).
 
-- [ ] **Step 4: Run the outbound suites and the typecheck**
+- [x] **Step 4: Run the outbound suites and the typecheck**
 
 Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/al-outbound-message-runtime.test.ts packages/tests/shared/al-outbound-durable-effects.test.ts packages/tests/shared/al-durable-runtime.test.ts && npx tsc -p packages/shared/tsconfig.json --noEmit`
 Expected: PASS and exit 0 (the runtime tests that called `runtime.dequeue(...)` are rewritten to enqueue a foreign row and drive the engine).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/tests
@@ -1034,36 +1137,36 @@ git commit -m "refactor(alm): one outbound work owner, control admission as its 
 
 **Files:**
 
-- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:334-339` (delete `dequeueOutbox`; pass `dequeue: { types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience }` and the port when constructing the outbound runtime)
+- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:334-339` (delete `dequeueOutbox`; Task 6 already passes `dequeue: { types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, resilience }` and `workQueue` when constructing the outbound runtime)
 - Modify: `packages/shared/services/ws-queue-box-client-service.ts:573-579` and the `includeTask` registration near lines 180-200 (delete the outbox task; the runtime's handler owns the engine task)
 - Modify: `packages/shared/multicast/web-rtc-overlay-multicast-manager.ts:355-363` and its outbox `includeTask` registration
 - Modify: `packages/shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts:131-146` (delete the `WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE` task)
 - Modify: `packages/shared/services/queue-box-utilities.ts` (delete `defaultDequeue` if `rg -n "defaultDequeue" packages apps` finds no remaining caller other than the RTC rx streamer's inbox, which stays)
 - Test: update `packages/tests/shared/services/ws-queue-box-server-ingress.test.ts`, `ws-queue-box-client-ingress.test.ts`, `packages/tests/shared/webrtc-overlay-services.test.ts`, `packages/tests/shared-server/rallar-system/middleware/rallar-middleware-queue-completeness.test.ts`, `apps/api-v1/test/services/ws-room-live-fanout.test.ts`
 
-- [ ] **Step 1: Find every registration and caller**
+- [x] **Step 1: Find every registration and caller**
 
 Run: `rg -n "dequeueOutbox|outboundRuntime\.dequeue|OUTBOX_DEQUEUE_TYPES|includeTask\(" packages/shared/services packages/shared/multicast packages/shared-server/rallar-system/middleware apps/api-v1/src`
 Expected: the sites listed above plus the RTC rx streamer's inbox task, which is out of scope.
 
-- [ ] **Step 2: Run the affected tests to see them fail after deletion**
+- [x] **Step 2: Run the affected tests to see them fail after deletion**
 
 Delete the methods and registrations, then run:
 `npx vitest run packages/tests/shared/services packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared-server/rallar-system/middleware`
 Expected: FAIL on tests that called `dequeueOutbox` directly.
 
-- [ ] **Step 3: Rewrite those tests to drive the engine**
+- [x] **Step 3: Rewrite those tests to drive the engine**
 
 Each test that called `service.dequeueOutbox(types, resilience)` now enqueues the outbox row and
 awaits `engine.wake()` followed by the runtime's batch (use the same `drainEngine()` helper as
 Task 6's test; put it in `packages/tests/shared/alm/outbound-runtime-test-fixture.ts`).
 
-- [ ] **Step 4: Run tests, typechecks, and the Deno check**
+- [x] **Step 4: Run tests, typechecks, and the Deno check**
 
 Run: `npx vitest run packages/tests/shared/services packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared-server packages/tests/api-v1 && npm --workspace @ar-eye-hunter/shared-server run typecheck && cd apps/api-v1 && deno task check`
 Expected: PASS and exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/shared-server packages/tests apps/api-v1
@@ -1118,7 +1221,7 @@ Every former whole-store scan becomes a loop over the requested `typeIds × stat
 `maxToReserve` (or 64 for probes), and `cleanupAsync` deletes at most 256 expired rows and 256
 retention-expired completed rows per run.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts` with `fake-indexeddb/auto`:
 seed 300 entries of three types and mixed statuses, then assert (a) `reserveEntries` for one type
@@ -1128,12 +1231,12 @@ removes only expired rows and completed rows past retention, (c) `isAnyEntryToLo
 one RETRY row is due and false when none is, and (d) `readAllStoredQueueEntries` no longer exists
 (`expect('readAllStoredQueueEntries' in storeModule).toBe(false)`).
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add the two fields and two indexes, write the three readers, and rewrite the five bodies. For
 `reserveEntries` with `observations === undefined`:
@@ -1161,12 +1264,12 @@ type with `maxToReserve`; `isAnyEntryToLock` reads one `NEW` row per type, `RETR
 fairness index with `fairnessDueEpochMs <= now` (`IDBKeyRange.bound([typeId, RETRY, 0], [typeId, RETRY, now])`, count 1),
 and `RESERVED` rows (64 per type) for the timeout predicate; `cleanupAsync` uses the two new readers.
 
-- [ ] **Step 4: Run the queue box suites**
+- [x] **Step 4: Run the queue box suites**
 
 Run: `npx vitest run packages/tests/shared/queuebox packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared/indexeddb-queuebox-computed-write.test.ts packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared/queuebox packages/tests/shared
@@ -1183,19 +1286,19 @@ git commit -m "perf(queuebox): indexed IndexedDB reads replace every whole-store
 - Modify: `packages/shared-web/browser/al-runtime/browser-al-work-cleanup.ts` (replace the full-range cursor with one bounded range per owned prefix and topic), `browser-al-runtime-cleanup.ts`
 - Test: update `packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-validation.test.ts`, `browser-outbound-cleanup.test.ts`, `browser-al-runtime-ownership.test.ts`
 
-- [ ] **Step 1: Write the failing cleanup test**
+- [x] **Step 1: Write the failing cleanup test**
 
 Add to `browser-outbound-cleanup.test.ts` a case that seeds work and canonical rows for two sessions,
 runs the session cleanup for one, and asserts through a spied `IDBObjectStore.prototype.openCursor`
 that every range passed starts with `AL_INBOUND/<prefix>` or `AL_OUTBOUND/<prefix>` or
 `AL_OUTBOUND_MESSAGE/scope-<hash>` and that the other session's rows survive.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime/browser-outbound-cleanup.test.ts`
 Expected: FAIL (the current cursor range is the whole AL topic range).
 
-- [ ] **Step 3: Implement the key layout and the range reads**
+- [x] **Step 3: Implement the key layout and the range reads**
 
 Change the three key builders. In `readBrowserALWorkCleanupRows` replace the single
 `IDBKeyRange.bound('AL_INBOUND', 'AL_OUTBOUND￿')` with one cursor per range in
@@ -1230,12 +1333,12 @@ passes the global prefix and uses the queue box's`cleanupAsync`for expired rows 
 range scan. Delete`isSelectedBrowserCanonicalScope` and the identity-fact decoding that only served
 scope filtering.
 
-- [ ] **Step 4: Run the shared-web suites**
+- [x] **Step 4: Run the shared-web suites**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts packages/tests/shared/alm/al-admission-backend.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/shared-web packages/tests
@@ -1286,7 +1389,7 @@ close the database, `indexedDB.deleteDatabase(dbName)` (reject with `ALStorageRe
 if `blocked` fires and does not resolve within 5 s), call `onStorageReset`, and open once more; a
 second mismatch throws. The schema record is written as an initial record `{ key: AL_ADMISSION_SCHEMA_KEY, value: schemaId, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts` with `fake-indexeddb/auto`:
 open a database through `openIndexedDbAdmissionDatabase` with `schemaId: 'old'`, write one admission
@@ -1296,12 +1399,12 @@ was emitted once, the old row is gone, and the schema record now holds the new i
 database created with a different store set (open `indexedDB.open(dbName)` and create a single store
 named `legacy`) resets with `reason: 'store-schema-mismatch'`.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts`
 Expected: FAIL, the function does not accept an input object.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 export async function openIndexedDbAdmissionDatabase(
@@ -1375,12 +1478,12 @@ those a typed `IndexedDbSchemaMismatchError` in `open-indexed-db.ts` rather than
 `diagnosticsPorts.onStorageReset`. The black-box page composition records the event as a diagnostic
 `rallar.browser.alm.storage_reset`.
 
-- [ ] **Step 4: Run the suites**
+- [x] **Step 4: Run the suites**
 
 Run: `npx vitest run packages/tests/shared-web/al-runtime packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shared packages/shared-web packages/tests
@@ -1398,21 +1501,29 @@ git commit -m "feat(alm): schema identity with delete-on-mismatch reset for the 
 - Modify: every touched ALM file for banned verbs, `room` in the shared `Source` contract (rename `roomRecipientPeerIds` → `groupRecipientPeerIds` with its producer in `rallar-server-ws-router.ts`), optional persisted fields `outboxKey?`/`supersedenceKey?` in `al-runtime-state-stores.ts:86-91` (make them `| null` required), and `toAdmissionAcceptance`'s string-prefix match in `al-inbound-message-admission.ts:163` (the plan returns a typed `dropReasonCode: 'duplicate' | ...`; add the code to `ALMessageHandlingPlan` in `al-policy.ts` beside `dropReason`)
 - Create: `packages/tests/shared/alm/al-storage-snapshot.test.ts`
 
-- [ ] **Step 1: Delete the dispositions and measure**
+- [x] **Step 1: Delete the dispositions and measure**
 
 Delete the entries, then run:
 `node scripts/repo-style-check.mjs --cognitive-metrics --root packages/shared/alm | grep -c "file.cognitive-load"`
-Expected: `0`. If a file still reports a warn-tier load, split it along a real boundary (the two
-admission stores must each be under 700 lines after Tasks 3 to 6; if not, move the pure `read*`
-snapshot assembly into `al-inbound-admission-reads.ts` / `al-outbound-admission-reads.ts`).
+Expected: `0`. Measured after Task 6: `compute-al-inbound-admission.ts` 64,
+`validate-al-inbound-commit-bundle.ts` 58, `al-outbound-admission-store.ts` 62,
+`al-outbound-message-runtime.ts` 55, `al-outbound-repair-admission.ts` 60. Ruling R40: move the
+outbound admission family into `packages/shared/alm/outbound/admission/` (store, reads, keys,
+effect store, validation, plus `al-outbound-admission-mutations.ts` holding the store's
+compute/apply half) in one move with lineage entries, which also clears the directory's
+zero-tolerance layout metrics (23 → 18 direct files); split the runtime's ack-timeout/repair
+dispatch and the repair admission's retry scheduling along their real boundaries; split the two
+inbound files along theirs (the admission compute's dedup/ordering halves; the bundle validation's
+effect/mutation halves). `validateALInboundControlAdmission` returns every issue (global
+constraint), not the first.
 
-- [ ] **Step 2: Run the changed gate**
+- [x] **Step 2: Run the changed gate**
 
 Run: `npm run check:repo-style:changed -- origin/main HEAD`
 Expected: `PASS: no new repository style findings`. A finding here is fixed in code, never by a new
 disposition.
 
-- [ ] **Step 3: Update the navigation maps**
+- [x] **Step 3: Update the navigation maps**
 
 Rewrite the "Construction and registration", "Admission and invocation paths", and "Selection,
 failure, and cleanup" sections of both READMEs to name `ALWorkQueuePort`, `ALWorkHandler`, the
@@ -1421,7 +1532,7 @@ the reset. Remove the sentences that no longer hold ("wakes the existing worker 
 becomes true and stays; "inbound effects can still contain envelope copies" is deleted; "the scan
 currently visits the AL work range before filtering by session" is deleted).
 
-- [ ] **Step 4: Write the storage snapshot test**
+- [x] **Step 4: Write the storage snapshot test**
 
 Create `packages/tests/shared/alm/al-storage-snapshot.test.ts`: with `fake-indexeddb/auto`, run the
 standard workload (eight superseding updates to three recipients at 128 B, 4 KiB, and 64 KiB) through
@@ -1430,7 +1541,7 @@ standard workload (eight superseding updates to three recipients at 128 B, 4 KiB
 (commit from `git rev-parse HEAD` via `node:child_process`) and assert the file has the four keys. The
 PR body cites its numbers next to #521's 47,465-byte readback figure.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/repo-style-check packages/shared packages/shared-server packages/tests
@@ -1441,7 +1552,7 @@ git commit -m "chore(alm): retire the ALM checker pins, close touched files, and
 
 ### Task 12: Whole-branch validation and the PR
 
-- [ ] **Step 1: Run the full local gates**
+- [x] **Step 1: Run the full local gates**
 
 ```bash
 npm run test:unit
@@ -1461,7 +1572,7 @@ Expected: every command exits 0. The medium-scale and Postgres integration lanes
 `npm run db:test:up` on a fresh database first; record "skipped" with the reason if Docker is not
 available and let the Release Gate run them.
 
-- [ ] **Step 2: Manual 5/5 navigation probe**
+- [x] **Step 2: Manual 5/5 navigation probe**
 
 From `WsQueueBoxServerService`'s construction of the outbound runtime, reach with Go to Definition
 and Find Usages: the concrete operation entry (`admitDequeuedMessage`), the policy
@@ -1470,7 +1581,7 @@ compare), the exact durable result (`commitBundle` → `'committed' | 'conflict'
 after-commit effect (`ALWorkHandler.committed`). Record the five landmarks and any search escape in
 the PR body.
 
-- [ ] **Step 3: Open the PR**
+- [x] **Step 3: Open the PR**
 
 Body sections: Goal (F2 outcome), Changes (Tasks 1 to 11 in one paragraph each), Acceptance (the
 spec's F2 acceptance list mapped to tests and lanes), Validation (Step 1 with the commit each figure
@@ -1478,6 +1589,138 @@ was measured on, the storage snapshot numbers, the probe result), Risk and rollb
 browser schema id and key layout; every pending ALM browser row from the previous schema is discarded
 on first open; rollback is the revert, and a reverted build resets the database again on the old
 schema id), Follow-up (S1).
+
+### Task 13: Outbound admission throughput on slow storage
+
+Added 2026-09-10 after PR #559's first Release Gate. Maintainer decision (option 2): hold #559 and land
+the fix inside it. The observation job (run 34500712415, diagnosis in the session scratchpad
+`alm-observation-47a9c2ae1-diagnosis.md`) showed the runner's ws delivery-baseline send spending 3.8 s
+queued behind another commit's 5.5 s per-sender lock hold and 9.2 s inside `commitDispatchOnce` before
+its 10 s budget; send median 1.9 s on F1's runner → 7.4 s on F2's, on an environment only 1.4× slower
+than local; the RTC smoke cells regressed from passing to 24–40 s readiness because signaling answers
+travel through the same admission path. Two causes: `readOutgoingMessage` still performs 7+ sequential
+IndexedDB round trips under the lock (the F1 assessment's item never landed), and F2's fire-and-forget
+`committed()` lets the drain's commits re-enter the same per-sender queue and lock, charged to the next
+send as queue wait.
+
+**Files:**
+
+- Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts` (`readOutgoingMessage`
+  and the control/repair reads that share its shape), `packages/shared/alm/outbound/admission/al-outbound-admission-store.ts`,
+  `packages/shared/alm/indexed-db-admission-backend.ts` (one readonly transaction for a decision-surface read),
+  `packages/shared/alm/outbound/al-outbound-message-runtime.ts` (commit queue and lock policy),
+  `packages/shared/alm/work/al-work-queue-port.ts` (lease from the row's `startTs`),
+  `packages/tests/shared-server/integration/postgres/al-admission-queue-work.test.ts`,
+  `packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts`.
+- Test: `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`,
+  `packages/tests/shared/alm/outbound/*.test.ts`, `packages/tests/shared/alm/work/al-work-queue-port.test.ts`.
+
+**Interfaces:**
+
+- Consumes: the outbound diagnostics events (Task 6b, extended by Step 1 with `read`/`commit` lock-hold
+  phases and the commit's origin), `storage.counters`, the IndexedDB operation observer.
+- Produces: no public surface change; the admission result values and the fence-abort invariant (R58/R69)
+  are unchanged.
+
+- [x] **Step 0: Repair the Postgres gate** — the claim's `leaseUntilMs` derives from the reserved row's
+      `dequeueAudit.startTs` (ceil to the millisecond, shared with `resolveALOutboundWorkReadyAt`) plus the
+      lease, never from the JavaScript clock (`al-outbound-effect-claims.test.ts:60` failed by 1 ms); the
+      ALM race test writes a JSON resource and cleans up `actionKey`, and `reserveTopologyWork` filters by the
+      key it owns before parsing (`group-connect-trigger-sql.test.ts:276`).
+- [x] **Step 1: Instrumentation** — a `storage.counters` step right after connect in every conformance
+      scenario (manifests regenerated), the lock hold split into `read` and `commit` phases, and each commit's
+      queue wait attributed to a send or a drain origin; diagnostics contract doc updated; pinned in the
+      diagnostics tests.
+- [x] **Step 2: Pin the current read cost** — an operation-count test records the IndexedDB transactions
+      and round trips one typed send's `readOutgoingMessage` performs (RED at the measured count).
+- [x] **Step 3: One readonly transaction per decision-surface read** — `readOutgoingMessage` (and the
+      control/repair reads with the same shape) issue every key read inside one transaction through the
+      backend's read API; read → compute → validate → commit is unchanged; the pin from Step 2 goes GREEN at
+      one transaction; the fences tests stay green over memory, IndexedDB, and PGlite.
+- [x] **Step 4: Cut the readiness scan volume and name the dropped hop (ruling R79)** — the second
+      observation run showed the breaker never tripped and the largest IndexedDB consumer is the owner's
+      readiness and claim `work-page` scans (1 067 of 1 743 operations in one session, ~12 per second),
+      which starve admission and the RTC offer alike. Make the outbound owner probe storage only when it
+      cannot know the answer in memory (a wake or a commit invalidates a cached `nextReadyAtMs`; an idle
+      owner re-probes on the engine's backed-off schedule, not at the initial interval), bound the reads
+      one probe performs, and pin the probe count per idle second and per batch over the IndexedDB
+      backend. Diagnostics: `QRtcPeerConnection.readDiagnostics()` counts (offers, answers, candidates in
+      and out, signaling errors) in `toRtcConnectionStatus` so a readiness timeout names the hop that
+      dropped the offer, and the message id and type on `commit-phases`. Fix the `sendSignal` one-way
+      stall (`handleNegotiationNeeded` swallows a throwing enqueue with no retry) if the change is bounded;
+      otherwise record it. The drain-lane idea is dropped: queue waits behind drains were measured (max
+      7 833 ms) but the scan volume is the larger lever.
+      Landed: the work owner remembers `{ readyAtMs, observedAtMs }` and re-reads only when its own
+      commit, its own batch, a retained claim's settlement, or the engine's 3 s idle ceiling says the
+      answer could have moved; how long an answer stands is the owner's decision, since the inbound
+      rotation advances one status per probe and must reach it every round. One probe is now one
+      readonly transaction and one `work-page` operation instead of six, through a repository
+      `readWorkPages` and a port `readPages` scan. Measured on IndexedDB: one probe 6 -> 1 operations
+      and 6 -> 1 readonly transactions; ten idle seconds of engine passes 600 -> 4 operations; the ten
+      passes that follow one typed send 30 -> 1. `rtc.status` carries the peer's signaling counts and
+      `commit-phases` carries `msgId` and `typeId`. The `sendSignal` stall was bounded and is fixed for
+      the three statuses that clear on their own; two residues are recorded in the Step 4 report.
+- [x] **Step 5: Re-observe on the runner** — push, let the observation job run, read
+      `alm-conformance-lane-<sha>`: the ws smoke cell green on all three scenarios, per-send admission wall
+      clock on the runner recorded against the 1.9 s F1 baseline, RTC readiness back under the 30 s budget;
+      one more iteration is allowed before the maintainer is asked again.
+- [x] **Step 6: Final gates** — the Task 12 list on the final tree plus the Postgres lanes on the gate;
+      the PR body's Validation and Findings sections updated with the runner figures.
+
+**Task 13 outcome (2026-09-11, six observation runs):** the ws smoke cell is green on every run since the
+transaction fix; the ws send median on the runner is 1.6 s against F1's 1.9 s (7.4 s when the PR
+opened); readiness scans fell from 15.6 to 5.1 per second; RTC readiness recovered to 12 of 12 peers
+under the 30 s budget on runs at the runner's normal speed, and the rtc cell's pass/fail boundary
+sits at roughly 30–35 ms per storage operation, so a slow runner still times out cold peers. Routed to
+the maintainer as findings, not fixed here: the RTC `not-yet-in-sync` delivery loss (a pending frame is
+discarded without retention and the sender's retry never fires; S2), the harness budgets (30 s RTC
+readiness, 10 s non-expiring send) sitting inside the runner's speed spread, and the readiness-scan
+rate rising back to 11.3 per second in one run (the `readiness-probe` cause event now names it).
+
+### Task 14: Pin the runner regime in every observation artifact
+
+Added 2026-09-11 (maintainer decision): the harness budgets stay as they are (`CONNECT_READINESS_TIMEOUT_MS`
+30 000, the receiver window derived from the 18 000 ms scenario deadline, `NON_EXPIRING_SEND_TIMEOUT_MS`
+10 000), the ALM lane stays the Release Gate's non-blocking observation job, and a red is read as a
+regression only when the run's runner regime matches a green baseline. Seven observation runs put the
+rtc cell's boundary at roughly 30–35 ms per IndexedDB operation on the hosted runner, and a same-day
+re-execution of a green head failed identically in the slow regime.
+
+**Files:**
+
+- Create: `packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts`
+- Modify: `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`,
+  `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md` (or a sibling lane doc),
+  `.github/workflows/release-gate.yml` (only if the upload path must change)
+- Test: `packages/tests/shared-test/alm-observation-regime.test.ts`
+
+**Interfaces:**
+
+- Consumes: the lane's run snapshot (both agents' recorded events: `commit-phases`, `storage.counters`,
+  `rallar.browser.rtc.lifecycle`, the recipe command results with their durations).
+- Produces: `ALMObservationRegime` — `{ regime: 'normal' | 'slow' | 'unclassified', perOperationMs,
+  readinessMs per peer, sendMs per scenario, workPagePerSecond, cellOutcome }` written as
+  `alm-observation/<carrier>-<scope>.json` under the Playwright output root for every cell, pass or fail.
+
+- [x] **Step 1: The pure computation** — `computeALMObservationRegime(snapshot)` derives the per-operation
+      cost (readDurationMs over readOperationCount, p50 across `commit-phases`), the readiness time per peer
+      from the lifecycle witness, each scenario's send wall clock from the command results, and the
+      `work-page` rate from the two `storage.counters` readings; classifies `normal` below 30 ms per
+      operation, `slow` at or above 35, `unclassified` between or when fewer than five commit phases exist
+      (the thresholds are named constants with the seven-run evidence in one comment). Unit-test it from a
+      fixture snapshot with known figures, including the `unclassified` band.
+- [x] **Step 2: Written for every cell** — the spec writes the regime file for every cell in a
+      `finally`, into a directory Playwright does not delete for passing tests (outside `testInfo.outputPath`,
+      under the configured output root so the observation job's existing `apps/rallar-black-box/test-results`
+      upload carries it); the per-cell run snapshot is written beside it for the same reason, so a green cell's
+      evidence is no longer lost. The spec also prints one line per cell to the job log: the regime, the
+      per-operation cost, and the outcome.
+- [x] **Step 3: How to read a red** — a short section in the lane's doc: the budgets and why they stay,
+      the regime file's fields, the rule (compare against the green baseline of the same regime; a slow-regime
+      red is a measurement, not a verdict), and the pointer to the F2 PR body's runner table.
+- [x] **Step 4: Gates and commit** — the focused Vitest, the four typechecks, `check-tests-typecheck`,
+      dprint on touched files, `check:repo-style:changed`, coupling, the ws ALM lane locally (the regime file
+      must appear for the passing cell), then commit.
 
 ---
 

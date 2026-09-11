@@ -13,6 +13,7 @@ import {
     decodeRtcSignalingMessage
 } from '@shared/webrtc/decode-rtc-signaling-message.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+import { QRtcSignalingAdmissionError } from '@shared/webrtc/qrtc-signaling-admission.ts';
 import {
     QRtcSignalingSender,
     QRtcSignalingType
@@ -305,6 +306,102 @@ describe('QRtcPeerConnection', () => {
         });
     });
 
+    it('reports the hop a terminal signaling failure lost, instead of logging and dropping it', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        const terminal = new QRtcSignalingAdmissionError('expired', 'msg-7', 'Signaling admission returned expired');
+        const signaler: QRtcSignalingSender = {
+            send: async () => {
+                throw terminal;
+            }
+        };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        onTestFinished(() => {
+            peer.reset();
+        });
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+        const native = runtime.createdConnections[0];
+        if (!native) {
+            throw new Error('Expected a native connection after connect');
+        }
+
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await native.onicecandidate?.call(native, new NativeIceCandidateEvent('ice-1'));
+
+        // Each hop names the status admission gave it and the message that carried it.
+        const rejected = { outcome: 'rejected', status: 'expired', messageId: 'msg-7' };
+        expect(failures).toEqual([
+            { peerSessionId: 'peer-1', signalType: QRtcSignalingType.Offer, admission: rejected, error: terminal },
+            { peerSessionId: 'peer-1', signalType: QRtcSignalingType.IceCandidate, admission: rejected, error: terminal }
+        ]);
+        // The counters back the report up, and neither hop is reduced to a log line.
+        expect(peer.readDiagnostics().outboundSignalingErrorCount).toBe(2);
+        expect(consoleError).not.toHaveBeenCalled();
+    });
+
+    it('reports the answer hop a terminal admission lost, not only the inbound chain log', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        const terminal = new QRtcSignalingAdmissionError('expired', 'msg-9', 'Signaling admission returned expired');
+        const signaler: QRtcSignalingSender = {
+            send: async () => {
+                throw terminal;
+            }
+        };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        onTestFinished(() => {
+            peer.reset();
+        });
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+
+        await expect(peer.handleSignal(QRtcSignalingType.Offer, {
+            description: { type: 'offer', sdp: 'remote-offer' },
+            candidate: null
+        })).rejects.toBe(terminal);
+
+        // A lost answer strands the offerer in have-local-offer exactly as a lost offer does.
+        expect(failures).toEqual([{
+            peerSessionId: 'peer-1',
+            signalType: QRtcSignalingType.Answer,
+            admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-9' },
+            error: terminal
+        }]);
+        // The inbound chain still owns its own log and counter for the hop it could not complete.
+        expect(peer.readDiagnostics().inboundSignalingErrorCount).toBe(1);
+        expect(consoleError).toHaveBeenCalledWith('Signaling chain error', terminal);
+    });
+
+    it('names a hop that failed before admission saw the signal', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        const signaler: QRtcSignalingSender = { send: async () => {} };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        onTestFinished(() => {
+            peer.reset();
+        });
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+        const native = runtime.createdConnections[0];
+        if (!native) {
+            throw new Error('Expected a native connection after connect');
+        }
+        const localDescriptionFailed = new Error('setLocalDescription rejected');
+        native.setLocalDescription = () => Promise.reject(localDescriptionFailed);
+
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+
+        expect(failures).toEqual([{
+            peerSessionId: 'peer-1',
+            signalType: QRtcSignalingType.Offer,
+            admission: { outcome: 'never-admitted' },
+            error: localDescriptionFailed
+        }]);
+    });
+
     it('cleans up peer connection handlers and listeners on reset', () => {
         const { peer, native } = createPeerFixture(true);
         expect(getEventListeners(native, 'icegatheringstatechange')).toHaveLength(1);
@@ -321,6 +418,39 @@ describe('QRtcPeerConnection', () => {
         expect(native.oniceconnectionstatechange).toBeNull();
         expect(native.onsignalingstatechange).toBeNull();
         expect(native.onconnectionstatechange).toBeNull();
+    });
+
+    it('stops reporting to the session reset closed, even for a hop still in flight', async () => {
+        const runtime = installNativeRtcRuntime();
+        onTestFinished(() => runtime.dispose());
+        let failSend: (error: Error) => void = () => {};
+        const pendingSend = new Promise<void>((_resolve, reject) => {
+            failSend = reject;
+        });
+        let sendCalls = 0;
+        const signaler: QRtcSignalingSender = {
+            send: () => {
+                sendCalls += 1;
+                return pendingSend;
+            }
+        };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const failures: QRtcPeerConnection.SignalingFailure[] = [];
+        peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
+        const native = runtime.createdConnections[0];
+        if (!native) {
+            throw new Error('Expected a native connection after connect');
+        }
+        const negotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await vi.waitFor(() => expect(sendCalls).toBe(1));
+
+        peer.reset();
+        failSend(new Error('signaling closed with the session'));
+        await negotiation;
+
+        // The hop did fail -- the counter proves it -- but the callbacks belonged to a closed session.
+        expect(peer.readDiagnostics().outboundSignalingErrorCount).toBe(1);
+        expect(failures).toEqual([]);
     });
 
     it('coalesces repeated disconnected events into one reconnect timer', async () => {

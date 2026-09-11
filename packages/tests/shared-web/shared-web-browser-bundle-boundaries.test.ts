@@ -38,12 +38,21 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // Maintainer approved the canonical room-readiness owner; the reviewed
-        // cutover measures 200.32421875 KiB. Keep the smallest whole-KiB ceiling.
+        // Maintainer approved necessary ALM growth; the queue box's paged terminal sweep and
+        // split readiness probe measure 201.04296875 KiB. Merging the RTC group-snapshot refresh
+        // and transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
+        // Splitting the outbound commit hold into its read and write phases measures 202.896 KiB.
+        // Leasing a claim from the reservation the queue stamped measures 203.065 KiB, so the
+        // ceiling moves to 204. Naming the hop that drops an RTC offer -- the peer's signaling
+        // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
+        // Main's canonical room-readiness owner (#557) measures 200.32421875 KiB on its own;
+        // merging it with the ALM runtime measures 204.873046875 KiB, so the 205 ceiling holds.
+        // Subscribing the RTC lifecycle runtime to the typed signaling failure measures
+        // 205.185546875 KiB, so the ceiling moves to 206.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 201
+        brotliBudgetKiB: 206
     },
     {
         label: 'browser/rallar-core.ts',
@@ -76,7 +85,8 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: 10
     },
     {
-        // Measured 1.69921875 KiB; types erase and the runtime surface is rallar-core.ts's own.
+        // Measured 1.69921875 KiB; types erase and the runtime surface is rallar-core.ts's own. The
+        // budget starts tight so this entry can detect a regression rather than absorb one.
         label: 'browser/rallar-messages.ts',
         entry: 'packages/shared-web/browser/rallar-messages.ts',
         output: 'rallar-browser-messages.boundary.min.js',

@@ -1,3 +1,4 @@
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 
@@ -23,7 +24,11 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import {
+    createPassThroughALInboundRuntimeDiagnosticsSink,
+    createPassThroughALOutboundRuntimeDiagnosticsSink,
+    toRallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
@@ -190,14 +195,16 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
         const unrelatedSentPrefix = toBrowserOutboundSentPrefix(unrelatedRuntimeName);
 
-        const result = await deleteExpiredBrowserALRuntimeEntries();
+        const result = await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
 
         expect(result).toMatchObject({
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             keyPrefixes: ['browser:'],
-            scanned: 16,
-            deleted: 12
+            // AL_OUTBOUND work rows are expired via the QueueBox's own cleanupAsync sweep now,
+            // so this scanned/deleted count reflects the plain admission metadata rows only.
+            scanned: 6,
+            deleted: 6
         });
         expect(await readBrowserALRuntimeEntryKeys(currentSentPrefix)).toEqual([
             `${currentSentPrefix}:current-fresh`
@@ -226,9 +233,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
             throw new Error('Periodic expiry cleanup must not scan the complete object store');
         });
 
-        const result = await deleteExpiredBrowserALRuntimeEntries();
+        const result = await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
 
-        expect(result.deleted).toBe(4);
+        // The AL_OUTBOUND work row's own expiry now goes through cleanupAsync, off this count.
+        expect(result.deleted).toBe(2);
     });
 
     it.each([
@@ -247,8 +255,11 @@ describe('Browser AL runtime IndexedDB stores', () => {
             ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp })
         });
 
-        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(
+            deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
+                onStorageReset: diagnosticsPorts.onStorageReset
+            })
+        ).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect(await readBrowserALRuntimeEntryKeys(key)).toEqual([key]);
     });
 
@@ -281,10 +292,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
             toBrowserWsClientALRuntimeStoreId(otherSessionId)
         );
 
-        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId);
+        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
-        expect(result.scanned).toBe(9);
-        expect(result.deleted).toBe(4);
+        // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count.
+        expect(result.scanned).toBe(5);
+        expect(result.deleted).toBe(2);
         expect(await readBrowserALRuntimeEntryKeys(targetSentPrefix)).toEqual([
             `${targetSentPrefix}:target-fresh`
         ]);
@@ -318,7 +332,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
                 }
             ],
             durableEffects: []
-        }, decodeALOutboundPreparedMessage);
+        });
 
         const ownerPrefix = `${
             toBrowserALRuntimeEntryKeyPrefix(
@@ -332,7 +346,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         await vi.advanceTimersByTimeAsync(15_001);
 
-        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(sessionId);
+        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
         expect(result.deleted).toBe(1);
         expect(await readBrowserALRuntimeEntryKeys(ownerPrefix)).toEqual([]);
@@ -381,7 +397,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
             toBrowserWsClientALRuntimeStoreId(otherSessionId)
         );
 
-        const result = await deleteBrowserALRuntimeEntriesForSession(targetSessionId);
+        const result = await deleteBrowserALRuntimeEntriesForSession(targetSessionId, {
+            onStorageReset: diagnosticsPorts.onStorageReset
+        });
 
         expect(result.scanned).toBe(11);
         expect(result.deleted).toBe(11);
@@ -427,8 +445,12 @@ describe('Browser AL runtime IndexedDB stores', () => {
             return originalTransaction.call(this, storeNames, mode, options);
         });
 
-        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, { nowMs: 100 }))
-            .rejects.toThrow('cleanup conflicted');
+        await expect(
+            deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
+                nowMs: 100,
+                onStorageReset: diagnosticsPorts.onStorageReset
+            })
+        ).rejects.toThrow('cleanup conflicted');
 
         expect(await readBrowserALRuntimeEntry(key)).toMatchObject({
             key,
@@ -440,17 +462,6 @@ describe('Browser AL runtime IndexedDB stores', () => {
     it('initialises repeated browser AL runtime expiry eviction', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        let evictionCount = 0;
-        let resolveSecondEviction!: () => void;
-        const secondEviction = new Promise<void>((resolve) => {
-            resolveSecondEviction = resolve;
-        });
-        vi.spyOn(console, 'log').mockImplementation(() => {
-            evictionCount += 1;
-            if (evictionCount === 2) {
-                resolveSecondEviction();
-            }
-        });
 
         const retention = {
             sentMessageTtlMs: 20,
@@ -464,20 +475,25 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await persistSentMessage(admissionStore, 'initial-expired');
         await vi.advanceTimersByTimeAsync(21);
 
-        await initBrowserALRuntimeExpiryEviction(50);
+        const stop = await initBrowserALRuntimeExpiryEviction({
+            onStorageReset: diagnosticsPorts.onStorageReset,
+            intervalMs: 50
+        });
+        try {
+            expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
 
-        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
+            await persistSentMessage(admissionStore, 'interval-expired');
+            await vi.advanceTimersByTimeAsync(21);
+            expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([
+                `${sentPrefix}:interval-expired`
+            ]);
 
-        await persistSentMessage(admissionStore, 'interval-expired');
-        await vi.advanceTimersByTimeAsync(21);
-        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([
-            `${sentPrefix}:interval-expired`
-        ]);
-
-        await vi.advanceTimersByTimeAsync(29);
-        await secondEviction;
-
-        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
+            await vi.advanceTimersByTimeAsync(29);
+            await vi.waitFor(async () => expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]));
+        }
+        finally {
+            stop();
+        }
     });
 
     it('routes IndexedDB operations to the configured observer', async () => {
@@ -486,7 +502,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
         configureBrowserALRuntimeStores(sessionId, {
             diagnosticsPorts: {
                 transportFaultPort: createPassThroughTransportFaultPort(),
-                indexedDbOperationObserver: observer
+                indexedDbOperationObserver: observer,
+                outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink(),
+                inboundDiagnostics: createPassThroughALInboundRuntimeDiagnosticsSink(),
+                onStorageReset: () => {}
             }
         });
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
@@ -498,7 +517,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
 });
 
 async function readSentMessageIds(
-    admissionStore: ALOutboundAdmissionStore
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<readonly string[]> {
     const prefix = `${admissionStore.namespace}:sent:`;
     const keys = await readBrowserALRuntimeEntryKeys(prefix);
@@ -507,12 +526,12 @@ async function readSentMessageIds(
 }
 
 async function persistSentMessage(
-    admissionStore: ALOutboundAdmissionStore,
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
     msgId: string
 ): Promise<void> {
     const snapshot = createSentSnapshot(msgId);
     const bundle = await computeOutboundTestAdmission(admissionStore, snapshot.msg);
-    const status = await admissionStore.commitBundle(bundle, decodeALOutboundPreparedMessage);
+    const status = await admissionStore.commitBundle(bundle);
 
     if (status !== 'committed') {
         throw new Error(`Failed to persist sent message ${msgId}`);
@@ -523,7 +542,9 @@ function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
     const msg = createOutboundUnicastMessage(msgId);
     return {
         msgId,
-        msg: { ...msg, id: { ...msg.id, msgId } }
+        msg: { ...msg, id: { ...msg.id, msgId } },
+        outboxKey: null,
+        supersedenceKey: null
     };
 }
 
