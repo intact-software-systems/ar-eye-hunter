@@ -47,6 +47,7 @@ export class RtcEndpointFixture {
     readonly outbound = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeALOutboundTransportMessage
     });
+    readonly inbound = createDefaultInMemoryALInboundRuntimeStores();
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];
     readonly peer: QRtcPeerDto;
@@ -95,7 +96,7 @@ export class RtcEndpointFixture {
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
             sessionId,
-            inboundStores: createDefaultInMemoryALInboundRuntimeStores(),
+            inboundStores: this.inbound,
             nowEpochMs: Date.now,
             heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
         });

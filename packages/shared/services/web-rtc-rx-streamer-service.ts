@@ -120,9 +120,7 @@ export class WebRtcRxStreamerService {
                 dispatchInboxEntry: async (entry, plan) => {
                     return await this.dispatchInboxEntry(entry, plan);
                 },
-                sendControlMessage: async (msg) => {
-                    await this.multicast.enqueueIfAbsent(msg);
-                },
+                sendControlMessage: async (msg) => await this.handoffControlMessage(msg),
                 onControlMessage: async (msg) => {
                     await this.multicast.acceptControlMessage(msg);
                 },
@@ -132,6 +130,28 @@ export class WebRtcRxStreamerService {
                 diagnostics: dependencies.inboundDiagnostics
             }
         );
+    }
+
+    private async handoffControlMessage(msg: ALMessage): Promise<void> {
+        const result = await this.multicast.enqueueIfAbsent(msg);
+        switch (result.status) {
+            case 'pending-admission':
+            case 'enqueued':
+            case 'accepted':
+            case 'duplicate':
+                return;
+            case 'no-route':
+            case 'rate-limited':
+            case 'circuit-open':
+            case 'failed':
+                throw new Error(result.reason ?? `RTC control admission returned ${result.status}`);
+            case 'skipped':
+            case 'superseded':
+            case 'expired':
+                throw new NonRetryableException(
+                    result.reason ?? `RTC control admission returned ${result.status}`
+                );
+        }
     }
 
     addPeer(peerDto: QRtcPeerDto): void {
