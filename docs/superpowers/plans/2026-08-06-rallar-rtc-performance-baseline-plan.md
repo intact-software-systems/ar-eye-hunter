@@ -44,12 +44,15 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 - Treat observation archives as append-only. A failed primary remains useful
   diagnostic evidence but contributes no accepted metric, and a later run does
   not overwrite or repair its identity.
-- Task 10 capture does not authorize a production change. When a failed
-  observation exposes a product defect, keep one reviewed correction PR open
-  while its hypothesis is tested. Use explicitly non-publishing diagnostics
-  against that PR's exact head; do not merge test-only hypothesis slices merely
-  to learn from the next run. Merge only after the correction is proved, then
-  dispatch the accepted observation from moving `main`.
+- Task 10 capture does not itself authorize a production change. The human has
+  explicitly authorized the bounded control-handoff correction currently in PR
+  #566: delete affected obsolete code, retain no legacy or migration path,
+  reuse the existing QueueBox and retry owners, and add no fence, retry
+  mechanism, lock, queue, or library. That approval does not choose the next
+  inbound correction or mandate PR #566 as the final delivery. Use explicitly
+  non-publishing diagnostics while the hypothesis is tested; do not merge test-
+  only slices merely to learn from the next run. Merge only the human-selected,
+  proved correction path, then dispatch a fresh observation from moving `main`.
 - Apply the current repository human-readability standard: visible ownership,
   dataflow, decisions, side effects, failure paths, cognitive-load tiers,
   responsibility review, and the post-discount navigation backstop. The old
@@ -62,32 +65,26 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-11
+**Updated:** 2026-09-12
 
-**Status:** Last reconciled with moving `origin/main` at
-`f8db937626a814aa29c18332a4eea6f77993aa01`, which includes the ALM F2
-ownership/storage refactor in PR #559. PRs #562 through #565 are merged. The
-repository contains fourteen archived RTC-B06 primaries; all fourteen are
-failed evidence with `acceptedMetrics: false`, and none required a repeat.
-Latest E3-memory run 34573688470 observed source
-`bf67bacb928c5b5188ff3c65086eabea02918fa4`: all six default attempts passed,
-then the first all-scenarios warmup failed when sender B's `messages.rtc`
-**broadcast** returned `RALLAR_BB_RTC_NO_ROUTE`. The archive proves that the
-send saw no usable overlay context while B, A, and C each reported two settled
-and ready peers, four open lanes, and two connected peer connections. It does
-not prove which cache lifecycle event caused the context to be absent.
+**Status:** Task 10 correction-and-proof work is active, and there is still no
+valid B06 E3-memory primary. The approved one-file, test-only real-IndexedDB/
+real-QueueBox trace now closes the diagnostic slice: the pre-existing handoff
+test stays green, while the new semantic case fails only the unchanged answer
+deadline. It adds no product behavior or test wake.
 
-PR #563 successfully retained the previously missing sender-side and receiver
-diagnostic envelopes. Their archive projection still loses the failed send's
-status, reason, and message identity because it reads success-shaped
-`result.value`, while the real failed command carries those facts under bounded
-`error.details`. Static production tracing also found a separate correctness
-gap: `WebRtcOverlayMulticastManager` converts every absent, removed, or
-wrong-scope overlay observation into immediate `no-route`, bypassing the
-existing durable ALM/QueueBox readiness lifecycle even when current room
-authority permits the locally originated message. The approval-gated design in
-Task 10 corrects both facts in one correction-and-proof PR; no production or
-tooling implementation is authorized merely by this plan update.
+That deterministic evidence selects successor continuation after admission
+release as the narrow proposed correction. The proposal remains approval-
+gated; the earlier control-handoff approval does not authorize this inbound
+scheduling behavior. PR #567's disposition also remains a human choice. The
+recommendation is to consolidate only the selected owner-continuation behavior,
+not its broader task changes, but proving PR #567 first remains available.
+
+The current horizon is explicit human approval and disposition choice, followed
+only after approval by TDD implementation, deterministic green, and independent
+reviews. A browser rerun is a later outcome after the selected correction is
+proved. A mergeable branch does not need refresh merely because `main` moves or
+GitHub reports `BEHIND`.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -576,19 +573,25 @@ was ready.
 
 ### Current execution horizon
 
-| Order | Slice                                        | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | One approval-gated correction-and-proof PR   | Correct bounded failed-result projection, make diagnostic mode exercise default/all-scenarios/retention on three isolated same-head runners, and defer only an authorized durable room broadcast/multicast during an observed overlay gap through the existing ALM/QueueBox owner. Complete TDD, touched-file closure, focused/type/style/structure/build gates, per-task reviews, one whole-branch review, Branch Release Gate, and three retry-free exact-head diagnostic results. Do not merge intermediate hypotheses. |
-| 2     | Fresh RTC-B06 observation from moving `main` | After the correction PR merges, dispatch `RTC-B06 Performance Observation` in `publish` mode from then-current `main`. Preserve a failed primary unchanged; accept only a complete valid primary and any controller-required repeat.                                                                                                                                                                                                                                                                                       |
+| Order | Slice                                        | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Approve the correction path and disposition  | The human reviews the approved deterministic RED and the exact-successor continuation design, then explicitly chooses between proving PR #567 first against its own gates or consolidating only the selected owner-continuation behavior. The recommendation is the narrow consolidation, not PR #567's broader task changes. If PR #567 is proved first, reassess whether PR #566 remains necessary. No inbound scheduling behavior changes before this choice and approval.                                                                  |
+| 2     | Implement the selected correction test-first | After approval, make the pre-existing semantic case remain green and turn the answer-deadline RED green with the exact-successor continuation. Run focused ALM work/admission and RTC handoff tests, affected type/style/structure/coupling checks, and fresh specification and quality reviews. Every changed human-authored file is reviewed and remediated in full; support files modified by remediation enter closure recursively; independent untouched code remains outside closure. Retain the no-new-mechanism/no-legacy constraints. |
 
-The first slice remains inactive until the human explicitly approves the Task
-10 correction design below. Approval applies to that behavioral boundary, not
-to a permanently pinned `main`: before implementation, reconcile the plan with
-the then-current owners and repair a real conflict. `BEHIND` alone is not a
-reason to refresh the branch or discard already valid proof.
+The control-handoff approval does not authorize the proposed exact-successor
+continuation or choose PR #567's disposition. The trace slice is complete with
+no product change; do not rerun the unchanged browser candidate. The next
+action is the explicit human choice above. That choice also does not pin
+`main`: repair a real conflict when one exists, but do not refresh, rebase,
+repeat review, or discard already valid proof merely because GitHub reports
+`BEHIND`.
 
-After the second slice, Task 12 chooses the B05 observation window, revisits
-whether the candidate call path requires E4-pg, and reconciles
+After the selected path passes deterministic proof and fresh reviews, run one
+new exact-head browser invocation against that result, complete its whole-
+branch review and necessary delivery, and then dispatch B06 from moving `main`.
+These are later outcome-shaped steps, not a third current slice. After a valid
+B06 primary and every required repeat, Task 12 chooses the B05 observation
+window, revisits whether the candidate call path requires E4-pg, and reconciles
 unlike-environment evidence before ranking at most one candidate—or `none`.
 
 If a later published B06 run fails, retain it as failed evidence and diagnose
@@ -984,16 +987,22 @@ Before the first retained sample, record:
 Never capture secret values, authorization headers, password values, private
 keys, full environment dumps, or unredacted remote host inventories.
 
-### Measurement anchors
+### Historical measurement anchors
+
+**Current rule:** B05 and B06 are append-only observation streams over the
+moving `main` snapshot selected by each run. The bullets below preserve the
+original fixed-anchor contract for provenance and do not reactivate pinning,
+branch-refresh, or B06 approval work.
 
 - Capture B01-B05 only after the ordered foundation, B01, B02, B03, B04, and
   B05 commits are published, every required local gate passes, and the exact
   final main head has a successful **Deploy Web + API** run whose embedded
   **Release Gate / Release Gate** job succeeded. That exact head and tree are
   the B01-B05 measurement anchor.
-- B06 remains inactive until its separate reservation is approved. It receives
-  a later clean head and fresh focused, repository, and branch-release gates;
-  its evidence never retroactively changes the B01-B05 anchor.
+- Historically, B06 remained inactive until its separate reservation was
+  approved. That reservation and the later Task 10 correction approval have
+  since been granted; B06 evidence still never retroactively changes an older
+  B01-B05 cohort.
 - Before selecting a candidate from evidence spanning both anchors, rerun the
   relevant B01-B05 workload on the B06 head with the same frozen workload and
   environment contract. Keep original-anchor and B06-head samples under
@@ -4417,17 +4426,256 @@ are under `result.error.details`; `summarizeLiveRtcSendResult`,
 `messageIdFromSendResult`, and `toFailedControlResult` read only
 `result.result.value`. Consequently, `failedResults` records null status/reason
 and `messageFailures.sendResult` records `missing`, even though the producer
-returned the facts. Correct this representation/redaction boundary before using
-another failed run to diagnose product behavior.
+returned the facts. Task 10A corrected this representation/redaction boundary;
+the statement above is retained as the historical diagnosis, not current work.
 
-#### Approval-gated correction design
+#### Task 10C.4-C.7 correction and diagnostic record
 
-This subsection is a proposed implementation contract, not implementation
-authorization. Do not change product, test tooling, or workflow behavior until
-the human explicitly approves it. Approval authorizes one continuing
-correction-and-proof PR on the then-current repository owners. It does not pin
-`main`; reconcile real owner/interface conflicts before work, and do not refresh
-solely because the branch is `BEHIND`.
+The human explicitly approved continued subagent-driven implementation on the
+single draft PR #566. The active constraints are stronger than the original
+design envelope: retain no legacy or migration path, delete affected obsolete
+code, reuse the existing QueueBox and retry ownership, and add no queue, retry
+mechanism, fence, lock, timer, library, public API, or persisted shape. Each
+changed human-authored file is reviewed and remediated in full; every support
+file modified by that remediation enters closure recursively; independent
+untouched code remains outside closure. This records the approved and completed
+control-handoff work; it does not mandate PR #566 as the final correction path
+after the next human choice.
+
+Task 10C.4 closed a confirmed diagnostic capture gap in commits
+`5715af6218e6718b7095c9cae59879f524f50721` and
+`32c6868445a8db1c14dc739f4237cb4352c06277`:
+
+- canonical formation command, refresh, and peer-proof failures invoke the
+  existing bounded causal capture before cleanup while preserving the original
+  lifecycle error;
+- readiness, message-failure, and NACK health fan-outs use bounded selection
+  ordinals instead of collision-prone sanitized agent IDs; and
+- the initial-pair lifecycle owner was kept cohesive and brought to the
+  repository's 60-line function backstop without a pass-through extraction.
+
+Its canonical RED, four collision REDs, and six restored mutations all caught
+their intended regressions. The restored related RTC set passed 88/88 together
+with shared/test typechecks and changed style, structure, test-structure
+coupling, legacy, format, and diff checks.
+
+Its one retry-free retention-100 run on exact head `32c68684` passed the
+ordinary matrix and failed reconnect cycle 1. The two canonical sidecars showed
+A and restored C each ready to B while retaining the other as desired, known,
+and connectable, with an active non-exhausted attempt and zero manager failure,
+budget-deferral, or pacing-deferral counts. That localized the failure to the
+reciprocal A/C signaling/native-establishment corridor but did not justify a
+product, retry, timeout, lock, or QueueBox change.
+
+Task 10C.5 therefore ran exactly one additional retry-free retention capture at
+the unchanged product head with the existing storage recorder enabled. The
+ordinary matrix passed in 2.7 minutes; retention failed in reconnect cycle 4;
+the complete invocation ended 1 passed / 1 failed / 1 skipped after 415.41
+seconds and retained 3,887 pre-trim events plus 86 results. The event join
+proved that C committed two outbound RTC-signaling identities, A received those
+exact identities but classified both `pending-admission`, and later signals
+repeated that state. C timed out in `have-local-offer` with no remote
+description; A timed out with no descriptions and zero signaling counters.
+
+The first pending signals arrived roughly 30 seconds into an already selected,
+sequential sixteen-claim inbound page that completed after 36.482 seconds. The
+next sixteen-claim page took 13.109 seconds and ended 923 ms after C's existing
+30-second peer watchdog. Because replay writes a later `dispatch-local` work
+item, delivery before that peer lifetime ended was impossible in this run. The
+evidence selects the existing `ALInboundMessageRuntime` retained
+`admit-message` -> QueueBox worker -> `ALInboundMessageAdmission.replay` path as
+the investigation boundary. It does not prove the exact failed-edge owner,
+which scheduling step consumed the deadline, or that a retained row was lost.
+
+The same retained rows exposed a separate tooling error: the real control
+envelope already carries the normalized runtime diagnostic under
+`payload.data`, while the causal classifier read `.data`. Commit
+`0b7ea583d0cfc4d6853ed5a6a3c616f0029251a3` replaces the synthetic extra-wrapper
+fixture with the canonical envelope and corrects that read. Replaying all 3,887
+rows through the corrected parser yields 179 bounded causal events, so another
+browser run was not needed to prove the parser. Its related 83-test suite,
+shared-test typecheck, full test typecheck, and changed
+style/structure/coupling/legacy/format/diff checks passed; independent review
+found no parser finding.
+
+Task 10C.6 then created a deterministic semantic RED with a real shared
+IndexedDB database, one explicitly started existing `InboxOutboxEngine`, and a
+payload-free test-local QueueBox trace. Exactly sixteen real `send-control`
+claims were selected before a forced conditional conflict retained the target
+RTC `admit-message`; replay created its `dispatch-local` successor, all 31
+controls completed, and the RTC callback occurred at modeled time 49.591
+seconds against deadline 48.539 seconds—1,102 ms late.
+
+Two apparent fixes were rejected and fully removed:
+
+- retaining inbound `send-control` settlement cleared the modeled latency but
+  produced 61 outbound admission attempts for 31 controls plus a lost-
+  reservation compare-and-set after the ten-second lease; making that safe
+  would require a new fence or lease owner; and
+- removing the outbound Web Lock recovered storage exactly once across two
+  same-sender runtimes but physically transported sequence 2 before sequence 1,
+  which is unsafe for unordered RTC signaling and contradicts the retained
+  sender-ordering boundary.
+
+The approved design is a control-only ownership handoff. For initial canonical
+AL controls only, `ALOutboundDispatchAdmission` performs its existing read,
+pending-read, compute, and validation phases, then atomically writes the
+canonical payload, immutable identity, and deterministic outbound
+`admit-message` QueueBox row through the existing pending-admission store before
+entering the sender queue or browser Web Lock. The inbound `send-control` claim
+completes only after that durable transfer. The existing outbound worker then
+replays the row through the unchanged sender queue and Web Lock. Ordinary data,
+ordered data, malformed controls, reliable-QoS control lookalikes, existing
+pending/reserved/retry/terminal rows, and server delivery keep their prior
+owners. A true retention compare-and-set conflict throws the existing
+`RetryableConflictError`, so the existing inbound QueueBox retry—not a new
+mechanism—owns recovery.
+
+Commit `ec405b98a75e27d697670dd7af07637556c93bcf` implements that handoff;
+commit `833b6571be5eec9b7cf4ce4ad9d8ef2db724af7b` strengthens the independent
+negative, retry, timing, and deduplication evidence. At that exact local head,
+the focused four-file set passes 35/35 and the related single-worker set passes
+658/658. Shared/test typechecks, changed style, structure, test-structure
+coupling, legacy/format/diff checks, and three targeted mutation probes pass or
+detect the intended regression.
+
+The first independent quality review found one correctness defect beyond that
+35-test boundary. A real retention compare-and-set conflict crossed RTC
+multicast's circuit breaker as `failed`, but `WebRtcRxStreamerService` treated
+that status as a completed handoff, so the inbound claim could complete without
+durable ownership. The corrective adapter change keeps accepted/enqueued/
+pending-admission/duplicate successful, keeps skipped/superseded/expired non-
+retryable, and makes failed/no-route/rate-limited/circuit-open fail the claim so
+the already existing inbound QueueBox retry owns recovery. Its production-wired regression and
+status matrix pass 12/12; the corrected focused five-file set passes 47/47;
+shared and test typechecks plus changed style, structure, test-structure
+coupling, legacy, format, and diff checks pass. Fresh specification and quality
+re-reviews approve the corrected candidate with no remaining finding.
+
+Exactly one retry-free local browser invocation then ran on exact head
+`6a5a0b04e0970964ca290740317cccc09334393c`. The ordinary matrix passed in 2.5
+minutes, all-scenarios was skipped because its selector remained unset, and
+retention-100 failed reconnect cycle 2. The complete invocation ended 1 passed /
+1 failed / 1 skipped after 300.32 seconds, retaining 2,667 full events and 69
+results. Both canonical A and C failure sidecars contain 90 bounded causal
+events. All 143 observed initial
+`send-control` handoffs committed, while the outbound drain path recorded 142
+commits and sixteen ordinary conflicts. There was no initial handoff conflict,
+expiry, or non-attempted outcome in this invocation, and no failed-status
+outcome exercised the newly corrected branch. This proves the successful
+durable-handoff branch only for the observed traffic; it does not prove the
+whole correction sufficient.
+
+The failed A/C edge is now bounded precisely:
+
+- C's signal `dd4901d2-6e3d-4408-a700-d7cd251f7ee3` committed at
+  `1789159998612` and A classified it `pending-admission` at `1789160002546`;
+  C's signal `8bd0760e-4753-44f5-9e09-046791dc8ff2` committed at
+  `1789160000418` and A classified it `pending-admission` at `1789160002351`.
+  Both reached A roughly 15.2-15.4 seconds before the reciprocal peer timeout.
+- Both signals arrived during A's already selected fourteen-claim page, which
+  ran from approximately `1789159996050` to `1789160007783`, completed thirteen
+  claims, and rescheduled one. The next preselected page ran from
+  `1789160007971` to `1789160014975`, completed seven of nine claims, and
+  rescheduled two. A third page ran past the peer lifetime, from
+  `1789160015618` to `1789160020963`.
+- C timed out A at `1789160017718` with stable signaling, connected ICE, local
+  and remote descriptions, one outbound answer, and one outbound ICE signal. A
+  timed out C at `1789160017877` in `have-local-offer`, with ICE `checking`, one
+  applied inbound ICE candidate, no remote description, and no inbound answer.
+  C therefore received A's offer/candidate and answered; A did not apply C's
+  answer before the existing deadline.
+
+This selects the inbound pending-admission path—its retained `admit-message`,
+QueueBox processing, replay, and later `dispatch-local` successor—as the next
+investigation boundary. At this point it did not yet prove which individual
+slow claim, replay, `commitPending`, successor creation, or next wake/admission
+ordering consumed the remaining budget.
+
+#### Task 10C.7 approved deterministic continuation evidence
+
+The approved next diagnostic extends only
+`packages/tests/shared/webrtc/ws-rtc-control-handoff-latency.test.ts`. It uses
+the real shared IndexedDB stores and the real started QueueBox engine while
+recording payload-free claim, page, admission, and callback events. The original
+handoff case remains green. The new semantic RED fails only its answer deadline:
+the RTC candidate callback completes at modeled `+28,909 ms`, the answer at
+`+39,009 ms`, and the unchanged peer deadline is `+30,000 ms`. Every one of the
+31 control callbacks matches its seeded identity, and the test invokes no wake.
+There is no product change.
+
+After the answer admission commits its successor, the exact page reads before
+the answer successor is reserved are `NEW:16`, `NEW:1`, `RETRY:0`,
+`RESERVED:0`, and `NEW:16`. This trace selects ordinary queue ordering—not
+payload handling—as the deterministic boundary after successor commit. A PR-
+#567-style `wroteWork` -> `commitWork` restart is necessary and useful so the
+committed successor earns a fresh run, but projecting that restart into the
+same model places the answer callback around `+33,009 ms`: two older `NEW` pages
+still precede the answer, so that restart alone is not sufficient under this
+model. This is an inference from the trace, not execution proof of PR #567.
+
+The assessed PR #567 tree improves decision reads, observation, and wake hooks
+while retaining full replay, serial pages, and non-preemptive `commitPending`.
+Its retained hosted RTC case is classified slow; its fallback and WS cases
+remain unclassified. Overall safety and sufficiency remain unresolved. The
+recommended disposition is to consolidate only the selected owner-continuation
+behavior rather than the broader PR #567 task changes, but the human may instead
+choose to prove PR #567 first against its own acceptance gates. If that path is
+chosen, reassess whether PR #566 remains necessary.
+
+#### Proposed exact-successor continuation design — awaiting approval
+
+This is a proposed implementation contract, not authorization. The human must
+explicitly approve both the scheduling behavior and the chosen PR disposition
+before product edits begin.
+
+- Replace the admission result's `wroteWork` boolean with the exact committed
+  `ResourceEntry` successors. Do not reconstruct or broadly rescan to discover
+  what the just-completed admission wrote.
+- `ALWorkHandler` first releases the original admission claim through its
+  existing release path. It then iteratively exact-selects each committed
+  successor, applies the existing readiness decision, CAS-reserves it through
+  the existing QueueBox port, and processes it through the same claim/release
+  path as ordinary work.
+- Continue announcing the committed-work fallback. If exact continuation loses
+  contention, becomes not ready, or exceeds the turn bound, the durable row
+  remains owned by the ordinary QueueBox scan and wake lifecycle.
+- Bound original plus exact-continuation claims together by the existing
+  `pageSize`. Overflow stays durable for a later ordinary turn; continuation
+  does not create an unbounded chain.
+- Apply the same continuation semantics to data and control work. Do not add
+  RTC priority, RTC-specific ordering, or direct delivery.
+- Add no queue, retry mechanism, fence, lock, timer, library, persisted shape,
+  compatibility/legacy path, or migration.
+
+The likely production closure is provisional until implementation exploration:
+
+- `packages/shared/alm/work/al-work-handler.ts`;
+- `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`;
+- `packages/shared/alm/inbound/al-inbound-message-admission.ts`;
+- `packages/shared/alm/inbound/control/al-inbound-control-admission.ts`;
+- `packages/shared/alm/inbound/al-inbound-message-runtime.ts`;
+- `packages/shared/alm/inbound/README.md`; and
+- only a small adaptation in
+  `packages/shared/alm/outbound/al-outbound-message-runtime.ts` if the generic
+  handler's exact-continuation selector becomes mandatory, with no outbound
+  behavior change.
+
+The test scope starts with the existing RTC handoff test above plus focused ALM
+work/admission tests adjacent to affected owners. This list is a likely
+navigation map, not a promise to touch every file. Touched-file closure may add
+only support files actually required by remediation; independent untouched code
+remains outside closure.
+
+#### Historical approved overlay-gap correction design
+
+The human approved the following design as the starting contract for this one
+correction-and-proof PR. Its completed Task 10A/10B decisions remain useful
+provenance, but the current Task 10C.4-C.7 evidence and horizon above supersede
+its activation language, provisional file list, exact proof sequence, and any
+conflicting next action. It does not pin `main`; reconcile real owner/interface
+conflicts before work, and do not refresh solely because the branch is
+`BEHIND`.
 
 The intended outcome is narrow:
 
@@ -4963,15 +5211,51 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Merge PR #564's verified failed ZIP/index row unchanged.
 - [x] Merge PR #565's separate valid B05 archive without treating E2 as B06
       evidence.
-- [ ] Obtain explicit human approval for the Task 10 correction design in this
-      revision before changing product, test tooling, or workflow behavior.
-- [ ] Complete one continuing correction-and-proof PR using the documented
-      subagent-driven sequence: bounded failed-result projection; three-runner
-      full-scenario diagnostic mode; durable, authorized RTC overlay-gap
-      deferral; touched-file closure; per-task reviews; whole-branch review;
-      local and branch gates; and three green exact-head diagnostic runners.
-      Merge no intermediate hypothesis and retain no migration, compatibility,
-      or legacy path.
+- [x] Obtain explicit human approval for the Task 10 correction-and-proof PR:
+      subagent-driven implementation, no legacy or migration, affected obsolete
+      code deleted, existing QueueBox/retry owners only, and no added fence,
+      retry mechanism, lock, queue, timer, or library.
+- [x] Complete Task 10C.4 bounded canonical-formation failure capture and
+      collision-proof diagnostic command identities; preserve the original
+      failure and accepted evidence schema.
+- [x] Retain and analyze one complete Task 10C.5 storage-backed failure stream;
+      select inbound pending admission as the investigation boundary and
+      correct the canonical causal parser without another browser rerun.
+- [x] Reproduce Task 10C.6 with real IndexedDB/QueueBox work and its 1,102 ms
+      peer-budget RED; reject and remove retained-settlement and lock-removal
+      experiments rather than adding lease fencing or weakening sender order.
+- [x] Implement the initial canonical-control durable handoff in commits
+      `ec405b98a75e27d697670dd7af07637556c93bcf` and
+      `833b6571be5eec9b7cf4ce4ad9d8ef2db724af7b`; pass 35/35 focused tests,
+      658/658 related single-worker tests, type/style/structure/coupling checks,
+      and targeted mutation probes.
+- [x] Address the independent handoff-status finding, pass its dedicated and
+      focused tests plus affected checks, and obtain fresh approving
+      specification and quality re-reviews.
+- [x] Run one retry-free local B06 invocation on the exact reviewed candidate;
+      preserve its ordinary pass, all-scenarios skip, retention cycle-2 failure,
+      full event/result stream, and two bounded causal sidecars. Do not rerun
+      this unchanged candidate.
+- [x] Complete and approve the one-file Task 10C.7 payload-free per-claim trace
+      with real IndexedDB and the real QueueBox engine. Preserve the original
+      green case and the answer-only deadline RED, exact page ordering, all
+      matched control callbacks, absence of a test wake, and zero product
+      change. Do not rerun the browser candidate in this slice.
+- [ ] Obtain explicit human approval for the exact-successor continuation and
+      choose its disposition. The recommendation is to consolidate only that
+      owner-continuation behavior, not PR #567's broader task changes; proving
+      PR #567 first remains available, with its RTC result classified slow and
+      fallback/WS results unclassified. If that path is chosen, reassess whether
+      PR #566 remains necessary.
+- [ ] After approval, implement the selected path with TDD; retain the original
+      green and turn the deterministic answer deadline green, close touched
+      files, run focused affected checks, and obtain fresh specification and
+      quality reviews. Keep the no-new-queue/retry/fence/lock/timer/library and
+      no-legacy/migration constraints.
+- [ ] Later, after deterministic proof and reviews, run one new exact-head
+      browser proof against the selected result, complete whole-branch review
+      and final plan reconciliation, and take only the necessary delivery
+      through `pr:delivery`. `BEHIND` alone creates no rebase work.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.
@@ -5374,9 +5658,13 @@ moving.
 
 Phase 1 now completes only after:
 
-- the approval-gated Task 10 correction-and-proof PR, if approved, satisfies
-  its semantic, review, local, branch, and exact-head diagnostic gates and
-  merges without a retained legacy/migration path;
+- the human selects and explicitly approves the Task 10 correction path, that
+  path turns the deterministic answer-deadline RED green, and only the
+  necessary correction satisfies its semantic, independent-review, exact-head
+  local B06, whole-branch, and delivery gates without a retained legacy/
+  migration path or a new queue, retry mechanism, fence, lock, timer, or
+  library; if PR #567 is proved first, the human reassesses whether PR #566 is
+  still necessary before either delivery proceeds;
 - a later moving-main B06 observation produces one valid complete E3-memory
   primary and any controller-required repeat, while every prior failed archive
   remains unchanged and traceable;
@@ -5462,7 +5750,53 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-**2026-09-11 current reconciliation:** Last reconciled with moving
+**2026-09-12 current reconciliation:** The one-file test-only real-IndexedDB/
+real-QueueBox trace is approved and completes the diagnostic slice without a
+product change. The original handoff case remains green; the new case fails
+only the answer deadline and selects exact successor continuation after release
+as the proposed boundary. A general committed-work restart is useful but remains
+insufficient in this deterministic model because older ordinary `NEW` pages
+still precede the answer successor.
+
+The exact-successor continuation design now awaits explicit human approval and
+a disposition choice. The recommendation is to consolidate only the selected
+owner-continuation behavior, not PR #567's broader task changes; proving PR #567
+first remains available, and would trigger reassessment of PR #566's necessity.
+After approval, the next slice is TDD implementation, deterministic green, and
+fresh reviews under the existing QueueBox/no-new-mechanism/no-legacy
+constraints. Browser proof and delivery remain later outcomes.
+
+**2026-09-11 post-browser investigation reconciliation (historical):** The approved control-handoff and adapter
+corrections retain existing QueueBox/retry ownership, add no new mechanism or
+legacy path, and have approving specification and quality reviews. The exact
+browser-evidence provenance and validation detail live in the Task 10 record
+above rather than in this progress summary.
+
+That retained invocation exercised successful initial handoffs but not the
+corrected failed-status branch. Its A/C signal and page evidence selects inbound
+pending admission as the investigation boundary without identifying the exact
+claim, replay, `commitPending`, successor, or wake ordering responsible.
+
+For PR #567, the hosted RTC case is classified slow, while fallback and WS
+remain unclassified; overall safety and sufficiency are unresolved. The next
+two useful slices are the deterministic payload-free per-claim trace, followed
+by failure classification and an explicit human choice between proving PR #567
+first or intentionally consolidating only selected work. If PR #567 is proved
+first, reassess whether PR #566 remains necessary. Any selected behavior change
+still requires separate approval and retains the no-new-mechanism/no-legacy
+constraints. A new exact-head browser proof, necessary delivery, moving-`main`
+B06 publication, and Task 12 remain later outcomes.
+
+**2026-09-11 pre-browser correction reconciliation (historical):** The control-
+handoff implementation and deterministic evidence existed, while fresh re-
+review and its first post-change browser proof were still pending. At that
+checkpoint the plan expected PR #566 delivery after proof and had not resolved
+how to coordinate PR #567. The detailed Task 10 record above preserves the
+implementation, rejected experiments, validation, and exact execution
+provenance. This checkpoint is superseded by the retained browser failure and
+the current human-choice horizon.
+
+**2026-09-11 pre-implementation reconciliation (historical):** Last reconciled with moving
 `origin/main` at `f8db937626a814aa29c18332a4eea6f77993aa01`, including PR
 #559's ALM F2 ownership/storage refactor. PRs #562-#565 are merged. There are
 fourteen archived B06 primaries, all failed with no accepted metrics and no
@@ -5487,8 +5821,9 @@ default-only serial branch proof with three isolated parallel diagnostic
 runners that each exercise default, all-scenarios, and retention-100 on one
 exact head. The work stays in one correction-and-proof PR and will use fresh
 sequential implementers, per-task spec/quality reviews, and one final
-whole-branch review. No implementation begins until explicit human approval.
-B07 remains held and E4-pg remains conditional under Task 12.
+whole-branch review. At that historical checkpoint implementation was still
+awaiting the approval that has since been granted. B07 remains held and E4-pg
+remains conditional under Task 12.
 
 **2026-09-11 earlier reconciliation (historical):** `origin/main` was
 `48717845a287ab2d009b36639d2e2c6abe9911aa`; PRs #560 and #561 were merged.
