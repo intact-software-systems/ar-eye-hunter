@@ -16,6 +16,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -497,10 +498,11 @@ function createRtcRoomMulticast(
     const groupCache = new shared.LatestRepository<string, GroupSnapshot>();
     groupCache.accept('group-1', {
         ...snapshot,
+        group: { ...snapshot.group, acceptedLayoutIdentity: { ...snapshot.causalRevision, version: 1, state: 'active' } },
         activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
     });
     const overlayCache = new shared.LatestRepository<string, shared.OverlayInfo>();
-    overlayCache.accept('group-1', {
+    overlayCache.accept(toScopedOverlayId(roomRef), {
         sourceGroupStateCausalRevision: snapshot.causalRevision,
         provenance: 'server',
         state: 'active',

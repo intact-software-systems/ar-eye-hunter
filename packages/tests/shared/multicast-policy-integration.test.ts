@@ -14,6 +14,7 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
@@ -48,7 +49,7 @@ describe('multicast QoS integration', () => {
             });
             const connectionService = createConnectionService(['relay', 'peer-2', 'peer-3']);
             const groups = createReadableCache({ 'group-1': createGroupSnapshot(['self', 'origin', 'relay', 'peer-2', 'peer-3']) });
-            const overlays = createReadableCache({ 'group-1': createOverlayInfo(['relay', 'peer-2']) });
+            const overlays = createReadableCache({ [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['relay', 'peer-2']) });
             const engine = new InboxOutboxEngine();
             const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine });
             const store = resources.admissionStore;
@@ -98,7 +99,7 @@ describe('multicast QoS integration', () => {
             if (authority === 'expired') {
                 vi.setSystemTime(message.constraints!.expiresAtMs!);
             }
-            overlays.accept('group-1', createOverlayInfo(['relay', 'peer-2', 'peer-3']));
+            overlays.accept(toScopedOverlayId(groupRef('group-1')), createOverlayInfo(['relay', 'peer-2', 'peer-3']));
             const restarted = new shared.WebRtcOverlayMulticastManager(dependencies);
             onTestFinished(() => restarted.dispose());
             await vi.waitFor(async () => {
@@ -170,7 +171,7 @@ describe('multicast QoS integration', () => {
             vi.setSystemTime(entry.audit.expiryTs.epochMilliseconds);
         }
         groups.set('group-1', createGroupSnapshot(['self', 'peer-1']));
-        overlays.set('group-1', createOverlayInfo(['peer-1']));
+        overlays.set(toScopedOverlayId(groupRef('group-1')), createOverlayInfo(['peer-1']));
         // The first drain admits the row; the send it commits runs on the owner's follow-up batch.
         await drainOnce();
         await drainOnce();
@@ -256,7 +257,7 @@ describe('multicast QoS integration', () => {
                 'group-1': createGroupSnapshot(['self', 'peer-1'])
             }),
             overlayCache: createReadableCache({
-                'group-1': createOverlayInfo(['peer-1'])
+                [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1'])
             }),
             multicasterFactory: (overlayId) =>
                 new shared.WebRtcOverlayMulticastService(
@@ -315,7 +316,7 @@ describe('multicast QoS integration', () => {
                 'group-1': createGroupSnapshot(['self', 'peer-1'])
             }),
             overlayCache: createReadableCache({
-                'group-1': createOverlayInfo(['peer-1'])
+                [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1'])
             }),
             multicasterFactory: (overlayId) =>
                 new shared.WebRtcOverlayMulticastService(
@@ -371,7 +372,7 @@ describe('multicast QoS integration', () => {
                 'group-1': createGroupSnapshot(['self', 'peer-1'])
             }),
             overlayCache: createReadableCache({
-                'group-1': createOverlayInfo(['peer-1'])
+                [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1'])
             }),
             multicasterFactory: (overlayId) =>
                 new shared.WebRtcOverlayMulticastService(
@@ -423,7 +424,7 @@ describe('multicast QoS integration', () => {
                     'group-1': createGroupSnapshot(['self', 'peer-1', 'peer-2'])
                 }),
                 overlayCache: createReadableCache({
-                    'group-1': createOverlayInfo(['peer-1', 'peer-2'])
+                    [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1', 'peer-2'])
                 }),
                 multicasterFactory: (overlayId) =>
                     new shared.WebRtcOverlayMulticastService(
@@ -516,7 +517,7 @@ describe('multicast QoS integration', () => {
             connectionService: connectionService,
             groupCache: groups,
             overlayCache: createReadableCache({
-                'group-1': createOverlayInfo(['peer-1', 'peer-2'])
+                [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1', 'peer-2'])
             }),
             multicasterFactory: (overlayId) =>
                 new shared.WebRtcOverlayMulticastService(
@@ -823,7 +824,13 @@ function createOverlayContext(
 
 function createGroupSnapshot(memberSessionIds: readonly string[]): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...groupRef('group-1'), sessionIds: memberSessionIds });
-    return { ...snapshot, activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 })) };
+    const causalRevision = { groupRevision: 1, presenceRevision: 0 };
+    return {
+        ...snapshot,
+        causalRevision,
+        group: { ...snapshot.group, acceptedLayoutIdentity: { ...causalRevision, version: 1, state: 'active' } },
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+    };
 }
 
 function createOverlayInfo(nextHopSessionIds: readonly string[]): OverlayInfo {

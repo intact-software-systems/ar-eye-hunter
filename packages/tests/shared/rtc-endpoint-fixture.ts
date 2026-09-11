@@ -147,9 +147,11 @@ export class RtcEndpointFixture {
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {
         const snapshot = createGroupSnapshotFixture({ ...ref, sessionIds });
+        const causalRevision = { groupRevision: version, presenceRevision: version };
         this.groups.set(toScopedOverlayId(ref), {
             ...snapshot,
-            group: { ...snapshot.group, snapshotVersion: version },
+            causalRevision,
+            group: { ...snapshot.group, snapshotVersion: version, acceptedLayoutIdentity: { ...causalRevision, version, state: 'active' } },
             activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
         });
     }

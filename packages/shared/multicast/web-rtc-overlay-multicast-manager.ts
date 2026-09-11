@@ -15,7 +15,6 @@ import {
     normalizeALQosPolicy,
     planALMessageHandling,
     resolveALQosNormalizationInput,
-    resolveSupersedenceKey,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
@@ -23,17 +22,13 @@ import type {
     ALOutboundEnqueueResult,
     ALOutboundEnqueueStatus,
     ALOutboundPreparedSendResult,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettledSendResult
+    ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
-    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
-    ALOutboundRepairTrackingPlan,
-    ALOutboundRetryTrackingPlan,
-    ALOutboundSupersedenceTrackingPlan
+    ALOutboundRepairTrackingPlan
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -54,12 +49,12 @@ import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts'
 import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import { isOverlayIdentity } from '../repository/overlays-repository.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type {
-    QRtcDataChannel,
     RtcDataChannelHealth,
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
@@ -70,7 +65,22 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
-import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
+import {
+    computeRtcRoomSnapshotAdmission,
+    toRtcRoomSnapshotHandlingPlan,
+    type RtcRoomSnapshotAdmission
+} from './rtc-room-snapshot-admission.ts';
+
+import { toRtcOutboundTracking } from './to-rtc-outbound-tracking.ts';
+import { writeRtcChannelMessage } from './write-rtc-channel-message.ts';
+
+interface RtcOutboundObservation {
+    readonly overlayId: OverlayId | undefined;
+    readonly room: GroupSnapshot | undefined;
+    readonly overlay: OverlayInfo | undefined;
+    readonly connectedPeerIds: readonly PeerId[];
+    readonly nowMs: number;
+}
 
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
@@ -110,7 +120,7 @@ export class WebRtcOverlayMulticastManager {
 
     private readonly multicasterByOverlayId = new Map<OverlayId, WebRtcOverlayMulticaster>();
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
-    private readonly qosProvider?: ALQosInputProvider;
+    private readonly qosProvider: ALQosInputProvider | undefined;
     private disposed = false;
 
     public readonly outbox: QueueBoxResourceEntryRepository;
@@ -147,7 +157,7 @@ export class WebRtcOverlayMulticastManager {
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
-                planDequeuedMessage: (msg) => this.planDequeuedMessage(msg),
+                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg, true),
                 afterDequeueAdmission: undefined,
                 readPendingAdmissionAuthority: async (message, prepared) =>
                     this.readPendingAdmissionAuthority(message, prepared),
@@ -277,7 +287,7 @@ export class WebRtcOverlayMulticastManager {
         if (admissionPlan.dropReason) {
             return [];
         }
-        const context = this.readOverlayContext(msg);
+        const context = toAcceptedOverlayContext(this.readOutboundObservation(msg));
         if (!context) {
             return [];
         }
@@ -323,16 +333,13 @@ export class WebRtcOverlayMulticastManager {
         source?: ALInboundMessageRuntime.Source,
         observations?: ALMessagePlanningObservations
     ): ALMessageHandlingPlan {
-        const nowMs = observations?.nowMs ?? this.clock.nowMs();
+        const observation = this.readOutboundObservation(msg);
+        const nowMs = observations?.nowMs ?? observation.nowMs;
         const fromPeerId = source && source.kind !== 'trusted-server' ? source.peerId : undefined;
-        const groupRef = readALTargetGroupRef(msg);
-        const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
-        const overlayId = this.readOverlayId(msg);
-        const overlay = overlayId ? this.overlayCache.read(overlayId) : undefined;
         const admission = computeRtcRoomSnapshotAdmission({
             message: msg,
-            snapshot,
-            overlay,
+            snapshot: observation.room,
+            overlay: observation.overlay,
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
             recipientPeerId: undefined,
@@ -341,7 +348,7 @@ export class WebRtcOverlayMulticastManager {
         const messageContext = {
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
-            connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
+            connectedPeerIds: observation.connectedPeerIds,
             groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
             overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : []
         };
@@ -364,39 +371,28 @@ export class WebRtcOverlayMulticastManager {
         await this.outboundRuntime.acceptControlMessage(msg);
     }
 
-    private readOverlayContext(
-        msg: ALMessage
-    ): OverlayMulticasterContext | undefined {
-        const overlayId = this.readOverlayId(msg);
-        if (!overlayId) {
-            return undefined;
-        }
-
+    private readOutboundObservation(msg: ALMessage): RtcOutboundObservation {
         const groupRef = readALTargetGroupRef(msg);
-        const room = groupRef
-            ? this.readGroupSnapshotByRef(groupRef)
-            : this.groupCache.read(overlayId);
-        if (!room) {
-            console.warn(`No GroupSnapshot found for overlayId/groupId ${overlayId}`);
-            return undefined;
-        }
-
-        const overlay = this.overlayCache.read(overlayId);
-        if (!overlay || overlay.state === 'removed') {
-            console.warn(`No OverlayInfo found for overlayId/groupId ${overlayId}`);
-            return undefined;
-        }
-        if (groupRef && !isOverlayForGroupRef(overlay, groupRef)) {
-            console.warn(
-                `Overlay ${overlayId} does not match scoped target ${toScopedOverlayId(groupRef)}`
-            );
-            return undefined;
-        }
-
+        const explicitId = msg.forwarding?.overlayId;
+        const explicit = explicitId ? this.overlayCache.read(explicitId) : undefined;
+        const scopedId = groupRef
+            ? toScopedOverlayId(groupRef)
+            : msg.targets?.mode === 'broadcast'
+            ? msg.route.contextId
+            : undefined;
+        const scoped = explicit === undefined && scopedId !== explicitId && scopedId
+            ? this.overlayCache.read(scopedId)
+            : undefined;
+        const overlayId = explicit ? explicitId : scoped ? scopedId : explicitId ?? scopedId;
         return {
             overlayId,
-            room,
-            overlay,
+            overlay: explicit ?? scoped,
+            room: groupRef
+                ? this.readGroupSnapshotByRef(groupRef)
+                : overlayId
+                ? this.groupCache.read(overlayId)
+                : undefined,
+            connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             nowMs: this.clock.nowMs()
         };
     }
@@ -404,41 +400,6 @@ export class WebRtcOverlayMulticastManager {
     private readGroupSnapshotByRef(ref: GroupRef): GroupSnapshot | undefined {
         return this.groupCache.readAllValues()
             .find((group) => isSameGroupRef(group.group, ref));
-    }
-
-    private readOverlayId(msg: ALMessage): OverlayId | undefined {
-        const targetGroupRef = readALTargetGroupRef(msg);
-        const explicitOverlayId = msg.forwarding?.overlayId;
-
-        if (explicitOverlayId && this.readOverlayPresence(explicitOverlayId)) {
-            return explicitOverlayId;
-        }
-
-        if (targetGroupRef) {
-            const scopedOverlayId = toScopedOverlayId(targetGroupRef);
-            if (this.readOverlayPresence(scopedOverlayId)) {
-                return scopedOverlayId;
-            }
-        }
-
-        if (explicitOverlayId) {
-            return explicitOverlayId;
-        }
-
-        if (msg.targets?.mode === 'multicast') {
-            return msg.targets.groupRef.groupId;
-        }
-
-        if (msg.targets?.mode === 'broadcast') {
-            return msg.route.contextId;
-        }
-
-        return undefined;
-    }
-
-    private readOverlayPresence(overlayId: OverlayId): boolean {
-        const overlay = this.overlayCache.read(overlayId);
-        return overlay !== undefined;
     }
 
     private planDirectDispatch(
@@ -482,54 +443,125 @@ export class WebRtcOverlayMulticastManager {
         );
     }
 
-    private planDequeuedMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        const admissionPlan = this.planIncomingMessage(msg);
-        if (admissionPlan.dropReasonCode === 'not-yet-in-sync') {
-            throw new NotReadyException(50, 'Awaiting RTC room authority before dequeuing the transport copy');
-        }
-        return this.planOutgoingMessage(msg);
-    }
-
-    private planOutgoingMessage(original: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        const context = this.readOverlayContext(original);
-        const msg = toALOutboundMessage(original, this.readOutgoingQosPolicy(original, context).effective);
+    private planOutgoingMessage(
+        original: ALMessage,
+        alreadyOwned = false
+    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const observation = this.readOutboundObservation(original);
+        const context = toAcceptedOverlayContext(observation);
+        const qos = resolveALQosNormalizationInput(original, {
+            direction: 'outbound',
+            selfPeerId: this.connectionService.input.sessionId,
+            connectedPeerIds: observation.connectedPeerIds,
+            groupMemberPeerIds: observation.room ? readGroupMemberSessionIds(observation.room) : undefined,
+            overlayNeighborPeerIds: context?.overlay.nextHopSessionIds
+        }, this.qosProvider);
+        const effective = normalizeALQosPolicy(original, qos).effective;
+        const msg = toALOutboundMessage(original, effective);
 
         if (!msg.targets) {
-            return this.toUnaddressedDispatchPlan(msg, this.readOutgoingQosPolicy(msg, context).effective);
+            return this.toUnaddressedDispatchPlan(msg, effective);
         }
 
         if (msg.targets.mode === 'unicast') {
             return this.planOutboundDispatch(msg, this.planDirectDispatch(msg));
         }
 
-        if (!context) {
+        const admission = this.computeOutboundAuthority(msg, observation);
+        if ((alreadyOwned || !context) && (admission.kind === 'pending' || admission.kind === 'unauthorized')) {
+            if (alreadyOwned && admission.kind === 'pending') {
+                throw new NotReadyException(50, admission.reason);
+            }
             return {
-                dropReason: `Skipping RTC outbound message ${msg.id.msgId} without overlay context`,
-                persist: false,
                 msg,
-                preparedMessages: []
+                persist: false,
+                preparedMessages: [],
+                dropReason: alreadyOwned
+                    ? 'Skipping revoked RTC outbound authority'
+                    : `Skipping RTC outbound message ${msg.id.msgId} without overlay context`
             };
+        }
+        if (!context) {
+            const potential = admission.kind === 'authorized' ? admission.memberPeerIds : [];
+            const handling = planALMessageHandling(msg, {
+                nowMs: observation.nowMs,
+                selfPeerId: this.connectionService.input.sessionId,
+                connectedPeerIds: observation.connectedPeerIds,
+                groupMemberPeerIds: potential,
+                overlayNeighborPeerIds: potential
+            }, qos);
+            return this.planAbsentOverlay(msg, handling, alreadyOwned);
         }
 
         const multicaster = this.getOrCreateMulticaster(context.overlayId);
-        return this.planOutboundDispatch(
-            msg,
-            multicaster.createOriginatingPlan(
+        const plan = multicaster.createOriginatingPlan(msg, context, qos);
+        return this.planOutboundDispatch(msg, {
+            ...plan,
+            handlingPlan: toRtcRoomSnapshotHandlingPlan(plan.handlingPlan, admission, undefined)
+        });
+    }
+
+    private computeOutboundAuthority(msg: ALMessage, observation: RtcOutboundObservation): RtcRoomSnapshotAdmission {
+        const groupRef = readALTargetGroupRef(msg);
+        const overlay = observation.overlay;
+        if (
+            groupRef && overlay &&
+            (overlay.provenance !== 'server' || overlay.state !== 'active' || !isOverlayForGroupRef(overlay, groupRef))
+        ) {
+            return { kind: 'unauthorized', reason: 'RTC selected topology is explicitly inactive or foreign' };
+        }
+        const admission = computeRtcRoomSnapshotAdmission({
+            message: msg,
+            snapshot: observation.room,
+            overlay: observation.overlay,
+            selfPeerId: this.connectionService.input.sessionId,
+            fromPeerId: undefined,
+            recipientPeerId: undefined,
+            nowMs: observation.nowMs
+        });
+        const room = observation.room;
+        if (admission.kind === 'not-room' || !room) {
+            return admission;
+        }
+        const identity = room.group.acceptedLayoutIdentity;
+        if (
+            room.group.transportState !== 'flowing' || !identity || identity.state !== 'active' ||
+            identity.presenceRevision !== room.causalRevision.presenceRevision
+        ) {
+            return { kind: 'unauthorized', reason: 'RTC accepted room authority is not current and flowing' };
+        }
+        if (observation.overlay && !toAcceptedOverlayContext(observation)) {
+            return { kind: 'unauthorized', reason: 'RTC selected topology is not the exact accepted room layout' };
+        }
+        return admission;
+    }
+
+    private planAbsentOverlay(
+        msg: ALMessage,
+        handling: ALMessageHandlingPlan,
+        alreadyOwned: boolean
+    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const eligible = msg.id.senderId === this.connectionService.input.sessionId &&
+            readALTargetGroupRef(msg) !== undefined &&
+            !(msg.targets?.mode === 'broadcast' && msg.targets.recipientPeerIds !== undefined) &&
+            !handling.dropReason && handling.forwarding.persist && handling.forwarding.nextHopPeerIds.length > 0;
+        if (eligible && alreadyOwned) {
+            throw new NotReadyException(50, 'Awaiting the exact accepted RTC overlay cache value');
+        }
+        if (!eligible) {
+            return {
                 msg,
-                context,
-                resolveALQosNormalizationInput(
-                    msg,
-                    {
-                        direction: 'outbound',
-                        selfPeerId: this.connectionService.input.sessionId,
-                        connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
-                        groupMemberPeerIds: readGroupMemberSessionIds(context.room),
-                        overlayNeighborPeerIds: context.overlay.nextHopSessionIds
-                    },
-                    this.qosProvider
-                )
-            )
-        );
+                persist: false,
+                preparedMessages: [],
+                dropReason: `Skipping RTC outbound message ${msg.id.msgId} without overlay context`
+            };
+        }
+        return {
+            msg,
+            persist: true,
+            preparedMessages: [],
+            ...toRtcOutboundTracking(handling.effective, msg, [])
+        };
     }
 
     private toUnaddressedDispatchPlan(
@@ -544,13 +576,14 @@ export class WebRtcOverlayMulticastManager {
                 preparedMessages: []
             };
         }
+        const tracking = toRtcOutboundTracking(effective, msg, msg.forwarding.nextHopPeerIds);
         return {
             persist: true,
             msg,
             preparedMessages: [toALOutboundTransportMessage(msg)],
-            ackTracking: this.toAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
-            repairTracking: this.toRepairTrackingPlan(effective),
-            supersedenceTracking: this.toSupersedenceTrackingPlan(effective, msg)
+            ackTracking: tracking.ackTracking,
+            repairTracking: tracking.repairTracking,
+            supersedenceTracking: tracking.supersedenceTracking
         };
     }
 
@@ -597,17 +630,12 @@ export class WebRtcOverlayMulticastManager {
             persist: plan.handlingPlan.forwarding.persist,
             msg,
             preparedMessages: plan.transportMessages.map(toALOutboundTransportMessage),
-            ackTracking: this.toAckTrackingPlan(
+            ...toRtcOutboundTracking(
                 plan.handlingPlan.effective,
+                plan.transportMessages[0],
                 plan.transportMessages
                     .map((message) => message.forwarding?.nextHopPeerIds?.[0])
                     .filter((peerId): peerId is string => peerId !== undefined)
-            ),
-            retryTracking: this.toRetryTrackingPlan(plan.handlingPlan.effective),
-            repairTracking: this.toRepairTrackingPlan(plan.handlingPlan.effective),
-            supersedenceTracking: this.toSupersedenceTrackingPlan(
-                plan.handlingPlan.effective,
-                plan.transportMessages[0]
             )
         };
     }
@@ -667,13 +695,20 @@ export class WebRtcOverlayMulticastManager {
             };
         }
 
-        return this.submitPreparedMessage(peer.channel, msg, lifecycle);
+        return writeRtcChannelMessage(peer.channel, msg, { lifecycle, clock: this.clock });
     }
 
     private readPendingAdmissionAuthority(
         message: ALMessage,
         preparedMessages: readonly ALOutboundTransportMessage[]
     ): ALOutboundMessageRuntime.PendingAdmissionAuthority {
+        const logical = this.computeOutboundAuthority(message, this.readOutboundObservation(message));
+        if (logical.kind === 'pending') {
+            return { status: 'not-ready', reason: logical.reason, retryAfterMs: 50 };
+        }
+        if (logical.kind === 'unauthorized') {
+            return { status: 'rejected', reason: logical.reason };
+        }
         for (const prepared of preparedMessages) {
             const admission = this.readRtcDispatchAuthority(
                 message,
@@ -695,14 +730,17 @@ export class WebRtcOverlayMulticastManager {
         ingressPeerId: string | null,
         recipientPeerId: string | undefined
     ) {
-        const roomRef = readALTargetGroupRef(message);
-        const overlayId = this.readOverlayId(message);
+        const outbound = this.readOutboundObservation(message);
+        const logical = this.computeOutboundAuthority(message, outbound);
+        if (logical.kind === 'pending' || logical.kind === 'unauthorized') {
+            return logical;
+        }
         const observation = {
             message,
-            snapshot: roomRef ? this.readGroupSnapshotByRef(roomRef) : undefined,
-            overlay: overlayId ? this.overlayCache.read(overlayId) : undefined,
+            snapshot: outbound.room,
+            overlay: outbound.overlay,
             selfPeerId: this.connectionService.input.sessionId,
-            nowMs: this.clock.nowMs()
+            nowMs: outbound.nowMs
         };
         if (ingressPeerId !== null) {
             const ingress = computeRtcRoomSnapshotAdmission({
@@ -715,108 +753,6 @@ export class WebRtcOverlayMulticastManager {
             }
         }
         return computeRtcRoomSnapshotAdmission({ ...observation, fromPeerId: undefined, recipientPeerId });
-    }
-
-    private submitPreparedMessage(
-        channel: WebRtcOverlayMulticastManager.Channel,
-        msg: ALMessage,
-        lifecycle: ALOutboundMessageRuntime.SendLifecycle
-    ): ALOutboundPreparedSendResult {
-        // Promise's executor runs synchronously, before the transport registers this completion callback.
-        let resolveSettlement!: (value: QRtcDataChannel.SendSettlement) => void;
-        const settled = new Promise<QRtcDataChannel.SendSettlement>((resolve) => {
-            resolveSettlement = resolve;
-        });
-        const expiresAtEpochMs = Math.min(lifecycle.expiresAtMs ?? Infinity, lifecycle.leaseUntilMs ?? Infinity);
-        const result = channel.sendJson(msg, {
-            signal: lifecycle.signal,
-            expiresAtEpochMs: Number.isFinite(expiresAtEpochMs) ? expiresAtEpochMs : undefined,
-            onSettled: resolveSettlement
-        });
-        if (result.status === 'queued' || result.status === 'replaced') {
-            return {
-                status: 'queued',
-                settled: settled.then((value) =>
-                    toALOutboundRtcSettlement({
-                        status: value.status,
-                        submissionAttempted: value.submissionAttempted,
-                        reason: value.reason,
-                        messageExpiresAtMs: lifecycle.expiresAtMs,
-                        observedAtMs: this.clock.nowMs()
-                    })
-                )
-            };
-        }
-        return toALOutboundRtcSettlement({
-            status: result.status,
-            submissionAttempted: result.status === 'sent',
-            reason: result.reason,
-            messageExpiresAtMs: lifecycle.expiresAtMs,
-            observedAtMs: this.clock.nowMs()
-        });
-    }
-
-    private toAckTrackingPlan(
-        effective: ALQosEffectivePolicy,
-        expectedPeerIds: readonly string[],
-        mode?: 'merge' | 'replace'
-    ): ALOutboundAckTrackingPlan | undefined {
-        if (effective.ack.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            timeoutMs: effective.ack.opts.timeoutMs,
-            maxAttempts: effective.retry.algo === 'none'
-                ? 0
-                : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [...new Set(expectedPeerIds)],
-            mode
-        };
-    }
-
-    private toRetryTrackingPlan(
-        effective: ALQosEffectivePolicy
-    ): ALOutboundRetryTrackingPlan | undefined {
-        if (effective.retry.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            maxAttempts: effective.retry.opts.maxAttempts
-        };
-    }
-
-    private toRepairTrackingPlan(
-        effective: ALQosEffectivePolicy
-    ): ALOutboundRepairTrackingPlan | undefined {
-        if (effective.repair.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            algo: effective.repair.algo,
-            maxAttempts: effective.repair.opts.maxRepairs
-        };
-    }
-
-    private toSupersedenceTrackingPlan(
-        effective: ALQosEffectivePolicy,
-        msg: ALMessage
-    ): ALOutboundSupersedenceTrackingPlan | undefined {
-        if (effective.supersedence.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            algo: effective.supersedence.algo,
-            key: resolveSupersedenceKey(msg, effective),
-            replacesMsgId: effective.supersedence.opts.replacesMsgId
-        };
     }
 
     private planRepairMessage(
@@ -851,17 +787,7 @@ export class WebRtcOverlayMulticastManager {
             return undefined;
         }
 
-        const roomRef = readALTargetGroupRef(msg);
-        const overlayId = this.readOverlayId(msg);
-        const admission = computeRtcRoomSnapshotAdmission({
-            message: msg,
-            snapshot: roomRef ? this.readGroupSnapshotByRef(roomRef) : undefined,
-            overlay: overlayId ? this.overlayCache.read(overlayId) : undefined,
-            selfPeerId: this.connectionService.input.sessionId,
-            fromPeerId: undefined,
-            recipientPeerId: peerId,
-            nowMs: this.clock.nowMs()
-        });
+        const admission = this.readRtcDispatchAuthority(msg, null, peerId);
         if (admission.kind === 'unauthorized' || admission.kind === 'pending') {
             return {
                 dropReason: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
@@ -870,7 +796,8 @@ export class WebRtcOverlayMulticastManager {
                 preparedMessages: []
             };
         }
-        const normalized = this.readOutgoingQosPolicy(msg, this.readOverlayContext(msg));
+        const normalized = this.readOutgoingQosPolicy(msg, toAcceptedOverlayContext(this.readOutboundObservation(msg)));
+        const tracking = toRtcOutboundTracking(normalized.effective, msg, [peerId]);
         return {
             persist: false,
             msg,
@@ -883,11 +810,7 @@ export class WebRtcOverlayMulticastManager {
                     }
                 })
             ],
-            ackTracking: this.toAckTrackingPlan(
-                normalized.effective,
-                [peerId],
-                'replace'
-            ),
+            ackTracking: tracking.ackTracking ? { ...tracking.ackTracking, mode: 'replace' } : undefined,
             repairTracking: repair
         };
     }
@@ -931,24 +854,14 @@ export class WebRtcOverlayMulticastManager {
     }
 }
 
-interface ALOutboundRtcSettlementInput {
-    readonly status: QRtcDataChannel.SendSettlement['status'];
-    readonly submissionAttempted: boolean;
-    readonly reason: string | undefined;
-    readonly messageExpiresAtMs: number | undefined;
-    readonly observedAtMs: number;
-}
-
-function toALOutboundRtcSettlement(input: ALOutboundRtcSettlementInput): ALOutboundSettledSendResult {
-    const { status, reason, messageExpiresAtMs, observedAtMs } = input;
-    if (status === 'expired' && (messageExpiresAtMs === undefined || observedAtMs < messageExpiresAtMs)) {
-        return { status: 'not-ready', reason: 'RTC attempt lease elapsed before native submission.', retryAfterMs: 50 };
+function toAcceptedOverlayContext(observation: RtcOutboundObservation): OverlayMulticasterContext | undefined {
+    const { overlayId, room, overlay, nowMs } = observation;
+    const identity = room?.group.acceptedLayoutIdentity;
+    if (
+        !overlayId || !room || !overlay || overlay.provenance !== 'server' || overlay.state !== 'active' ||
+        !isOverlayForGroupRef(overlay, room.group) || !identity || !isOverlayIdentity(overlay, identity)
+    ) {
+        return undefined;
     }
-    if (status === 'failed' && input.submissionAttempted) {
-        return { status: 'failed', reason, retryAfterMs: 50 };
-    }
-    if (status === 'dropped' || status === 'closed' || status === 'failed') {
-        return { status: 'not-ready', reason, retryAfterMs: 50 };
-    }
-    return { status, reason };
+    return { overlayId, room, overlay, nowMs };
 }
