@@ -9,6 +9,11 @@ export interface RecordedIndexedDbTransactions {
     liveCount(): number;
 }
 
+/**
+ * Patches `IDBDatabase.prototype.transaction` and `IDBTransaction.prototype.abort` for the rest of
+ * the test: the caller owns the teardown, and every suite using this needs `vi.restoreAllMocks()` in
+ * an `afterEach`.
+ */
 export function recordIndexedDbTransactions(): RecordedIndexedDbTransactions {
     const modes: IDBTransactionMode[] = [];
     const liveWhenOpened: number[] = [];

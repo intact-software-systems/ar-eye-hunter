@@ -1,26 +1,20 @@
-import {
-    expect,
-    it,
-    onTestFinished
-} from 'vitest';
+import { expect, it } from 'vitest';
 
-import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import {
-    AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS,
-    ALInboundMessageRuntime,
-    type ALInboundRuntimeStores
-} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
+import { AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+import {
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    createInboundTestStores,
+    INBOUND_TEST_SENDER_PEER_ID,
+    type InboundTestRuntime,
+    type InboundTestStorage
+} from './inbound-runtime-test-fixture.ts';
 
 import '../../setup-browser-indexeddb.ts';
 
@@ -30,81 +24,26 @@ type RotationAliveEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'rot
 
 /** Engine rounds one poll attempt drives, so the rotation reaches its liveness cadence in a few. */
 const ROTATION_ROUNDS_PER_ATTEMPT = 16;
-const SELF_PEER_ID = 'receiver';
-const SENDER_PEER_ID = 'sender';
-
-function createStores(kind: 'memory' | 'indexeddb'): ALInboundRuntimeStores {
-    const backend = kind === 'memory'
-        ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
-        : new IndexedDbAdmissionBackend({
-            schemaId: AL_ADMISSION_SCHEMA_ID,
-            onStorageReset: () => {},
-            dbName: `inbound-admission-diagnostics-${crypto.randomUUID()}`,
-            storeName: 'entries',
-            nowMs: Date.now,
-            newWriteToken: crypto.randomUUID.bind(crypto),
-            observer: createPassThroughIndexedDbOperationObserver()
-        });
-    return {
-        admissionStore: createALInboundAdmissionStore({
-            nowMs: Date.now,
-            namespace: 'inbound-admission-diagnostics',
-            backend,
-            orderingTrackTtlMs: 60_000,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        }),
-        workQueue: backend.workQueue
-    };
-}
+const DIAGNOSTICS_NAMESPACE = 'inbound-admission-diagnostics';
+const DIAGNOSTICS_WORKER_ID = 'inbound-diagnostics-worker';
 
 interface InboundDiagnosticsFixtureInput {
-    readonly kind: 'memory' | 'indexeddb';
+    readonly kind: InboundTestStorage;
     readonly plan?: (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan;
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
 }
 
-function createRuntime(input: InboundDiagnosticsFixtureInput) {
-    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
-    const delivered: string[] = [];
-    const queueEngine = new InboxOutboxEngine();
-    const resources = createDefaultALInboundRuntimeResources({
-        selfPeerId: SELF_PEER_ID,
-        stores: createStores(input.kind),
-        queueEngine,
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
-    });
-    const runtime = new ALInboundMessageRuntime({
-        ...resources,
-        planIncomingMessage: (msg, _source, observations) => {
-            const plan = planALMessageHandling(msg, {
-                ...observations,
-                selfPeerId: SELF_PEER_ID,
-                fromPeerId: SENDER_PEER_ID
-            });
-            return input.plan?.(plan) ?? plan;
-        },
+function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntime {
+    return createInboundTestRuntime({
+        stores: createInboundTestStores({
+            namespace: DIAGNOSTICS_NAMESPACE,
+            storage: input.kind,
+            observer: createPassThroughIndexedDbOperationObserver()
+        }),
+        effectWorkerId: DIAGNOSTICS_WORKER_ID,
         canDispatchMessage: input.canDispatchMessage,
-        dispatchInboxEntry: async () => {
-            delivered.push('dispatched');
-        },
-        sendControlMessage: async () => {},
-        diagnostics: (event) => diagnostics.push(event),
-        effectWorkerId: 'inbound-diagnostics-worker'
+        plan: input.plan
     });
-    onTestFinished(() => runtime.dispose());
-    return { runtime, diagnostics, delivered, queueEngine };
-}
-
-function createIncomingMessage(msgId: string): ALMessage {
-    return newALUnicastMessage(
-        SENDER_PEER_ID,
-        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        SELF_PEER_ID,
-        'chat.private-text.v1',
-        { text: 'inbound diagnostics' },
-        { ttlMs: 60_000 }
-    );
 }
 
 function admissionOutcomesOf(
@@ -138,15 +77,15 @@ it.each(['memory', 'indexeddb'] as const)(
     'names the message an ingress committed and the drain that delivered it over %s',
     async (kind) => {
         const { runtime, diagnostics, delivered } = createRuntime({ kind });
-        const message = createIncomingMessage('committed-delivery');
+        const message = createInboundTestMessage({ msgId: 'committed-delivery' });
 
         await runtime.ready();
-        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: SENDER_PEER_ID });
+        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
 
         expect(admitted.right).toEqual({ kind: 'admitted' });
         expect(admissionOutcomesOf(diagnostics)).toEqual([{
             kind: 'admission-outcome',
-            workerId: 'inbound-diagnostics-worker',
+            workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
             typeId: 'chat.private-text.v1',
             outcome: 'committed',
@@ -163,7 +102,7 @@ it.each(['memory', 'indexeddb'] as const)(
             rescheduledCount: event.rescheduledCount,
             rejectedCount: event.rejectedCount
         }))).toEqual([{
-            workerId: 'inbound-diagnostics-worker',
+            workerId: DIAGNOSTICS_WORKER_ID,
             claimedCount: 1,
             completedCount: 1,
             rescheduledCount: 0,
@@ -185,16 +124,16 @@ it.each(['memory', 'indexeddb'] as const)(
                 nack: { enabled: false, reason: 'unauthorized', missingSeqs: [] }
             })
         });
-        const message = createIncomingMessage('unauthorized-drop');
+        const message = createInboundTestMessage({ msgId: 'unauthorized-drop' });
 
         await runtime.ready();
-        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: SENDER_PEER_ID });
+        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
 
         // Without this event the drop is indistinguishable from a delivery still on its way.
         expect(admitted.right).toEqual({ kind: 'not-admitted', reason: 'unauthorized' });
         expect(admissionOutcomesOf(diagnostics)).toEqual([{
             kind: 'admission-outcome',
-            workerId: 'inbound-diagnostics-worker',
+            workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
             typeId: 'chat.private-text.v1',
             outcome: 'unauthorized',
@@ -211,10 +150,10 @@ it.each(['memory', 'indexeddb'] as const)(
             kind,
             canDispatchMessage: () => false
         });
-        const message = createIncomingMessage('no-inbox-consumer');
+        const message = createInboundTestMessage({ msgId: 'no-inbox-consumer' });
 
         await runtime.ready();
-        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: SENDER_PEER_ID });
+        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
         await runRotationUntilAlive(queueEngine, diagnostics);
 
         expect(admitted.right).toEqual({ kind: 'admitted' });
@@ -237,8 +176,8 @@ it.each(['memory', 'indexeddb'] as const)(
 
         await runtime.ready();
         await runtime.admitIncomingMessage(
-            createIncomingMessage('rotation-liveness'),
-            { kind: 'rtc-peer', peerId: SENDER_PEER_ID }
+            createInboundTestMessage({ msgId: 'rotation-liveness' }),
+            { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
         await expect.poll(async () => {
             for (let round = 0; round < ROTATION_ROUNDS_PER_ATTEMPT; round += 1) {
@@ -251,7 +190,7 @@ it.each(['memory', 'indexeddb'] as const)(
         // stopped": the row is still there, still scanned, and still claimed by nobody.
         expect(rotationsOf(diagnostics)[0]).toMatchObject({
             kind: 'rotation-alive',
-            workerId: 'inbound-diagnostics-worker',
+            workerId: DIAGNOSTICS_WORKER_ID,
             emptyRoundCount: AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS
         });
         expect(rotationsOf(diagnostics)[0]?.durationMs).toBeGreaterThanOrEqual(0);
