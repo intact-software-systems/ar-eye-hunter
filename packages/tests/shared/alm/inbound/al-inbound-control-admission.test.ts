@@ -8,7 +8,8 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
-    type ALInboundAdmissionStore
+    type ALInboundAdmissionStore,
+    type ALInboundControlOwnerIndex
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
     decodeALInboundWorkEntry,
@@ -58,7 +59,15 @@ function createFixture() {
     };
 }
 
-async function seedPendingAcknowledgement(admissionStore: ALInboundAdmissionStore): Promise<void> {
+const TRACKED_CONTROL_OWNERS: ALInboundControlOwnerIndex = {
+    ambiguous: false,
+    values: [{ peerId: 'receiver', senderId: message.id.senderId }]
+};
+
+async function seedPendingAcknowledgement(
+    admissionStore: ALInboundAdmissionStore,
+    controlOwners: ALInboundControlOwnerIndex = TRACKED_CONTROL_OWNERS
+): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
     const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
     const nowMs = Date.now();
@@ -101,7 +110,7 @@ async function seedPendingAcknowledgement(admissionStore: ALInboundAdmissionStor
             }, {
                 kind: 'set-control-owners',
                 msgId: message.id.msgId,
-                value: { ambiguous: false, values: [{ peerId: 'receiver', senderId: message.id.senderId }] },
+                value: controlOwners,
                 expireAtTimestamp
             }],
             durableEffects: []
@@ -172,6 +181,21 @@ async function readRetainedWork(
     return page.entries.map((entry) => decodeALInboundWorkEntry(entry, admissionStore.namespace));
 }
 
+interface UnresolvedControlOwnerCase {
+    readonly named: string;
+    readonly controlOwners: ALInboundControlOwnerIndex;
+}
+
+/** Two stored owner indexes that resolve the acknowledging peer to no single original sender. */
+const UNRESOLVED_CONTROL_OWNERS: readonly UnresolvedControlOwnerCase[] = [
+    // An overflowed index retains no entries at all, so its ambiguity is all there is left to read.
+    { named: 'an overflowed correlation set', controlOwners: { ambiguous: true, values: [] } },
+    {
+        named: 'a peer tracked against several senders',
+        controlOwners: { ambiguous: false, values: [{ peerId: 'receiver', senderId: null }] }
+    }
+];
+
 describe('inbound control admission', () => {
     it('commits an acknowledgement from the peer that owes it', async () => {
         const { admissionStore, control } = createFixture();
@@ -198,6 +222,22 @@ describe('inbound control admission', () => {
         expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
         expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
     });
+
+    it.each(UNRESOLVED_CONTROL_OWNERS)(
+        'writes nothing for an acknowledgement whose owner index names $named',
+        async ({ controlOwners }) => {
+            const { admissionStore, workQueue, control } = createFixture();
+            await seedPendingAcknowledgement(admissionStore, controlOwners);
+
+            const result = await control.admit(createAcknowledgement('receiver'));
+
+            expect(result).toEqual({ kind: 'not-handled' });
+            const state = await admissionStore.readAcknowledgementState(message.id.msgId, message.id.senderId);
+            expect(state.acks).toEqual([]);
+            expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
+            expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
+        }
+    );
 
     it('retains admit-control work for a conflicting commit and replays it to completion', async () => {
         const { backend, write, admissionStore, workQueue, control } = createFixture();

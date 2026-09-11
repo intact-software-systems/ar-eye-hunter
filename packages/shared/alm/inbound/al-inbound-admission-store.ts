@@ -365,12 +365,8 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 
     readInboundMessage(reference: ALInboundMessageReference): Promise<ALMessage | undefined>;
 
-    readControlOwnerIndex(msgId: string): Promise<ALInboundControlOwnerIndex | undefined>;
-
     /** Absent when the owner index names no single original sender for the acknowledging peer. */
     readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined>;
-
-    readMessageOwnerRecord(msgId: string, senderId: string): Promise<ALInboundMessageOwner | undefined>;
 
     readAcknowledgementState(
         msgId: string,
@@ -443,7 +439,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readIncomingMessage(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead> {
-        const { msg, source, nowMs, prePlan } = input;
+        const { msg, prePlan } = input;
         return await this.backend.readWithin(async (session): Promise<ALInboundAdmissionRead> => {
             const messageOwner = await this.readStoredMessageOwner(session, msg.id.msgId, msg.id.senderId);
             const dedupExpiresAt = await session.read(this.toDedupKey(prePlan.dedupKey), decodeALAdmissionNumber);
@@ -452,41 +448,21 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             const deliveryProgress = await this.readDeliveryProgress(session, ordering.trackKey);
             const { pendingAck, acks } = await this.readStoredAcknowledgements(session, msg.id.msgId, msg.id.senderId);
             const controlOwners = await this.readStoredControlOwnerIndex(session, msg.id.msgId);
-            return {
+            return toALInboundAdmissionRead({
                 namespace: this.namespace,
-                msg,
-                fromPeerId: source.kind === 'trusted-server' ? msg.id.senderId : source.peerId,
-                source,
-                prePlan,
-                nowMs,
-                observations: {
-                    msgId: msg.id.msgId,
-                    senderId: msg.id.senderId,
-                    messageOwner,
-                    dedup: { key: prePlan.dedupKey, expiresAtTimestamp: dedupExpiresAt },
-                    ordering: ordering.trackKey === undefined
-                        ? undefined
-                        : { trackKey: ordering.trackKey, snapshot: ordering.snapshot, buffered: ordering.buffered },
-                    buffered: undefined,
-                    deliveryProgress,
-                    supersedence,
-                    pendingAck,
-                    acks,
-                    controlOwners
-                },
+                request: input,
+                messageOwner,
+                dedupExpiresAt,
+                ordering,
+                supersedence,
+                deliveryProgress,
                 pendingAck,
                 acks,
                 controlOwners,
-                supersedence,
-                dedupExpiresAt,
-                orderingTrackKey: ordering.trackKey,
-                orderingSnapshot: ordering.snapshot,
                 orderingTrackTtlMs: this.orderingTrackTtlMs,
                 supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
-                retention: this.retention,
-                admitted: false,
-                bufferedSnapshots: ordering.buffered
-            };
+                retention: this.retention
+            });
         });
     }
 
@@ -529,47 +505,26 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 namespace: this.namespace,
                 stored
             });
+            const { msgId, senderId } = snapshot.msg.id;
             const messageOwner = await this.readMessageOwner(session, snapshot.msg);
             const deliveryProgress = await this.readDeliveryProgress(session, trackKey);
-            const source = messageOwner.source;
-            const supersedence = await this.readSupersedenceState(
-                session,
-                snapshot.plan.supersedence.key,
-                snapshot.msg.id.msgId
-            );
-            const { pendingAck, acks } = await this.readStoredAcknowledgements(
-                session,
-                snapshot.msg.id.msgId,
-                snapshot.msg.id.senderId
-            );
-            const controlOwners = await this.readStoredControlOwnerIndex(session, snapshot.msg.id.msgId);
-            return {
-                kind: 'buffered-release',
-                orderingTrackTtlMs: this.orderingTrackTtlMs,
+            const supersedence = await this.readSupersedenceState(session, snapshot.plan.supersedence.key, msgId);
+            const { pendingAck, acks } = await this.readStoredAcknowledgements(session, msgId, senderId);
+            const controlOwners = await this.readStoredControlOwnerIndex(session, msgId);
+            return toALInboundBufferedReleaseReadDto({
                 namespace: this.namespace,
                 nowMs,
-                source,
-                observations: {
-                    msgId: snapshot.msg.id.msgId,
-                    senderId: snapshot.msg.id.senderId,
-                    messageOwner,
-                    dedup: undefined,
-                    ordering: undefined,
-                    buffered: snapshot,
-                    deliveryProgress,
-                    supersedence,
-                    pendingAck,
-                    acks,
-                    controlOwners
-                },
                 snapshot,
+                messageOwner,
+                deliveryProgress,
                 supersedence,
-                supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
                 pendingAck,
                 acks,
                 controlOwners,
+                orderingTrackTtlMs: this.orderingTrackTtlMs,
+                supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
                 retention: this.retention
-            };
+            });
         });
     }
 
@@ -677,10 +632,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             observed.msgId,
             observed.senderId
         );
-        const controlOwners = await transaction.read(
-            this.toControlOwnerIndexKey(observed.msgId),
-            decodeALInboundControlOwnerIndex
-        );
+        const controlOwners = await this.readStoredControlOwnerIndex(transaction, observed.msgId);
         const supersedence = await this.readSupersedenceState(transaction, observed.supersedence.key, observed.msgId);
         const dedup = observed.dedup === undefined ? undefined : {
             key: observed.dedup.key,
@@ -854,19 +806,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return owner;
     }
 
-    async readMessageOwnerRecord(msgId: string, senderId: string): Promise<ALInboundMessageOwner | undefined> {
-        return await this.backend.readWithin((session) => this.readStoredMessageOwner(session, msgId, senderId));
-    }
-
     async readAcknowledgementState(
         msgId: string,
         senderId: string
     ): Promise<Pick<ALInboundAdmissionObservations, 'pendingAck' | 'acks'>> {
         return await this.backend.readWithin((session) => this.readStoredAcknowledgements(session, msgId, senderId));
-    }
-
-    async readControlOwnerIndex(msgId: string): Promise<ALInboundControlOwnerIndex | undefined> {
-        return await this.backend.readWithin((session) => this.readStoredControlOwnerIndex(session, msgId));
     }
 
     async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {
@@ -960,6 +904,110 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private toBufferedTrackPrefix(trackKey: string): string {
         return `${this.namespace}:buffered:${trackKey}:`;
     }
+}
+
+interface ToALInboundAdmissionReadInput {
+    readonly namespace: string;
+    readonly request: ReadALInboundMessageInput;
+    readonly messageOwner: ALInboundMessageOwner | undefined;
+    readonly dedupExpiresAt: number | undefined;
+    readonly ordering: ProviderBackedALInboundAdmissionStore.OrderingRead;
+    readonly supersedence: ALInboundSupersedenceReadState;
+    readonly deliveryProgress: ALInboundAdmissionObservations['deliveryProgress'];
+    readonly pendingAck: ALPendingAckSnapshot | undefined;
+    readonly acks: readonly ALAckPayload[];
+    readonly controlOwners: ALInboundControlOwnerIndex | undefined;
+    readonly orderingTrackTtlMs: number;
+    readonly supersedenceTrackTtlMs: number;
+    readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+}
+
+function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALInboundAdmissionRead {
+    const { msg, source, nowMs, prePlan } = observed.request;
+    const { ordering, supersedence, dedupExpiresAt, pendingAck, acks, controlOwners } = observed;
+    return {
+        namespace: observed.namespace,
+        msg,
+        fromPeerId: source.kind === 'trusted-server' ? msg.id.senderId : source.peerId,
+        source,
+        prePlan,
+        nowMs,
+        observations: {
+            msgId: msg.id.msgId,
+            senderId: msg.id.senderId,
+            messageOwner: observed.messageOwner,
+            dedup: { key: prePlan.dedupKey, expiresAtTimestamp: dedupExpiresAt },
+            ordering: ordering.trackKey === undefined
+                ? undefined
+                : { trackKey: ordering.trackKey, snapshot: ordering.snapshot, buffered: ordering.buffered },
+            buffered: undefined,
+            deliveryProgress: observed.deliveryProgress,
+            supersedence,
+            pendingAck,
+            acks,
+            controlOwners
+        },
+        pendingAck,
+        acks,
+        controlOwners,
+        supersedence,
+        dedupExpiresAt,
+        orderingTrackKey: ordering.trackKey,
+        orderingSnapshot: ordering.snapshot,
+        orderingTrackTtlMs: observed.orderingTrackTtlMs,
+        supersedenceTrackTtlMs: observed.supersedenceTrackTtlMs,
+        retention: observed.retention,
+        admitted: false,
+        bufferedSnapshots: ordering.buffered
+    };
+}
+
+interface ToALInboundBufferedReleaseReadDtoInput {
+    readonly namespace: string;
+    readonly nowMs: number;
+    readonly snapshot: ALInboundResolvedDeliverySnapshot;
+    readonly messageOwner: ALInboundMessageOwner;
+    readonly deliveryProgress: ALInboundAdmissionObservations['deliveryProgress'];
+    readonly supersedence: ALInboundSupersedenceReadState;
+    readonly pendingAck: ALPendingAckSnapshot | undefined;
+    readonly acks: readonly ALAckPayload[];
+    readonly controlOwners: ALInboundControlOwnerIndex | undefined;
+    readonly orderingTrackTtlMs: number;
+    readonly supersedenceTrackTtlMs: number;
+    readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+}
+
+function toALInboundBufferedReleaseReadDto(
+    observed: ToALInboundBufferedReleaseReadDtoInput
+): ALInboundBufferedReleaseReadDto {
+    const { snapshot, messageOwner, supersedence, pendingAck, acks, controlOwners } = observed;
+    return {
+        kind: 'buffered-release',
+        orderingTrackTtlMs: observed.orderingTrackTtlMs,
+        namespace: observed.namespace,
+        nowMs: observed.nowMs,
+        source: messageOwner.source,
+        observations: {
+            msgId: snapshot.msg.id.msgId,
+            senderId: snapshot.msg.id.senderId,
+            messageOwner,
+            dedup: undefined,
+            ordering: undefined,
+            buffered: snapshot,
+            deliveryProgress: observed.deliveryProgress,
+            supersedence,
+            pendingAck,
+            acks,
+            controlOwners
+        },
+        snapshot,
+        supersedence,
+        supersedenceTrackTtlMs: observed.supersedenceTrackTtlMs,
+        pendingAck,
+        acks,
+        controlOwners,
+        retention: observed.retention
+    };
 }
 
 /**
