@@ -135,7 +135,7 @@ the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
-  `commit-phases`, or `effect-drain`
+  `commit-phases`, `effect-drain`, or `readiness-probe`
 - `durationMs`: how long that phase took, on every kind but `commit-phases`
 - `origin`: which call path asked for the commit — `send` for a caller's own
   `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
@@ -167,6 +167,24 @@ every session the page opens. The event's `data` is the event itself:
   store-level counter before and after its own chain and reports the window
   delta — a concurrent commit on the same store (another sender, or the same
   sender's drain) lands in that window and is counted too
+
+- `readiness-probe` carries `workerId`, `cause` and `readyAtMs`: one event for
+  every storage read an owner spends deciding whether it has work, which is the
+  read the page's `work-page` and `work-reserve` counters charge. `cause` is why
+  the owner had no remembered answer to give -- `own-commit`, `batch` and
+  `retained-release` are this owner's own progress, `external-wake` is the
+  announcement another writer made to every owner on the engine, `age-bound` is
+  the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and `no-memory` is an owner
+  that has not probed yet. `readyAtMs` is the answer: an epoch-ms time work is
+  next due, or `none` for no work at all. A probe is not a batch, so it is
+  outside the empty-batch suppression the drains carry; the inbound rotation
+  reports none, because its probe reads storage every engine round by
+  construction and the count would drown the sink
+
+Together they separate a page that reads storage more often because it is less
+blocked from one that reads it more often because more wakes reach more owners:
+the same probe count is benign under `own-commit` and a fan-out regression under
+`external-wake`.
 
 This is the evidence a `deadline-expiry` conformance run uses to attribute a
 slow admission (the serialized IndexedDB chain a typed send commits through)

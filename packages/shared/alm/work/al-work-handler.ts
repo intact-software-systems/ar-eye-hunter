@@ -40,8 +40,10 @@ export interface ALWorkHandlerDependencies {
         pageSize: number
     ) => Promise<ALWorkReadySelection>;
     readonly runClaim: (claim: ALWorkClaim) => Promise<ALWorkAttemptResult>;
-    readonly diagnostics: ((event: ALWorkBatchDiagnostics) => void) | undefined;
+    readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
 }
+
+export type ALWorkDiagnostics = ALWorkBatchDiagnostics | ALWorkReadinessProbeDiagnostics;
 
 export interface ALWorkBatchDiagnostics {
     readonly kind: 'work-batch';
@@ -51,6 +53,26 @@ export interface ALWorkBatchDiagnostics {
     readonly completedCount: number;
     readonly rescheduledCount: number;
     readonly rejectedCount: number;
+}
+
+/**
+ * Why a probe had no remembered answer to give: one of the four invalidations, the memory reaching
+ * its bound, or no memory ever taken. Every storage read this owner spends on readiness has one.
+ */
+export type ALWorkReadinessProbeCause =
+    | 'no-memory'
+    | 'external-wake'
+    | 'own-commit'
+    | 'batch'
+    | 'retained-release'
+    | 'age-bound';
+
+export interface ALWorkReadinessProbeDiagnostics {
+    readonly kind: 'readiness-probe';
+    readonly workerId: string;
+    readonly cause: ALWorkReadinessProbeCause;
+    /** What storage answered: when work is next due, or `none` for no work at all. */
+    readonly readyAtMs: number | 'none';
 }
 
 /**
@@ -89,6 +111,8 @@ export class ALWorkHandler {
     private readiness: ALWorkReadinessMemory | undefined;
     /** Bumped by every invalidation, so a probe that started before one cannot store its stale answer. */
     private readinessGeneration = 0;
+    /** What emptied the memory the next probe replaces; `no-memory` until the first invalidation. */
+    private readinessInvalidation: ALWorkReadinessProbeCause = 'no-memory';
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
     private readonly shutdown = new AbortController();
@@ -108,7 +132,10 @@ export class ALWorkHandler {
         // engine, because the writer cannot say which of them the row belongs to. Only those wakes
         // do: the owners' own progress reaches `wake`, which reschedules and announces nothing, so
         // one owner running a batch no longer costs every other owner its memory.
-        dependencies.queueEngine.includeWakeListener(dependencies.workerId, () => this.forgetReadiness());
+        dependencies.queueEngine.includeWakeListener(
+            dependencies.workerId,
+            () => this.forgetReadiness('external-wake')
+        );
     }
 
     async ready(): Promise<void> {
@@ -137,7 +164,7 @@ export class ALWorkHandler {
      * made outside `runBatch`.
      */
     committed(): void {
-        this.forgetReadiness();
+        this.forgetReadiness('own-commit');
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {
             void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
@@ -170,11 +197,18 @@ export class ALWorkHandler {
         ) {
             return remembered.readyAtMs;
         }
+        const cause = remembered === undefined ? this.readinessInvalidation : 'age-bound';
         const generation = this.readinessGeneration;
         const readyAtMs = await this.dependencies.readNextReadyAtMs(this.dependencies.port);
         if (generation === this.readinessGeneration) {
             this.readiness = { readyAtMs, observedAtMs: nowMs };
         }
+        this.dependencies.diagnostics?.({
+            kind: 'readiness-probe',
+            workerId: this.dependencies.workerId,
+            cause,
+            readyAtMs: readyAtMs ?? 'none'
+        });
         return readyAtMs;
     }
 
@@ -185,7 +219,14 @@ export class ALWorkHandler {
      * storage no longer supports. The three ways it does are `committed()`, a retained claim's
      * settlement, and the engine wake every writer that is not this owner announces its row with.
      */
-    private forgetReadiness(): void {
+    private forgetReadiness(
+        cause: 'external-wake' | 'own-commit' | 'batch' | 'retained-release'
+    ): void {
+        if (this.readiness !== undefined) {
+            // The one that emptied a standing memory owns the probe that replaces it: a commit runs
+            // a batch, and that batch's own invalidation must not take the credit from the commit.
+            this.readinessInvalidation = cause;
+        }
         this.readiness = undefined;
         this.readinessGeneration += 1;
     }
@@ -204,7 +245,7 @@ export class ALWorkHandler {
             this.reportBatchFailure(toError(error));
         }).finally(() => {
             this.batch = undefined;
-            this.forgetReadiness();
+            this.forgetReadiness('batch');
             this.runPendingCommit();
         });
         return this.batch;
@@ -293,7 +334,7 @@ export class ALWorkHandler {
                 .finally(() => {
                     // This release lands after its batch ended, so it is the one row change no batch
                     // boundary covers: the remembered answer still describes the row as reserved.
-                    this.forgetReadiness();
+                    this.forgetReadiness('retained-release');
                     this.dependencies.queueEngine.wake();
                 });
             return;

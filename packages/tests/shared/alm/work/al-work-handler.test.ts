@@ -1,6 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import type { ALWorkBatchDiagnostics, ALWorkReadySelection } from '@shared/alm/work/al-work-handler.ts';
+import type {
+    ALWorkBatchDiagnostics,
+    ALWorkDiagnostics,
+    ALWorkReadinessProbeDiagnostics,
+    ALWorkReadySelection
+} from '@shared/alm/work/al-work-handler.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
@@ -128,7 +133,7 @@ describe('ALWorkHandler', () => {
 
     it('finalizes a seeded exhausted claim as non-retryable and counts it in diagnostics', async () => {
         const released: string[] = [];
-        const diagnosticsEvents: ALWorkBatchDiagnostics[] = [];
+        const diagnosticsEvents: ALWorkDiagnostics[] = [];
         const port = fakePort({
             claims: [],
             finalizeExhausted: ['exhausted-1'],
@@ -155,8 +160,9 @@ describe('ALWorkHandler', () => {
         await handler.ready();
 
         expect(released).toEqual(['exhausted-1:non-retryable']);
-        expect(diagnosticsEvents).toHaveLength(1);
-        expect(diagnosticsEvents[0]).toMatchObject({
+        const batches = diagnosticsEvents.filter((event): event is ALWorkBatchDiagnostics => event.kind === 'work-batch');
+        expect(batches).toHaveLength(1);
+        expect(batches[0]).toMatchObject({
             claimedCount: 0,
             completedCount: 0,
             rescheduledCount: 0,
@@ -597,7 +603,63 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
+    it('names what emptied the memory every probe replaces', async () => {
+        const probes: ALWorkReadinessProbeDiagnostics[] = [];
+        const pending: ALWorkClaim[] = [];
+        let nowMs = 10_000;
+        let nextReadyAtMs: number | undefined;
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], onRelease: () => {} }),
+            claim: async ({ maxCount }) => pending.splice(0, maxCount)
+        };
+        const engine = createEngine();
+        const handler = new ALWorkHandler({
+            workerId: 'probe-cause-worker',
+            port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => nextReadyAtMs,
+            selectReady: async (p, size) => ({
+                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
+                nextReadyAtMs: undefined
+            }),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: (event) => collectProbe(probes, event)
+        });
+
+        // The bootstrap batch empties nothing: no probe has taken a memory for it to invalidate.
+        await handler.ready();
+        await engine.executeOnce();
+
+        // A commit runs a batch, and that batch's own invalidation must not take the commit's credit.
+        pending.push(toFakeALWorkClaim('committed-row'));
+        handler.committed();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await engine.executeOnce();
+
+        // A row nothing can claim yet: the probe reports the time it comes due, not that there is none.
+        nextReadyAtMs = 15_000;
+        engine.wakeAfterExternalWrite();
+        await engine.executeOnce();
+
+        nowMs += AL_WORK_READINESS_MEMORY_MS;
+        await engine.executeOnce();
+
+        expect(probes).toEqual([
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'no-memory', readyAtMs: 'none' },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'own-commit', readyAtMs: 'none' },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'external-wake', readyAtMs: 15_000 },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'age-bound', readyAtMs: 15_000 }
+        ]);
+
+        handler.dispose();
+    });
+
     it('re-probes storage when a retained claim settles after its own batch ended', async () => {
+        const probes: ALWorkReadinessProbeDiagnostics[] = [];
         const released: string[] = [];
         const pending: ALWorkClaim[] = [toFakeALWorkClaim('retained-row')];
         let probeCount = 0;
@@ -627,7 +689,7 @@ describe('ALWorkHandler', () => {
                 nextReadyAtMs: undefined
             }),
             runClaim: async () => ({ status: 'retained', settled }),
-            diagnostics: undefined
+            diagnostics: (event) => collectProbe(probes, event)
         });
 
         await handler.ready();
@@ -645,6 +707,8 @@ describe('ALWorkHandler', () => {
 
         await engine.executeOnce();
         expect(probeCount).toBe(2);
+        // The release, not the batch that ended long before it, is what emptied the standing memory.
+        expect(probes.map((probe) => probe.cause)).toEqual(['no-memory', 'retained-release']);
 
         handler.dispose();
     });
@@ -893,6 +957,12 @@ describe('ALWorkHandler', () => {
         }
     });
 });
+
+function collectProbe(probes: ALWorkReadinessProbeDiagnostics[], event: ALWorkDiagnostics): void {
+    if (event.kind === 'readiness-probe') {
+        probes.push(event);
+    }
+}
 
 function createEngine(): InboxOutboxEngine {
     return new InboxOutboxEngine();

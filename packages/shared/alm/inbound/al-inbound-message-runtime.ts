@@ -9,7 +9,8 @@ import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
-    type ALWorkBatchDiagnostics
+    type ALWorkBatchDiagnostics,
+    type ALWorkDiagnostics
 } from '../work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
@@ -146,7 +147,7 @@ export class ALInboundMessageRuntime {
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
             runClaim: (claim) => this.runInboundClaim(claim),
-            diagnostics: (event) => this.recordWorkBatch(event)
+            diagnostics: (event) => this.recordWorkDiagnostics(event)
         });
         if (dependencies.ownsQueueEngine) {
             void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
@@ -190,6 +191,17 @@ export class ALInboundMessageRuntime {
      * of relayed events per session for no evidence -- enough, measured, to move the races this sink
      * exists to explain.
      */
+    /**
+     * The rotation's probe reads storage every engine round by construction, so relaying one event
+     * per probe would cost this page what the empty batches below already cost it. The outbound
+     * owners, whose probes are the invalidations they can name, report theirs.
+     */
+    private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
+        if (event.kind === 'work-batch') {
+            this.recordWorkBatch(event);
+        }
+    }
+
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
         if (event.claimedCount === 0 && event.rejectedCount === 0) {
             return;

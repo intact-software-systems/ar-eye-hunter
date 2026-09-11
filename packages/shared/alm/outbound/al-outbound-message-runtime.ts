@@ -10,6 +10,8 @@ import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
     type ALWorkAttemptResult,
+    type ALWorkDiagnostics,
+    type ALWorkReadinessProbeCause,
     type ALWorkReadySelection
 } from '../work/al-work-handler.ts';
 import {
@@ -165,6 +167,14 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         completedCount: number;
         rescheduledCount: number;
         rejectedCount: number;
+    }>
+    | Readonly<{
+        kind: 'readiness-probe';
+        workerId: string;
+        /** Which invalidation emptied this owner's readiness memory, or that it had none yet. */
+        cause: ALWorkReadinessProbeCause;
+        /** The answer storage gave: when work is next due, or `none` for no work at all. */
+        readyAtMs: number | 'none';
     }>;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
@@ -318,16 +328,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
-            diagnostics: (event) =>
-                this.dependencies.diagnostics?.({
-                    kind: 'effect-drain',
-                    workerId: event.workerId,
-                    durationMs: event.durationMs,
-                    claimedCount: event.claimedCount,
-                    completedCount: event.completedCount,
-                    rescheduledCount: event.rescheduledCount,
-                    rejectedCount: event.rejectedCount
-                })
+            diagnostics: (event) => this.recordWorkDiagnostics(event)
         });
         this.effects = new ALOutboundMessageEffects({
             runtime: dependencies,
@@ -526,6 +527,32 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 });
                 return { status: 'completed' };
         }
+    }
+
+    /**
+     * A probe is reported as it happens rather than folded into the batch: a batch that runs is one
+     * of six reasons a probe read storage, and only the reason separates an owner re-reading because
+     * it committed from one re-reading because another writer woke every owner on the engine.
+     */
+    private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
+        if (event.kind === 'readiness-probe') {
+            this.dependencies.diagnostics?.({
+                kind: 'readiness-probe',
+                workerId: event.workerId,
+                cause: event.cause,
+                readyAtMs: event.readyAtMs
+            });
+            return;
+        }
+        this.dependencies.diagnostics?.({
+            kind: 'effect-drain',
+            workerId: event.workerId,
+            durationMs: event.durationMs,
+            claimedCount: event.claimedCount,
+            completedCount: event.completedCount,
+            rescheduledCount: event.rescheduledCount,
+            rejectedCount: event.rejectedCount
+        });
     }
 
     private readNowMs(): number {
