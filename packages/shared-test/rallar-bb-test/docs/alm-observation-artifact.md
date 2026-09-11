@@ -76,6 +76,11 @@ A red cell is a regression only when its runner regime matches a green baseline'
    that is too few commit phases or a median inside the band between the thresholds. Treat the cell
    as unattributed and re-run.
 
+The band was established on the `rtc` cell. The `ws` and `rtc-with-ws-fallback` cells carry only
+4–13 opening-window samples per run, a weaker discriminator than `rtc`'s. Take a run's `rtc` regime
+as the runner's verdict, and treat a `normal` regime on a non-`rtc` cell as unattributed rather than
+a second confirmation.
+
 Seven hosted observation runs on 2026-09-10/11 put the boundary where the two thresholds sit: every
 head whose rtc cell opened at or below 24 ms per operation went 6 ready / 0 timeout, and every head
 at or above 36 ms went 0 ready / 6 timeout — including a same-day re-execution of a green head,
