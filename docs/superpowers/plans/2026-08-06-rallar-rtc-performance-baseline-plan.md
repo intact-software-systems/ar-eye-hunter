@@ -64,20 +64,30 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Updated:** 2026-09-11
 
-**Status:** `origin/main` is
-`48717845a287ab2d009b36639d2e2c6abe9911aa`. PR #560 merged the verified
-failed run-34524003896 observation unchanged, and PR #561 merged its bounded
-failure-evidence tooling correction. Publish run 34563664803 then observed that
-moving-main snapshot: source, tooling, capture, archive verification, and
-publication passed; all six default attempts passed; the first all-scenarios
-warmup failed when agent B's `messages.rtc` multicast send returned
-`RALLAR_BB_RTC_NO_ROUTE` with no entries; later attempts did not run and no
-repeat is required. PR #562 awaits human review to merge that verified failed
-ZIP/index row unchanged. An exact-source local default plus all-scenarios run
-passed 2/2 without retry, so the observation does not authorize an RTC product,
-routing, retry, or timeout change. The actionable gap is orchestration: receipt
-observations start only after a successful send and therefore cannot retain
-their existing bounded diagnostics when the sender command fails.
+**Status:** Last reconciled with moving `origin/main` at
+`f8db937626a814aa29c18332a4eea6f77993aa01`, which includes the ALM F2
+ownership/storage refactor in PR #559. PRs #562 through #565 are merged. The
+repository contains fourteen archived RTC-B06 primaries; all fourteen are
+failed evidence with `acceptedMetrics: false`, and none required a repeat.
+Latest E3-memory run 34573688470 observed source
+`bf67bacb928c5b5188ff3c65086eabea02918fa4`: all six default attempts passed,
+then the first all-scenarios warmup failed when sender B's `messages.rtc`
+**broadcast** returned `RALLAR_BB_RTC_NO_ROUTE`. The archive proves that the
+send saw no usable overlay context while B, A, and C each reported two settled
+and ready peers, four open lanes, and two connected peer connections. It does
+not prove which cache lifecycle event caused the context to be absent.
+
+PR #563 successfully retained the previously missing sender-side and receiver
+diagnostic envelopes. Their archive projection still loses the failed send's
+status, reason, and message identity because it reads success-shaped
+`result.value`, while the real failed command carries those facts under bounded
+`error.details`. Static production tracing also found a separate correctness
+gap: `WebRtcOverlayMulticastManager` converts every absent, removed, or
+wrong-scope overlay observation into immediate `no-route`, bypassing the
+existing durable ALM/QueueBox readiness lifecycle even when current room
+authority permits the locally originated message. The approval-gated design in
+Task 10 corrects both facts in one correction-and-proof PR; no production or
+tooling implementation is authorized merely by this plan update.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -566,18 +576,20 @@ was ready.
 
 ### Current execution horizon
 
-| Order | Slice                                                 | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Merge PR #562 unchanged after human review            | Merge the verified failed run-34563664803 ZIP/index row unchanged. The failed primary contributes no accepted metric and requires no repeat.                                                                                                                                                                                                                                                                             |
-| 2     | Complete and merge sender-failure orchestration proof | Start the existing bounded receiver observations before the sender command, settle both sides, preserve sender-failure precedence, and retain receipt-failure precedence when send succeeds. Complete focused, type/style/structure, independent-review, local/browser, and branch gates. Add no diagnostic contract, RTC product/routing/retry/timeout change, migration, compatibility implementation, or legacy path. |
+| Order | Slice                                        | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | One approval-gated correction-and-proof PR   | Correct bounded failed-result projection, make diagnostic mode exercise default/all-scenarios/retention on three isolated same-head runners, and defer only an authorized durable room broadcast/multicast during an observed overlay gap through the existing ALM/QueueBox owner. Complete TDD, touched-file closure, focused/type/style/structure/build gates, per-task reviews, one whole-branch review, Branch Release Gate, and three retry-free exact-head diagnostic results. Do not merge intermediate hypotheses. |
+| 2     | Fresh RTC-B06 observation from moving `main` | After the correction PR merges, dispatch `RTC-B06 Performance Observation` in `publish` mode from then-current `main`. Preserve a failed primary unchanged; accept only a complete valid primary and any controller-required repeat.                                                                                                                                                                                                                                                                                       |
 
-After this two-slice horizon is complete, manually dispatch
-`RTC-B06 Performance Observation` in `publish` mode from the then-current
-moving `main`. Preserve and diagnose a failed primary; a valid primary plus any
-controller-required repeat unlocks Task 12, which then chooses the B05
-observation window, revisits whether the candidate call path requires E4-pg,
-and reconciles unlike-environment evidence before ranking at most one
-candidate—or `none`.
+The first slice remains inactive until the human explicitly approves the Task
+10 correction design below. Approval applies to that behavioral boundary, not
+to a permanently pinned `main`: before implementation, reconcile the plan with
+the then-current owners and repair a real conflict. `BEHIND` alone is not a
+reason to refresh the branch or discard already valid proof.
+
+After the second slice, Task 12 chooses the B05 observation window, revisits
+whether the candidate call path requires E4-pg, and reconciles
+unlike-environment evidence before ranking at most one candidate—or `none`.
 
 If a later published B06 run fails, retain it as failed evidence and diagnose
 the first failed attempt from that run. Fix only the evidenced tooling or
@@ -4363,28 +4375,407 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains 12 failed B06 primaries archived on `main` and no
-accepted metrics. PR #560 merged the verified run-34524003896 failure unchanged,
-and PR #561 merged the bounded, payload-free failure-evidence tooling
-correction. Publish run 34563664803 observed
-`48717845a287ab2d009b36639d2e2c6abe9911aa`: source, tooling, capture, archive
-verification, and publication passed; all six default attempts passed; then the
-first all-scenarios warmup failed when agent B's `messages.rtc` multicast send
-returned `RALLAR_BB_RTC_NO_ROUTE` with no entries. Later attempts did not run,
-and no repeat is required. PR #562 awaits human review to merge that verified
-failed ZIP and index row unchanged.
+Current evidence contains fourteen failed B06 primaries archived on `main` and
+no accepted metrics. PRs #562, #563, #564, and #565 are merged. PR #563 starts
+the existing bounded receiver observations before the sender command, settles
+both sides, and preserves sender-versus-receipt failure precedence; run
+34573688470 proves that this orchestration correction now retains
+`messageFailures` when send itself fails.
 
-The finalized attempt retained the generic failed control result but no
-`messageFailures`. The delivery owner starts receiver receipt observations only
-after `sendMatrixPayload` succeeds, so a sender-command rejection bypasses the
-existing bounded, payload-free first-case diagnostic capture. An exact-source
-local default plus all-scenarios run passed 2/2 without retry, so the failed
-observation does not authorize an RTC behavior, routing, retry, or timeout
-change. The current correction starts all receiver observations before send,
-settles both sides, preserves the sender rejection when both fail, and preserves
-the temporally first receipt rejection when send succeeds. It reuses the
-existing diagnostic path and adds no diagnostic contract, sidecar, retry,
-delay, timeout, migration, compatibility implementation, or legacy path.
+Run 34573688470 observed source
+`bf67bacb928c5b5188ff3c65086eabea02918fa4`. Source, tooling, capture, archive
+verification, and publication passed. All six default attempts passed; the
+first all-scenarios warmup then failed on sender B's `messages.rtc`
+**broadcast**, not multicast. The send command returned
+`RALLAR_BB_RTC_NO_ROUTE`; its message reason says that RTC skipped the outbound
+message without overlay context. Later attempts did not run, no repeat was
+required, and PR #564 merged the failed ZIP/index row unchanged. The associated
+B05 run 34576994213 is separately archived by PR #565 and cannot substitute for
+B06.
+
+The E3 archive proves all of the following:
+
+- the failure was the B-originated room broadcast;
+- the message used a current scoped `GroupRef`, default at-least-once delivery,
+  and the original 30-second deadline;
+- at failure capture, B, A, and C each reported two settled peers, two ready
+  peers, four open lanes, zero reconnectable lanes, two connected peer
+  connections, and zero relays; and
+- the current manager returned no-route because it observed no usable overlay
+  context at the exact send decision.
+
+The archive does **not** prove which preceding publication, eviction, removal,
+or cache-adoption event made that context absent. “A transient accepted-overlay
+cache gap during lifecycle churn” remains a bounded hypothesis until a
+deterministic product test reproduces the owner transition. The earlier local
+2/2 pass is non-reproduction, not evidence that no product correction is
+required.
+
+The retained diagnostic projection has one independently proven tooling defect.
+The failed command's bounded status, reason, message identity, and entry facts
+are under `result.error.details`; `summarizeLiveRtcSendResult`,
+`messageIdFromSendResult`, and `toFailedControlResult` read only
+`result.result.value`. Consequently, `failedResults` records null status/reason
+and `messageFailures.sendResult` records `missing`, even though the producer
+returned the facts. Correct this representation/redaction boundary before using
+another failed run to diagnose product behavior.
+
+#### Approval-gated correction design
+
+This subsection is a proposed implementation contract, not implementation
+authorization. Do not change product, test tooling, or workflow behavior until
+the human explicitly approves it. Approval authorizes one continuing
+correction-and-proof PR on the then-current repository owners. It does not pin
+`main`; reconcile real owner/interface conflicts before work, and do not refresh
+solely because the branch is `BEHIND`.
+
+The intended outcome is narrow:
+
+1. preserve bounded failed-send facts without retaining arbitrary command
+   details or payloads; and
+2. when a locally originated, scoped, durable room broadcast or multicast is
+   authorized by current room state, names a current active accepted layout,
+   and lacks only that accepted overlay's cache value, let the existing
+   ALM/QueueBox owner retain it until current topology permits dispatch or the
+   original lifecycle terminates it. This new admission applies only when a
+   broadcast has no immutable `recipientPeerIds`; authoritative fixed-audience
+   broadcasts retain their current immediate outcome.
+
+The correction adds no lock, queue, retry library, scheduler, polling owner,
+pre-send readiness facade, public status, public export, persisted shape,
+protocol version, migration, compatibility overload, or legacy branch. It does
+not reconstruct routes from peer health. Connected data channels establish
+transport capability, not authoritative room topology.
+
+##### Options considered
+
+| Option                                                                | Decision                                    | Reason                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing ALM/QueueBox plus fresh RTC authority reads                  | **Selected**                                | Reuses the current owner of durable admission, reservation, readiness, retry, expiry, restart recovery, and deduplication. RTC retains only topology classification and transport planning.                                                  |
+| Wait in `messages.rtc` or the browser readiness facade before enqueue | Rejected                                    | A pre-send observation can become stale immediately, duplicates lifecycle ownership, and cannot supply durable restart recovery.                                                                                                             |
+| Queue every `!context` result                                         | Rejected                                    | Conflates observed absence with missing room state, expired/foreign authority, explicit removal, and empty audience; it can preserve work that must be rejected.                                                                             |
+| Synthesize an overlay from healthy lanes                              | Rejected                                    | Peer health does not authorize a room edge, selected layout, generation, or scoped audience.                                                                                                                                                 |
+| Add a manager-local pending map, timer, lock, or retry loop           | Rejected                                    | Duplicates QueueBox, increases memory/storage coordination, and creates a second failure/recovery owner.                                                                                                                                     |
+| Immediately use WS whenever RTC topology is absent                    | Rejected for accepted durable RTC ownership | Existing `rtc-with-ws-fallback` falls back only before RTC accepts ownership (`no-route` or `circuit-open`). Once RTC returns `enqueued`, a second carrier could duplicate delivery. Fallback remains unchanged for immediate RTC rejection. |
+
+##### Ownership and file shape
+
+- `WebRtcOverlayMulticastManager` remains the public RTC lifecycle, routing
+  observation, live authority, multicaster, and dispatch owner. Preserve its
+  class/namespace and package export.
+- `computeRtcRoomSnapshotAdmission` remains the canonical room/session/member
+  and topology security decision. Do not copy those rules into ALM or browser
+  readiness code.
+- Browser composition already gives the manager
+  `readableAcceptedOverlayCache()`, not the planned/publication cache. Treat
+  that accepted-only ownership as a classification dependency: direct manager
+  tests must pair any cached overlay with the snapshot's exact accepted layout
+  identity and must not manufacture a planned overlay as an accepted route.
+- `ALOutboundMessageRuntime`, `ALOutboundDispatchAdmission`, `ALWorkHandler`,
+  and QueueBox retain durable storage, claim, readiness reschedule, expiry,
+  restart, supersedence, and settlement ownership. Generic ALM remains unaware
+  of RTC overlays.
+- Extract the manager's pure QoS-to-ACK/retry/repair/supersedence translations
+  into `packages/shared/multicast/to-rtc-outbound-tracking.ts`. Extract native
+  channel submission, queued settlement, and lease-versus-message-deadline
+  conversion into
+  `packages/shared/multicast/write-rtc-channel-message.ts`. Keep cancellation,
+  current room/edge authority, target selection, and channel-readiness checks
+  visibly in the manager before native submission. These are real translation
+  and side-effect boundaries, not pass-through facades.
+- Extract the pure failed command/message/NACK projection cluster from
+  `tests/playwright/rallar-black-box/live-rtc-control-client.ts` into
+  `tests/playwright/rallar-black-box/live-rtc-failure-diagnostics.ts`.
+  `LiveRtcControlClient` retains HTTP command execution, polling deadlines,
+  capture scheduling, first-failure retention, and artifact writes. Keep the
+  canonical `LiveRtcControlClient.Result` and existing evidence contracts;
+  type-only imports must not create a runtime cycle or renamed structural type.
+- Do not move the projection into `live-rtc-performance-evidence.ts`; that file
+  already owns baseline identity, performance, and retention interpretation.
+  Do not reorganize all nine `live-*` siblings merely because the directory
+  reports a prefix cluster.
+
+Current-main style facts make these separations part of touched-file closure,
+not optional cleanup: `web-rtc-overlay-multicast-manager.ts` has cognitive load
+100 (warning tier), while `live-rtc-control-client.ts` has cognitive load 113
+(separation-review tier). Neither breaches its applicable line backstop. Review
+both complete files, remove the private `#waitForRtcReadiness` pass-through by
+placing its body in the required public `waitForPeerReadiness` owner, and retain
+only boundaries that reduce real decision or side-effect indirection.
+
+##### RTC classification and outcomes
+
+Read the selected overlay, exact scoped group snapshot, connection observation,
+and clock once for each plan. Preserve explicit-overlay precedence: an extant
+explicit overlay that is removed or belongs to another scope is a denial, not
+permission to fall through to another cached overlay.
+
+| Observation at initial enqueue                                                                                                                                                                                                                                                                                                                                                                                                                                   | Required result                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Exact active accepted server overlay and current authority                                                                                                                                                                                                                                                                                                                                                                                                       | Use normal RTC planning and current recipients.                                                                                 |
+| Accepted-overlay cache value absent; locally originated scoped non-unicast message; room, sender, self session, members, and deadline current; group transport `flowing`; `acceptedLayoutIdentity` active and at the current causal presence revision; policy permits durable outbox; at least one potential non-self audience member remains after the existing exclusion, visited-peer, forwarding-hint, and fanout rules; broadcast has no `recipientPeerIds` | Persist the normalized canonical message as one QueueBox `NEW` entry with zero prepared transport copies and return `enqueued`. |
+| Same observed absence with volatile/best-effort policy                                                                                                                                                                                                                                                                                                                                                                                                           | Preserve immediate `no-route`; write no durable entry.                                                                          |
+| Missing/unknown room authority or initial pending session/member authority                                                                                                                                                                                                                                                                                                                                                                                       | Preserve immediate `no-route`; an unknown authority observation is not authorization to retain new work.                        |
+| Inactive/expired/wrong-scope room, halted transport, no current active accepted layout, removed/wrong-scope selected overlay, expired message, nonlocal origin, or—while the accepted-cache value is absent—broadcast with immutable `recipientPeerIds`                                                                                                                                                                                                          | Preserve immediate rejection/no-route and write no durable entry.                                                               |
+| Present topology but self-only, empty, wholly excluded, hinted-away, visited, or zero-fanout audience                                                                                                                                                                                                                                                                                                                                                            | Preserve normal no-route semantics; never relabel a known-empty route as topology readiness.                                    |
+
+Use the existing policy planner to evaluate a potential authoritative member
+set rather than freezing a speculative route or duplicating its implemented
+exclusion, visited-peer, forwarding-hint, and fanout rules. Potential
+recipients prove only that waiting can be useful. The current planner does not
+apply broadcast `recipientPeerIds`, so fixed-audience broadcasts are expressly
+ineligible for this new zero-copy admission instead of being widened by an
+invented interpretation. The actual prepared recipients are recomputed from
+the then-current accepted overlay when eligible queued work becomes
+dispatchable.
+
+| Observation while draining already-owned work                                                                                                                                               | Required result                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Room/session/member authority is temporarily pending, or the room remains authorized with flowing transport and a current active accepted identity while its accepted-cache value is absent | Throw the existing `NotReadyException` with the existing RTC readiness delay. QueueBox refunds only that readiness reservation, preserves the original deadline, and retries without charging a transport-attempt budget.          |
+| Current authority is explicitly inactive, expired, removed, foreign, halted, lacks a current active accepted identity, or is otherwise unauthorized                                         | Return a terminal skipped plan so the existing `dequeue-message` effect completes. Restoration must never revive that old logical message. Do not phrase this terminal reason so generic ALM maps it back to retryable `no-route`. |
+| Exact active topology is available                                                                                                                                                          | Replan current recipients, commit current prepared effects, and continue through the existing pre-send authority and native settlement boundaries.                                                                                 |
+| Message is expired or superseded                                                                                                                                                            | Complete through current ALM behavior; never refresh TTL, identity, ordering, or supersedence state.                                                                                                                               |
+
+The current `readPendingAdmissionAuthority` loop authorizes an empty prepared
+list vacuously. Reauthorize the logical message once before per-edge checks, so
+an optimistic initial-admission conflict cannot commit a retained zero-copy
+plan after authority has been revoked. Then validate every prepared edge as it
+does today.
+
+The zero-copy admission plan must capture the complete normalized policy on its
+first admission: persistence, ACK, retry, repair, and supersedence. For
+ACK-enabled policy, capture ACK tracking with an empty expected-peer list.
+Current ALM creates ACK timeout work only after prepared recipients exist and
+replaces that empty set with the recovery plan's current recipients. Omitting a
+field is not harmless: captured policy intentionally overrides later replans.
+
+Do not add an in-memory wake list or overlay subscription in the first
+implementation. Existing QueueBox readiness wakeups are sufficient and survive
+restart. Expected absence must not emit a warning every readiness cycle. The
+correctness proof must show more readiness cycles than the normal transport
+attempt budget without consuming that budget, creating duplicate canonical
+rows, starting an ACK timeout prematurely, or sending before authority exists.
+The original message deadline still bounds storage and retry work.
+
+The `rtc-with-ws-fallback` contract remains transport-aware in one precise way:
+an immediate RTC `no-route`/`circuit-open` can fall back, while an RTC
+`enqueued` result means RTC now owns the durable lifecycle and suppresses a
+second-carrier send. Exercise the existing fallback identity test so this is a
+reviewed consequence rather than an accidental behavior change.
+
+##### Owner-to-result timelines
+
+Construction remains:
+
+```text
+browser composition
+  -> WebRtcOverlayMulticastManager(existing ALM resources)
+  -> ALOutboundMessageRuntime
+  -> dispatch/repair/effect owners + existing ALWorkHandler
+  -> ready() opens existing storage before claim
+```
+
+No callback runs during registration and no new service locators or
+construction-time cycles are permitted.
+
+An authorized gap resolves as:
+
+```text
+messages.rtc.send
+  -> manager observes current room authority + flowing transport
+     + current active accepted identity + absent accepted-cache value
+  -> AL dispatch atomically stores canonical NEW work + captured policy
+  -> QueueBox claim
+  -> manager replans from fresh authority
+      absent/pending -> NotReady -> QueueBox reschedules to original deadline
+      unauthorized  -> terminal skipped -> work completes without send
+      active overlay -> current recipients -> durable send effects
+  -> manager rechecks each current edge and channel readiness
+  -> native RTC queue submission
+  -> existing settlement converts factual outcome to complete/readiness/retry
+```
+
+Restart reconstructs the same path from canonical storage; it must not depend
+on an object retained by the old manager. Duplicate enqueue, supersedence,
+ordering, ACK, repair, cancellation, and exact-boundary expiry retain their
+current canonical identities and owners.
+
+##### Bounded failure projection
+
+For a successful command, project only from `result.value`. For a failed
+command, project only from `error.details`; do not retain a value-shaped fallback
+for the old unrealistic test fixture. A contradictory failed envelope must not
+allow `result.value` to override the error boundary. Extract only the existing
+whitelist:
+
+- result `ok`;
+- runtime and admission status classifications;
+- an allowlisted reason category (`missing`/known category/`other`), never the
+  arbitrary producer string;
+- message-ID presence, not payload or full identity;
+- total entry count; and
+- at most the existing maximum number of classified entry statuses.
+
+Malformed, absent, or non-object details produce the existing bounded
+`missing`/null facts. Never retain the raw error, `details`, command, message,
+payload, content, credentials, authorization headers, URLs, or arbitrary nested
+values. Existing evidence schemas and archive readers stay unchanged.
+
+##### TDD and mutation-sensitive proof
+
+Implementation starts RED and records RED/GREEN/mutation output only in the
+plan's ignored SDD workspace.
+
+The diagnostics RED test passes the real failed command envelope through
+`LiveRtcControlClient.captureAttemptFailure` and message-failure capture. It
+must assert concrete no-route status/reason/message-ID/zero-entry facts for
+`failedResults` and `messageFailures.sendResult`, plus success-shaped,
+malformed, missing, and contradictory envelopes. It must assert that sentinel
+payload and credential values are absent from serialized evidence. Restoring
+value-only failed-result decoding or retaining raw details must fail the test.
+
+The RTC RED test uses a real `WebRtcOverlayMulticastManager`, current ALM
+runtime/admission stores, QueueBox work owner, controlled clock, and native RTC
+channel port. Do not mock QueueBox's admission/readiness decisions. It must
+prove:
+
+- current scoped authority, flowing transport, a current active accepted
+  identity, and only its absent accepted-cache value admit one eligible durable
+  broadcast and multicast, store one canonical `NEW` entry, and perform no
+  native send;
+- more readiness cycles than the normal retry budget retain the same work and
+  message deadline; an exact active server overlay then produces exactly one
+  delivery and completion;
+- ACK-enabled policy records no premature timeout, then tracks the recovered
+  recipient set;
+- restart during the gap, duplicate enqueue, supersedence, cancellation, and
+  exact-boundary expiry preserve current semantics;
+- best-effort, initial unknown authority, halted transport, missing/stale/
+  removed accepted identity, removed/foreign explicit overlays, nonlocal
+  origin, broadcast with immutable `recipientPeerIds`, and every known-empty
+  audience shape do not become durable waits;
+- removal or authority revocation while queued is terminal, and later topology
+  restoration does not resurrect the old message; and
+- pending-admission commit conflict with zero prepared copies rechecks logical
+  authority instead of passing vacuously.
+
+Mutation probes must demonstrate that the tests fail when the implementation
+restores immediate durable-gap drop, completes a zero-copy dequeue instead of
+raising readiness, queues a best-effort, immutable-audience broadcast, or
+unauthorized/empty audience, refreshes the deadline, skips empty-plan authority
+revalidation, or sends a terminally revoked message after restoration. Exact
+send-count checks are per-owned-work interaction requirements, not an
+exactly-once claim across an unbounded distributed protocol; classify any
+structure-coupling candidates individually under current governance.
+
+##### One-PR subagent-driven execution
+
+After approval, use `superpowers:subagent-driven-development` in this existing
+isolated worktree. Resolve the plan-specific ignored workspace with
+`scripts/sdd-workspace`, create its plan-identified ledger, and write the
+required preflight task/interface conflict table before dispatching work. The
+ledger, briefs, reports, review packages, RED/GREEN output, and mutation notes
+remain ignored local artifacts; do not add a tracked progress ledger.
+
+Use one continuing draft PR and never merge an intermediate hypothesis.
+Implementation agents edit sequentially, never in parallel:
+
+1. a fresh implementer owns bounded failure projection, the real-envelope
+   tests, and the diagnostic workflow/test correction;
+2. after its independent specification-and-quality review is clean, a fresh
+   implementer owns manager separation, durable authorized-gap behavior, and
+   focused semantic tests; and
+3. after the second independent task review is clean, run integration gates and
+   dispatch one most-capable fresh reviewer over the complete branch diff.
+
+Each task uses the skill's generated brief, report, and BASE-to-HEAD review
+package. Review findings enter the bounded fix/re-review loop; the coordinator
+does not make unreviewed implementation fixes. Carry only established
+interfaces between agents. A genuine public API, persisted format, protocol,
+migration, retained-legacy, security, or unresolvable correctness decision is a
+proper blocker requiring explicit human approval; ordinary cleanup volume,
+moving `main`, or pre-existing touched-file debt is not.
+
+##### Expected closure and validation
+
+Expected changed owners are provisional because `main` moves, but no public
+barrel change is expected:
+
+- `.github/workflows/rtc-b06-performance-observation.yml` and its focused
+  workflow contract tests;
+- `tests/playwright/rallar-black-box/live-rtc-control-client.ts`, new
+  `live-rtc-failure-diagnostics.ts`, and their focused tests;
+- `packages/shared/multicast/web-rtc-overlay-multicast-manager.ts`, new
+  `to-rtc-outbound-tracking.ts`, new `write-rtc-channel-message.ts`, and a new
+  focused `rtc-outbound-overlay-readiness.test.ts`; and
+- only support files that focused tests or current-main ownership prove are
+  necessary.
+
+Touched-file standards closure is exact: review and remediate every changed
+human-authored file in full; every support file changed by that remediation
+enters closure recursively; independent untouched code stays outside. Delete
+affected obsolete code. Retain no legacy or migration path. A new file must own
+a real translation, side effect, or semantic test boundary and must be called
+directly by its consumer—no facade-only split or A→planner→A callback cycle.
+
+Focused starting commands are:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/live-rtc-control-client.test.ts \
+  packages/tests/rallar-black-box/live-rtc-failure-diagnostics.test.ts \
+  packages/tests/repo/pull-request-delivery/rtc-b06-observation-workflow-environment.test.ts \
+  packages/tests/repo/pull-request-delivery/pull-request-workflow.test.ts
+
+npx vitest run \
+  packages/tests/shared/multicast/rtc-outbound-overlay-readiness.test.ts \
+  packages/tests/shared/multicast/rtc-multicast-snapshot-admission.test.ts \
+  packages/tests/shared/multicast/rtc-outbound-transport-results.test.ts \
+  packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts \
+  packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts \
+  packages/tests/shared/webrtc-overlay-services.test.ts \
+  packages/tests/shared/queuebox-utilities.test.ts \
+  packages/tests/shared/al-outbound-message-runtime.test.ts \
+  packages/tests/shared-web/messages/browser-message-fallback-identity.test.ts
+
+npx tsc -p packages/shared/tsconfig.json --noEmit
+npm run typecheck:tests
+npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
+npm run check --workspace=packages/shared-rtc-bench
+```
+
+Before broad validation, run `npm run pr:delivery -- status`; repair a real
+conflict first, while `BEHIND` alone creates no work. Then run the scoped/full
+style and construction reports, changed-style check, structure check,
+test-structure-coupling review, legacy review, retained-legacy check, format
+check, and `git diff --check` against the actual merge base. Run
+`npm run test:unit`, `npm run test:ci`, and `npm run build` when the resulting
+build-affecting tree requires them, and report environment failures separately.
+Public surface changes are not planned; if unavoidable, stop before them and
+add the required API snapshots only after approval.
+
+The final branch head must pass the local E3 default, all-scenarios, and
+retention-100 modes and the exact-head Branch Release Gate. Then one manual
+`diagnostic` workflow dispatch must fan out three isolated, fail-fast-disabled
+runners over that same SHA. Every runner executes default, all-scenarios, and
+retention-100 with Playwright retry disabled/default-zero, propagates producer
+failure through `pipefail`, and uploads a uniquely named diagnostic artifact
+containing source identity and failure output. Diagnostic mode must never call
+`observe-live-rtc`, finalize an observation, create a publication archive, or
+open an observation PR. A code, test, workflow, or configuration change resets
+all three results. Parallel isolated runners reduce wall time; they do not turn
+these correctness diagnostics into accepted performance metrics.
+
+After three green diagnostic runners and a clean whole-branch review, mark the
+single correction PR ready. Once it merges, publish one fresh B06 observation
+from then-current `main`. Preserve all fourteen prior failed archives unchanged.
+A valid complete primary plus its controller-required repeat unlocks Task 12;
+six passing default attempts cannot rescue a failed cohort.
+
+This tooling/RTC correctness correction does not by itself require E4-pg. Task
+12 must require separate E4-pg evidence if a selected performance candidate's
+measured call path reaches database-backed admission, persistence, outbox,
+AppInbox, or cluster transport. B07 remains held.
 
 **Historical provenance:** The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
@@ -4562,12 +4953,25 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       primary with six passing default attempts and its first all-scenarios
       warmup sender-side `RALLAR_BB_RTC_NO_ROUTE`. Do not accept metrics or run
       a repeat.
-- [ ] Merge PR #562's verified failed ZIP/index row unchanged after human review.
-- [ ] Complete and merge the sender-failure orchestration correction after
-      focused, type/style/structure, independent-review, local/browser, and
-      branch gates. Reuse the existing bounded receipt diagnostic; add no RTC
-      product/routing/retry/timeout, diagnostic contract, migration,
-      compatibility, or legacy path.
+- [x] Merge PR #562's verified failed ZIP/index row unchanged after human review.
+- [x] Merge PR #563's sender-failure orchestration correction after focused,
+      type/style/structure, independent-review, local/browser, and branch gates.
+- [x] Dispatch run 34573688470 from moving `main`; preserve its verified failed
+      primary with six passing default attempts and the first all-scenarios
+      warmup sender-B `messages.rtc` broadcast `RALLAR_BB_RTC_NO_ROUTE`. Do not
+      accept metrics or run a repeat.
+- [x] Merge PR #564's verified failed ZIP/index row unchanged.
+- [x] Merge PR #565's separate valid B05 archive without treating E2 as B06
+      evidence.
+- [ ] Obtain explicit human approval for the Task 10 correction design in this
+      revision before changing product, test tooling, or workflow behavior.
+- [ ] Complete one continuing correction-and-proof PR using the documented
+      subagent-driven sequence: bounded failed-result projection; three-runner
+      full-scenario diagnostic mode; durable, authorized RTC overlay-gap
+      deferral; touched-file closure; per-task reviews; whole-branch review;
+      local and branch gates; and three green exact-head diagnostic runners.
+      Merge no intermediate hypothesis and retain no migration, compatibility,
+      or legacy path.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.
@@ -4960,7 +5364,39 @@ evidence, or an explicit conclusion that no optimization is justified.
 
 ## 12. Phase 1 Baseline Completion Gate
 
-An exact reviewed-package B01-B05 head with green local and publication evidence
+**Current completion semantics (supersedes the historical anchor procedure
+below):** Tasks 1-9, the reviewed benchmark package, B04/B05 tooling, and both
+observation streams are delivered. Performance observations are append-only
+events identified by their own source commit/tree and environment; there is no
+immutable B01-B05/B06 measurement head, resulting-main rerun, exact-four-path
+publication, separate plan-only progress PR, or requirement that `main` stop
+moving.
+
+Phase 1 now completes only after:
+
+- the approval-gated Task 10 correction-and-proof PR, if approved, satisfies
+  its semantic, review, local, branch, and exact-head diagnostic gates and
+  merges without a retained legacy/migration path;
+- a later moving-main B06 observation produces one valid complete E3-memory
+  primary and any controller-required repeat, while every prior failed archive
+  remains unchanged and traceable;
+- Task 12 records the conditional E4 decision and supplies valid E4-pg evidence
+  whenever the selected candidate crosses its database-backed rule;
+- Task 12 reconciles comparable evidence and ranks at most one candidate, or
+  records `none`; and
+- the human accepts the candidate or explicitly accepts that no optimization is
+  justified.
+
+Required focused, repository, release, redaction, checksum, sample-identity,
+failure-accounting, environment, and unlike-environment gates remain binding on
+the exact code/evidence they validate. `RTC-B07` remains held unless separately
+authorized or the selected hotspot specifically requires distributed proof.
+Waiting for a quiet `main`, refreshing a mergeable branch merely because it is
+behind, or manufacturing a post-merge closure publication is not completion
+work.
+
+**Superseded historical completion gate (preserved for provenance; do not
+execute):** An exact reviewed-package B01-B05 head with green local and publication evidence
 is a gated measurement-anchor milestone only. The equivalent B06 head is a
 second gated measurement-anchor milestone. Both remain
 explicitly incomplete source-publication evidence even when capture succeeds;
@@ -5026,21 +5462,43 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-**2026-09-11 reconciliation:** `origin/main` is
-`48717845a287ab2d009b36639d2e2c6abe9911aa`; PRs #560 and #561 are merged.
+**2026-09-11 current reconciliation:** Last reconciled with moving
+`origin/main` at `f8db937626a814aa29c18332a4eea6f77993aa01`, including PR
+#559's ALM F2 ownership/storage refactor. PRs #562-#565 are merged. There are
+fourteen archived B06 primaries, all failed with no accepted metrics and no
+required repeat. Latest run 34573688470 passed all six default attempts, then
+failed its first all-scenarios warmup when sender B's `messages.rtc` **broadcast**
+returned `RALLAR_BB_RTC_NO_ROUTE`. PR #563 successfully retained the
+sender/receiver diagnostic envelopes, and PR #564 preserves this failed archive
+unchanged. The archive proves absent usable overlay context at the send decision
+alongside healthy peer/channel observations; it does not identify the causal
+cache lifecycle event. It also exposes a bounded reducer bug: failed command
+facts live under `error.details`, while the projection reads only
+`result.value`.
+
+Production tracing against current ALM ownership shows that a locally
+originated room message can retain valid room authority while its overlay is
+observed absent, but the manager currently collapses absence, removal, and
+scope mismatch into immediate no-route before QueueBox owns the message. The
+new Task 10 design separates those states, reuses existing durable readiness,
+captures complete policy before recipients exist, terminates queued work on
+explicit revocation, and repairs failed-result projection. It also replaces
+default-only serial branch proof with three isolated parallel diagnostic
+runners that each exercise default, all-scenarios, and retention-100 on one
+exact head. The work stays in one correction-and-proof PR and will use fresh
+sequential implementers, per-task spec/quality reviews, and one final
+whole-branch review. No implementation begins until explicit human approval.
+B07 remains held and E4-pg remains conditional under Task 12.
+
+**2026-09-11 earlier reconciliation (historical):** `origin/main` was
+`48717845a287ab2d009b36639d2e2c6abe9911aa`; PRs #560 and #561 were merged.
 Run 34563664803 completed source, tooling, capture, archive verification, and
 publication on that moving-main snapshot. All six default attempts passed; the
 first all-scenarios warmup failed when agent B's `messages.rtc` multicast send
 returned `RALLAR_BB_RTC_NO_ROUTE` with no entries, so later attempts did not run
-and no repeat is required. PR #562 awaits human review to merge the verified
-failed archive unchanged. The exact-source local default plus all-scenarios
-reproduction passed 2/2 without retry, ruling out a product correction from this
-evidence. The proven orchestration gap is that receiver observations begin only
-after send succeeds, bypassing their bounded diagnostics on sender rejection.
-The next two slices are the unchanged PR #562 merge and the focused
-sender-failure orchestration correction; after both merge, dispatch a fresh B06
-publish from then-current moving `main`. B07 remains held and E4-pg remains
-conditional for Task 12.
+and no repeat was required. PR #562 had not yet merged. The local 2/2 pass was a
+non-reproduction; its former claim that product correction was ruled out is
+superseded by the later archive and current production trace.
 
 **2026-09-10 reconciliation:** `origin/main` is
 `aeb671039ec8c3f9ee3862ce1413b603fb1fd93f`; PRs #556 and #557 are merged, and
