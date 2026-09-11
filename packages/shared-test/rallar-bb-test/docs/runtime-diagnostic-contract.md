@@ -136,8 +136,9 @@ every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, or `readiness-probe`
-- `durationMs`: how long that phase took, on every kind but `commit-phases` and
-  `readiness-probe`, neither of which carries one here
+- `durationMs`: how long that phase took, on every kind but `commit-phases`,
+  which splits its own into the two halves below. On `readiness-probe` it is
+  not a phase of a commit at all but what that owner's storage read cost
 - `origin`: which call path asked for the commit — `send` for a caller's own
   `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
   dequeue commits, `repair` for retransmission. It is on all four
@@ -169,19 +170,22 @@ every session the page opens. The event's `data` is the event itself:
   delta — a concurrent commit on the same store (another sender, or the same
   sender's drain) lands in that window and is counted too
 
-- `readiness-probe` carries `workerId`, `cause` and `readyAtMs`: one event for
-  every storage read an owner spends deciding whether it has work, which is the
-  read the page's `work-page` and `work-reserve` counters charge. `cause` is why
-  the owner had no remembered answer to give -- `own-commit`, `batch` and
-  `retained-release` are this owner's own progress, `external-wake` is the
-  announcement another writer made to every owner on the engine, `age-bound` is
-  the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and `no-memory` is an owner
-  that has not probed yet. `readyAtMs` is the answer: an epoch-ms time work is
-  next due, or `none` for no work at all. A probe is not a batch, so it is
-  outside the empty-batch suppression the drains carry. The inbound rotation
-  reports none: its probe reads a page every engine round by construction, and
-  relaying one event per round costs more in this harness than the answer is
-  worth (see **Inbound Admission Diagnostics** below)
+- `readiness-probe` carries `workerId`, `cause`, `readyAtMs` and `durationMs`:
+  one event for every storage read an owner spends deciding whether it has work,
+  which is the read the page's `work-page` and `work-reserve` counters charge.
+  `cause` is why the owner had no remembered answer to give -- `own-commit`,
+  `batch` and `retained-release` are this owner's own progress, `external-wake`
+  is the announcement another writer made to every owner on the engine,
+  `age-bound` is the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and
+  `no-memory` is an owner that has not probed yet. `readyAtMs` is the answer: an
+  epoch-ms time work is next due, or `none` for no work at all. `durationMs` is
+  what that read cost, and this is where it is charged: an owner whose probe
+  answers "due now" holds the page for the batch that follows, which reads none
+  of its own. A probe is not a batch, so it is outside the empty-batch
+  suppression the drains carry. The inbound rotation reports none: its probe
+  reads a page every engine round by construction, and relaying one event per
+  round costs more in this harness than the answer is worth (see **Inbound
+  Admission Diagnostics** below)
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
@@ -260,6 +264,12 @@ independent of any connection. The event's `data` is the event itself:
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
   this claim included
+- a `claim-settled` `queueWaitMs` is computed from the reserved entry, and a
+  reservation clears the row's retry stamp: a row that had already been retried
+  answers from when it was written, so its claim overstates the wait. The
+  `effect-drain` beside it is exact: its own wait is read from the observed page,
+  before any reservation replaced that stamp. So a backlog is measured from the
+  batch, and a claim's own wait is read as an upper bound
 - a `claim-settled` identity is only what its effect retains, and absence is
   `null` rather than any spelled-out name — `payloadKind` is the discriminator
   that says which effect withheld it. A retained admission (`admit-message`,

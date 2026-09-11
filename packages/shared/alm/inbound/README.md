@@ -34,10 +34,10 @@ engine stops; a supplied shared engine remains available to its other tasks.
 
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | A commit that wrote work announces it; one that wrote none leaves the worker idle.                                                                                                                                                                         |
+| Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | A commit that wrote work announces it; one that wrote none leaves that round unannounced — the rotation reads a page every engine round either way.                                                                                                        |
 | Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline. Retention checks exact content and identity on reuse.                                                                                                                                                                                                                                                              | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. No success receipt is earned by pending storage.                                                                                                 |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
-| Admitted delivery               | `ALInboundAdmittedDelivery` rereads stored message authority/planning observations, checks ordering and expiry, then dispatches locally or forwards through the supplied port.                                                                                                                                                                                                                                                                             | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
+| Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
 | Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; later work becomes eligible through the same worker.                                                                                                                                       |
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
@@ -48,9 +48,11 @@ A commit announces the work it wrote, and only that. A data or control replay wh
 commit persisted work, and an inline control admission whose commit wrote a row, announce
 it through `commitWork()`: the scan restarts and the row reaches the batch the running
 batch's end schedules, rather than whichever round the rotation next reaches. A retained
-conflict announces for the same reason — retention itself wrote the row. An admission that
-wrote no row announces nothing, because there is nothing for the worker to claim, and a
-conflict the plan does not retain wrote no row at all.
+conflict announces for the same reason, and only when retention wrote the row: a message
+already past its deadline is rejected before the row is written, and a row that is already
+terminal holds nothing to claim. An admission that wrote no row announces nothing, because
+there is nothing for the worker to claim, and a conflict the plan does not retain wrote no
+row at all.
 
 ## The admission directory
 
@@ -103,14 +105,16 @@ rejected.
 
 A retained conflict's replay re-reads its decision surface. It does not carry one forward,
 and cannot: a conflict means an authority-bearing observation moved, so the surface the
-attempt read is exactly the thing that has to be read again. Everything else that attempt
-needs — the pre-plan, the deadline, the decoded message and the effect facts — is pure work
-re-derived from the message and the source
-[`retainPending`](./al-inbound-message-admission.ts) already persists, so the retained
-payload carries nothing it did not carry before and the stored schema identity did not
-move. The replay runs in the batch the owner's own commit starts when the worker is idle,
-or in the follow-up batch `commitPending` schedules when a batch is already running; it
-never waits for the rotation to come round to it.
+attempt read is exactly the thing that has to be read again. The pre-plan, the deadline and
+the decoded message are pure work re-derived from the message and the source
+[`retainPending`](./al-inbound-message-admission.ts) already persists; the effect facts are
+carried by neither, and are taken fresh instead — `readALInboundEffectFacts` builds
+`selfPeerId`, `observedAtEpochMs` and a new `controlIdPrefix` from the replay's own clock
+and this owner's effect preparation. So the retained payload carries nothing it did not
+carry before and the stored schema identity did not move. The replay runs in the batch the
+owner's own commit starts when the worker is idle, or in the follow-up batch
+`commitPending` schedules when a batch is already running; it never waits for the rotation
+to come round to it.
 
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
@@ -169,13 +173,15 @@ at 10-13 ms/op — 12.6 measured on the full lane, 10.3 on the rtc-only run that
 this relay — and `rotation-alive` remains the liveness witness that a scanning rotation is
 still running.
 
-What the owner does relay is `effect-drain`, for a batch that touched work, splitting that
-batch's duration into its selection, claim, run and release phases and stating how long the
-earliest row it claimed had been due (`queueWaitMs`); one `claim-settled` per claim, with
-that claim's own duration, attempts, outcome and wait; and `rotation-alive` once per
-`AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying `longestRoundMs` so one
-crawling scan is not averaged away by the rest. No `readiness-probe` reaches the inbound
-topic. The field-by-field contract is in
+What the owner does relay is `effect-drain`, for a batch that touched work, reporting where
+that batch spent its time — selection, claim, run and release, which do not sum to its
+duration, for the reasons the contract document states — and how long the earliest row it
+claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ran to an
+outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
+decoded and a claim that throws are counted by the drain and named by no event; and
+`rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
+`longestRoundMs` so one crawling scan is not averaged away by the rest. No
+`readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
 
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
