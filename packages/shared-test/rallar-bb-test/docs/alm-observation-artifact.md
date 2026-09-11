@@ -46,9 +46,10 @@ All three live in
 records what the runner was doing while the cell ran:
 
 - `regime` — `normal`, `slow`, or `unclassified`.
-- `perOperation` — the median admission read cost, `readDurationMs / readOperationCount` over the
-  `commit-phases` events of the [outbound admission diagnostics](./runtime-diagnostic-contract.md).
-  It is `too-few-samples` below `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples.
+- `perOperation` — the median admission read cost, `readDurationMs / readOperationCount`, over
+  `send`-origin commits inside the opening window, from the `commit-phases` events of the
+  [outbound admission diagnostics](./runtime-diagnostic-contract.md). It is `too-few-samples` below
+  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples.
 - `windowMs` — the opening window the median is taken over, measured from the run's earliest event.
   Only `send`-origin commits count. A failing cell's own degradation dominates a whole-cell median,
   and a drain's commit measures a different read chain than a caller's own admission, so neither
