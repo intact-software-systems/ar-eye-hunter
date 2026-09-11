@@ -236,8 +236,10 @@ independent of any connection. The event's `data` is the event itself:
   cleared), `runDurationMs` (every claim's own work, summed) and
   `releaseDurationMs` (every release the batch wrote, summed, the exhaustion
   sweep's included). `queueWaitMs` is the fifth, and it is not a phase: it is how
-  long the earliest row the batch claimed had already been due when the batch
-  started, so a backlog reads apart from a slow drain
+  long the earliest row the batch claimed had already been **due** when the batch
+  started, so a backlog reads apart from a slow drain. It counts every row the
+  batch took, including a reservation whose lease start was missing and which the
+  page therefore recovered without the queue reserving it
 - the four phases do not sum to `durationMs`. The exhaustion sweep's own read is
   outside them, and so is the page read the readiness probe paid for: a probe
   that answers "due now" holds its page for the batch that follows, which reads
@@ -252,12 +254,14 @@ independent of any connection. The event's `data` is the event itself:
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
   this claim included
-- a `claim-settled` identity is only what its effect retains. A retained
-  admission (`admit-message`, `admit-control`) and a forwarded acknowledgement
-  (`send-control`) keep the message, so both fields are its own; a delivery
-  effect (`dispatch-local`, `forward-message`) keeps a reference, which carries
-  the id and not the type, so `typeId` is `none`; a `release-buffered` effect
-  names a track and a sequence rather than a message, so both are `none`
+- a `claim-settled` identity is only what its effect retains, and absence is
+  `null` rather than any spelled-out name — `payloadKind` is the discriminator
+  that says which effect withheld it. A retained admission (`admit-message`,
+  `admit-control`) and a forwarded acknowledgement (`send-control`) keep the
+  message, so both fields are its own; a delivery effect (`dispatch-local`,
+  `forward-message`) keeps a reference, which carries the id and not the type, so
+  `typeId` is `null`; a `release-buffered` effect names a track and a sequence
+  rather than a message, so both are `null`
 - a claim reports nothing when it throws, and when its work row could not be
   decoded at all: the generic work handler classifies those, and the
   `effect-drain` beside them still counts them. So `claimedCount` is a ceiling on

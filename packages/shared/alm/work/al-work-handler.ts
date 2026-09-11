@@ -17,11 +17,12 @@ export interface ALWorkReadySelection {
     /** What the port's reservation of those rows cost. */
     readonly claimDurationMs: number;
     /**
-     * The earliest time a claimed row had become due, read before the reservation that hid it: a
-     * reserved row's own stamps describe its lease, not its wait. Undefined when nothing was claimed,
-     * and for an owner that reserves without observing a page first.
+     * The earliest time a claimed row had become **due** -- not when it next becomes claimable. It is
+     * read before the reservation that hides it, because a reserved row's own stamps describe its
+     * lease. Undefined when nothing was claimed, and for an owner that reserves without observing a
+     * page first.
      */
-    readonly earliestReadyAtMs: number | undefined;
+    readonly earliestDueAtMs: number | undefined;
 }
 
 export interface ALWorkHandlerDependencies {
@@ -247,7 +248,7 @@ export class ALWorkHandler {
             workerId: this.dependencies.workerId,
             cause,
             readyAtMs: readyAtMs ?? 'none',
-            durationMs: toElapsedMs(probedAtMs, this.dependencies.clock.nowMs())
+            durationMs: computeElapsedMs(probedAtMs, this.dependencies.clock.nowMs())
         });
         return readyAtMs;
     }
@@ -338,11 +339,11 @@ export class ALWorkHandler {
         diagnostics?.({
             kind: 'work-batch',
             workerId,
-            durationMs: toElapsedMs(startedAtMs, clock.nowMs()),
+            durationMs: computeElapsedMs(startedAtMs, clock.nowMs()),
             ...progress,
             selectionDurationMs: selection.selectionDurationMs,
             claimDurationMs: selection.claimDurationMs,
-            queueWaitMs: computeALWorkQueueWaitMs(selection.earliestReadyAtMs, startedAtMs)
+            queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs)
         });
         return progress;
     }
@@ -372,7 +373,7 @@ export class ALWorkHandler {
         catch (error) {
             result = toALWorkFailureOutcome(error);
         }
-        progress.runDurationMs += toElapsedMs(runStartedAtMs, clock.nowMs());
+        progress.runDurationMs += computeElapsedMs(runStartedAtMs, clock.nowMs());
         if (result.status === 'retained') {
             this.releaseRetainedClaim(claim, result.settled);
             return;
@@ -397,7 +398,7 @@ export class ALWorkHandler {
         const { clock, port } = this.dependencies;
         const startedAtMs = clock.nowMs();
         await port.release(claim, outcome);
-        progress.releaseDurationMs += toElapsedMs(startedAtMs, clock.nowMs());
+        progress.releaseDurationMs += computeElapsedMs(startedAtMs, clock.nowMs());
     }
 
     /**
@@ -423,16 +424,16 @@ export class ALWorkHandler {
 }
 
 /** A clock that steps backwards under a system time change must never report a negative phase. */
-function toElapsedMs(startedAtMs: number, endedAtMs: number): number {
+function computeElapsedMs(startedAtMs: number, endedAtMs: number): number {
     return Math.max(0, endedAtMs - startedAtMs);
 }
 
 /** A batch that claimed nothing waited on nothing, so it reports no wait rather than a made-up one. */
 function computeALWorkQueueWaitMs(
-    earliestReadyAtMs: number | undefined,
+    earliestDueAtMs: number | undefined,
     batchStartedAtMs: number
 ): number {
-    return earliestReadyAtMs === undefined ? 0 : toElapsedMs(earliestReadyAtMs, batchStartedAtMs);
+    return earliestDueAtMs === undefined ? 0 : computeElapsedMs(earliestDueAtMs, batchStartedAtMs);
 }
 
 /** The one place a thrown claim becomes an outcome. */

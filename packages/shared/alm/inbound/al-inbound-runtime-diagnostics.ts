@@ -5,9 +5,6 @@ import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
-/** What a claimed effect reports where it carries no message identity of its own. */
-const NO_CLAIMED_MESSAGE = 'none';
-
 /**
  * Where an incoming message stopped. `committed` is the only ending that leaves durable work behind,
  * so a delivery that never arrives either did not reach it or was never claimed by a drain.
@@ -52,10 +49,13 @@ export type ALInboundRuntimeDiagnosticsEvent =
     | Readonly<{
         kind: 'claim-settled';
         workerId: string;
-        /** The claimed message, or `none` where the effect names a track rather than a message. */
-        msgId: string;
-        /** The claimed message's type, or `none` where the effect retains only a reference to it. */
-        typeId: string;
+        /** The claimed message. Null for `release-buffered`, which names a track and a sequence and no message. */
+        msgId: string | null;
+        /**
+         * The claimed message's type. Null for `dispatch-local` and `forward-message`, whose effect
+         * retains only a message reference, and for `release-buffered`, which retains neither.
+         */
+        typeId: string | null;
         payloadKind: ALInboundDurableEffect['kind'];
         /** What this claim's own work cost, from the decoded effect to the outcome it returned. */
         durationMs: number;
@@ -87,16 +87,19 @@ export type ALInboundRuntimeDiagnosticsEvent =
 
 export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnosticsEvent) => void;
 
-/** What a claimed effect says about the message it runs, for the join back to its `admission-outcome`. */
+/**
+ * What a claimed effect says about the message it runs, for the join back to its
+ * `admission-outcome`. Null is absence, not a name: `payloadKind` says which effect withheld it.
+ */
 export interface ALInboundClaimIdentity {
-    readonly msgId: string;
-    readonly typeId: string;
+    readonly msgId: string | null;
+    readonly typeId: string | null;
 }
 
 /**
  * A retained message answers with its own identity. A delivery effect holds only a reference, which
  * carries the id and not the type, and a buffered release names a track and a sequence rather than
- * any message at all.
+ * any message at all. Every kind is listed, so a seventh one has to decide what it reports.
  */
 export function toALInboundClaimIdentity(payload: ALInboundDurableEffect): ALInboundClaimIdentity {
     switch (payload.kind) {
@@ -106,9 +109,9 @@ export function toALInboundClaimIdentity(payload: ALInboundDurableEffect): ALInb
             return { msgId: payload.msg.id.msgId, typeId: payload.msg.payload.typeId };
         case 'dispatch-local':
         case 'forward-message':
-            return { msgId: payload.message.msgId, typeId: NO_CLAIMED_MESSAGE };
-        default:
-            return { msgId: NO_CLAIMED_MESSAGE, typeId: NO_CLAIMED_MESSAGE };
+            return { msgId: payload.message.msgId, typeId: null };
+        case 'release-buffered':
+            return { msgId: null, typeId: null };
     }
 }
 

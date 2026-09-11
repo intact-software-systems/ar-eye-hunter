@@ -131,6 +131,7 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
     }
 }
 
+/** When the row is next claimable: the lease end while it is reserved, and its own due time otherwise. */
 export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
     if (entry.status === EntityStatus.RESERVED) {
         if (entry.dequeueAudit.startTs === undefined) {
@@ -144,9 +145,9 @@ export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
 }
 
 /**
- * When the row itself says it became due, whatever status it now carries. A reservation clears the
- * retry stamp, so a claimed row that had been retried answers from when it was written; the wait a
- * batch reports precisely is the one read from the page before the reservation.
+ * When the row became due, whatever status it now carries -- the wait half of the pair above, never
+ * a lease. A reservation clears the retry stamp, so a claimed row that had been retried answers from
+ * when it was written; the wait a batch reports precisely is the one read before the reservation.
  */
 export function resolveALInboundWorkDueAtMs(entry: ResourceEntry): number {
     return Number(

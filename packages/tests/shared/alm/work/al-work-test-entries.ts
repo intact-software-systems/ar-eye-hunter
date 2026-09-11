@@ -61,6 +61,6 @@ export function toTestALWorkReadySelection(
         nextReadyAtMs,
         selectionDurationMs: 0,
         claimDurationMs: 0,
-        earliestReadyAtMs: undefined
+        earliestDueAtMs: undefined
     };
 }

@@ -76,7 +76,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // Measured 259.0634765625 KiB brotli after the Task 13 evidence round -- the named
         // room-authority denial, the outbound readiness probe and the inbound rotation's liveness
         // witness; the limit was raised to 260.
-        expect(result.brotliKiB).toBeLessThan(260);
+        // Measured 260.0009765625 KiB brotli after the F2b drain-latency instrumentation -- the
+        // batch phase split, the per-claim `claim-settled` event and the relayed readiness probe;
+        // the limit was raised to 261.
+        expect(result.brotliKiB).toBeLessThan(261);
     });
 });
 

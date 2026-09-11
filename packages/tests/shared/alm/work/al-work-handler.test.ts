@@ -194,7 +194,7 @@ describe('ALWorkHandler', () => {
                     nextReadyAtMs: undefined,
                     selectionDurationMs: PHASE_SELECTION_MS,
                     claimDurationMs: PHASE_CLAIM_MS,
-                    earliestReadyAtMs: PHASE_BATCH_START_MS - PHASE_QUEUE_WAIT_MS
+                    earliestDueAtMs: PHASE_BATCH_START_MS - PHASE_QUEUE_WAIT_MS
                 };
             },
             runClaim: async () => {

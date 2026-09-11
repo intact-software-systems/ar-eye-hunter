@@ -204,9 +204,11 @@ export class ALInboundMessageRuntime {
     }
 
     /**
-     * The rotation's probe reads one page every engine round by construction, so one event per probe
-     * is that same cadence and no more: it is the read the batch below then claims from, and without
-     * it a rotation whose page read is what crawls reports a fast batch over a slow round.
+     * The two halves of a rotation round, relayed on different terms. A probe is reported as it
+     * happens: it reads one page every engine round by construction, so one event per probe is that
+     * same cadence and no more, and it is the read the batch then claims from -- without it a
+     * rotation whose page read is what crawls reports a fast batch over a slow round. A batch is
+     * reported only when it touched work, for the reason `recordWorkBatch` gives.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
@@ -223,10 +225,11 @@ export class ALInboundMessageRuntime {
     }
 
     /**
-     * The rotation runs a batch every engine round, so an empty one is its normal resting state and
-     * reports nothing the probe did not already decide. Recording those would cost the page hundreds
-     * of relayed events per session for no evidence -- enough, measured, to move the races this sink
-     * exists to explain.
+     * The rotation runs a batch every engine round, so an empty one is its normal resting state: it
+     * claimed nothing, ran nothing and released nothing, and every number it could carry was already
+     * decided by the probe relayed above it. It is suppressed for having no evidence to add, not for
+     * costing events -- `rotation-alive` below is what keeps a silent rotation distinguishable from
+     * a stopped one.
      */
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
         if (event.claimedCount === 0 && event.rejectedCount === 0) {

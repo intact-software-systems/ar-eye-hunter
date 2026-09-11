@@ -147,7 +147,7 @@ it.each(['memory', 'indexeddb'] as const)(
             kind: 'claim-settled',
             workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
-            typeId: 'none',
+            typeId: null,
             payloadKind: 'dispatch-local',
             attempts: 1,
             outcome: 'completed'

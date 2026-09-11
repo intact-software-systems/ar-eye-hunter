@@ -438,7 +438,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             nextReadyAtMs: undefined,
             selectionDurationMs: 0,
             claimDurationMs: Math.max(0, this.readNowMs() - startedAtMs),
-            earliestReadyAtMs: undefined
+            earliestDueAtMs: undefined
         };
     }
 

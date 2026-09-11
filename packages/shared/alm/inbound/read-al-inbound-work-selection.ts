@@ -268,7 +268,8 @@ async function readALInboundNextReadyAtMs(
  * One rotation round's claim, timed in the two halves a slow drain has to be split into: the page
  * read with its eligibility reads, and the port's reservation of what that read cleared. The wait it
  * reports is read from the observed page, because the reservation that follows replaces a row's own
- * due stamp with its lease.
+ * due stamp with its lease, and it covers every row the batch takes -- the unleased reservations
+ * included, since those are claims the port itself never made.
  */
 async function readALInboundClaimedSelection(
     input: ReadALInboundClaimedSelectionInput
@@ -288,22 +289,33 @@ async function readALInboundClaimedSelection(
             nextReadyAtMs: selection.nextReadyAtMs,
             selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
             claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
-            earliestReadyAtMs: computeEarliestALInboundDueAtMs(selection.claimable, claimedKeys)
+            earliestDueAtMs: computeEarliestALInboundDueAtMs(
+                toClaimedALInboundEntries(selection, claimedKeys)
+            )
         },
         observations: toClaimedALInboundObservations(selection.observations, claimedKeys)
     };
 }
 
-/** The earliest a reserved row had been due, over the page read that observed it before the reservation. */
-function computeEarliestALInboundDueAtMs(
-    claimable: readonly ResourceEntry[],
+/**
+ * Every row this selection hands the batch, as the page observed it before any reservation: the ones
+ * the port reserved, and the unleased reservations the page recovered itself, which the port never
+ * sees and which a batch of nothing else would otherwise report as no wait at all.
+ */
+function toClaimedALInboundEntries(
+    selection: ALInboundWorkSelection,
     claimedKeys: ReadonlySet<ResourceEntryKeyString>
-): number | undefined {
+): readonly ResourceEntry[] {
+    return [
+        ...selection.unleasedReservations.map((claim) => claim.entry),
+        ...selection.claimable.filter((entry) => claimedKeys.has(toKeyAsString(entry.key)))
+    ];
+}
+
+/** The earliest of those rows' own due times, which is the wait the batch reports. */
+function computeEarliestALInboundDueAtMs(entries: readonly ResourceEntry[]): number | undefined {
     let earliest: number | undefined;
-    for (const entry of claimable) {
-        if (!claimedKeys.has(toKeyAsString(entry.key))) {
-            continue;
-        }
+    for (const entry of entries) {
         const dueAtMs = resolveALInboundWorkDueAtMs(entry);
         earliest = earliest === undefined ? dueAtMs : Math.min(earliest, dueAtMs);
     }

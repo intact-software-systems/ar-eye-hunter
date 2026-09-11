@@ -36,11 +36,11 @@ const INBOUND_NAMESPACE = 'al-inbound-counts';
 const INBOUND_WORKER_ID = 'al-inbound:counts';
 /** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
 const INBOUND_ROTATION_ROUND_LIMIT = 16;
-/** A hundred engine passes at the engine's fixed 100 ms delay: ten idle seconds of a rotation with nothing to claim. */
+/**
+ * A hundred engine passes at the engine's fixed 100 ms delay: ten idle seconds of a rotation with
+ * nothing to claim, so a bound per round is also the bound per second the relay has to hold.
+ */
 const INBOUND_IDLE_ROUNDS = 100;
-const INBOUND_IDLE_SECONDS = 10;
-/** The ceiling the relay must stay under: the engine's own pass rate, and never a cadence of its own. */
-const INBOUND_IDLE_PROBES_PER_SECOND = INBOUND_IDLE_ROUNDS / INBOUND_IDLE_SECONDS;
 /** Far above the 4 per hundred rounds the outbound owner spends, whose probe answer stands for the idle ceiling. */
 const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
@@ -222,9 +222,10 @@ describe('inbound work owner IndexedDB scan volume', () => {
             // The rotation carries its scan position inside the read, so no answer of its own can
             // stand and every round reaches storage. Relaying one event per probe is therefore the
             // engine's own pass rate and no cadence of its own.
+            // A per-second bound is the same statement over these hundred rounds, so it is left
+            // unasserted rather than restated: ten rounds are one idle second of this engine.
             expect(idle.probes).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
             expect(idle.probes).toBeLessThanOrEqual(INBOUND_IDLE_ROUNDS);
-            expect(idle.probes / INBOUND_IDLE_SECONDS).toBeLessThanOrEqual(INBOUND_IDLE_PROBES_PER_SECOND);
             // A probe that answers "due now" holds its page for the batch, which reads none of its own.
             expect(idle.workPages).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
             expect(idle.workPages).toBeLessThanOrEqual(idle.probes);
