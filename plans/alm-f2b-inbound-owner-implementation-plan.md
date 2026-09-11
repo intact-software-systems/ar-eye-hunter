@@ -127,13 +127,13 @@ same rows again before dispatching.
 **Interfaces:** consumes `IndexedDbAdmissionBackend`, `createALInboundAdmissionStore`,
 `createCountingIndexedDbOperationObserver`; produces no runtime surface.
 
-- [ ] **Step 0: Read the evidence.** Read the `902fa30a7` diagnosis §1.3, §2.2, §2.3, §3.1, §3.2 and
+- [x] **Step 0: Read the evidence.** Read the `902fa30a7` diagnosis §1.3, §2.2, §2.3, §3.1, §3.2 and
       §5.2; the `04f0f70a1` diagnosis §3.1 (the same ws frame passing with 15 s unused); the
       `c99cf654e` diagnosis §"storage counters" for the `work-page` share; and the `f8db93762`
       regime files. Record in the PR body draft the figures from "The measured starting point" with
       the head each was measured on. Do not build on
       `commit-phases.transportSettleDurationMs`: it is emitted in no run.
-- [ ] **Step 1: Transaction pins (RED).** Move the spy
+- [x] **Step 1: Transaction pins (RED).** Move the spy
       `recordIndexedDbTransactions` with its `RecordedIndexedDbTransactions` contract and the
       `IDBTransaction.prototype.abort` patch from
       `packages/tests/shared/alm/outbound/al-outbound-admission-transactions.test.ts:50-92` into
@@ -147,14 +147,14 @@ same rows again before dispatching.
       close before the readwrite — this one starts GREEN and is the regression guard).
       Command: `npx vitest run packages/tests/shared/alm/inbound/al-inbound-admission-transactions.test.ts`
       Expected: the five surface pins fail with the real counts; the `commitBundle` pin passes.
-- [ ] **Step 2: Drain-shape pin (RED).** In `al-indexeddb-operation-counts.test.ts`, add a
+- [x] **Step 2: Drain-shape pin (RED).** In `al-indexeddb-operation-counts.test.ts`, add a
       `describe('inbound work owner IndexedDB scan volume')` that builds a real
       `ALInboundMessageRuntime` over `IndexedDbAdmissionBackend` with a counting observer, commits one
       `dispatch-local` effect, runs one batch, and pins `counts.byOwner['al-admission']` for
       (a) one rotation round over a page holding one row and (b) the whole admit → deliver path for
       one unordered message. Both RED at today's figure, with the target in the message.
       Command: `npx vitest run packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`
-- [ ] **Step 3: Commit the pins.** One commit, message naming the measured counts. The roadmap's
+- [x] **Step 3: Commit the pins.** One commit, message naming the measured counts. The roadmap's
       red-head rule (every commit keeps `test:unit` green) decides the shape: the five surface pins and
       the two drain-shape pins are `it.fails` at this commit, each named with its target and its
       measured count, and Tasks 1–3 flip each to `it` in the commit that earns it. `commitBundle`'s
