@@ -755,18 +755,18 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 );
             case 'set-control-acks':
                 return await tx.set(
-                    this.toControlAcksKey(mutation.msgId, mutation.senderId),
+                    toALInboundControlAcksKey(this.namespace, mutation.msgId, mutation.senderId),
                     mutation.value,
                     mutation.expireAtTimestamp
                 );
             case 'set-control-pending':
                 return await tx.set(
-                    this.toControlPendingKey(mutation.msgId, mutation.senderId),
+                    toALInboundControlPendingKey(this.namespace, mutation.msgId, mutation.senderId),
                     mutation.value,
                     mutation.expireAtTimestamp
                 );
             case 'delete-control-pending':
-                return await tx.remove(this.toControlPendingKey(mutation.msgId, mutation.senderId));
+                return await tx.remove(toALInboundControlPendingKey(this.namespace, mutation.msgId, mutation.senderId));
             case 'set-control-owners': {
                 const controlOwnerKey = this.toControlOwnerIndexKey(mutation.msgId);
                 return await tx.set(controlOwnerKey, mutation.value, mutation.expireAtTimestamp);
@@ -847,11 +847,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         senderId: string
     ): Promise<Pick<ALInboundAdmissionObservations, 'pendingAck' | 'acks'>> {
         const pendingAck = (await database.read(
-            this.toControlPendingKey(msgId, senderId),
+            toALInboundControlPendingKey(this.namespace, msgId, senderId),
             (value) => decodeALAdmissionControlValue(value, msgId, 'pending')
         ))?.value;
         const acks = (await database.read(
-            this.toControlAcksKey(msgId, senderId),
+            toALInboundControlAcksKey(this.namespace, msgId, senderId),
             (value) => decodeALAdmissionControlValue(value, msgId, 'acks')
         ))?.values ?? [];
         return { pendingAck, acks };
@@ -875,14 +875,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     private toControlOwnerIndexKey(msgId: string): string {
         return `${this.namespace}:control:owners:${encodeURIComponent(msgId)}`;
-    }
-
-    private toControlAcksKey(msgId: string, senderId: string): string {
-        return `${this.namespace}:control:acks:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
-    }
-
-    private toControlPendingKey(msgId: string, senderId: string): string {
-        return `${this.namespace}:control:pending:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
     }
 
     private toBufferedKey(trackKey: string, seq: number): string {
@@ -1011,4 +1003,13 @@ function resolveALInboundAcknowledgedSenderId(
         return undefined;
     }
     return controlOwners.values.find((value) => value.peerId === fromPeerId)?.senderId ?? undefined;
+}
+
+/** The acknowledgement rows one message owns, under the namespace the store was opened with. */
+export function toALInboundControlAcksKey(namespace: string, msgId: string, senderId: string): string {
+    return `${namespace}:control:acks:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
+}
+
+export function toALInboundControlPendingKey(namespace: string, msgId: string, senderId: string): string {
+    return `${namespace}:control:pending:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
 }

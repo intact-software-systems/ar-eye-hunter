@@ -317,10 +317,10 @@ export class ALInboundMessageRuntime {
     }
 
     /**
-     * Only the retained row is announced. A conflict the plan does not retain never reaches
-     * retention, and a retention that answers anything but `pending-admission` wrote no claimable
-     * row either: an expired message is rejected before the row is written, and a row already in a
-     * terminal status holds no work for the worker.
+     * Only a retention that left a claimable row is announced — `pending-admission`, whether this call
+     * wrote the row or found one a previous attempt wrote. A conflict the plan does not retain never
+     * reaches retention; a message past its deadline is rejected before the write, or as a row written
+     * already expired; and a row in a terminal status holds no work for the worker.
      */
     private async retainConflictedAdmission(
         pending: ALInboundPendingAdmission | undefined

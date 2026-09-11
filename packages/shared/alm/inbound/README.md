@@ -48,9 +48,9 @@ A commit announces the work it wrote, and only that. A data or control replay wh
 commit persisted work, and an inline control admission whose commit wrote a row, announce
 it through `commitWork()`: the scan restarts and the row reaches the batch the running
 batch's end schedules, rather than whichever round the rotation next reaches. A retained
-conflict announces for the same reason, and only when retention wrote the row: a message
-already past its deadline is rejected before the row is written, and a row that is already
-terminal holds nothing to claim. An admission that wrote no row announces nothing, because
+conflict announces for the same reason, and only when retention left a claimable row: a message
+already past its deadline is rejected before the write or as a row written already expired, and a
+row that is already terminal holds nothing to claim. An admission that wrote no row announces nothing, because
 there is nothing for the worker to claim, and a conflict the plan does not retain wrote no
 row at all.
 
