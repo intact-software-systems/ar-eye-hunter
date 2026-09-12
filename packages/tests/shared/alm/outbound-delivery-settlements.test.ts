@@ -423,6 +423,172 @@ it.each(BACKEND_KINDS)(
     }
 );
 
+it.each(BACKEND_KINDS)(
+    'completes a claimed send-prepared effect without sending when cancelled before the drain over %s',
+    async (kind) => {
+        const settlements: ALDeliverySettlement[] = [];
+        const sent: string[] = [];
+        const stores = createStores(kind);
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: planSend(),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.kind));
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const message = createOutboundMessage('msg-cancelled-before-drain');
+
+        // The owner has admitted no work for this id yet; the cancellation is still remembered.
+        expect(runtime.cancel(message.id.msgId)).toBe('cancelled');
+        expect(runtime.cancel(message.id.msgId)).toBe('already-cancelled');
+
+        await runtime.enqueueIfAbsent(message);
+        await runOutboundWorkTask(runtime);
+
+        expect(sent).toEqual([]);
+        expect(settlements).toEqual([{
+            kind: 'cancelled',
+            msgId: message.id.msgId,
+            carrier: 'ws',
+            atMs: expect.any(Number)
+        }]);
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
+    }
+);
+
+it.each(BACKEND_KINDS)(
+    'cancels a retained send: aborts its signal and the transport settles cancelled over %s',
+    async (kind) => {
+        const settlements: ALDeliverySettlement[] = [];
+        const settled = Promise.withResolvers<ALOutboundSettledSendResult>();
+        let capturedSignal: AbortSignal | undefined;
+        const stores = createStores(kind);
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: planSend(),
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                capturedSignal = lifecycle.signal;
+                return { status: 'queued', settled: settled.promise };
+            }
+        });
+        const message = createOutboundMessage('msg-cancel-retained');
+
+        await enqueueOutboundOrThrow(runtime, message);
+        expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started']);
+        expect(capturedSignal?.aborted).toBe(false);
+
+        expect(runtime.cancel(message.id.msgId)).toBe('cancelled');
+
+        expect(capturedSignal?.aborted).toBe(true);
+        expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'cancelled']);
+
+        settled.resolve({ status: 'cancelled', submissionAttempted: false, reason: 'Aborted by cancel().' });
+        await waitUntil(() => settlements.length === 3);
+
+        expect(settlements[2]).toMatchObject({
+            kind: 'attempt-settled',
+            msgId: message.id.msgId,
+            attemptId: firstAttemptId(message.id.msgId),
+            outcome: 'cancelled',
+            submissionAttempted: false,
+            willRetry: false
+        });
+
+        // The row was released `completed`: a further batch finds no work left to attempt.
+        await runOutboundWorkTask(runtime);
+        expect(settlements.length).toBe(3);
+    }
+);
+
+it.each(BACKEND_KINDS)(
+    'disposes every live per-message signal without stating a cancelled settlement over %s',
+    async (kind) => {
+        const settlements: ALDeliverySettlement[] = [];
+        const settledByMsgId = new Map<string, ReturnType<typeof Promise.withResolvers<ALOutboundSettledSendResult>>>();
+        const signalByMsgId = new Map<string, AbortSignal>();
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createStores(kind),
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: planSend(),
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                const msgId = lifecycle.canonicalMessage.id.msgId;
+                const settled = Promise.withResolvers<ALOutboundSettledSendResult>();
+                settledByMsgId.set(msgId, settled);
+                signalByMsgId.set(msgId, lifecycle.signal);
+                return { status: 'queued', settled: settled.promise };
+            }
+        });
+        // Two independent messages: disposal must reach both controllers, not just one shared signal.
+        const first = createOutboundMessage('msg-dispose-live-signal-1');
+        const second = createOutboundMessage('msg-dispose-live-signal-2');
+
+        await enqueueOutboundOrThrow(runtime, first);
+        await enqueueOutboundOrThrow(runtime, second);
+        expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-started']);
+
+        runtime.dispose();
+
+        expect(signalByMsgId.get(first.id.msgId)?.aborted).toBe(true);
+        expect(signalByMsgId.get(second.id.msgId)?.aborted).toBe(true);
+        expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-started']);
+
+        settledByMsgId.get(first.id.msgId)?.resolve({ status: 'cancelled', submissionAttempted: false });
+        settledByMsgId.get(second.id.msgId)?.resolve({ status: 'cancelled', submissionAttempted: false });
+        await waitUntil(() => settlements.length === 4);
+
+        // Both attempts settle cancelled; the owner itself states no `cancelled` fact for a disposed message.
+        expect(settlements.map((settlement) => settlement.kind)).toEqual([
+            'attempt-started',
+            'attempt-started',
+            'attempt-settled',
+            'attempt-settled'
+        ]);
+        expect(settlements[2]).toMatchObject({ outcome: 'cancelled', willRetry: false });
+        expect(settlements[3]).toMatchObject({ outcome: 'cancelled', willRetry: false });
+    }
+);
+
+it('completes an ack-timeout effect for a cancelled message without retrying it', async () => {
+    const settlements: ALDeliverySettlement[] = [];
+    const stores = createStores('memory');
+    let ownerNowMs = Date.now();
+    const runtime = createDefaultOutboundTestRuntime({
+        stores,
+        // An engine this test owns and never starts: only the explicit batches below claim work.
+        queueEngine: new InboxOutboxEngine(),
+        nowMs: () => ownerNowMs,
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: planSend({
+            enabled: true,
+            timeoutMs: ACK_TIMEOUT_WINDOW_MS,
+            maxAttempts: 100,
+            expectedPeerIds: ['peer-1']
+        }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const message = createOutboundMessage('msg-cancelled-ack-timeout');
+
+    await enqueueOutboundOrThrow(runtime, message);
+    expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
+
+    expect(runtime.cancel(message.id.msgId)).toBe('cancelled');
+
+    // The acknowledgement row falls due on the queue's clock; cancellation preempts its repair.
+    await new Promise((resolve) => setTimeout(resolve, ACK_TIMEOUT_WINDOW_MS + 30));
+    ownerNowMs = Date.now();
+    await runOutboundWorkTask(runtime);
+
+    expect(settlements.map((settlement) => settlement.kind)).toEqual([
+        'attempt-started',
+        'attempt-settled',
+        'cancelled'
+    ]);
+    expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
+});
+
 /** Drains one message whose deadline passes inside its carrier, so the deadline guard settles it. */
 async function readSettlementsPastDeadline(
     kind: 'memory' | 'indexeddb',

@@ -248,7 +248,7 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
     export interface SendLifecycle {
         readonly canonicalMessage: ALMessage;
-        /** The runtime owns this cancellation signal; disposal stops remaining local transport work. */
+        /** This message's own signal: `cancel(msgId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
         readonly expiresAtMs: number | undefined;
         readonly leaseUntilMs: number | undefined;
@@ -312,8 +312,20 @@ export namespace ALOutboundMessageRuntime {
     }
 }
 
+/** What a `cancel` call decided: a message the owner never saw still moves the set and returns `cancelled`. */
+export type ALOutboundCancelOutcome = 'cancelled' | 'already-cancelled';
+
+/** One message's live transport controller, shared by its concurrent attempts, and how many hold it open. */
+interface ALOutboundLiveSendControl {
+    readonly controller: AbortController;
+    liveAttempts: number;
+}
+
 export class ALOutboundMessageRuntime<TPrepared> {
     private readonly sendAbortController = new AbortController();
+    /** Held for the owner's lifetime (README "Transport attempt settlement"): never drained, never persisted. */
+    private readonly cancelledMsgIds = new Set<string>();
+    private readonly liveMessageSendControllers = new Map<string, ALOutboundLiveSendControl>();
     private readonly readyPromise: Promise<void>;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
@@ -400,11 +412,32 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.disposed = true;
         this.work.dispose();
         this.dispatchAdmission.dispose();
+        // Every live message controller first: disposal ends local transport work, same as cancellation
+        // does, but states no `cancelled` fact of its own -- the attempts settle cancelled, not the messages.
+        for (const live of this.liveMessageSendControllers.values()) {
+            live.controller.abort();
+        }
         this.sendAbortController.abort();
     }
 
     get sendSignal(): AbortSignal {
         return this.sendAbortController.signal;
+    }
+
+    /**
+     * Cancels one message for this owner's lifetime. A message the owner never admitted is still
+     * remembered, so a row later claimed for it completes without sending; a message with a live
+     * attempt has that attempt's transport signal aborted. Idempotent: only the first call states the
+     * `cancelled` settlement.
+     */
+    cancel(msgId: string): ALOutboundCancelOutcome {
+        if (this.cancelledMsgIds.has(msgId)) {
+            return 'already-cancelled';
+        }
+        this.cancelledMsgIds.add(msgId);
+        this.liveMessageSendControllers.get(msgId)?.controller.abort();
+        this.emitSettlement({ kind: 'cancelled', msgId });
+        return 'cancelled';
     }
 
     async enqueueIfAbsent(
@@ -550,6 +583,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private async runDurableEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>
     ): Promise<ALWorkAttemptResult> {
+        // Before anything else: a cancelled message's remaining work completes silently, of any kind --
+        // no `attempt-started`, no `expired`, no repair. Its live attempt (if any) settles through the
+        // transport instead, which states its own `attempt-settled cancelled`.
+        if (this.isCancelledEffect(effect)) {
+            return { status: 'completed' };
+        }
         if (effect.expireAtTimestamp <= this.readNowMs()) {
             this.emitWorkExpiry(effect);
             return { status: 'completed' };
@@ -582,6 +621,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
     }
 
+    private isCancelledEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
+        const msgId = resolveALOutboundEffectMsgId(effect);
+        return msgId !== undefined && this.cancelledMsgIds.has(msgId);
+    }
+
     /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */
     private async runPreparedSend(
         effect: ALOutboundEffectSnapshot<TPrepared>,
@@ -591,22 +635,68 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (!canonicalMessage) {
             throw new NonRetryableException('Prepared work has no canonical message');
         }
+        const msgId = canonicalMessage.id.msgId;
+        const signal = this.acquireMessageSendSignal(msgId);
         this.emitSettlement({
             kind: 'attempt-started',
-            msgId: canonicalMessage.id.msgId,
+            msgId,
             attemptId: effect.effectId
         });
-        return await this.effects.writePreparedMessage({
-            attemptId: effect.effectId,
-            payload,
-            lifecycle: {
-                canonicalMessage,
-                signal: this.sendSignal,
-                expiresAtMs: effect.expireAtTimestamp,
-                leaseUntilMs: effect.leaseUntilMs
-            },
-            attempts: effect.attempts
-        });
+        try {
+            const result = await this.effects.writePreparedMessage({
+                attemptId: effect.effectId,
+                payload,
+                lifecycle: {
+                    canonicalMessage,
+                    signal,
+                    expiresAtMs: effect.expireAtTimestamp,
+                    leaseUntilMs: effect.leaseUntilMs
+                },
+                attempts: effect.attempts
+            });
+            this.releaseMessageSendAttemptWhenSettled(msgId, result);
+            return result;
+        }
+        catch (error) {
+            this.releaseMessageSendSignal(msgId);
+            throw error;
+        }
+    }
+
+    /**
+     * One controller per message, shared by concurrent attempts on it -- the RTC owner commits one
+     * `send-prepared` row per next-hop peer, and `cancel` must abort all of them together.
+     */
+    private acquireMessageSendSignal(msgId: string): AbortSignal {
+        const live = this.liveMessageSendControllers.get(msgId);
+        if (live) {
+            live.liveAttempts += 1;
+            return live.controller.signal;
+        }
+        const controller = new AbortController();
+        this.liveMessageSendControllers.set(msgId, { controller, liveAttempts: 1 });
+        return controller.signal;
+    }
+
+    /** A retained attempt keeps its message controller open until the transport truly settles it. */
+    private releaseMessageSendAttemptWhenSettled(msgId: string, result: ALWorkAttemptResult): void {
+        if (result.status !== 'retained') {
+            this.releaseMessageSendSignal(msgId);
+            return;
+        }
+        const release = () => this.releaseMessageSendSignal(msgId);
+        void result.settled.then(release, release);
+    }
+
+    private releaseMessageSendSignal(msgId: string): void {
+        const live = this.liveMessageSendControllers.get(msgId);
+        if (!live) {
+            return;
+        }
+        live.liveAttempts -= 1;
+        if (live.liveAttempts <= 0) {
+            this.liveMessageSendControllers.delete(msgId);
+        }
     }
 
     /**
@@ -677,4 +767,24 @@ export class ALOutboundMessageRuntime<TPrepared> {
 /** The effect kinds whose queue row expires exactly when the message it carries does. */
 function statesMessageDeadline(kind: ALOutboundDurableEffect<unknown>['kind']): boolean {
     return kind === 'send-prepared' || kind === 'admit-message' || kind === 'dequeue-message';
+}
+
+/** The message a durable effect names, read from whichever field its own kind carries the id in. */
+function resolveALOutboundEffectMsgId<TPrepared>(
+    effect: ALOutboundEffectSnapshot<TPrepared>
+): string | undefined {
+    const { payload } = effect;
+    switch (payload.kind) {
+        case 'admit-message':
+        case 'send-prepared':
+            return payload.message.msgId;
+        case 'ack-timeout':
+        case 'repair-hint':
+        case 'nack-retry':
+            return payload.msgId;
+        case 'admit-control':
+            return payload.msg.id.msgId;
+        case 'dequeue-message':
+            return effect.canonicalMessage?.id.msgId;
+    }
 }
