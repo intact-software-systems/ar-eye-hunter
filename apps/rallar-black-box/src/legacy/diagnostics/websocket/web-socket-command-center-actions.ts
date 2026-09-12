@@ -720,7 +720,7 @@ export class WebSocketCommandCenterActions {
             hasObserved: () =>
                 deriveWebSocketDiagnostics(this.input.stateRef.current, this.input.values.connection).inboundCount >
                     startCount,
-            nowMs: Date.now,
+            nowMs: this.input.nowMs,
             startedAtEpochMs: startedAt,
             timeoutMs: this.input.values.timeoutMs
         });

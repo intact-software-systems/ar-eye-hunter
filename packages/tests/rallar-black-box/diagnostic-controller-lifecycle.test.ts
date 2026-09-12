@@ -233,6 +233,43 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
+    it.each([-1_000_000, 1_000_000])('uses the supplied receive clock with ambient offset %s', async (offsetMs) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(100_000);
+        const clock = { nowMs: 100_000 + offsetMs };
+        const ambientNow = Date.now;
+        // The real composition captures this dependency; the in-flight action must retain it.
+        Date.now = () => clock.nowMs;
+        try {
+            await act(async () =>
+                root.render(createElement(WebSocketHarness, {
+                    input,
+                    capture: (view) => {
+                        websocket = view;
+                    }
+                }))
+            );
+        }
+        finally {
+            Date.now = ambientNow;
+        }
+        const waiting = Promise.withResolvers<void>();
+        await act(async () => {
+            void websocket.waitForMessage().then(waiting.resolve, waiting.reject);
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(100);
+        });
+        expect(websocket.waitStatus).toBe('waiting');
+        clock.nowMs += websocket.values.timeoutMs + 1;
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(100);
+        });
+        expect(websocket.waitStatus).toBe('timeout');
+        await waiting.promise;
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it.each(['quick', 'websocket'] as const)('does not publish an abandoned %s send result', async (controller) => {
         const start = Promise.withResolvers<RallarStartResult>();
         facade.start = () => start.promise;
