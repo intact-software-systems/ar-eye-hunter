@@ -1,8 +1,3 @@
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -11,9 +6,6 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import {
-    peekOutboundWorkReadyAt
-} from '../alm/outbound-runtime-test-fixture.ts';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -26,13 +18,20 @@ import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-run
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient, type OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
 
+import { peekOutboundWorkReadyAt } from '../alm/outbound-runtime-test-fixture.ts';
 import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
+import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 interface ClientIngressFixture {
@@ -56,7 +55,7 @@ describe('WS client typed ingress and transport effects', () => {
 
     it('rejects malformed and oversized input before admission and still delivers valid traffic', async () => {
         const fixture = await createClientIngressFixture();
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         const malformed = { ...message, payload: { ...message.payload, resource: '{' } };
         const oversized = { ...message, diagnostics: { visitedPeerIds: Array.from({ length: 65 }, () => 'peer') } };
 
@@ -76,7 +75,7 @@ describe('WS client typed ingress and transport effects', () => {
     it.each(['owned', 'shared'] as const)('replays without new ingress when a matching consumer registers with an %s engine', async (ownership) => {
         const fixture = await createClientIngressFixture();
         fixture.service.removeAnyInboxMessageCallback('test-observer');
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         await fixture.service.acceptIncomingMessage(message);
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
@@ -116,7 +115,7 @@ describe('WS client typed ingress and transport effects', () => {
 
     it('accepts the logical origin relayed by its configured server without rewriting the candidate', async () => {
         const fixture = await createClientIngressFixture();
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         Object.freeze(message.id);
         Object.freeze(message.route);
         Object.freeze(message.targets);
@@ -148,7 +147,7 @@ describe('WS client typed ingress and transport effects', () => {
                 delivered.push('wildcard');
             }
         });
-        const message = { ...incomingMessage(), constraints: { expiresAtMs } };
+        const message = { ...createIncomingMessage(), constraints: { expiresAtMs } };
 
         await fixture.service.acceptIncomingMessage(message);
 
@@ -159,7 +158,7 @@ describe('WS client typed ingress and transport effects', () => {
 
     it('consumes malformed live socket input without throwing or poisoning the next message', async () => {
         const fixture = await createClientIngressFixture();
-        const message = incomingMessage();
+        const message = createIncomingMessage();
 
         fixture.socket.receive(JSON.stringify({ ...message, id: { ...message.id, v: 99 } }));
         fixture.socket.receive(JSON.stringify(message));
@@ -170,7 +169,7 @@ describe('WS client typed ingress and transport effects', () => {
 
     it('rejects an oversized live serialization before parsing even when its decoded envelope would be small', async () => {
         const fixture = await createClientIngressFixture();
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         const serialized = ' '.repeat(AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes) + JSON.stringify(message);
         const parse = vi.spyOn(JSON, 'parse');
 
@@ -187,7 +186,7 @@ describe('WS client typed ingress and transport effects', () => {
         const fixture = await createClientIngressFixture();
         fixture.service.close();
 
-        const accepted = await fixture.service.acceptIncomingMessage(incomingMessage());
+        const accepted = await fixture.service.acceptIncomingMessage(createIncomingMessage());
 
         expect(accepted.right?.kind).toBe('disposed');
         expect(fixture.admission.data.size).toBe(0);
@@ -210,12 +209,13 @@ describe('WS client typed ingress and transport effects', () => {
                 fixture.delivered.push(message);
             }
         });
-        const receiving = fixture.service.acceptIncomingMessage(incomingMessage());
+        const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage());
         await started.promise;
 
         fixture.service.close();
         resume.resolve();
         await receiving;
+        await waitForOwnedQueueWork(fixture.admission.workQueue);
 
         expect(fixture.delivered).toEqual([]);
     });
@@ -226,7 +226,7 @@ describe('WS client typed ingress and transport effects', () => {
         vi.spyOn(fixture.socket, 'send').mockImplementationOnce(() => {
             throw new Error('connection interrupted during send');
         });
-        const incoming = incomingMessage();
+        const incoming = createIncomingMessage();
         const message: ALMessage = {
             ...incoming,
             id: { ...incoming.id, ts: Date.now(), senderId: 'self' },
@@ -254,7 +254,8 @@ describe('WS client typed ingress and transport effects', () => {
     });
 
     it('retains accepted local delivery when an application handler fails and retries it', async () => {
-        vi.useFakeTimers();
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
         const fixture = await createClientIngressFixture();
         let available = false;
         fixture.service.onInboxMessageDo('message.v1', {
@@ -264,18 +265,17 @@ describe('WS client typed ingress and transport effects', () => {
                 }
             }
         });
-        const message = incomingMessage();
+        const message = createIncomingMessage();
 
         expect((await fixture.service.acceptIncomingMessage(message)).right?.kind).toBe('admitted');
-        // The worker owns delivery: flush its first attempt without advancing the retry deadline.
-        await vi.advanceTimersByTimeAsync(0);
-        expect(fixture.delivered).toEqual([]);
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
+        await expect.poll(() => fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        expect(fixture.delivered).toEqual([]);
         const retry = (await fixture.admission.workQueue.getItem(keys[0]))!;
         expect(retry).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
         available = true;
-        await vi.advanceTimersByTimeAsync(retry.dequeueAudit.nextTs!.epochMilliseconds - Date.now());
+        nowMs = retry.dequeueAudit.nextTs!.epochMilliseconds;
         await vi.waitFor(() => expect(fixture.delivered).toEqual([message]));
     });
 
@@ -284,7 +284,7 @@ describe('WS client typed ingress and transport effects', () => {
         const fixture = await createClientIngressFixture({
             onMessage: async () => await new Promise<void>((resolve) => setTimeout(resolve, 1))
         });
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         fixture.socket.receive(JSON.stringify(message));
         fixture.socket.disconnect(1006, 'connection-lost');
         const reconnected = fixture.service.socket.connect();
@@ -356,7 +356,7 @@ async function createClientIngressFixture(
     };
 }
 
-function incomingMessage(): ALMessage {
+function createIncomingMessage(): ALMessage {
     return {
         id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'logical-origin' },
         route: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },

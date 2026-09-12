@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import type { ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     createInMemoryALAdmissionState,
@@ -53,7 +54,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-2',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'two'
@@ -76,7 +77,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-1',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'one'
@@ -121,9 +122,9 @@ describe('ALInboundMessageRuntime', () => {
         await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         await expect.poll(() => dispatchedTexts).toEqual(['kept-local']);
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
+        await expect.poll(() => toAckPayloads(controlMessages)).toHaveLength(1);
         expect(forwardedIds).toEqual([]);
-        const ackPayloads = readAckPayloads(controlMessages);
+        const ackPayloads = toAckPayloads(controlMessages);
         expect(ackPayloads).toHaveLength(1);
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
@@ -178,7 +179,7 @@ describe('ALInboundMessageRuntime', () => {
         await expect.poll(() => restarted.forwardedIds).toEqual([seq2.id.msgId]);
         expect((await stores.workQueue.getItem(entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         expect(restarted.dispatchedTexts).toEqual([]);
-        expect(readAckPayloads(restarted.controlMessages)).toEqual([]);
+        expect(toAckPayloads(restarted.controlMessages)).toEqual([]);
         const seq1 = createOrderedMessage(1, 'one');
         const admitted = await restarted.runtime.admitIncomingMessage(seq1, source);
 
@@ -392,9 +393,9 @@ describe('ALInboundMessageRuntime', () => {
         await pendingRelease;
         await expect.poll(() => releaseConflictObserved).toBe(true);
         vi.setSystemTime(Date.now() + 100);
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
+        await expect.poll(() => toAckPayloads(controlMessages)).toHaveLength(1);
 
-        const ackPayloads = readAckPayloads(controlMessages);
+        const ackPayloads = toAckPayloads(controlMessages);
 
         expect(releaseConflictObserved).toBe(true);
         expect(ackPayloads).toHaveLength(1);
@@ -418,7 +419,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                 resourceId: 'msg-ack',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello'
@@ -495,7 +496,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         releaseForwarding.resolve();
         await admission;
 
-        await expect.poll(() => readAckPayloads(controlMessages)).toEqual([expect.objectContaining({
+        await expect.poll(() => toAckPayloads(controlMessages)).toEqual([expect.objectContaining({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
             status: 'subtree-complete'
@@ -505,7 +506,12 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
     it('does not complete deferred subtree ack after the source message expires', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
 
-        const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
+        const forwarded = Promise.withResolvers<string>();
+        const { runtime, controlMessages, controlAcceptances } = createInboundHarness(undefined, {
+            forwardMessage: async (message) => {
+                forwarded.resolve(message.id.msgId);
+            }
+        });
 
         const msg = newALMulticastMessage(
             'peer-1',
@@ -514,7 +520,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                 resourceId: 'msg-expiring-pending-ack',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello'
@@ -533,7 +539,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
 
         await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
-        await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
+        await expect(forwarded.promise).resolves.toBe(msg.id.msgId);
         expect(controlMessages).toHaveLength(0);
 
         vi.setSystemTime(Date.now() + 100);
@@ -606,7 +612,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                 resourceId: 'msg-dispatch',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello'
@@ -643,7 +649,9 @@ describe('ALInboundMessageRuntime durable effects', () => {
     });
 
     it('does not retry durable local dispatch after the message expires', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const firstAttempt = Promise.withResolvers<void>();
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
 
         const delivered: string[] = [];
         let attempts = 0;
@@ -654,7 +662,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                 resourceId: 'msg-expiring-dispatch',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'expires'
@@ -669,7 +677,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
             }
         );
         const { runtime } = createInboundHarness(
-            createDefaultInMemoryALInboundRuntimeStores(),
+            stores,
             {
                 dispatchInboxEntry: async (entry) => {
                     const parsed = decodePersistedALMessage(entry.resource);
@@ -677,6 +685,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                     if (attempts === 1) {
                         // The failing attempt outlives the message deadline; the retry must not deliver it.
                         vi.setSystemTime(Date.now() + 30_000);
+                        firstAttempt.resolve();
                         throw new Error('temporary dispatch failure');
                     }
                     delivered.push(parsed.id.msgId);
@@ -686,9 +695,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
-        await expect.poll(() => attempts).toBe(1);
-
-        await vi.advanceTimersByTimeAsync(30_000);
+        await firstAttempt.promise;
+        await expect.poll(() => stores.workQueue.getAllKeys()).toEqual([]);
 
         expect(delivered).toEqual([]);
         expect(attempts).toBe(1);
@@ -795,8 +803,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
         await runtime2.ready();
         vi.setSystemTime(Date.now() + 100);
 
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
-        const ackPayloads = readAckPayloads(controlMessages);
+        await expect.poll(() => toAckPayloads(controlMessages)).toHaveLength(1);
+        const ackPayloads = toAckPayloads(controlMessages);
 
         expect(ackPayloads).toHaveLength(1);
         expect(ackPayloads[0]).toMatchObject({
@@ -891,7 +899,7 @@ function toDeliveredMessageText(entry: ResourceEntry): string {
     return text ?? msg.id.msgId;
 }
 
-function readAckPayloads(messages: readonly ALMessage[]) {
+function toAckPayloads(messages: readonly ALMessage[]): ALAckPayload[] {
     return messages.flatMap((message) => {
         const parsed = parseALControlMessage(message);
         return parsed?.type === 'ack' ? [parsed.payload] : [];
@@ -902,7 +910,7 @@ function createOrderedMessage(
     seq: number,
     text: string,
     ack: 'none' | 'all-logical-recipients' = 'none'
-) {
+): ALMessage {
     return newALMulticastMessage(
         'peer-1',
         {
@@ -910,7 +918,7 @@ function createOrderedMessage(
             resourceId: `msg-${seq}`,
             contextId: 'group-1'
         },
-        groupRef('group-1'),
+        toGroupRef('group-1'),
         'chat.message.v1',
         {
             text
@@ -936,7 +944,7 @@ function createSenderScopedDedupMessage(senderId: string, text: string): ALMessa
             resourceId: `msg-${senderId}`,
             contextId: 'group-1'
         },
-        groupRef('group-1'),
+        toGroupRef('group-1'),
         'chat.message.v1',
         { text },
         {
@@ -973,7 +981,11 @@ function createInboundBackedStores(namespace: string, state: ALAdmissionMemorySt
     };
 }
 
-function createInboundPersistenceFixture() {
+interface InboundPersistenceFixture {
+    openStores(): ALInboundRuntimeStores;
+}
+
+function createInboundPersistenceFixture(): InboundPersistenceFixture {
     const state = createInMemoryALAdmissionState();
     return {
         openStores(): ALInboundRuntimeStores {
@@ -982,7 +994,7 @@ function createInboundPersistenceFixture() {
     };
 }
 
-function groupRef(groupId: string): GroupRef {
+function toGroupRef(groupId: string): GroupRef {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',

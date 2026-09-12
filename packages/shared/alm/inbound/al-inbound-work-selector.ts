@@ -56,12 +56,6 @@ interface ALInboundWorkSelection {
     readonly nextReadyAtMs: number | undefined;
 }
 
-/** What one round claimed, with the eligibility surfaces of exactly the rows the port reserved. */
-interface ALInboundClaimedSelection {
-    readonly selection: ALWorkReadySelection;
-    readonly observations: ReadonlyMap<string, ALInboundDeliveryObservation>;
-}
-
 /** One row's eligibility surface, under the queue slot it was read for, so a claim can be matched to it. */
 interface ALInboundClaimableObservation {
     readonly key: ResourceEntryKeyString;
@@ -73,14 +67,6 @@ interface ALInboundPageEligibility
     extends Pick<ALInboundWorkSelection, 'claimable' | 'observations' | 'unleasedReservations'> {
     /** The earliest time a row this page passed over becomes claimable. */
     readonly readyAtMs: number | undefined;
-}
-
-interface ReadALInboundClaimedSelectionInput {
-    readonly selection: ALInboundWorkSelection;
-    readonly port: ALWorkQueuePort;
-    readonly pageSize: number;
-    readonly nowMs: () => number;
-    readonly selectionStartedAtMs: number;
 }
 
 export namespace ALInboundWorkSelector {
@@ -120,20 +106,40 @@ export class ALInboundWorkSelector {
         return selection.nextReadyAtMs;
     }
 
+    /** Reports due time from the observations: reservation replaces each row's retry stamp with its lease. */
     async selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection> {
         const selectionStartedAtMs = this.dependencies.nowMs();
         const pending = this.readSelection(port, pageSize);
         this.forgetSelection(pending);
         const selection = await pending;
-        const claimed = await readALInboundClaimedSelection({
-            selection,
-            port,
-            pageSize,
-            nowMs: this.dependencies.nowMs,
-            selectionStartedAtMs
-        });
-        this.claimedObservations = claimed.observations;
-        return claimed.selection;
+
+        const claimStartedAtMs = this.dependencies.nowMs();
+        const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
+        const claimedAtMs = this.dependencies.nowMs();
+        const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
+        const observations = new Map<string, ALInboundDeliveryObservation>();
+        for (const [effectId, observation] of selection.observations) {
+            if (claimedKeys.has(observation.key)) {
+                observations.set(effectId, observation.observed);
+            }
+        }
+        this.claimedObservations = observations;
+        let earliestDueAtMs: number | undefined;
+        const claimedEntries = [
+            ...selection.unleasedReservations.map((claim) => claim.entry),
+            ...selection.claimable.filter((entry) => claimedKeys.has(toKeyAsString(entry.key)))
+        ];
+        for (const entry of claimedEntries) {
+            const dueAtMs = resolveALInboundWorkDueAtMs(entry);
+            earliestDueAtMs = Math.min(earliestDueAtMs ?? dueAtMs, dueAtMs);
+        }
+        return {
+            claims: [...selection.unleasedReservations, ...claims],
+            nextReadyAtMs: selection.nextReadyAtMs,
+            selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
+            claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
+            earliestDueAtMs
+        };
     }
 
     /** Only surfaces matched to a successful reservation survive until the next selection. */
@@ -258,74 +264,6 @@ function resolveALInboundScannedReadyAtMs(
     scanned: number | undefined
 ): number | undefined {
     return readyAt < entry.audit.expiryTs.epochMilliseconds ? Math.min(scanned ?? readyAt, readyAt) : scanned;
-}
-
-/**
- * One rotation round's claim, timed in the two halves a slow drain has to be split into: the page
- * read with its eligibility reads, and the port's reservation of what that read cleared. The wait it
- * reports is read from the observed page, because the reservation that follows replaces a row's own
- * due stamp with its lease, and it covers every row the batch takes -- the unleased reservations
- * included, since those are claims the port itself never made.
- */
-async function readALInboundClaimedSelection(
-    input: ReadALInboundClaimedSelectionInput
-): Promise<ALInboundClaimedSelection> {
-    const { selection, port, pageSize, nowMs, selectionStartedAtMs } = input;
-    const claimStartedAtMs = nowMs();
-    const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
-    const claimedAtMs = nowMs();
-    const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
-    return {
-        selection: {
-            claims: [...selection.unleasedReservations, ...claims],
-            nextReadyAtMs: selection.nextReadyAtMs,
-            selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
-            claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
-            earliestDueAtMs: computeEarliestALInboundDueAtMs(
-                toClaimedALInboundEntries(selection, claimedKeys)
-            )
-        },
-        observations: toClaimedALInboundObservations(selection.observations, claimedKeys)
-    };
-}
-
-/**
- * Every row this selection hands the batch, as the page observed it before any reservation: the ones
- * the port reserved, and the unleased reservations the page recovered itself, which the port never
- * sees and which a batch of nothing else would otherwise report as no wait at all.
- */
-function toClaimedALInboundEntries(
-    selection: ALInboundWorkSelection,
-    claimedKeys: ReadonlySet<ResourceEntryKeyString>
-): readonly ResourceEntry[] {
-    return [
-        ...selection.unleasedReservations.map((claim) => claim.entry),
-        ...selection.claimable.filter((entry) => claimedKeys.has(toKeyAsString(entry.key)))
-    ];
-}
-
-/** The earliest of those rows' own due times, which is the wait the batch reports. */
-function computeEarliestALInboundDueAtMs(entries: readonly ResourceEntry[]): number | undefined {
-    let earliest: number | undefined;
-    for (const entry of entries) {
-        const dueAtMs = resolveALInboundWorkDueAtMs(entry);
-        earliest = earliest === undefined ? dueAtMs : Math.min(earliest, dueAtMs);
-    }
-    return earliest;
-}
-
-/** A row the page cleared but the port did not reserve is delivered by no one, so its surface is dropped. */
-function toClaimedALInboundObservations(
-    observations: ReadonlyMap<string, ALInboundClaimableObservation>,
-    claimedKeys: ReadonlySet<ResourceEntryKeyString>
-): ReadonlyMap<string, ALInboundDeliveryObservation> {
-    const claimed = new Map<string, ALInboundDeliveryObservation>();
-    for (const [effectId, observation] of observations) {
-        if (claimedKeys.has(observation.key)) {
-            claimed.set(effectId, observation.observed);
-        }
-    }
-    return claimed;
 }
 
 function toUnleasedALWorkClaim(entry: ResourceEntry, nowMs: number): ALWorkClaim {

@@ -1,3 +1,13 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -11,14 +21,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
 interface ReplayObservedState {
@@ -99,6 +102,8 @@ describe('RTC admitted-message consumption', () => {
 
     it('retains a buffered message and withholds its ACK until its snapshot catches up', async () => {
         const fixture = createReplayFixture(false);
+        fixture.engine.start();
+        onTestFinished(() => fixture.engine.stop());
         const second = createMessage({ seq: 2, versioned: true, acknowledge: true });
         const first = createMessage({ seq: 1, versioned: false, acknowledge: true });
         const trackKey = toALOrderingTrackKey(second);
@@ -111,7 +116,7 @@ describe('RTC admitted-message consumption', () => {
             await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             await expect.poll(() => fixture.delivered).toEqual([first.id.msgId]);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeDefined();
-            expect(acknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
+            expect(toAcknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
 
             fixture.observed.snapshot = createCurrentSnapshot();
             await fixture.engine.executeOnce();
@@ -121,7 +126,7 @@ describe('RTC admitted-message consumption', () => {
             }).toEqual([first.id.msgId, second.id.msgId]);
             await expect.poll(async () => {
                 await fixture.engine.executeOnce();
-                return acknowledgedIds(fixture.controls);
+                return toAcknowledgedIds(fixture.controls);
             }).toContain(second.id.msgId);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeUndefined();
         }
@@ -386,7 +391,7 @@ function createMessage(input: ReplayMessageInput): ALMessage {
     );
 }
 
-function acknowledgedIds(controls: readonly ALMessage[]): string[] {
+function toAcknowledgedIds(controls: readonly ALMessage[]): string[] {
     return controls.flatMap((message) => {
         const control = parseALControlMessage(message);
         return control?.type === 'ack' ? [control.payload.ackedMsgId] : [];

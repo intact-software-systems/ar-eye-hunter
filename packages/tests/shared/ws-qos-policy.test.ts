@@ -1,8 +1,3 @@
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import * as shared from '@shared/mod.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import type { OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
     describe,
@@ -11,8 +6,15 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
-import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import * as shared from '@shared/mod.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import type { OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
+
+import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -23,6 +25,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -41,11 +44,11 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
-        const result = await enqueueOutboxAndDrain(service, msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
-        expect(socket.sentJsonStrings).toHaveLength(1);
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
         expect((await readQueueEntries(outbox)).filter((entry) => entry.status !== shared.EntityStatus.COMPLETED)).toEqual([]);
     });
@@ -55,6 +58,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -72,13 +76,13 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
-        const first = await enqueueOutboxAndDrain(service, msg);
-        const second = await enqueueOutboxAndDrain(service, msg);
+        const first = await service.enqueueOutboxIfAbsent(msg);
+        const second = await service.enqueueOutboxIfAbsent(msg);
 
         expect(first.status).toBe('accepted');
         expect(second.status).toBe('duplicate');
         expect(second.entry?.key).toEqual(first.entry?.key);
-        expect(socket.sentJsonStrings).toHaveLength(1);
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
     });
 
     it('applies topic defaults from the qos provider on outbound sends', async () => {
@@ -87,6 +91,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self',
             qosProvider: {
                 defaultsForMessage: (msg) =>
@@ -117,11 +122,11 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
-        const result = await enqueueOutboxAndDrain(service, msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('enqueued');
         expect(result.entries).toHaveLength(1);
-        expect(socket.sentJsonStrings).toHaveLength(1);
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
@@ -134,6 +139,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             const service = shared.createDefaultWsQueueBoxClientService({
                 outbox: outbox,
                 socket: socket.client,
+                inboundStores: socket.inbound,
                 sessionId: 'self'
             }).enableDefaultCallbacks();
             onTestFinished(() => service.close());
@@ -171,10 +177,9 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 }
             );
 
-            await enqueueOutboxAndDrain(service, msg);
-            await settleCommittedOutboundBatch();
+            await service.enqueueOutboxIfAbsent(msg);
 
-            expect(socket.sentJsonStrings).toHaveLength(1);
+            await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
 
             await vi.advanceTimersByTimeAsync(100);
             await expect.poll(async () => {
@@ -208,6 +213,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -259,8 +265,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         };
 
-        await enqueueOutboxAndDrain(service, seq1);
-        await enqueueOutboxAndDrain(service, seq2);
+        await service.enqueueOutboxIfAbsent(seq1);
+        await service.enqueueOutboxIfAbsent(seq2);
 
         const repair = shared.newALRepairControlMessage(
             { v: 2, msgId: 'control-repair', ts: 0, senderId: 'peer-1' },
@@ -276,6 +282,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             }
         );
 
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(2);
         await socket.receive(repair);
 
         await expect.poll(() => socket.sentJsonStrings.length).toBe(3);
@@ -288,6 +295,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -346,8 +354,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
 
         socket.native.readyState = 3;
-        const firstResult = await enqueueOutboxAndDrain(service, first);
-        const secondResult = await enqueueOutboxAndDrain(service, second);
+        const firstResult = await service.enqueueOutboxIfAbsent(first);
+        const secondResult = await service.enqueueOutboxIfAbsent(second);
 
         expect(firstResult.status).toBe('enqueued');
         expect(secondResult.status).toBe('enqueued');
@@ -366,6 +374,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -411,6 +420,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         await socket.receive(msg);
 
+        await waitForSettledALInboundWork(socket.inbound.workQueue);
         expect(receivedByFirst).toEqual([msg.id.msgId]);
         expect(receivedBySecond).toEqual([]);
     });
@@ -420,6 +430,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -495,6 +506,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(newer);
         await socket.receive(older);
 
+        await waitForSettledALInboundWork(socket.inbound.workQueue);
         expect(deliveredTexts).toEqual([newer.payload.resource]);
     });
 
@@ -519,6 +531,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         onTestFinished(() => service.close());
 
         let callbackCount = 0;
+        engine.start();
+        onTestFinished(() => engine.stop());
         service.onInboxMessageDo(
             'chat.private-text.v1',
             {
@@ -557,7 +571,6 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(callbackCount).toBe(0);
         const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        await engine.executeOnce();
         expect(await stores.workQueue.getItem(keys[0])).toMatchObject({
             status: shared.EntityStatus.NEW,
             dequeueAudit: { attempts: 0 }
@@ -565,10 +578,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(callbackCount).toBe(0);
 
         overloaded = false;
-        await expect.poll(async () => {
-            await engine.executeOnce();
-            return callbackCount;
-        }).toBe(1);
+        await expect.poll(() => callbackCount).toBe(1);
 
         expect(callbackCount).toBe(1);
     });
@@ -579,6 +589,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
+            inboundStores: socket.inbound,
             sessionId: 'self'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
@@ -600,7 +611,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 resourceId: 'msg-2',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'two'
@@ -618,7 +629,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 resourceId: 'msg-3',
                 contextId: 'group-1'
             },
-            groupRef('group-1'),
+            toGroupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'one'
@@ -631,6 +642,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         await socket.receive(seq2);
 
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(2);
         expect(deliveredTexts).toEqual([]);
         expect((await readQueueEntries(outbox)).filter((entry) => entry.status !== shared.EntityStatus.COMPLETED)).toEqual([]);
 
@@ -649,7 +661,16 @@ describe('WsQueueBoxClientService QoS runtime', () => {
     });
 });
 
-function createFakeWsSocket() {
+interface WsSocketFixture {
+    readonly inbound: shared.ALInboundRuntimeStores;
+    readonly client: shared.JsonWebSocketClient;
+    readonly native: RecordingWebSocket;
+    readonly sentJsonStrings: readonly string[];
+    receive(message: shared.ALMessage): Promise<void>;
+}
+
+function createFakeWsSocket(): WsSocketFixture {
+    const inbound = createDefaultInMemoryALInboundRuntimeStores();
     const native = new RecordingWebSocket();
     const client = new shared.JsonWebSocketClient('ws://client-qos-policy-test', createPassThroughTransportFaultPort());
     client.ws = native;
@@ -659,6 +680,7 @@ function createFakeWsSocket() {
         return client;
     });
     return {
+        inbound,
         client,
         native,
         sentJsonStrings: native.sent,
@@ -669,7 +691,6 @@ function createFakeWsSocket() {
             for (const callback of callbacks) {
                 await callback.onMessage(message, new MessageEvent('message', { data: JSON.stringify(message) }));
             }
-            await waitForALInboundWork();
         }
     };
 }
@@ -711,20 +732,10 @@ async function readQueueEntries(queue: shared.InMemoryQueueBox): Promise<shared.
     return entries;
 }
 
-function groupRef(groupId: string) {
+function toGroupRef(groupId: string): GroupRef {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId
     };
-}
-
-/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
-async function enqueueOutboxAndDrain(
-    service: shared.WsQueueBoxClientService,
-    msg: shared.ALMessage
-): Promise<shared.ALOutboundEnqueueResult> {
-    const result = await service.enqueueOutboxIfAbsent(msg);
-    await settleCommittedOutboundBatch();
-    return result;
 }

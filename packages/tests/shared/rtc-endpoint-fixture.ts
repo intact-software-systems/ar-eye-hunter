@@ -1,4 +1,3 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { vi } from 'vitest';
 
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -8,6 +7,7 @@ import {
     createDefaultInMemoryALInboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -32,8 +32,7 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
-import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
-import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -132,8 +131,9 @@ export class RtcEndpointFixture {
 
     async waitForDeliveries(): Promise<void> {
         do {
+            await waitForOwnedQueueWork(this.inbound.workQueue);
+            await waitForOwnedQueueWork(this.outbound.workQueue);
             await Promise.all(this.pendingDeliveries.splice(0));
-            await waitForALInboundWork();
         }
         while (this.pendingDeliveries.length > 0);
     }
@@ -141,9 +141,8 @@ export class RtcEndpointFixture {
     private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
         this.received.push(message);
         await this.messageCallbacks.get(senderId)!.receive(message);
-        // A reply the received message triggers is enqueued by the callback above without being
-        // awaited; this settles that owner's batch before the caller observes the outcome.
-        await settleCommittedOutboundBatch();
+        await waitForOwnedQueueWork(this.inbound.workQueue);
+        await waitForOwnedQueueWork(this.outbound.workQueue);
     }
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {
