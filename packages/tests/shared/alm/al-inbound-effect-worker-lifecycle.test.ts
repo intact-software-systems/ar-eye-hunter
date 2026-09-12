@@ -34,6 +34,7 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -523,7 +524,7 @@ describe('inbound durable effect worker lifecycle', () => {
         releaseSend.resolve();
     });
 
-    it('leaves retained control work unclaimed when the acknowledgement it admitted wrote no row', async () => {
+    it('does not request scheduling when the acknowledgement commit wrote no work', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: new InboxOutboxEngine(),
@@ -542,9 +543,8 @@ describe('inbound durable effect worker lifecycle', () => {
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
 
-        // The same retained row the committing admission above claims, behind the page the bootstrap
-        // batch already read. No engine round is ever driven here, so only a commit's own
-        // announcement can bring the batch that would claim it.
+        const wake = vi.spyOn(resources.queueEngine, 'wake');
+
         const forwarded = computeALInboundWorkEntry({
             namespace: resources.admissionStore.namespace,
             effectId: 'unannounced-control',
@@ -581,15 +581,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
 
         const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(acceptance.right).toEqual({ kind: 'control', handled: true });
+        expect(wake).not.toHaveBeenCalled();
         expect(controls).toEqual([]);
         expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
     });
 
-    it('leaves retained work unclaimed when the conflicted admission it retained had already expired', async () => {
+    it('does not request scheduling when conflicted admission expires before retention', async () => {
         let nowMs = Date.now();
         vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
         const resources = createDefaultALInboundRuntimeResources({
@@ -610,8 +609,8 @@ describe('inbound durable effect worker lifecycle', () => {
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
 
-        // The retained row of the pin above, behind the page the bootstrap batch already read. No
-        // engine round is ever driven here, so only an announcement can bring the batch that claims it.
+        const wake = vi.spyOn(resources.queueEngine, 'wake');
+
         const forwarded = computeALInboundWorkEntry({
             namespace: resources.admissionStore.namespace,
             effectId: 'expired-retention-control',
@@ -645,10 +644,9 @@ describe('inbound durable effect worker lifecycle', () => {
         });
 
         const acceptance = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'expired' });
+        expect(wake).not.toHaveBeenCalled();
         expect(controls).toEqual([]);
         expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
     });

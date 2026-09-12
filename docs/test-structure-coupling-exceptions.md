@@ -80,6 +80,36 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "inbound-control-no-work-no-notification",
+      "domain": "Inbound control admission scheduling",
+      "owner": "Rallar realtime maintainers",
+      "summary": "An acknowledgement commit that writes no work does not request scheduling.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when the acknowledgement commit wrote no work",
+      "coverageRelation": "The runtime accepts a partial acknowledgement without creating work; the test observes no wake after bootstrap and preserves the unrelated retained control row.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InboxOutboxEngine.wake",
+        "observableEffect": "A control commit without work leaves the existing worker's scheduling untouched.",
+        "requiredConstraint": "No scheduling request occurs between completed bootstrap and the no-work control admission result.",
+        "failureRationale": "An erroneous notification can scan an empty later status and leave the seeded NEW row untouched, so queue state alone cannot prove notification absence."
+      }
+    },
+    {
+      "id": "inbound-expired-retention-no-notification",
+      "domain": "Inbound expired admission scheduling",
+      "owner": "Rallar realtime maintainers",
+      "summary": "An admission that expires after conflict and before retention does not request scheduling.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when conflicted admission expires before retention",
+      "coverageRelation": "The runtime returns expired after a controlled conflicting write; the test observes no wake and verifies unrelated retained work remains unchanged.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InboxOutboxEngine.wake",
+        "observableEffect": "Rejected expired retention leaves the worker's scheduling untouched because no pending row was retained.",
+        "requiredConstraint": "No scheduling request occurs between completed bootstrap and the expired retention result.",
+        "failureRationale": "Natural rotation can absorb an erroneous notification without claiming unrelated NEW work, so absence of delivery cannot establish absence of a scheduling request."
+      }
+    },
+    {
       "id": "inbound-retained-control-commit-notification",
       "domain": "Inbound retained control work scheduling",
       "owner": "Rallar realtime maintainers",
@@ -2134,6 +2164,28 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-f6bcceb7062f196b",
+      "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "inbound-control-no-work-no-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Observing the scheduling port is necessary because an empty later-status batch can hide an erroneous notification from the unchanged NEW-row assertion.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when the acknowledgement commit wrote no work"
+    },
+    {
+      "id": "test-structure-coupling-a1518ca29d5d86f7",
+      "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "inbound-expired-retention-no-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "A direct absence assertion at the scheduling port proves expired retention announces nothing even when natural rotation would leave unrelated durable rows unchanged.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when conflicted admission expires before retention"
+    },
     {
       "id": "test-structure-coupling-2bebd29c36f6d739",
       "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
