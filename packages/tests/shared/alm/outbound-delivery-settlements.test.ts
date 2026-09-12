@@ -504,6 +504,49 @@ it.each(BACKEND_KINDS)(
 );
 
 it.each(BACKEND_KINDS)(
+    'cancels an attempt still inside its pre-transport reads: no transport call, one settlement pair over %s',
+    async (kind) => {
+        const settlements: ALDeliverySettlement[] = [];
+        const sent: string[] = [];
+        const stores = createStores(kind);
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: planSend(),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.kind));
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const message = createOutboundMessage('msg-cancelled-pre-transport');
+        // The abort lands mid-await, inside `writeAttemptedSend`'s own reads -- before its carrier runs.
+        const readReceiptState = stores.admissionStore.readReceiptState.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementationOnce(async (msgId) => {
+            runtime.cancel(msgId);
+            return await readReceiptState(msgId);
+        });
+
+        await enqueueOutboundOrThrow(runtime, message);
+
+        expect(sent).toEqual([]);
+        expect(settlements.map((settlement) => settlement.kind)).toEqual([
+            'attempt-started',
+            'cancelled',
+            'attempt-settled'
+        ]);
+        expect(settlements[2]).toMatchObject({
+            kind: 'attempt-settled',
+            msgId: message.id.msgId,
+            attemptId: firstAttemptId(message.id.msgId),
+            outcome: 'cancelled',
+            submissionAttempted: false,
+            detail: 'The message was cancelled before its carrier ran.',
+            willRetry: false
+        });
+    }
+);
+
+it.each(BACKEND_KINDS)(
     'disposes every live per-message signal without stating a cancelled settlement over %s',
     async (kind) => {
         const settlements: ALDeliverySettlement[] = [];

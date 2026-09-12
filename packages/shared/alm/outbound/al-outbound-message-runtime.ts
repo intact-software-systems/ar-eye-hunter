@@ -413,7 +413,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.work.dispose();
         this.dispatchAdmission.dispose();
         // Every live message controller first: disposal ends local transport work, same as cancellation
-        // does, but states no `cancelled` fact of its own -- the attempts settle cancelled, not the messages.
+        // does, but states no `cancelled` fact of its own. Each interrupted attempt still terminates
+        // through its own `attempt-settled cancelled` -- the effects layer states it directly when the
+        // abort lands before the carrier runs, the carrier's own settlement when it lands during the send.
         for (const live of this.liveMessageSendControllers.values()) {
             live.controller.abort();
         }
@@ -584,8 +586,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
         effect: ALOutboundEffectSnapshot<TPrepared>
     ): Promise<ALWorkAttemptResult> {
         // Before anything else: a cancelled message's remaining work completes silently, of any kind --
-        // no `attempt-started`, no `expired`, no repair. Its live attempt (if any) settles through the
-        // transport instead, which states its own `attempt-settled cancelled`.
+        // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
+        // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
+        // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
         if (this.isCancelledEffect(effect)) {
             return { status: 'completed' };
         }
@@ -787,4 +790,9 @@ function resolveALOutboundEffectMsgId<TPrepared>(
         case 'dequeue-message':
             return effect.canonicalMessage?.id.msgId;
     }
+    // `noImplicitReturns` is off: without this, a payload kind missing a case above would compile
+    // silently and fall through returning `undefined`, escaping cancellation instead of failing the build.
+    // The switch narrows `payload` itself exhaustively, not `payload.kind` -- assign `payload` here.
+    const exhaustivePayload: never = payload;
+    return exhaustivePayload;
 }

@@ -200,8 +200,11 @@ export class ALOutboundMessageEffects<TPrepared> {
             });
             return { status: 'completed' };
         }
+        // The abort can land here -- inside these pre-transport reads -- before the carrier ever runs;
+        // this attempt already stated `attempt-started`, so it terminates its own settlement here, the
+        // same way a throwing carrier does (`writePreparedMessage`'s catch), instead of leaving it open.
         if (lifecycle.signal.aborted) {
-            return { status: 'completed' };
+            return this.writeCancelledBeforeTransport(send, msgId);
         }
         const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, send.attempts, runtime.random());
         const sendResult = await runtime.sendPreparedMessage(send.payload.prepared, send.payload.phase, lifecycle);
@@ -219,6 +222,23 @@ export class ALOutboundMessageEffects<TPrepared> {
             };
         }
         return this.writeSettledSend(send, sendResult, timing);
+    }
+
+    /** A started attempt the abort reached before its carrier ran states its own terminal settlement. */
+    private writeCancelledBeforeTransport(
+        send: ALOutboundMessageEffects.PreparedSend<TPrepared>,
+        msgId: string
+    ): ALWorkOutcome {
+        this.dependencies.settlements({
+            kind: 'attempt-settled',
+            msgId,
+            attemptId: send.attemptId,
+            outcome: 'cancelled',
+            submissionAttempted: false,
+            detail: 'The message was cancelled before its carrier ran.',
+            willRetry: false
+        });
+        return { status: 'completed' };
     }
 
     /** The carrier settled one attempt: its outcome is stated, then the deadline that may end the message. */
