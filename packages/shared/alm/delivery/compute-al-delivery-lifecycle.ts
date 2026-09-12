@@ -187,13 +187,24 @@ function toSettledAttemptLifecycle(
     if (settlement.outcome === 'sent') {
         return { ...next, state: 'transport-accepted' };
     }
-    if ((settlement.outcome === 'failed' || settlement.outcome === 'no-targets') && !settlement.willRetry) {
+    /**
+     * A message can have several attempts at once (one send-prepared row per next-hop peer): a
+     * non-retrying failure only fails the send when no hop in evidence already carried it.
+     */
+    if (
+        (settlement.outcome === 'failed' || settlement.outcome === 'no-targets') && !settlement.willRetry &&
+        !hasSentAttempt(next.evidence)
+    ) {
         return toReasonedLifecycle(next, 'failed', settlement.detail);
     }
     if (settlement.outcome === 'expired' || settlement.outcome === 'superseded') {
         return toReasonedLifecycle(next, settlement.outcome, settlement.detail);
     }
     return next;
+}
+
+function hasSentAttempt(evidence: ALDeliveryEvidence): boolean {
+    return evidence.attempts.some((attempt) => attempt.outcome === 'sent');
 }
 
 function toSettledAttemptEvidence(

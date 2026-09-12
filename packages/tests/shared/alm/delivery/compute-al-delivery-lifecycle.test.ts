@@ -423,6 +423,31 @@ describe('terminal guard', () => {
         ]);
     });
 
+    it('keeps a terminal lifecycle unchanged on a late acknowledgement while replacing the hop lists', () => {
+        const cancelled = computeALDeliveryLifecycle(createLifecycle('receiver'), {
+            kind: 'cancelled',
+            msgId: MSG_ID,
+            carrier: 'rtc',
+            atMs: AT_MS
+        });
+        expect(isALDeliveryTerminal(cancelled)).toBe(true);
+
+        const next = computeALDeliveryLifecycle(cancelled, {
+            kind: 'acknowledgement',
+            msgId: cancelled.msgId,
+            carrier: 'rtc',
+            atMs: AT_MS + 1,
+            confirmedHopPeerIds: ['peer-1'],
+            unconfirmedHopPeerIds: ['peer-2'],
+            complete: true
+        });
+
+        expect(next.state).toBe('cancelled');
+        expect(next.lateSettlementCount).toBe(1);
+        expect(next.evidence.confirmedHopPeerIds).toEqual(['peer-1']);
+        expect(next.evidence.unconfirmedHopPeerIds).toEqual(['peer-2']);
+    });
+
     it('only increments lateSettlementCount for a settlement kind other than attempt-settled or acknowledgement', () => {
         const cancelled = computeALDeliveryLifecycle(createLifecycle('receiver'), {
             kind: 'cancelled',
@@ -469,6 +494,100 @@ describe('transport-accepted terminality', () => {
         expect(sent.state).toBe('transport-accepted');
         expect(isALDeliveryTerminal(sent)).toBe(true);
         expect(isALDeliveryTerminal({ ...sent, ackMode: 'receiver' })).toBe(false);
+    });
+
+    it('keeps an ackMode=none lifecycle at transport-accepted against a further settlement, through the reducer', () => {
+        const opened = computeALDeliveryLifecycle(createLifecycle('none'), toAttemptStartedSettlement('attempt-1'));
+        const sent = computeALDeliveryLifecycle(
+            opened,
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-1',
+                outcome: 'sent',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: undefined
+            })
+        );
+        expect(sent.state).toBe('transport-accepted');
+
+        const next = computeALDeliveryLifecycle(sent, {
+            kind: 'expired',
+            msgId: sent.msgId,
+            carrier: 'rtc',
+            atMs: AT_MS + 1,
+            detail: 'late expiry, ignored'
+        });
+
+        expect(next.state).toBe('transport-accepted');
+        expect(next.lateSettlementCount).toBe(1);
+    });
+});
+
+describe('attempt-settled failed/no-targets alongside another sent hop (ruling R3)', () => {
+    it('leaves transport-accepted and settles both rows when another hop already carried the message', () => {
+        const openedA = computeALDeliveryLifecycle(createLifecycle('receiver'), toAttemptStartedSettlement('attempt-a'));
+        const sent = computeALDeliveryLifecycle(
+            openedA,
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-a',
+                outcome: 'sent',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: undefined
+            })
+        );
+        expect(sent.state).toBe('transport-accepted');
+
+        const next = computeALDeliveryLifecycle(
+            sent,
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-b',
+                outcome: 'failed',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: 'attempt-b failed'
+            })
+        );
+
+        expect(next.state).toBe('transport-accepted');
+        expect(next.evidence.attempts).toEqual([
+            {
+                attemptId: 'attempt-a',
+                carrier: 'rtc',
+                startedAtMs: AT_MS,
+                settledAtMs: AT_MS,
+                outcome: 'sent',
+                submissionAttempted: true,
+                detail: undefined
+            },
+            {
+                attemptId: 'attempt-b',
+                carrier: 'rtc',
+                startedAtMs: AT_MS,
+                settledAtMs: AT_MS,
+                outcome: 'failed',
+                submissionAttempted: true,
+                detail: 'attempt-b failed'
+            }
+        ]);
+    });
+
+    it('still moves to failed when no attempt has outcome sent', () => {
+        const opened = computeALDeliveryLifecycle(createLifecycle('receiver'), toAttemptStartedSettlement('attempt-a'));
+
+        const next = computeALDeliveryLifecycle(
+            opened,
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-a',
+                outcome: 'failed',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: 'no hop carried the message'
+            })
+        );
+
+        expect(next.state).toBe('failed');
+        expect(next.evidence.reason).toBe('no hop carried the message');
     });
 });
 
