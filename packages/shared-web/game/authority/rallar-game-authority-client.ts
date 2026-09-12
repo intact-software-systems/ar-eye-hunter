@@ -114,7 +114,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         this.pendingCommands.clear();
         this.subscriptions?.unsubscribe();
         this.subscriptions = undefined;
-        this.setStatus('stopped');
+        this.publishStatus('stopped');
     }
 
     public status(): RallarGameAuthorityClientStatus {
@@ -469,7 +469,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         }
         const room = this.readRoomTarget();
         const localPeerId = this.readLocalPeerId();
-        this.setStatus(
+        this.publishStatus(
             !this.started
                 ? 'idle'
                 : room.roomId && localPeerId
@@ -478,7 +478,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         );
     }
 
-    private setStatus(
+    private publishStatus(
         phase: RallarGameAuthorityClientStatus['phase'],
         reason?: string
     ): void {

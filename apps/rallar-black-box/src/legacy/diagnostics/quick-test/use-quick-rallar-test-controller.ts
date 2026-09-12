@@ -8,6 +8,7 @@ import {
 import { type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
+import { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import type {
     QuickRallarReceivedMessageRow,
     QuickRallarSubscriptionState,
@@ -80,10 +81,18 @@ export function useQuickRallarTestController(input: UseQuickRallarTestController
     const controls = useQuickRallarTestControls(input.globalValues);
     const lifecycle = useQuickRallarTestLifecycle(input, controls);
     const projection = useQuickRallarTestPresentation(input, controls, providerMode);
-    const actions = new QuickRallarTestActions({ ...input, ...controls, ...lifecycle, ...projection });
+    const actions = new QuickRallarTestActions({
+        nowMs: Date.now,
+        createRowId: () => crypto.randomUUID(),
+        ...input,
+        ...controls,
+        ...lifecycle,
+        ...projection
+    });
     return toQuickRallarTestViewModel(controls, projection, actions);
 }
 interface QuickRallarTestLifecycle {
+    readonly lifetime: DiagnosticControllerLifecycle;
     readonly subscriptionRef: React.RefObject<QuickRallarSubscriptionState | undefined>;
     readonly receivedCountRef: React.RefObject<number>;
     readonly previousGlobalGroupRef: React.RefObject<string>;
@@ -92,26 +101,25 @@ function useQuickRallarTestLifecycle(
     input: UseQuickRallarTestControllerInput,
     controls: QuickRallarTestControls
 ): QuickRallarTestLifecycle {
+    const lifetime = useMemo(() => new DiagnosticControllerLifecycle(), [
+        input.authSession?.clientId,
+        input.authSession?.sessionId
+    ]);
+    useEffect(() => {
+        lifetime.activate();
+        controls.setBusyAction(undefined);
+        controls.setSubscription(undefined);
+        return () => lifetime.close();
+    }, [lifetime, controls.setBusyAction, controls.setSubscription]);
+
     const { globalValues } = input;
-    const { subscription, receivedMessages, setValues } = controls;
+    const { setValues } = controls;
 
     const subscriptionRef = useRef<QuickRallarSubscriptionState | undefined>(
         undefined
     );
     const receivedCountRef = useRef(0);
     const previousGlobalGroupRef = useRef(globalValues.roomId);
-    useEffect(() => {
-        subscriptionRef.current = subscription;
-    }, [subscription]);
-    useEffect(() => {
-        receivedCountRef.current = receivedMessages.length;
-    }, [receivedMessages.length]);
-    useEffect(
-        () => () => {
-            subscriptionRef.current?.unsubscribe();
-        },
-        []
-    );
     useEffect(() => {
         const previousGroup = previousGlobalGroupRef.current;
         previousGlobalGroupRef.current = globalValues.roomId;
@@ -126,7 +134,7 @@ function useQuickRallarTestLifecycle(
             };
         });
     }, [globalValues.roomId]);
-    return { subscriptionRef, receivedCountRef, previousGlobalGroupRef };
+    return { lifetime, subscriptionRef, receivedCountRef, previousGlobalGroupRef };
 }
 
 interface QuickRallarTestPresentation {

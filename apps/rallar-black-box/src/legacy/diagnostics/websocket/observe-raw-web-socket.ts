@@ -18,15 +18,18 @@ export interface ObserveRawWebSocketInput {
     recordEvent(event: WebSocketRecordedEvent): void;
     setWaitStatus(status: string): void;
     setActionFeedback(feedback: CommandCenterActionFeedback): void;
+    readonly signal?: AbortSignal;
 }
 
 export function observeRawWebSocket(
     input: ObserveRawWebSocketInput
 ): void {
-    input.socket.addEventListener('open', () => publishRawWebSocketOpen(input));
-    input.socket.addEventListener('message', (event) => publishRawWebSocketMessage(input, event));
-    input.socket.addEventListener('error', () => publishRawWebSocketError(input));
-    input.socket.addEventListener('close', (event) => publishRawWebSocketClose(input, event));
+    input.socket.addEventListener('open', () => publishRawWebSocketOpen(input), { signal: input.signal });
+    input.socket.addEventListener('message', (event) => publishRawWebSocketMessage(input, event), {
+        signal: input.signal
+    });
+    input.socket.addEventListener('error', () => publishRawWebSocketError(input), { signal: input.signal });
+    input.socket.addEventListener('close', (event) => publishRawWebSocketClose(input, event), { signal: input.signal });
 }
 
 type RawWebSocketMessage = null | boolean | number | string | object;

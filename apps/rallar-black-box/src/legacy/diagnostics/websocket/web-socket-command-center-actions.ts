@@ -2,6 +2,8 @@ import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/types.ts';
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarFacade } from '@shared-web/browser/rallar.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type * as React from 'react';
 import {
     createDirectRallarRuntimeEvent,
@@ -22,6 +24,7 @@ import {
     type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
+import type { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import { observeRawWebSocket, type WebSocketRecordedEvent } from './observe-raw-web-socket.ts';
 import { requestWebSocketTicket } from './request-web-socket-ticket.ts';
 import type { UseWebSocketCommandCenterControllerInput } from './use-websocket-command-center-controller.ts';
@@ -43,6 +46,8 @@ import {
 
 export namespace WebSocketCommandCenterActions {
     export interface Input extends UseWebSocketCommandCenterControllerInput {
+        nowMs(): number;
+        createRequestId(): string;
         readonly providerMode: 'browser-rallar' | 'simulated';
         readonly values: WebSocketCommandCenterValues;
         readonly setValues: React.Dispatch<React.SetStateAction<WebSocketCommandCenterValues>>;
@@ -66,12 +71,15 @@ export namespace WebSocketCommandCenterActions {
             readonly ok: true;
             readonly value: import('@shared-web/browser/messages/rallar-message-contracts.ts').RallarMessagePayload;
         } | { readonly ok: false; readonly error: string; };
+        readonly lifetime: DiagnosticControllerLifecycle;
+        readonly rawSocketLifetime: DiagnosticControllerLifecycle;
     }
     export interface OpenAttempt {
         readonly ticketRequestId: string | undefined;
         readonly url: string;
         readonly label: string;
         readonly startedAtEpochMs: number;
+        readonly signal: AbortSignal;
     }
     export interface SubscribeAttempt {
         readonly label: string;
@@ -198,7 +206,7 @@ export class WebSocketCommandCenterActions {
         this.input.setBusyAction('Configure WebSocket');
         this.input.setLocalError(undefined);
         const label = 'Configure WebSocket';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -255,7 +263,8 @@ export class WebSocketCommandCenterActions {
         }
     };
     public readonly requestWsTicket = async (
-        requestId: string
+        requestId: string,
+        signal: AbortSignal
     ): Promise<AuthCommandCenterTicket> => {
         const nextTicket = await requestWebSocketTicket({
             apiBaseUrl: this.input.values.apiBaseUrl,
@@ -263,22 +272,28 @@ export class WebSocketCommandCenterActions {
             requestId,
             timeoutMs: this.input.values.timeoutMs
         });
-        this.input.setTicket(nextTicket);
+        if (!signal.aborted) {
+            this.input.setTicket(nextTicket);
+        }
         return nextTicket;
     };
     public readonly open = async (
         url = this.input.values.wsUrl,
         options: { useTicket?: boolean; } = { useTicket: true }
     ): Promise<void> => {
+        const signal = this.input.rawSocketLifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         const ticketRequestId = options.useTicket === false
             ? undefined
-            : crypto.randomUUID();
+            : this.input.createRequestId();
         this.input.setBusyAction('Open WebSocket');
         this.input.setLocalError(undefined);
         const label = options.useTicket === false
             ? 'Open WebSocket without ticket'
             : 'Open WebSocket';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -289,9 +304,12 @@ export class WebSocketCommandCenterActions {
             )
         );
         try {
-            await this.openRawSocket({ ticketRequestId, url, label, startedAtEpochMs });
+            await this.openRawSocket({ ticketRequestId, url, label, startedAtEpochMs, signal: signal });
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             const message = error instanceof Error ? error.message : String(error);
             this.input.setLocalError(message);
             this.input.setWaitStatus('raw ws open failed');
@@ -307,10 +325,17 @@ export class WebSocketCommandCenterActions {
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
     public readonly send = async (): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         if (!this.input.payloadResult.ok) {
             this.rejectAction('Send WebSocket JSON', 'invalid payload', this.input.payloadResult.error);
             return;
@@ -323,7 +348,7 @@ export class WebSocketCommandCenterActions {
         this.input.setBusyAction('Send WebSocket JSON');
         this.input.setLocalError(undefined);
         const label = 'Send WebSocket JSON';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -335,6 +360,9 @@ export class WebSocketCommandCenterActions {
             await this.sendRoomMessage(label, startedAtEpochMs, this.input.payloadResult.value);
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             const message = error instanceof Error ? error.message : String(error);
             this.input.setLocalError(message);
             this.input.setActionFeedback(
@@ -349,6 +377,9 @@ export class WebSocketCommandCenterActions {
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
@@ -356,7 +387,7 @@ export class WebSocketCommandCenterActions {
         this.input.setBusyAction('Close WebSocket');
         this.input.setLocalError(undefined);
         const label = 'Close WebSocket';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -417,9 +448,16 @@ export class WebSocketCommandCenterActions {
     };
     public readonly cleanup = async (): Promise<void> => {
         this.input.setTicket(undefined);
-        await this.close('cleanup');
+        const closing = this.close('cleanup');
+        this.input.rawSocketLifetime.close();
+        this.input.rawSocketLifetime.activate();
+        await closing;
     };
     public readonly subscribeWs = async (): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         if (!this.input.values.typeId.trim()) {
             const message = 'WS subscription requires a Type ID.';
             this.rejectAction('Subscribe WS', 'invalid selector', message);
@@ -433,7 +471,7 @@ export class WebSocketCommandCenterActions {
         this.input.setBusyAction('Subscribe WS');
         this.input.setLocalError(undefined);
         const label = 'Subscribe WS';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -442,9 +480,12 @@ export class WebSocketCommandCenterActions {
             )
         );
         try {
-            await this.subscribeRoomMessages({ label, startedAtEpochMs });
+            await this.subscribeRoomMessages({ label, startedAtEpochMs }, signal);
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             const message = error instanceof Error ? error.message : String(error);
             this.input.setLocalError(message);
             this.input.setActionFeedback(
@@ -459,11 +500,14 @@ export class WebSocketCommandCenterActions {
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
     public readonly unsubscribeWs = (): void => {
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.subscription?.unsubscribe();
         this.input.setSubscription(undefined);
         this.input.setWaitStatus('unsubscribed');
@@ -481,11 +525,15 @@ export class WebSocketCommandCenterActions {
         );
     };
     public readonly createTicket = async (): Promise<void> => {
-        const requestId = crypto.randomUUID();
+        const signal = this.input.rawSocketLifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
+        const requestId = this.input.createRequestId();
         this.input.setBusyAction('Create WS ticket');
         this.input.setLocalError(undefined);
         const label = 'Create WS ticket';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -494,30 +542,16 @@ export class WebSocketCommandCenterActions {
             )
         );
         try {
-            const nextTicket = await this.requestWsTicket(requestId);
-            this.recordWebSocketEvent(
-                {
-                    topic: 'rallar.direct.raw_ws.ticket.created',
-                    payload: {
-                        sessionId: nextTicket.sessionId,
-                        expiresAtEpochMs: nextTicket.expiresAtEpochMs,
-                        ticket: '<redacted:ws-ticket>'
-                    },
-                    lastAction: 'Create WS ticket'
-                }
-            );
-            this.input.setActionFeedback(
-                completedActionFeedback({
-                    label,
-                    startedAtEpochMs,
-                    target: '/api/auth/ws-ticket',
-                    ok: true,
-                    status: 'created',
-                    message: `Ticket expires at ${formatTime(nextTicket.expiresAtEpochMs)}.`
-                })
-            );
+            const nextTicket = await this.requestWsTicket(requestId, signal);
+            if (signal.aborted) {
+                return;
+            }
+            this.publishCreatedTicket(nextTicket, label, startedAtEpochMs);
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             const message = error instanceof Error ? error.message : String(error);
             this.input.setLocalError(message);
             this.input.setActionFeedback(
@@ -532,12 +566,19 @@ export class WebSocketCommandCenterActions {
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
     public readonly waitForMessage = async (): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         const startCount = this.input.diagnostics.inboundCount;
-        const startedAt = Date.now();
+        const startedAt = this.input.nowMs();
         const label = 'Wait for WS message';
         this.input.setWaitStatus('waiting');
         this.input.setBusyAction(label);
@@ -550,7 +591,14 @@ export class WebSocketCommandCenterActions {
             )
         );
         try {
-            await this.waitForInboundMessage(startCount, startedAt);
+            const outcome = await this.waitForInboundMessage(startCount, startedAt);
+            if (signal.aborted || outcome === 'aborted') {
+                return;
+            }
+            if (outcome === 'timeout') {
+                this.publishReceiveTimeout(startedAt);
+                return;
+            }
             this.input.setWaitStatus('message observed');
             this.input.setActionFeedback(
                 completedActionFeedback({
@@ -563,30 +611,22 @@ export class WebSocketCommandCenterActions {
                 })
             );
         }
-        catch (error) {
-            this.input.setWaitStatus('timeout');
-            const message = error instanceof Error ? error.message : String(error);
-            this.input.setLocalError(message);
-            this.input.setActionFeedback(
-                completedActionFeedback({
-                    label,
-                    startedAtEpochMs: startedAt,
-                    target: this.input.values.connection,
-                    ok: false,
-                    statusText: 'timeout',
-                    message
-                })
-            );
-        }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
     public readonly waitForRallarWsOpen = async (): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         this.input.setBusyAction('Wait for Rallar WS open');
         this.input.setLocalError(undefined);
         const label = 'Wait for Rallar WS open';
-        const startedAtEpochMs = Date.now();
+        const startedAtEpochMs = this.input.nowMs();
         this.input.setActionFeedback(
             runningActionFeedback(
                 label,
@@ -598,6 +638,9 @@ export class WebSocketCommandCenterActions {
             await this.waitForSignalingOpen(label, startedAtEpochMs);
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setWaitStatus('rallar ws wait failed');
             const message = error instanceof Error ? error.message : String(error);
             this.input.setLocalError(message);
@@ -613,6 +656,9 @@ export class WebSocketCommandCenterActions {
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
@@ -634,7 +680,7 @@ export class WebSocketCommandCenterActions {
                         ? {
                             ...this.input.ticket,
                             ticket: '<redacted:ws-ticket>',
-                            expiresInMs: this.input.ticket.expiresAtEpochMs - Date.now()
+                            expiresInMs: this.input.ticket.expiresAtEpochMs - this.input.nowMs()
                         }
                         : undefined,
                     waitStatus: this.input.waitStatus
@@ -666,36 +712,29 @@ export class WebSocketCommandCenterActions {
             useTicket: false
         });
 
-    private async waitForInboundMessage(startCount: number, startedAt: number): Promise<void> {
-        await new Promise<void>((resolve, reject) => {
-            const interval = window.setInterval(() => {
-                const latest = deriveWebSocketDiagnostics(
-                    this.input.stateRef.current,
-                    this.input.values.connection
-                );
-                if (latest.inboundCount > startCount) {
-                    window.clearInterval(interval);
-                    resolve();
-                    return;
-                }
-                if (Date.now() - startedAt > this.input.values.timeoutMs) {
-                    window.clearInterval(interval);
-                    reject(
-                        new Error(
-                            'Timed out waiting for WebSocket message.'
-                        )
-                    );
-                }
-            }, 100);
+    private async waitForInboundMessage(
+        startCount: number,
+        startedAt: number
+    ): Promise<DiagnosticControllerLifecycle.Observation> {
+        return await this.input.lifetime.waitForObservation({
+            hasObserved: () =>
+                deriveWebSocketDiagnostics(this.input.stateRef.current, this.input.values.connection).inboundCount >
+                    startCount,
+            nowMs: Date.now,
+            startedAtEpochMs: startedAt,
+            timeoutMs: this.input.values.timeoutMs
         });
     }
 
     private async openRawSocket(attempt: WebSocketCommandCenterActions.OpenAttempt): Promise<void> {
-        const { ticketRequestId, url, label, startedAtEpochMs } = attempt;
+        const { ticketRequestId, url, label, startedAtEpochMs, signal } = attempt;
 
         const nextTicket = ticketRequestId === undefined
             ? undefined
-            : await this.requestWsTicket(ticketRequestId);
+            : await this.requestWsTicket(ticketRequestId, signal);
+        if (signal.aborted) {
+            return;
+        }
         const resolvedUrl = resolveWebSocketUrlTemplate(
             url,
             this.input.values.apiBaseUrl,
@@ -709,40 +748,13 @@ export class WebSocketCommandCenterActions {
                 'Opening raw WebSocket connection.'
             )
         );
-        const protocols = this.input.values.protocols
-            .split(',')
-            .map((entry) => entry.trim())
-            .filter(Boolean);
-        this.input.rawSocketRef.current?.close(this.input.values.closeCode, 'replace raw socket');
-        const socket = new WebSocket(
-            resolvedUrl,
-            protocols.length > 0 ? protocols : undefined
-        );
-        this.input.rawSocketRef.current = socket;
-        this.input.setSequence((current) => current + 1);
-        observeRawWebSocket({
-            socket,
-            connection: this.input.values.connection,
-            url: resolvedUrl,
-            label,
-            startedAtEpochMs,
-            recordEvent: this.recordWebSocketEvent,
-            setWaitStatus: this.input.setWaitStatus,
-            setActionFeedback: this.input.setActionFeedback
-        });
-        this.input.setActionFeedback(
-            completedActionFeedback({
-                label,
-                startedAtEpochMs,
-                target: resolvedUrl,
-                ok: true,
-                status: 'requested',
-                message: 'Raw WebSocket open was requested.'
-            })
-        );
+        this.installRawSocket(attempt, resolvedUrl);
     }
 
-    private async subscribeRoomMessages(attempt: WebSocketCommandCenterActions.SubscribeAttempt): Promise<void> {
+    private async subscribeRoomMessages(
+        attempt: WebSocketCommandCenterActions.SubscribeAttempt,
+        signal: AbortSignal
+    ): Promise<void> {
         const { label, startedAtEpochMs } = attempt;
 
         this.input.subscription?.unsubscribe();
@@ -755,9 +767,14 @@ export class WebSocketCommandCenterActions {
                 context: this.directContext(),
                 selector: selector,
                 handler: (message) => this.receiveRoomMessage(message),
-                loadFacade: loadBrowserRallarFacade
+                loadFacade: loadBrowserRallarFacade,
+                signal: signal,
+                subscriptions: this.input.lifetime.subscriptions
             }
         );
+        if (signal.aborted) {
+            return;
+        }
         this.recordDirectResult(
             result,
             'Rallar WS subscribed',
@@ -768,7 +785,7 @@ export class WebSocketCommandCenterActions {
                 label: `${selector.topicId ?? '*'} / ${selector.typeId}`,
                 destination: this.input.routePreview.destination,
                 groupId: this.input.values.groupId,
-                subscribedAtEpochMs: Date.now(),
+                subscribedAtEpochMs: this.input.nowMs(),
                 unsubscribe: result.unsubscribe
             });
             this.input.setWaitStatus('subscribed');
@@ -794,6 +811,7 @@ export class WebSocketCommandCenterActions {
         startedAtEpochMs: number,
         payload: import('@shared-web/browser/messages/rallar-message-contracts.ts').RallarMessagePayload
     ): Promise<void> {
+        const signal = this.input.lifetime.signal;
         const result = await runDirectRallarWsSend(
             this.directContext(),
             {
@@ -806,6 +824,9 @@ export class WebSocketCommandCenterActions {
             },
             loadBrowserRallarFacade
         );
+        if (signal.aborted) {
+            return;
+        }
         this.input.setSequence((current) => current + 1);
         this.recordDirectResult(
             result,
@@ -829,38 +850,50 @@ export class WebSocketCommandCenterActions {
     }
 
     private async waitForSignalingOpen(label: string, startedAtEpochMs: number): Promise<void> {
-        const facade = await this.startSignalingFacade();
-        const result = await facade.ws.waitForOpen({
-            timeoutMs: this.input.values.timeoutMs
-        });
-        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
-            createDirectRallarRuntimeEvent({
-                topic: result.status === 'open'
-                    ? 'rallar.direct.ws.wait_open.completed'
-                    : 'rallar.direct.ws.wait_open.failed',
-                context: this.directContext(),
-                transport: 'ws',
-                severity: result.status === 'open' ? 'info' : 'error',
-                payload: result
-            }),
-            result.status === 'open'
-                ? 'Rallar WS open observed'
-                : 'Rallar WS open wait failed'
-        );
-        this.input.setWaitStatus(
-            result.status === 'open' ? 'rallar ws open' : result.status
-        );
-        this.input.setActionFeedback(
-            completedActionFeedback({
-                label,
-                startedAtEpochMs,
-                target: this.input.values.apiBaseUrl,
-                ok: result.status === 'open',
-                status: result.status,
-                message: result.status === 'open'
-                    ? 'Rallar signaling WebSocket is open.'
-                    : 'Rallar signaling WebSocket did not open.'
-            })
+        const signal = this.input.lifetime.signal;
+        const outcome = await this.startSignalingFacade();
+        if (signal.aborted) {
+            return;
+        }
+        await outcome.fold(
+            async (message) => this.publishSignalingFailure(label, startedAtEpochMs, message),
+            async (facade) => {
+                const result = await facade.ws.waitForOpen({
+                    timeoutMs: this.input.values.timeoutMs
+                });
+                if (signal.aborted) {
+                    return;
+                }
+                rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+                    createDirectRallarRuntimeEvent({
+                        topic: result.status === 'open'
+                            ? 'rallar.direct.ws.wait_open.completed'
+                            : 'rallar.direct.ws.wait_open.failed',
+                        context: this.directContext(),
+                        transport: 'ws',
+                        severity: result.status === 'open' ? 'info' : 'error',
+                        payload: result
+                    }),
+                    result.status === 'open'
+                        ? 'Rallar WS open observed'
+                        : 'Rallar WS open wait failed'
+                );
+                this.input.setWaitStatus(
+                    result.status === 'open' ? 'rallar ws open' : result.status
+                );
+                this.input.setActionFeedback(
+                    completedActionFeedback({
+                        label,
+                        startedAtEpochMs,
+                        target: this.input.values.apiBaseUrl,
+                        ok: result.status === 'open',
+                        status: result.status,
+                        message: result.status === 'open'
+                            ? 'Rallar signaling WebSocket is open.'
+                            : 'Rallar signaling WebSocket did not open.'
+                    })
+                );
+            }
         );
     }
 
@@ -869,7 +902,7 @@ export class WebSocketCommandCenterActions {
         this.input.setActionFeedback(
             completedActionFeedback({
                 label,
-                startedAtEpochMs: Date.now(),
+                startedAtEpochMs: this.input.nowMs(),
                 target: this.input.routePreview.destination,
                 ok: false,
                 statusText,
@@ -901,18 +934,18 @@ export class WebSocketCommandCenterActions {
         );
     }
 
-    private async startSignalingFacade(): Promise<import('@shared-web/browser/rallar.ts').RallarFacade> {
+    private async startSignalingFacade(): Promise<Either<string, RallarFacade>> {
+        const signal = this.input.lifetime.signal;
         if (this.input.providerMode !== 'browser-rallar') {
-            throw new Error(
-                'Rallar WS wait requires provider=browser-rallar.'
-            );
+            return Either.ofLeft('Rallar WS wait requires provider=browser-rallar.');
         }
         if (!this.input.authSession) {
-            throw new Error(
-                'Rallar WS wait requires a logged-in browser session.'
-            );
+            return Either.ofLeft('Rallar WS wait requires a logged-in browser session.');
         }
         const facade = await loadBrowserRallarFacade();
+        if (signal.aborted) {
+            return Either.ofLeft('Rallar WS wait was abandoned.');
+        }
         facade.configure({ apiBaseUrl: this.input.values.apiBaseUrl });
         facade.setDefaults({
             applicationId: this.input.values.applicationId,
@@ -934,6 +967,106 @@ export class WebSocketCommandCenterActions {
             refreshPeople: false,
             timeoutMs: this.input.values.timeoutMs
         });
-        return facade;
+        return Either.ofRight(facade);
+    }
+
+    private publishSignalingFailure(label: string, startedAtEpochMs: number, message: string): void {
+        this.input.setWaitStatus('rallar ws wait failed');
+        this.input.setLocalError(message);
+        this.input.setActionFeedback(
+            completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: this.input.values.apiBaseUrl,
+                ok: false,
+                statusText: 'error',
+                message
+            })
+        );
+    }
+
+    private publishReceiveTimeout(startedAt: number): void {
+        const label = 'Wait for WS message';
+        this.input.setWaitStatus('timeout');
+        const message = 'Timed out waiting for WebSocket message.';
+        this.input.setLocalError(message);
+        this.input.setActionFeedback(
+            completedActionFeedback({
+                label,
+                startedAtEpochMs: startedAt,
+                target: this.input.values.connection,
+                ok: false,
+                statusText: 'timeout',
+                message
+            })
+        );
+    }
+
+    private installRawSocket(attempt: WebSocketCommandCenterActions.OpenAttempt, resolvedUrl: string): void {
+        const { label, startedAtEpochMs, signal } = attempt;
+        const protocols = this.input.values.protocols
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+        this.input.rawSocketRef.current?.close(this.input.values.closeCode, 'replace raw socket');
+        const socket = new WebSocket(
+            resolvedUrl,
+            protocols.length > 0 ? protocols : undefined
+        );
+        this.input.rawSocketRef.current = socket;
+        this.input.rawSocketLifetime.subscriptions.add(() => {
+            if (this.input.rawSocketRef.current === socket) {
+                this.input.rawSocketRef.current = undefined;
+            }
+            if (socket.readyState !== WebSocket.CLOSING && socket.readyState !== WebSocket.CLOSED) {
+                socket.close(1000, 'rallar-black-box auth cleanup');
+            }
+        });
+        this.input.setSequence((current) => current + 1);
+        observeRawWebSocket({
+            socket,
+            connection: this.input.values.connection,
+            url: resolvedUrl,
+            label,
+            startedAtEpochMs,
+            recordEvent: this.recordWebSocketEvent,
+            setWaitStatus: this.input.setWaitStatus,
+            setActionFeedback: this.input.setActionFeedback,
+            signal: signal
+        });
+        this.input.setActionFeedback(
+            completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: resolvedUrl,
+                ok: true,
+                status: 'requested',
+                message: 'Raw WebSocket open was requested.'
+            })
+        );
+    }
+
+    private publishCreatedTicket(nextTicket: AuthCommandCenterTicket, label: string, startedAtEpochMs: number): void {
+        this.recordWebSocketEvent(
+            {
+                topic: 'rallar.direct.raw_ws.ticket.created',
+                payload: {
+                    sessionId: nextTicket.sessionId,
+                    expiresAtEpochMs: nextTicket.expiresAtEpochMs,
+                    ticket: '<redacted:ws-ticket>'
+                },
+                lastAction: 'Create WS ticket'
+            }
+        );
+        this.input.setActionFeedback(
+            completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: '/api/auth/ws-ticket',
+                ok: true,
+                status: 'created',
+                message: `Ticket expires at ${formatTime(nextTicket.expiresAtEpochMs)}.`
+            })
+        );
     }
 }

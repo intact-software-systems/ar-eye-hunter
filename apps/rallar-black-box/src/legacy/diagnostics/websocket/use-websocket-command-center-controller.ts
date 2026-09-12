@@ -16,6 +16,7 @@ import {
     type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
+import { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import { WebSocketCommandCenterActions } from './web-socket-command-center-actions.ts';
 import type {
     WebSocketCommandCenterValues,
@@ -140,10 +141,19 @@ export function useWebSocketCommandCenterController(
     const controls = useWebSocketCommandCenterControls(defaultContext);
     const lifecycle = useWebSocketCommandCenterLifecycle(input, controls, defaultContext);
     const projection = useWebSocketCommandCenterPresentation(input, controls, providerMode);
-    const actions = new WebSocketCommandCenterActions({ ...input, ...controls, ...lifecycle, ...projection });
+    const actions = new WebSocketCommandCenterActions({
+        nowMs: Date.now,
+        createRequestId: () => crypto.randomUUID(),
+        ...input,
+        ...controls,
+        ...lifecycle,
+        ...projection
+    });
     return toWebSocketCommandCenterViewModel(controls, projection, actions);
 }
 interface WebSocketCommandCenterLifecycle {
+    readonly lifetime: DiagnosticControllerLifecycle;
+    readonly rawSocketLifetime: DiagnosticControllerLifecycle;
     readonly rawSocketRef: React.RefObject<WebSocket | undefined>;
     readonly stateRef: React.RefObject<RallarBlackBoxTestState>;
 }
@@ -152,32 +162,31 @@ function useWebSocketCommandCenterLifecycle(
     controls: WebSocketCommandCenterControls,
     defaultContext: ReturnType<typeof defaultWebSocketValuesFromContext>
 ): WebSocketCommandCenterLifecycle {
-    const { state, authSession } = input;
-    const { subscription, setValues } = controls;
-    const rawSocketAuthKey = authSession
-        ? `${authSession.clientId}:${authSession.sessionId}`
-        : 'anonymous';
+    const lifetime = useMemo(() => new DiagnosticControllerLifecycle(), [
+        input.authSession?.clientId,
+        input.authSession?.sessionId
+    ]);
+    const rawSocketLifetime = useMemo(() => new DiagnosticControllerLifecycle(), [lifetime]);
+    useEffect(() => {
+        lifetime.activate();
+        rawSocketLifetime.activate();
+        controls.setBusyAction(undefined);
+        controls.setSubscription(undefined);
+        return () => {
+            lifetime.close();
+            rawSocketLifetime.close();
+        };
+    }, [lifetime, rawSocketLifetime, controls.setBusyAction, controls.setSubscription]);
+
+    const { state } = input;
+    const { setValues } = controls;
     const rawSocketRef = useRef<WebSocket | undefined>(undefined);
     const stateRef = useRef(state);
     useEffect(() => {
         stateRef.current = state;
     }, [state]);
     useWebSocketContextDefaults(defaultContext, setValues);
-    useEffect(() => () => subscription?.unsubscribe(), [subscription]);
-    useEffect(() => {
-        return () => {
-            const socket = rawSocketRef.current;
-            rawSocketRef.current = undefined;
-            if (
-                socket &&
-                socket.readyState !== WebSocket.CLOSING &&
-                socket.readyState !== WebSocket.CLOSED
-            ) {
-                socket.close(1000, 'rallar-black-box auth cleanup');
-            }
-        };
-    }, [rawSocketAuthKey]);
-    return { rawSocketRef, stateRef };
+    return { lifetime, rawSocketLifetime, rawSocketRef, stateRef };
 }
 
 interface WebSocketCommandCenterPresentation {

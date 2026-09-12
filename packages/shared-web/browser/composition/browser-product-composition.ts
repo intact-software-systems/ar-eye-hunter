@@ -130,7 +130,11 @@ export function createBrowserCallsComposition(
         readSourceStatuses: () => input.media.localMediaSources.readStatuses()
     });
     const callSignals = new BrowserCallSignalRuntime({
-        connect: async () => await input.session.connect(),
+        nowMs: Date.now,
+        createCallId: () => crypto.randomUUID(),
+        connect: async () => {
+            await input.session.connect();
+        },
         readSession,
         requireSession: input.session.requireSession,
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),

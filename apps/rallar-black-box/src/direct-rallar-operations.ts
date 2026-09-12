@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/types.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarFacade,
@@ -7,13 +8,21 @@ import type {
     RallarMessageHandler,
     RallarMessageSelectorInput,
     RallarStartResult,
+    RallarSubscriptionScope,
     RallarUnsubscribe,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { assertValidRallarRouteId, assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import {
+    failRallarValidation,
+    validateRallarRouteId,
+    validateRallarWsUserTopicId,
+    type RallarValidationIssue,
+    type RallarValidationResult
+} from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 
 export interface DirectRallarOperationContext {
@@ -113,7 +122,10 @@ export type DirectRallarOperationStatus = 'completed' | 'failed';
 export interface DirectRallarOperationError {
     readonly code: string;
     readonly message: string;
-    readonly details?: { readonly name: string; readonly stack?: string; } | {
+    readonly details?: { readonly issues: readonly RallarValidationIssue[]; } | {
+        readonly name: string;
+        readonly stack?: string;
+    } | {
         readonly providerMode: RallarBlackBoxProviderMode;
     };
 }
@@ -233,23 +245,18 @@ function directSession(
     return facade.session() ?? facade.auth.restore() ?? context.authSession;
 }
 
-function requireDirectSession(
-    facade: DirectRallarFacade,
-    context: DirectRallarOperationContext
-): AuthSession {
-    const session = directSession(facade, context);
-    if (!session) {
-        throw new Error('Direct Rallar operation requires a logged-in browser session.');
-    }
-
-    return session;
+function sessionRequiredError(): DirectRallarOperationError {
+    return {
+        code: 'RALLAR_DIRECT_OPERATION_FAILED',
+        message: 'Direct Rallar operation requires a logged-in browser session.'
+    };
 }
 
 async function startDirectRallarFacade(
     facade: DirectRallarFacade,
-    context: DirectRallarOperationContext
+    context: DirectRallarOperationContext,
+    restoredSession: AuthSession
 ): Promise<DirectRallarStartResult> {
-    const restoredSession = requireDirectSession(facade, context);
     const startResult = await facade.start({
         connect: true,
         refreshRooms: false,
@@ -281,7 +288,7 @@ interface DirectRallarOperationRunInput {
     readonly transport?: RallarBlackBoxTestRuntimeEventInput['transport'];
     readonly startedPayload: RallarBlackBoxTestRuntimeEventInput['payload'];
     readonly failurePayload?: Record<string, unknown>;
-    readonly run: () => Promise<DirectRallarOperationSuccess>;
+    readonly run: () => Promise<Either<DirectRallarOperationError, DirectRallarOperationSuccess>>;
 }
 
 interface DirectRallarOperationSuccess {
@@ -319,7 +326,11 @@ async function runDirectRallarOperation(
         return backendRequiredResult(resultInput);
     }
     try {
-        return completedOperationResult({ ...resultInput, success: await input.run() });
+        const outcome = await input.run();
+        return outcome.fold(
+            (error) => failedOperationResult({ ...resultInput, error }),
+            (success) => completedOperationResult({ ...resultInput, success })
+        );
     }
     catch (error) {
         return failedOperationResult({
@@ -405,43 +416,40 @@ function failedOperationResult(
     };
 }
 
-function validateRoomId(context: DirectRallarOperationContext, action: string): string {
-    const roomId = context.roomId?.trim();
-    if (!roomId) {
-        throw new Error(`${action} requires a group.`);
-    }
-
-    return assertValidRallarRouteId(roomId, '$.roomId', 'Room ID');
-}
-
-function validateRallarServerUserTopic(topicId: string, action: string): string {
-    const trimmed = topicId.trim();
-    if (!trimmed) {
-        throw new Error(`${action} requires a Topic ID.`);
-    }
-
-    return assertValidRallarWsUserTopicId(trimmed, '$.topicId');
+function validateRoomId(context: DirectRallarOperationContext): RallarValidationResult {
+    return validateRallarRouteId(context.roomId?.trim(), '$.roomId', 'Room ID');
 }
 
 function effectiveWsTopicId(input: DirectRallarWsSendInput): string {
     return input.topicId?.trim() || input.typeId.trim();
 }
 
-function requireRallarMessagePayload(
-    payload: RallarBlackBoxTestRuntimeEventInput['payload']
-): RallarMessagePayload {
-    if (
-        payload === null ||
-        typeof payload === 'object' ||
-        typeof payload === 'string' ||
-        typeof payload === 'number' ||
-        typeof payload === 'boolean'
-    ) {
-        return payload;
-    }
-    throw new Error(
-        'WS send payload must be an object, array, string, number, boolean, or null.'
-    );
+function isRallarMessagePayload(payload: unknown): payload is RallarMessagePayload {
+    return payload === null || typeof payload === 'object' || typeof payload === 'string' ||
+        typeof payload === 'number' || typeof payload === 'boolean';
+}
+
+function validateWsSend(context: DirectRallarOperationContext, input: DirectRallarWsSendInput): RallarValidationResult {
+    return failRallarValidation([
+        ...validateRallarRouteId(input.typeId.trim(), '$.typeId', 'Type ID').issues,
+        ...validateRallarWsUserTopicId(effectiveWsTopicId(input), '$.topicId').issues,
+        ...((input.scope ?? 'room') === 'room' ? validateRoomId(context).issues : []),
+        ...(isRallarMessagePayload(input.payload)
+            ? []
+            : [{
+                path: '$.payload',
+                code: 'invalid-payload',
+                message: 'WS send payload must be an object, array, string, number, boolean, or null.'
+            }])
+    ]);
+}
+
+function toValidationError(result: RallarValidationResult): DirectRallarOperationError {
+    return {
+        code: 'RALLAR_DIRECT_OPERATION_FAILED',
+        message: result.errors.join('\n'),
+        details: { issues: result.issues }
+    };
 }
 
 function directWsSendPayload(
@@ -485,8 +493,12 @@ export async function runDirectRallarStatusCheck(
         run: async () => {
             const facade = await loadFacade();
             configureDirectRallarFacade(facade, context);
-            const startResult = await startDirectRallarFacade(facade, context);
-            return {
+            const restoredSession = directSession(facade, context);
+            if (!restoredSession) {
+                return Either.ofLeft(sessionRequiredError());
+            }
+            const startResult = await startDirectRallarFacade(facade, context, restoredSession);
+            return Either.ofRight({
                 value: {
                     action: 'status.check',
                     connected: startResult.connected,
@@ -499,7 +511,7 @@ export async function runDirectRallarStatusCheck(
                     roomCount: facade.rooms.list().length,
                     peopleCount: facade.people.list().length
                 }
-            };
+            });
         }
     });
 }
@@ -520,11 +532,19 @@ export async function runDirectRallarGroupCreate(
 async function createDirectRallarGroup(
     context: DirectRallarOperationContext,
     loadFacade: DirectRallarFacadeLoader
-): Promise<DirectRallarOperationSuccess> {
-    const groupName = validateRoomId(context, 'Group create');
+): Promise<Either<DirectRallarOperationError, DirectRallarOperationSuccess>> {
+    const validation = validateRoomId(context);
+    if (!validation.ok) {
+        return Either.ofLeft(toValidationError(validation));
+    }
+    const groupName = context.roomId?.trim() ?? '';
     const facade = await loadFacade();
     configureDirectRallarFacade(facade, context);
-    const startResult = await startDirectRallarFacade(facade, context);
+    const restoredSession = directSession(facade, context);
+    if (!restoredSession) {
+        return Either.ofLeft(sessionRequiredError());
+    }
+    const startResult = await startDirectRallarFacade(facade, context, restoredSession);
     const snapshot = await facade.rooms.create({
         groupId: groupName,
         displayName: groupName,
@@ -532,7 +552,7 @@ async function createDirectRallarGroup(
         timeoutMs: context.timeoutMs
     });
     const groupId = snapshot.group.groupId;
-    return {
+    return Either.ofRight({
         value: {
             action: 'group.create',
             requestedGroup: groupName,
@@ -543,7 +563,7 @@ async function createDirectRallarGroup(
             snapshot
         },
         eventContext: { ...context, roomId: groupId ?? context.roomId }
-    };
+    });
 }
 
 export async function runDirectRallarGroupJoin(
@@ -562,16 +582,24 @@ export async function runDirectRallarGroupJoin(
 async function joinDirectRallarGroup(
     context: DirectRallarOperationContext,
     loadFacade: DirectRallarFacadeLoader
-): Promise<DirectRallarOperationSuccess> {
-    const roomId = validateRoomId(context, 'Group join');
+): Promise<Either<DirectRallarOperationError, DirectRallarOperationSuccess>> {
+    const validation = validateRoomId(context);
+    if (!validation.ok) {
+        return Either.ofLeft(toValidationError(validation));
+    }
+    const roomId = context.roomId?.trim() ?? '';
     const facade = await loadFacade();
     configureDirectRallarFacade(facade, context);
-    const startResult = await startDirectRallarFacade(facade, context);
+    const restoredSession = directSession(facade, context);
+    if (!restoredSession) {
+        return Either.ofLeft(sessionRequiredError());
+    }
+    const startResult = await startDirectRallarFacade(facade, context, restoredSession);
     const snapshot = await facade.rooms.join(roomId, {
         timeoutMs: context.timeoutMs,
         scope: directScope(context)
     });
-    return {
+    return Either.ofRight({
         value: {
             action: 'group.join',
             groupId: snapshot.group.groupId ?? roomId,
@@ -580,10 +608,12 @@ async function joinDirectRallarGroup(
             session: toSessionDiagnostic(startResult.session),
             snapshot
         }
-    };
+    });
 }
 
 export interface DirectRallarWsSubscribeInput {
+    readonly signal?: AbortSignal;
+    readonly subscriptions?: RallarSubscriptionScope;
     readonly context: DirectRallarOperationContext;
     readonly selector: RallarMessageSelectorInput;
     readonly handler: DirectRallarMessageHandler;
@@ -607,22 +637,39 @@ export async function runDirectRallarWsSubscribe(
 async function subscribeDirectRallarWs(
     input: DirectRallarWsSubscribeInput,
     loadFacade: DirectRallarFacadeLoader
-): Promise<DirectRallarOperationSuccess> {
-    const { context, selector, handler } = input;
-    const roomId = validateRoomId(context, 'WS subscribe');
-    if (typeof selector !== 'string' && typeof selector.topicId === 'string' && selector.topicId.trim()) {
-        validateRallarServerUserTopic(selector.topicId, 'WS subscribe');
+): Promise<Either<DirectRallarOperationError, DirectRallarOperationSuccess>> {
+    const { context, selector } = input;
+    const validation = validateWsSubscribe(context, selector);
+    if (!validation.ok) {
+        return Either.ofLeft(toValidationError(validation));
     }
+    const roomId = context.roomId?.trim() ?? '';
     const facade = await loadFacade();
+    if (input.signal?.aborted) {
+        return abandonedDirectSubscription();
+    }
     configureDirectRallarFacade(facade, context);
-    const unsubscribe = facade.messages.ws.onMessage(selector, (message) => handler({ ...message }));
+    const restoredSession = directSession(facade, context);
+    if (!restoredSession) {
+        return Either.ofLeft(sessionRequiredError());
+    }
+    const unsubscribe = registerDirectRallarWs(input, facade);
     try {
-        const startResult = await startDirectRallarFacade(facade, context);
+        if (input.signal?.aborted) {
+            return abandonedDirectSubscription();
+        }
+        const startResult = await startDirectRallarFacade(facade, context, restoredSession);
+        if (input.signal?.aborted) {
+            return abandonedDirectSubscription();
+        }
         const snapshot = await facade.rooms.join(roomId, {
             timeoutMs: context.timeoutMs,
             scope: directScope(context)
         });
-        return {
+        if (input.signal?.aborted) {
+            return abandonedDirectSubscription();
+        }
+        return Either.ofRight({
             value: {
                 action: 'ws.subscribe',
                 selector,
@@ -633,7 +680,7 @@ async function subscribeDirectRallarWs(
                 wsStatus: facade.ws.status()
             },
             unsubscribe
-        };
+        });
     }
     catch (error) {
         unsubscribe();
@@ -666,21 +713,22 @@ async function sendDirectRallarWs(
     context: DirectRallarOperationContext,
     input: DirectRallarWsSendInput,
     loadFacade: DirectRallarFacadeLoader
-): Promise<DirectRallarOperationSuccess> {
-    if (!input.typeId.trim()) {
-        throw new Error('WS send requires a Type ID.');
+): Promise<Either<DirectRallarOperationError, DirectRallarOperationSuccess>> {
+    const validation = validateWsSend(context, input);
+    if (!validation.ok || !isRallarMessagePayload(input.payload)) {
+        return Either.ofLeft(toValidationError(validation));
     }
-    const payload = requireRallarMessagePayload(input.payload);
-    validateRallarServerUserTopic(effectiveWsTopicId(input), 'WS send');
-    if ((input.scope ?? 'room') === 'room') {
-        validateRoomId(context, 'WS send');
-    }
+    const payload = input.payload;
     const facade = await loadFacade();
     configureDirectRallarFacade(facade, context);
-    const startResult = await startDirectRallarFacade(facade, context);
+    const restoredSession = directSession(facade, context);
+    if (!restoredSession) {
+        return Either.ofLeft(sessionRequiredError());
+    }
+    const startResult = await startDirectRallarFacade(facade, context, restoredSession);
     const sendInput = directWsSendPayload(context, input, payload);
     const sendResult = await facade.messages.ws.send(sendInput);
-    return {
+    return Either.ofRight({
         value: {
             action: 'ws.send',
             groupId: context.roomId,
@@ -695,5 +743,44 @@ async function sendDirectRallarWs(
             sendInput,
             sendResult: { msgId: sendResult.msgId, typeId: sendResult.typeId, lifecycle: sendResult.lifecycle() }
         }
-    };
+    });
+}
+
+function abandonedDirectSubscription(): Either<DirectRallarOperationError, DirectRallarOperationSuccess> {
+    return Either.ofLeft({ code: 'RALLAR_DIRECT_OPERATION_ABORTED', message: 'WS subscription was abandoned.' });
+}
+function registerDirectRallarWs(input: DirectRallarWsSubscribeInput, facade: DirectRallarFacade): RallarUnsubscribe {
+    const owned = new BrowserRallarSubscriptionScope();
+    owned.add(facade.messages.ws.onMessage(input.selector, (message) => {
+        if (!input.signal?.aborted) {
+            return input.handler({ ...message });
+        }
+    }));
+    const unsubscribe = () => owned.unsubscribe();
+    input.subscriptions?.add(unsubscribe);
+    if (input.signal?.aborted) {
+        unsubscribe();
+    }
+    else if (input.signal) {
+        input.signal.addEventListener('abort', unsubscribe, { once: true });
+        owned.add(() => input.signal?.removeEventListener('abort', unsubscribe));
+    }
+    return unsubscribe;
+}
+
+function validateWsSubscribe(
+    context: DirectRallarOperationContext,
+    selector: RallarMessageSelectorInput
+): RallarValidationResult {
+    return failRallarValidation([
+        ...validateRoomId(context).issues,
+        ...(typeof selector !== 'string' && selector.topicId !== undefined
+            ? validateRallarWsUserTopicId(selector.topicId.trim(), '$.topicId').issues
+            : []),
+        ...(typeof selector === 'string'
+            ? validateRallarRouteId(selector, '$.typeId', 'Type ID').issues
+            : selector.typeId === undefined
+            ? []
+            : validateRallarRouteId(selector.typeId, '$.typeId', 'Type ID').issues)
+    ]);
 }

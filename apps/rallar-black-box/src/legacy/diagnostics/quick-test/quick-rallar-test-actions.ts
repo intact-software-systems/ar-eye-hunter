@@ -1,5 +1,6 @@
 import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type * as React from 'react';
 import {
     createDirectRallarRuntimeEvent,
@@ -15,6 +16,7 @@ import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade
 import { recordValue } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { stringValue } from '../../shared/string-value.ts';
+import type { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import type {
     QuickRallarReceivedMessageRow,
     QuickRallarSubscriptionState,
@@ -24,6 +26,8 @@ import type { UseQuickRallarTestControllerInput } from './use-quick-rallar-test-
 
 export namespace QuickRallarTestActions {
     export interface Input extends UseQuickRallarTestControllerInput {
+        nowMs(): number;
+        createRowId(): string;
         readonly values: QuickRallarValues;
         readonly setValues: React.Dispatch<React.SetStateAction<QuickRallarValues>>;
         readonly setBusyAction: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -49,6 +53,7 @@ export namespace QuickRallarTestActions {
             readonly ok: true;
             readonly value: import('@shared-web/browser/messages/rallar-message-contracts.ts').RallarMessagePayload;
         } | { readonly ok: false; readonly error: string; };
+        readonly lifetime: DiagnosticControllerLifecycle;
     }
     export interface Operation {
         readonly busyLabel: string;
@@ -138,21 +143,34 @@ export class QuickRallarTestActions {
     public readonly runOperation = async (
         { busyLabel, action, completedAction, failedAction, onCompleted }: QuickRallarTestActions.Operation
     ): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         this.input.setBusyAction(busyLabel);
         this.input.setLocalError(undefined);
         try {
             const result = await action();
+            if (signal.aborted) {
+                return;
+            }
             this.recordDirectResult(result, completedAction, failedAction);
             if (result.status === 'completed') {
                 onCompleted?.(result);
             }
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setLocalError(
                 error instanceof Error ? error.message : String(error)
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
@@ -190,22 +208,11 @@ export class QuickRallarTestActions {
                 failedAction: 'Quick Test group join failed'
             }
         );
-    public readonly toReceivedMessageRow = (
-        message: RallarMessage<RallarMessagePayload>
-    ): QuickRallarReceivedMessageRow => ({
-        rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        atEpochMs: message.receivedAtEpochMs,
-        transport: 'ws',
-        senderId: message.senderId,
-        roomId: message.roomId ?? this.input.activeGroupId,
-        typeId: message.typeId,
-        topicId: message.topicId,
-        contextId: message.contextId,
-        resourceId: message.resourceId,
-        payload: message.payload,
-        raw: message
-    });
     public readonly subscribeWs = async (): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         if (!this.input.activeTypeId) {
             this.input.setLocalError('WS subscribe requires a Type ID.');
             return;
@@ -229,31 +236,35 @@ export class QuickRallarTestActions {
                     context: context,
                     selector: selector,
                     handler: (message) => this.receiveMessage(context, message),
-                    loadFacade: loadBrowserRallarFacade
+                    loadFacade: loadBrowserRallarFacade,
+                    signal: signal,
+                    subscriptions: this.input.lifetime.subscriptions
                 }
             );
+            if (signal.aborted) {
+                return;
+            }
             this.recordDirectResult(
                 result,
                 'Quick Test WS subscribed',
                 'Quick Test WS subscribe failed'
             );
             if (result.status === 'completed' && result.unsubscribe) {
-                this.input.setSubscription({
-                    transport: 'ws',
-                    label: this.input.selectorLabel,
-                    groupId: this.input.activeGroupId,
-                    subscribedAtEpochMs: Date.now(),
-                    unsubscribe: result.unsubscribe
-                });
-                this.input.setWaitStatus('subscribed');
+                this.publishSubscription(result.unsubscribe);
             }
         }
         catch (error) {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setLocalError(
                 error instanceof Error ? error.message : String(error)
             );
         }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
@@ -306,13 +317,24 @@ export class QuickRallarTestActions {
         );
     };
     public readonly waitForReceive = async (): Promise<void> => {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
         const startCount = this.input.receivedCountRef.current;
-        const startedAt = Date.now();
+        const startedAt = this.input.nowMs();
         this.input.setWaitStatus('waiting');
         this.input.setBusyAction('Wait for receive');
         this.input.setLocalError(undefined);
         try {
-            await this.waitForReceivedMessage(startCount, startedAt);
+            const outcome = await this.waitForReceivedMessage(startCount, startedAt);
+            if (signal.aborted || outcome === 'aborted') {
+                return;
+            }
+            if (outcome === 'timeout') {
+                this.publishReceiveTimeout(startedAt);
+                return;
+            }
             this.input.setWaitStatus('message observed');
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                 createDirectRallarRuntimeEvent({
@@ -320,33 +342,17 @@ export class QuickRallarTestActions {
                     context: this.operationContext(),
                     transport: 'ws',
                     payload: {
-                        waitedMs: Date.now() - startedAt,
+                        waitedMs: this.input.nowMs() - startedAt,
                         receivedCount: this.input.receivedCountRef.current
                     }
                 }),
                 'Quick Test receive observed'
             );
         }
-        catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.input.setWaitStatus('timeout');
-            this.input.setLocalError(message);
-            rallarBlackBoxRuntimeStore.recordRuntimeEvent(
-                createDirectRallarRuntimeEvent({
-                    topic: 'rallar.direct.quick.receive.timeout',
-                    context: this.operationContext(),
-                    transport: 'ws',
-                    severity: 'error',
-                    payload: {
-                        waitedMs: Date.now() - startedAt,
-                        receivedCount: this.input.receivedCountRef.current,
-                        error: message
-                    }
-                }),
-                'Quick Test receive timed out'
-            );
-        }
         finally {
+            if (signal.aborted) {
+                return;
+            }
             this.input.setBusyAction(undefined);
         }
     };
@@ -404,7 +410,8 @@ export class QuickRallarTestActions {
         context: DirectRallarOperationContext,
         message: RallarMessage<RallarMessagePayload>
     ): void {
-        const row = this.toReceivedMessageRow(message);
+        const row = toReceivedMessageRow(message, this.input.createRowId(), this.input.activeGroupId);
+        this.input.receivedCountRef.current += 1;
         this.input.setReceivedMessages((current) => [...current, row].slice(-50));
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
@@ -427,23 +434,15 @@ export class QuickRallarTestActions {
         );
     }
 
-    private async waitForReceivedMessage(startCount: number, startedAt: number): Promise<void> {
-        await new Promise<void>((resolve, reject) => {
-            const interval = window.setInterval(() => {
-                if (this.input.receivedCountRef.current > startCount) {
-                    window.clearInterval(interval);
-                    resolve();
-                    return;
-                }
-                if (Date.now() - startedAt > this.input.values.timeoutMs) {
-                    window.clearInterval(interval);
-                    reject(
-                        new Error(
-                            'Timed out waiting for a Quick Test WebSocket receive.'
-                        )
-                    );
-                }
-            }, 100);
+    private async waitForReceivedMessage(
+        startCount: number,
+        startedAt: number
+    ): Promise<DiagnosticControllerLifecycle.Observation> {
+        return await this.input.lifetime.waitForObservation({
+            hasObserved: () => this.input.receivedCountRef.current > startCount,
+            nowMs: this.input.nowMs,
+            startedAtEpochMs: startedAt,
+            timeoutMs: this.input.values.timeoutMs
         });
     }
 
@@ -506,4 +505,57 @@ export class QuickRallarTestActions {
             }
         };
     }
+
+    private publishReceiveTimeout(startedAt: number): void {
+        const message = 'Timed out waiting for a Quick Test WebSocket receive.';
+        this.input.setWaitStatus('timeout');
+        this.input.setLocalError(message);
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic: 'rallar.direct.quick.receive.timeout',
+                context: this.operationContext(),
+                transport: 'ws',
+                severity: 'error',
+                payload: {
+                    waitedMs: this.input.nowMs() - startedAt,
+                    receivedCount: this.input.receivedCountRef.current,
+                    error: message
+                }
+            }),
+            'Quick Test receive timed out'
+        );
+    }
+
+    private publishSubscription(unsubscribe: RallarUnsubscribe): void {
+        const installed: QuickRallarSubscriptionState = {
+            transport: 'ws',
+            label: this.input.selectorLabel,
+            groupId: this.input.activeGroupId,
+            subscribedAtEpochMs: this.input.nowMs(),
+            unsubscribe
+        };
+        this.input.subscriptionRef.current = installed;
+        this.input.setSubscription(installed);
+        this.input.setWaitStatus('subscribed');
+    }
+}
+
+function toReceivedMessageRow(
+    message: RallarMessage<RallarMessagePayload>,
+    rowId: string,
+    roomId: string
+): QuickRallarReceivedMessageRow {
+    return {
+        rowId,
+        atEpochMs: message.receivedAtEpochMs,
+        transport: 'ws',
+        senderId: message.senderId,
+        roomId: message.roomId ?? roomId,
+        typeId: message.typeId,
+        topicId: message.topicId,
+        contextId: message.contextId,
+        resourceId: message.resourceId,
+        payload: message.payload,
+        raw: message
+    };
 }

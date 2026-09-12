@@ -19,37 +19,37 @@ export type RallarBrowserAiTransport =
 export type RallarBrowserAiRallar = Pick<RallarFacade, 'data' | 'messages' | 'realtime'>;
 
 export interface CreateRallarBrowserAiOptions {
-    rallar: RallarBrowserAiRallar;
-    provider: RallarAiJsonProvider;
-    policy?: RallarAiGenerationPolicy;
-    diagnostics?: RallarAiDiagnosticsSink;
-    readCurrentStateRevision?: (
+    readonly rallar: RallarBrowserAiRallar;
+    readonly provider: RallarAiJsonProvider;
+    readonly policy?: RallarAiGenerationPolicy;
+    readonly diagnostics?: RallarAiDiagnosticsSink;
+    readonly readCurrentStateRevision?: (
         request: RallarAiJsonRequest
     ) => string | undefined;
 }
 
 export interface RallarBrowserAiBroadcastInput<TValue = unknown> {
-    result: RallarAiJsonResult<TValue>;
-    transport?: RallarBrowserAiTransport;
-    laneId?: string;
-    roomId?: string;
-    roomRef?: GroupRef;
-    topicId?: string;
-    typeId?: string;
+    readonly result: RallarAiJsonResult<TValue>;
+    readonly transport?: RallarBrowserAiTransport;
+    readonly laneId?: string;
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly topicId?: string;
+    readonly typeId?: string;
 }
 
 export interface RallarBrowserAiBroadcastResult {
-    transport: RallarBrowserAiTransport;
-    realtime?: readonly RallarRealtimeSendResult[];
-    message?: RallarMessageHandle;
+    readonly transport: RallarBrowserAiTransport;
+    readonly realtime?: readonly RallarRealtimeSendResult[];
+    readonly message?: RallarMessageHandle;
 }
 
 export interface RallarBrowserAiPersistInput<TValue = unknown> {
-    result: RallarAiJsonResult<TValue>;
-    storeName?: string;
-    key?: string;
-    scope?: RallarDataScope;
-    durability?: RallarDataDurability;
+    readonly result: RallarAiJsonResult<TValue>;
+    readonly storeName?: string;
+    readonly key?: string;
+    readonly scope?: RallarDataScope;
+    readonly durability?: RallarDataDurability;
 }
 
 export interface RallarBrowserAiFacade {

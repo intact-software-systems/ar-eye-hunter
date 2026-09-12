@@ -1,3 +1,4 @@
+import type { RallarCrdtMessageTransport } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import { createRallarCrdtMessageTransport } from '@shared-web/browser/crdt/create-rallar-crdt-message-transport.ts';
 import type { RallarMessage, RallarMessageHandler } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
@@ -8,7 +9,7 @@ import { createMessageDelivery, type MessageDeliveryFixture } from '../messages/
 const payload = { operations: ['one'] };
 const sendInput = { topicId: 'crdt', typeId: 'update', payload };
 
-function createTransport(delivery: MessageDeliveryFixture) {
+function createTransport(delivery: MessageDeliveryFixture): RallarCrdtMessageTransport {
     const messages: RallarMessagesOperations = {
         ws: { send: async () => delivery.handle, onMessage: () => () => {} },
         rtc: { send: async () => delivery.handle, onMessage: () => () => {} },

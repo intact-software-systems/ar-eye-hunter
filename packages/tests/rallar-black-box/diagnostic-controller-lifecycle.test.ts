@@ -1,10 +1,11 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { AuthCommandCenterTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { RallarMessage, RallarMessageHandler, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarStartResult } from '@shared-web/browser/rallar.ts';
-import { act, createElement, useLayoutEffect } from 'react';
+import { act, createElement, StrictMode, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DirectRallarFacade } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
@@ -19,6 +20,8 @@ import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fi
 import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';
 
 const loadFacade = vi.hoisted(() => vi.fn());
+const ticketRequest = vi.hoisted(() => vi.fn());
+vi.mock('../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/request-web-socket-ticket.ts', () => ({ requestWebSocketTicket: ticketRequest }));
 const runtimeEvents = vi.hoisted(() => [] as RallarBlackBoxTestRuntimeEventInput[]);
 vi.mock('../../../apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-facade.ts', () => ({ loadBrowserRallarFacade: loadFacade }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
@@ -228,6 +231,262 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         });
         expect(quick.waitStatus).toBe('timeout');
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each(['quick', 'websocket'] as const)('does not publish an abandoned %s send result', async (controller) => {
+        const start = Promise.withResolvers<RallarStartResult>();
+        facade.start = () => start.promise;
+        await act(async () =>
+            root.render(
+                controller === 'quick'
+                    ? createElement(QuickHarness, {
+                        input,
+                        capture: (view) => {
+                            quick = view;
+                        }
+                    })
+                    : createElement(WebSocketHarness, {
+                        input,
+                        capture: (view) => {
+                            websocket = view;
+                        }
+                    })
+            )
+        );
+        const sending = Promise.withResolvers<void>();
+        await act(async () => {
+            void (controller === 'quick' ? quick.sendWs() : websocket.send()).then(sending.resolve, sending.reject);
+        });
+        await act(async () => root.unmount());
+        const recorded = [...runtimeEvents];
+        await act(async () => {
+            start.resolve({ session: authSession, connected: true });
+            await sending.promise;
+        });
+        expect(runtimeEvents).toEqual(recorded);
+        expect(sends).toEqual(['room-a']);
+    });
+
+    it.each(['quick', 'websocket'] as const)('releases a pending %s receive wait on teardown', async (controller) => {
+        vi.useFakeTimers();
+        await act(async () =>
+            root.render(
+                controller === 'quick'
+                    ? createElement(QuickHarness, {
+                        input,
+                        capture: (view) => {
+                            quick = view;
+                        }
+                    })
+                    : createElement(WebSocketHarness, {
+                        input,
+                        capture: (view) => {
+                            websocket = view;
+                        }
+                    })
+            )
+        );
+        const waiting = Promise.withResolvers<void>();
+        await act(async () => {
+            void (controller === 'quick' ? quick.waitForReceive() : websocket.waitForMessage()).then(waiting.resolve, waiting.reject);
+        });
+        await act(async () => root.unmount());
+        const pendingAfterUnmount = vi.getTimerCount();
+        const events = [...runtimeEvents];
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync((controller === 'quick' ? quick.values.timeoutMs : websocket.values.timeoutMs) + 100);
+            await waiting.promise;
+        });
+        expect(pendingAfterUnmount).toBe(0);
+        expect(runtimeEvents).toEqual(events);
+    });
+
+    it('observes traffic after the fifty-row display is full', async () => {
+        vi.useFakeTimers();
+        await act(async () =>
+            root.render(createElement(QuickHarness, {
+                input,
+                capture: (view) => {
+                    quick = view;
+                }
+            }))
+        );
+        await act(async () => quick.subscribeWs());
+        await act(async () => {
+            for (let index = 0; index < 50; index++) {
+                for (const listener of listeners) {
+                    await listener(createDiagnosticMessage(String(index)));
+                }
+            }
+        });
+        expect(quick.receivedMessages).toHaveLength(50);
+        const waiting = Promise.withResolvers<void>();
+        await act(async () => {
+            void quick.waitForReceive().then(waiting.resolve, waiting.reject);
+        });
+        await act(async () => {
+            for (const listener of listeners) {
+                await listener(createDiagnosticMessage('new receive'));
+            }
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(quick.values.timeoutMs + 100);
+            await waiting.promise;
+        });
+        expect(quick.waitStatus).toBe('message observed');
+        expect(quick.receivedMessages).toHaveLength(50);
+        expect(quick.receivedMessages.at(-1)?.payload).toEqual({ text: 'new receive' });
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each(['quick-start', 'quick-join', 'websocket-start', 'websocket-join'] as const)(
+        'releases the registered listener immediately when unmounted during %s',
+        async (acquisition) => {
+            const release = Promise.withResolvers<void>();
+            const pending = Promise.withResolvers<void>();
+            const originalStart = facade.start;
+            const originalJoin = facade.rooms.join;
+            if (acquisition.endsWith('start')) {
+                facade.start = async (options) => {
+                    await release.promise;
+                    return originalStart(options);
+                };
+            }
+            else {
+                facade.rooms.join = async (room, options) => {
+                    await release.promise;
+                    return originalJoin(room, options);
+                };
+            }
+            if (acquisition.startsWith('quick')) {
+                await act(async () =>
+                    root.render(createElement(QuickHarness, {
+                        input,
+                        capture: (view) => {
+                            quick = view;
+                        }
+                    }))
+                );
+                await act(async () => {
+                    void quick.subscribeWs().then(pending.resolve, pending.reject);
+                });
+            }
+            else {
+                await act(async () =>
+                    root.render(createElement(WebSocketHarness, {
+                        input,
+                        capture: (view) => {
+                            websocket = view;
+                        }
+                    }))
+                );
+                await act(async () => {
+                    void websocket.subscribeWs().then(pending.resolve, pending.reject);
+                });
+            }
+            expect(listeners.size).toBe(1);
+            await act(async () => root.unmount());
+            const observedAfterUnmount = listeners.size;
+            const eventsBeforeRelease = [...runtimeEvents];
+            await act(async () => {
+                release.resolve();
+                await pending.promise;
+            });
+            for (const listener of listeners) {
+                await listener(createDiagnosticMessage('abandoned'));
+            }
+            expect({ registeredAfterUnmount: observedAfterUnmount, registeredAfterRelease: listeners.size }).toEqual({
+                registeredAfterUnmount: 0,
+                registeredAfterRelease: 0
+            });
+            expect(runtimeEvents).toEqual(eventsBeforeRelease);
+        }
+    );
+
+    it.each(['quick', 'websocket'] as const)('owns %s subscriptions through StrictMode replay, auth replacement and immediate teardown', async (controller) => {
+        const render = (next: UseQuickRallarTestControllerInput) =>
+            controller === 'quick'
+                ? createElement(QuickHarness, {
+                    input: next,
+                    capture: (view) => {
+                        quick = view;
+                    }
+                })
+                : createElement(WebSocketHarness, {
+                    input: next,
+                    capture: (view) => {
+                        websocket = view;
+                    }
+                });
+        const subscribe = () => controller === 'quick' ? quick.subscribeWs() : websocket.subscribeWs();
+        await act(async () => root.render(createElement(StrictMode, null, render(input))));
+        await act(async () => subscribe());
+        expect(listeners.size).toBe(1);
+        await act(async () => root.render(createElement(StrictMode, null, render({ ...input, authSession: { ...authSession, sessionId: 'replacement' } }))));
+        expect(listeners.size).toBe(0);
+        await act(async () => {
+            await subscribe();
+            root.unmount();
+        });
+        expect(listeners.size).toBe(0);
+        const recorded = [...runtimeEvents];
+        for (const listener of listeners) {
+            await listener(createDiagnosticMessage('after immediate teardown'));
+        }
+        expect(runtimeEvents).toEqual(recorded);
+    });
+
+    it.each(
+        [
+            { teardown: 'auth change', action: 'open' },
+            { teardown: 'unmount', action: 'open' },
+            { teardown: 'cleanup', action: 'open' },
+            { teardown: 'auth change', action: 'createTicket' },
+            { teardown: 'unmount', action: 'createTicket' },
+            { teardown: 'cleanup', action: 'createTicket' }
+        ] as const
+    )('abandons ticket acquisition %j', async ({ teardown, action }) => {
+        vi.stubGlobal('WebSocket', DiagnosticSocket);
+        DiagnosticSocket.instances.length = 0;
+        const ticket = Promise.withResolvers<AuthCommandCenterTicket>();
+        ticketRequest.mockReturnValue(ticket.promise);
+        const opening = Promise.withResolvers<void>();
+        await act(async () =>
+            root.render(createElement(WebSocketHarness, {
+                input,
+                capture: (view) => {
+                    websocket = view;
+                }
+            }))
+        );
+        await act(async () => {
+            void websocket[action]().then(opening.resolve, opening.reject);
+        });
+        if (teardown === 'cleanup') {
+            await act(async () => websocket.cleanup());
+        }
+        else if (teardown === 'unmount') {
+            await act(async () => root.unmount());
+        }
+        else {
+            await act(async () =>
+                root.render(
+                    createElement(WebSocketHarness, {
+                        input: { ...input, authSession: { ...authSession, sessionId: 'new-session' } },
+                        capture: (view) => {
+                            websocket = view;
+                        }
+                    })
+                )
+            );
+        }
+        const eventsBeforeRelease = [...runtimeEvents];
+        await act(async () => {
+            ticket.resolve({ ticket: 'old-ticket', sessionId: authSession.sessionId, expiresAtEpochMs: 1_000, issuedAtEpochMs: 1 });
+            await opening.promise;
+        });
+        expect(DiagnosticSocket.instances).toEqual([]);
+        expect(runtimeEvents).toEqual(eventsBeforeRelease);
     });
 
     it('closes the registered raw socket on auth change and copies current diagnostic values', async () => {

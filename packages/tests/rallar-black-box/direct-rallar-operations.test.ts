@@ -1,3 +1,6 @@
+import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarRtcStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
     runDirectRallarGroupCreate,
@@ -10,6 +13,7 @@ import {
 import type { RallarMessagePayload } from '../../../packages/shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessage, RallarMessageHandler } from '../../../packages/shared-web/browser/rallar.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
+import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';
 
 const session: AuthSession = {
@@ -21,9 +25,34 @@ const session: AuthSession = {
 };
 
 describe('direct Rallar operations', () => {
+    it('reports every invalid send field before loading the facade', async () => {
+        const result = await runDirectRallarWsSend(
+            {
+                providerMode: 'browser-rallar',
+                apiBaseUrl: 'http://localhost',
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                roomId: 'bad room'
+            },
+            { typeId: '', topicId: 'invalid.topic', payload: undefined },
+            async () => {
+                throw new Error('Validation must precede facade loading');
+            }
+        );
+        expect(result.status).toBe('failed');
+        expect(result.error?.details).toMatchObject({
+            issues: [
+                expect.objectContaining({ path: '$.typeId' }),
+                expect.objectContaining({ path: '$.topicId' }),
+                expect.objectContaining({ path: '$.roomId' }),
+                expect.objectContaining({ path: '$.payload' })
+            ]
+        });
+    });
+
     it.each(['start', 'join'] as const)('releases the listener when %s rejects', async (failure) => {
         const unsubscribe = vi.fn();
-        const facade = toTestDouble<DirectRallarFacade>({
+        const facade = createDirectTestFacade({
             configure: () => {},
             setDefaults: () => {},
             session: () => session,
@@ -33,11 +62,16 @@ describe('direct Rallar operations', () => {
                 }
                 return { session, connected: true };
             },
-            rooms: toTestDouble<DirectRallarFacade['rooms']>({
-                join: async () => {
-                    throw new Error('join failed');
+            rooms: {
+                current: () => undefined,
+                list: () => [],
+                create: unsupportedOperation,
+                ...{
+                    join: async () => {
+                        throw new Error('join failed');
+                    }
                 }
-            }),
+            },
             messages: { ws: { send: async () => createMessageDelivery('ws', undefined).handle, onMessage: () => unsubscribe } }
         });
         const result = await runDirectRallarWsSubscribe(
@@ -225,17 +259,28 @@ describe('direct Rallar operations', () => {
             },
             rooms: {
                 current() {
-                    return toTestDouble<NonNullable<ReturnType<DirectRallarFacade['rooms']['current']>>>({
-                        group: toTestDouble<NonNullable<ReturnType<DirectRallarFacade['rooms']['current']>>['group']>({
-                            groupId: 'bb-group'
-                        })
+                    return createGroupSnapshotFixture({
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'bb-group',
+                        sessionIds: [session.sessionId]
                     });
                 },
                 list() {
                     return [
-                        toTestDouble<ReturnType<DirectRallarFacade['rooms']['list']>[number]>({
-                            roomId: 'bb-group'
-                        })
+                        {
+                            roomId: 'bb-group',
+                            roomRef: snapshot.group,
+                            name: 'bb-group',
+                            status: snapshot.group.status,
+                            kind: snapshot.group.kind,
+                            joinMode: snapshot.group.joinMode,
+                            memberCount: 1,
+                            onlineMemberCount: 1,
+                            isJoined: true,
+                            isCurrent: true,
+                            snapshot
+                        }
                     ];
                 },
                 async create() {
@@ -248,9 +293,14 @@ describe('direct Rallar operations', () => {
             people: {
                 list() {
                     return [
-                        toTestDouble<ReturnType<DirectRallarFacade['people']['list']>[number]>({
-                            principalId: 'alice-client'
-                        })
+                        {
+                            principalId: 'alice-client',
+                            username: 'alice',
+                            isOnline: true,
+                            activeSessionCount: 1,
+                            activeSessionIds: [session.sessionId],
+                            snapshot: createClientSnapshotFixture({ applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'alice-client' })
+                        }
                     ];
                 }
             },
@@ -266,14 +316,12 @@ describe('direct Rallar operations', () => {
             },
             ws: {
                 status() {
-                    return toTestDouble<ReturnType<DirectRallarFacade['ws']['status']>>({
-                        readyState: 'open'
-                    });
+                    return createWsStatus();
                 }
             },
             rtc: {
                 status() {
-                    return toTestDouble<ReturnType<DirectRallarFacade['rtc']['status']>>({
+                    return createRtcStatus({
                         readyPeerIds: ['bob-session']
                     });
                 }
@@ -361,11 +409,11 @@ describe('direct Rallar operations', () => {
                     const groupId = typeof input === 'string' ? input : input.groupId ?? input.displayName;
                     const displayName = typeof input === 'string' ? input : input.displayName;
                     calls.push(`create:${groupId}:${displayName}`);
-                    return toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['create']>>>({
-                        group: toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['create']>>['group']>({
-                            groupId,
-                            displayName
-                        })
+                    return createGroupSnapshotFixture({
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: groupId ?? 'missing',
+                        sessionIds: [session.sessionId]
                     });
                 },
                 async join(room) {
@@ -375,10 +423,11 @@ describe('direct Rallar operations', () => {
                         ? room.groupId
                         : room.roomId ?? 'missing-room';
                     calls.push(`join:${roomId}`);
-                    return toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>>({
-                        group: toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>['group']>({
-                            groupId: roomId
-                        })
+                    return createGroupSnapshotFixture({
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: roomId ?? 'missing',
+                        sessionIds: [session.sessionId]
                     });
                 }
             },
@@ -399,14 +448,12 @@ describe('direct Rallar operations', () => {
             },
             ws: {
                 status() {
-                    return toTestDouble<ReturnType<DirectRallarFacade['ws']['status']>>({
-                        readyState: 'open'
-                    });
+                    return createWsStatus();
                 }
             },
             rtc: {
                 status() {
-                    return toTestDouble<ReturnType<DirectRallarFacade['rtc']['status']>>({});
+                    return createRtcStatus({});
                 }
             }
         };
@@ -500,10 +547,11 @@ describe('direct Rallar operations', () => {
                         ? room.groupId
                         : room.roomId ?? 'missing-room';
                     calls.push(`join:${roomId}`);
-                    return toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>>({
-                        group: toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>['group']>({
-                            groupId: roomId
-                        })
+                    return createGroupSnapshotFixture({
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: roomId ?? 'missing',
+                        sessionIds: [session.sessionId]
                     });
                 }
             },
@@ -530,14 +578,12 @@ describe('direct Rallar operations', () => {
             },
             ws: {
                 status() {
-                    return toTestDouble<ReturnType<DirectRallarFacade['ws']['status']>>({
-                        readyState: 'open'
-                    });
+                    return createWsStatus();
                 }
             },
             rtc: {
                 status() {
-                    return toTestDouble<ReturnType<DirectRallarFacade['rtc']['status']>>({});
+                    return createRtcStatus({});
                 }
             }
         };
@@ -563,7 +609,7 @@ describe('direct Rallar operations', () => {
                 loadFacade: async () => facade
             }
         );
-        await subscribedHandler?.(toTestDouble<RallarMessage<RallarMessagePayload>>({
+        await subscribedHandler?.(createDirectMessage({
             typeId: 'room.manual.message',
             topicId: 'room.manual.message',
             payload: {
@@ -611,6 +657,65 @@ describe('direct Rallar operations', () => {
     });
 });
 
-function toTestDouble<T>(members: Partial<T>): T {
-    return members as T;
+const snapshot: GroupSnapshot = createGroupSnapshotFixture({
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'bb-group',
+    sessionIds: [session.sessionId]
+});
+function unsupportedOperation(): never {
+    throw new Error('Operation is outside this direct scenario');
+}
+function createWsStatus(): RallarWsStatus {
+    return {
+        readyState: 'open',
+        connectState: 'connected',
+        isOpen: true,
+        reconnecting: false,
+        reconnectEnabled: true,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 5,
+        reconnectExhausted: false
+    };
+}
+function createRtcStatus(input: Partial<RallarRtcStatus> = {}): RallarRtcStatus {
+    return { laneId: 'default', knownPeerIds: [], activePeerIds: [], peerIdsWithNoReconnectableLanes: [], readyPeerIds: [], peers: [], ...input };
+}
+function createDirectTestFacade(input: Partial<DirectRallarFacade>): DirectRallarFacade {
+    return {
+        configure: () => {},
+        setDefaults: () => {},
+        defaults: () => undefined,
+        start: unsupportedOperation,
+        status: () => 'connected',
+        isConnected: () => true,
+        session: () => session,
+        auth: { restore: () => session },
+        rooms: { current: () => undefined, list: () => [], create: unsupportedOperation, join: unsupportedOperation },
+        people: { list: () => [] },
+        messages: { ws: { send: unsupportedOperation, onMessage: unsupportedOperation } },
+        ws: { status: createWsStatus },
+        rtc: { status: () => createRtcStatus() },
+        ...input
+    };
+}
+interface DirectMessageInput {
+    readonly typeId: string;
+    readonly topicId: string;
+    readonly payload: RallarMessagePayload;
+}
+function createDirectMessage(input: DirectMessageInput): RallarMessage<RallarMessagePayload> {
+    return {
+        ...input,
+        transport: 'ws',
+        contextId: 'bb-group',
+        resourceId: '',
+        senderId: 'sender',
+        receivedAtEpochMs: 1,
+        raw: {
+            id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
+            route: { topicId: input.topicId, contextId: 'bb-group', resourceId: '' },
+            payload: { typeId: input.typeId, contentType: 'application/json', resource: JSON.stringify(input.payload) }
+        }
+    };
 }
