@@ -61,6 +61,26 @@ test('rejects every observed effect for a refused durable identity', () => {
     ]));
 });
 
+test('rejects a rate-limited send that retained an entry through the real classifier', () => {
+    const input = validCoverageInput();
+    input.durableSends = [
+        { msgId: 'admitted', status: 'pending-admission', entryCount: 1 },
+        { msgId: 'refused-with-entry', status: 'rate-limited', entryCount: 1 }
+    ];
+    input.durableDisposition = classifyMixedLiveDurableSends(input.durableSends);
+
+    const coverage = evaluateMixedLiveDurableCoverage(input);
+
+    expect(input.durableDisposition).toEqual({
+        offeredCount: 2,
+        admittedCount: 1,
+        refusedCount: 0,
+        unexpectedCount: 1
+    });
+    expect(coverage.verdict).toBe('failed');
+    expect(coverage.reasons).toContain('unexpected-durable-disposition');
+});
+
 test('rejects an all-refused capture with no returned-claim overlap and censored readback', () => {
     const input = { ...validCoverageInput(), expectedDurableSendCount: 1 };
     input.durableSends = [{ msgId: 'refused', status: 'rate-limited', entryCount: 0 }];

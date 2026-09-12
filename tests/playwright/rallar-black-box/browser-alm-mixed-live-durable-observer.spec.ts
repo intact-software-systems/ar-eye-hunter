@@ -42,9 +42,23 @@ test('restores observation hooks and permits reinstallation after a rejected que
         const queueModule: typeof import('../../../packages/shared/queuebox/indexed-db-queue-box.ts') = await import(
             input.queueBoxUrl
         );
-        const originalEnqueueIfAbsent = queueModule.IndexedDbQueueBox.prototype.enqueueIfAbsent;
+        const queuePrototype = queueModule.IndexedDbQueueBox.prototype;
+        const originalMethods = {
+            readWorkPage: queuePrototype.readWorkPage,
+            readWorkPages: queuePrototype.readWorkPages,
+            reserveEntries: queuePrototype.reserveEntries,
+            reserveTimeoutEntries: queuePrototype.reserveTimeoutEntries,
+            releaseEntries: queuePrototype.releaseEntries
+        };
+        const queueMethodsMatchOriginals = () =>
+            queuePrototype.readWorkPage === originalMethods.readWorkPage &&
+            queuePrototype.readWorkPages === originalMethods.readWorkPages &&
+            queuePrototype.reserveEntries === originalMethods.reserveEntries &&
+            queuePrototype.reserveTimeoutEntries === originalMethods.reserveTimeoutEntries &&
+            queuePrototype.releaseEntries === originalMethods.releaseEntries;
+        const originalEnqueueIfAbsent = queuePrototype.enqueueIfAbsent;
         let probeRejected = false;
-        queueModule.IndexedDbQueueBox.prototype.enqueueIfAbsent = async function () {
+        queuePrototype.enqueueIfAbsent = async function injectedEnqueueFailure () {
             throw new Error('injected queue failure');
         };
         try {
@@ -54,8 +68,9 @@ test('restores observation hooks and permits reinstallation after a rejected que
             probeRejected = true;
         }
         finally {
-            queueModule.IndexedDbQueueBox.prototype.enqueueIfAbsent = originalEnqueueIfAbsent;
+            queuePrototype.enqueueIfAbsent = originalEnqueueIfAbsent;
         }
+        const methodsRestoredAfterRejection = queueMethodsMatchOriginals();
         let reinstallationSucceeded = false;
         let methodsRestored = false;
         try {
@@ -77,7 +92,14 @@ test('restores observation hooks and permits reinstallation after a rejected que
                 // Absence proves the owner cleared its global installation marker.
             }
         }
-        return { probeRejected, reinstallationSucceeded, methodsRestored };
+        const methodsRestoredAfterReinstallation = queueMethodsMatchOriginals();
+        return {
+            probeRejected,
+            reinstallationSucceeded,
+            methodsRestored,
+            methodsRestoredAfterRejection,
+            methodsRestoredAfterReinstallation
+        };
     }, {
         observerUrl: `/@fs${OBSERVER_PATH}`,
         queueBoxUrl: `/@fs${QUEUE_BOX_PATH}`
@@ -86,6 +108,8 @@ test('restores observation hooks and permits reinstallation after a rejected que
     expect(result).toEqual({
         probeRejected: true,
         reinstallationSucceeded: true,
-        methodsRestored: true
+        methodsRestored: true,
+        methodsRestoredAfterRejection: true,
+        methodsRestoredAfterReinstallation: true
     });
 });

@@ -88,15 +88,21 @@ export async function installMixedLiveDurableReceiver(input: InstallMixedReceive
     }).onRtc((payload, message) => {
         observeDurableMessage({ roomRef: room.roomRef, observation, durableMessageIds, payload, message });
     });
-    const unsubscribeLive = room.realtime<MixedLivePayload>(input.liveLaneId).on((message) => {
-        observeLiveMessage({ roomRef: room.roomRef, observation, liveSequences, postReconnectState, message });
-    });
-    window.__rallarMixedReceiver = {
-        durableMessageIds,
-        liveSequences,
-        unsubscribers: [unsubscribeDurable, unsubscribeLive],
-        readPostReconnectReceived: () => postReconnectState.received
-    };
+    try {
+        const unsubscribeLive = room.realtime<MixedLivePayload>(input.liveLaneId).on((message) => {
+            observeLiveMessage({ roomRef: room.roomRef, observation, liveSequences, postReconnectState, message });
+        });
+        window.__rallarMixedReceiver = {
+            durableMessageIds,
+            liveSequences,
+            unsubscribers: [unsubscribeDurable, unsubscribeLive],
+            readPostReconnectReceived: () => postReconnectState.received
+        };
+    }
+    catch (error) {
+        unsubscribeDurable();
+        throw error;
+    }
 }
 
 export function readMixedLiveDurableReceiverProgress(): MixedReceiverProgress {
