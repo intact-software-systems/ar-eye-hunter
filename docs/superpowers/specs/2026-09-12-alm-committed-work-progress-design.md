@@ -6,12 +6,14 @@ correction, RTC/WS integration fixes, and semantic negative tests are reviewed.
 Local semantic and ordinary native-browser checks pass. The maintainer-approved
 strict 208 KiB facade ceiling passes its focused checks. The server fixture
 correction passes 39 tests and independent specification/quality review. A fresh
-hosted ALM observation now passes all three carriers after heartbeat repair. The
-headless ceiling now has separate maintainer approval for strict `<261 KiB`.
+hosted ALM observation passes all three carriers after heartbeat repair, but a
+later pre-correlation run fails ALM readiness/delivery and three API WS recipes.
+The separately approved strict `<261 KiB` headless ceiling is implemented and
+task-reviewed; that later run's root suite, builds, and Postgres integration pass.
 Native performance proof and complete RTC lifecycle proof remain unresolved.
-The maintainer has also authorized designing the narrow delayed-answer protocol
-correction below; its proposed wire contract still awaits design review before
-implementation.
+The maintainer has also approved implementing the narrow delayed-answer protocol
+correction below, including its fail-closed compatibility consequence and no
+legacy fallback. Native and reconnect proof remain required.
 
 The first all-scenarios local RTC command on the current correction exits after
 211 seconds: C's `messages.rtc` formation-readiness command exhausts its remaining
@@ -228,11 +230,10 @@ prove routing and callback disposition, not convergence; an already-entered old
 callback remains outside that diagnostic. The throwaway characterization is
 archived outside the maintained suite, not shipped as a regression expectation.
 
-The maintainer has explicitly authorized designing a narrow correction for the
-demonstrated cross-negotiation mechanism. That approval removes the investigation
-blocker, not the written-design review gate. The proposed contract below is a
-deliberate RTC protocol change, not an incidental performance correction. No
-correlation implementation or general fencing mechanism has been added.
+The maintainer has explicitly approved the written narrow correction for the
+demonstrated cross-negotiation mechanism. The contract below is a deliberate RTC
+protocol change, not an incidental performance correction. It authorizes this
+offer/answer correlation boundary, not a general fencing mechanism.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
@@ -269,11 +270,11 @@ an unused alternative path. The required tests must prove progress for finite
 backlogs, including while bounded commits continue; they cannot prove fairness
 under unlimited arrivals faster than the worker can drain.
 
-## Proposed RTC answer correlation — awaiting design review
+## Approved RTC answer correlation
 
 ### Problem and ownership
 
-An admitted answer can outlive the local offer it answers. At present,
+An admitted answer can outlive the local offer it answers. In the pre-correlation runtime,
 `WebRtcConnectionService.receiveSignal` selects a peer using only the sender
 session ID. `QRtcPeerConnection.handleAnswer` accepts a description whenever the
 selected native connection is in `have-local-offer`. Neither condition proves
@@ -387,7 +388,7 @@ ownership. The new ID flows through the existing serialized RTC payload once.
 
 ### Acceptance and execution horizon
 
-The next implementation slice, after design approval, must include the protocol
+The next implementation slice must include the protocol
 change and its semantic regression tests together in PR #566. Prove an old
 answer held by a real admission conflict is ignored after replacement while the
 matching current answer reaches the native port. Also cover successive offers
@@ -602,8 +603,9 @@ independent read/write number, gameplay SLO, or unlimited-load guarantee.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
 - The separately approved bundle policies are strict `<208 KiB` for the browser
   facade and `<261 KiB` for headless; compression and exclusions stay unchanged.
-- The proposed RTC answer-correlation section is a design-review request, not
-  permission to bypass the protocol/public-contract constraint during execution.
+- The approved RTC answer-correlation section is the sole exception to the
+  protocol/public-contract constraint: update direct consumers together, reject
+  old descriptions, and retain no compatibility path or general fencing mechanism.
 - Keep implementation and proof in PR #566. Do not merge test-only experiments.
 - PR #567's related read-session/observation work has landed and is incorporated
   in this branch. Reuse it, retain fresh authority checks, and do not create a

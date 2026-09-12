@@ -28,8 +28,10 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
 - The separately approved bundle ceilings are strict `<208 KiB` for the browser
   facade and `<261 KiB` for headless; preserve compression and dependency exclusions.
-- RTC answer correlation is authorized for design work only. Review the spec's
-  proposed contract before implementation; no general fencing mechanism is authorized.
+- The maintainer approved the spec's narrow RTC offer/answer correlation contract,
+  including fail-closed old descriptions and coordinated consumer replacement.
+  This is the sole exception to the protocol-change constraint; no general
+  fencing mechanism or compatibility fallback is authorized.
 - Keep implementation and proof in PR #566. Do not merge test-only experiments.
 - Main may move. Record each measurement's source and environment; repair actual
   conflicts, but do not rebase a mergeable branch for `BEHIND` alone.
@@ -140,13 +142,13 @@ characterization is archived outside the maintained test suite, not committed
 as a test that would preserve this faulty behavior.
 
 There is now a demonstrated cross-negotiation failure mechanism. The maintainer
-has approved designing the narrow correction. The spec compares RTC-owned offer
+has approved implementing the narrow correction. The spec compares RTC-owned offer
 identity, AL-envelope correlation, and peer-lifetime changes, and recommends a
 required offer ID echoed in answers. This is not a general stale-signaling or
 ICE protocol. The written contract, including fail-closed old descriptions and
-no legacy fallback, awaits design review before implementation. QueueBox and
+no legacy fallback, is approved for implementation. QueueBox and
 the no-additional-fencing constraint remain unchanged outside that explicit
-proposed RTC boundary.
+approved RTC boundary.
 
 The maintainer explicitly approved raising only the browser facade ceiling to
 **strict `<208 KiB`**. The approval-time measurement was **207.16796875 KiB**;
@@ -209,6 +211,39 @@ change does not alter that runtime. Served-module identity remains unverified.
 This is a fresh hosted correctness pass, not causal performance attribution,
 all-scenarios reconnect, retention-100, or RTC-B06 completion. Earlier failures
 remain retained, and successor continuation remains conditional.
+
+A later hosted observation on the pre-correlation runtime fails all three ALM
+cells. WS completes three negative/expiry recipes but its two valid sends hit
+command deadlines and positive delivery is absent. RTC and fallback fail all
+six per-carrier recipes at readiness. One WS commit reports completion only
+after command abort, with a 13,261 ms outer commit phase; this is not isolated
+IndexedDB request latency. Raw artifacts are retained under
+`tmp/perf/ci-34718820234-alm.DZzNuC/`. This variation means the earlier ALM pass
+does not establish reliable hosted acceptance. The approved RTC correction
+still needs its controlled proof and the unchanged broader acceptance; it
+cannot by itself remove measured outbound commit cost.
+
+That same pre-correlation workflow finishes with a failing Release Gate: root
+Vitest passes 11,044 tests with 12 skipped; deployable builds, Deno checks, and
+69 Postgres integration tests pass. The API-v1 black-box matrix passes 56 recipes
+and fails three WS receipt expectations: websocket topic routing, drop-in social
+app data, and the CRDT exemption while app data is blocked. Topology proof and
+later Postgres browser/presence checks are not reached; the missing topology
+artifact upload also fails. Original API artifacts are retained under
+`tmp/perf/ci-34718820234-api.W4BGai/`. These are unresolved acceptance failures,
+not compilation errors or evidence that answer correlation fixes WS delivery.
+
+Read-only triage narrows these API failures to a possible shared-work/local-socket
+ownership mismatch. Relevant sockets upgraded on the primary API process;
+secondary/tertiary processes logged `no recipients` for the failed topics in
+overlapping timestamp brackets. Their shared Postgres inbound queue can dispatch
+on a process whose `live-only` fanout has no local socket. Preserving scan progress
+may expose this pre-existing ownership risk, but warnings omit message identity
+and the capture does not prove that the removed scan reset caused those claims.
+A focused two-runtime, shared-store discriminator should distinguish authorized
+audience from process-local recipients and identify the exact claiming worker.
+Do not restore scan restarts as a substitute for proving the ownership invariant,
+or infer that RTC answer correlation repairs this separate delivery path.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
@@ -467,9 +502,9 @@ proven speedup. Raw evidence and the corrected projection remain under
 `tmp/perf/alm-mixed-comparison-9545d41e0.qraxQy/`. Measured latency ranges overlap; keep
 continuation conditional. The authority-freshness correction has since passed
 its focused review and hosted ALM proof above. The current execution horizon is
-the approved headless budget correction and review of the proposed RTC
-answer-correlation design. After design approval, keep only its implementation
-with semantic coverage and the native/reconnect proof concrete. An evidence-led
+the approved RTC answer-correlation implementation with semantic coverage and
+the following native/reconnect proof. The headless budget correction is complete.
+An evidence-led
 continuation retain/omit decision remains later work. Hosted claim/run/release
 attribution is incomplete; no deadline relaxation, unconditional continuation,
 or gameplay-latency promise follows from the local correctness results.
@@ -782,10 +817,10 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       alternatives, recommended owner, lifetime, compatibility consequence, and
       proof gates in the spec. Existing AL correlation fields are not an active
       RTC contract; using them requires explicit lifecycle design too.
-- [ ] Review the proposed answer-correlation spec before implementation. Its
+- [x] Review and approve the answer-correlation spec before implementation. Its
       offer/answer identity does not redefine ICE, delayed remote-offer ordering,
       room authority, or QueueBox/retry/lease ownership. Keep no legacy and no
-      generic additional fencing. After approval, implement with semantic coverage
+      generic additional fencing. Implement with semantic coverage
       in this PR, then prove native data-channel opening and unchanged reconnect
       acceptance. Do not attribute the retained browser failure to this mechanism
       without its missing causal join or claim protocol work is a storage speedup.
@@ -845,6 +880,157 @@ or the shared default while it contains evidence that must be retained.
 **Exit:** Reproducible native timing/causal evidence with a justified retained or
 omitted continuation. No invented per-operation latency and no performance
 claim based only on the synthetic diagnostic.
+
+## Approved RTC correction: current execution horizon
+
+The following two tasks are the current concrete horizon within this plan.
+Earlier completed tasks are not reopened. Conditional successor continuation
+remains unselected and is not part of these tasks.
+
+### Task 10: Correlate answers with the offer owned by the current peer
+
+The coherent correction is implemented locally and under independent review.
+Its final focused candidate passes 115 tests including both unchanged strict
+bundle boundaries. The affected suites pass 340 tests; benchmark checks pass
+414 tests; maintained typing covers 1,199 files with no errors. Package checks
+and both game builds pass, with builds preceding the final console-only observer
+removal; final lifecycle, bundle and shared/test typing checks cover that removal.
+Three initial semantic REDs reproduced stale native application and retired offer
+publication. Five changed-style findings remain open (strict decoder boundary,
+peer cognitive load, service density and two prefix clusters); no dispositions
+or standards exceptions have been added. Native exceptional cleanup is also in
+review. This is not accepted completion, a browser convergence result, or PR
+readiness. The task's implementation/review exit remains unchecked below.
+
+**Files and owners:**
+
+- `packages/shared/webrtc/qrtc-signaling-contracts.ts` and
+  `decode-rtc-signaling-message.ts`: canonical discriminated wire contract and
+  strict untrusted decoding. The old PascalCase contract module is removed and
+  actual imports use canonical kebab-case, without a forwarding file.
+- `packages/shared/webrtc/qrtc-peer-connection.ts`: outstanding local offer,
+  serialized negotiation, native lifecycle, and answer matching.
+- `packages/shared/services/web-rtc-connection-service.ts` and
+  `packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts`: validated
+  signal dispatch and explicit offer-ID dependency composition.
+- The existing WS signaling transport, shared-server signaling decoder/router
+  consumers, `packages/shared-rtc-bench/workloads/**`, and maintained RTC fixtures:
+  propagate the canonical contract without old overloads or optional-ID paths.
+- Tests: existing `packages/tests/shared/qrtc-peer-connection.test.ts`,
+  `packages/tests/shared/webrtc/ws-rtc-signaling-transport.test.ts`, connection
+  service tests, and a behavior-named delayed-answer admission regression beside
+  those signaling tests. Reuse the actual admission conflict fixture.
+
+**Interfaces:** Consume the existing signaling sender and peer lifecycle. Produce
+one canonical discriminated signal value: Offer/Answer have required `offerId`
+and the matching description payload; IceCandidate has its existing payload and
+no offer ID. The peer receives this correlated value as one argument, not an
+independent signal type plus unrelated nullable payload. Composition supplies a
+required ID-generation dependency; production uses the existing platform UUID
+facility and tests supply deterministic distinct identities.
+
+- [ ] Write and run semantic REDs before production edits. Hold an old answer
+      behind a real conditional-write conflict, replace the native peer, replay
+      it, and assert that only the matching current answer reaches the native
+      description port. Cover successive offers on one peer, duplicate answers,
+      polite rollback, impolite collision, malformed/missing IDs, reset while
+      queued and during native awaits, and transport re-admission identity.
+      Derive expected identities independently; do not preserve the archived
+      diagnostic's expectation that the stale answer is applied.
+- [ ] Replace the uncorrelated contract and use the existing signaling chain
+      for local description creation and incoming application. The core decision
+      at the actual native-write boundary is:
+
+  ```text
+  if captured native owner is no longer current: return stale no-op
+  if answer.offerId differs from outstanding local offer: return stale no-op
+  if native signaling state is not have-local-offer: return stale no-op
+  await captured native setRemoteDescription(answer.description)
+  if captured native owner is no longer current: return
+  consume outstanding local offer
+  continue existing ICE flush and state updates on that captured owner
+  ```
+
+  Record each new offer ID before transport admission, preserve it on transport
+  re-admission, and echo the captured accepted remote offer's ID in its answer.
+  Invalidate local identity on reset/replacement/disposal/polite rollback; retain
+  it on an impolite ignored collision. Guard deferred outbound work and
+  post-await mutations against retirement. Do not add a chain, retry, timer,
+  queue, generic fence, or ICE correlation scheme.
+- [ ] Update every verified direct producer/consumer together. Reject the old
+      description shape; remove superseded types, entry signatures, unused
+      methods, and aliases. Keep browser and server validation consistent and
+      retain payload-safe errors and sender/target checks. Preserve the unrelated
+      uncommitted synthetic latency diagnostic. If its old import/fixture shape
+      prevents contract alignment, archive its exact pre-change content and
+      align only that dependency, leaving the diagnostic body uncommitted.
+- [ ] Run the focused semantic tests, maintained test typecheck, shared,
+      shared-web and shared-server typechecks, and the benchmark's existing
+      typecheck/test command. Inspect affected executable performance harness
+      consumers and run their existing native checks if the contract reaches them.
+      Run the headless/browser bundle boundaries and both game builds once on
+      the coherent candidate. Preserve the approved ceilings and build settings.
+- [ ] Review/remediate every changed human-authored file in full and support
+      files recursively, leaving independent untouched code outside closure.
+      Perform code-derived registration/invocation traces for negotiation,
+      incoming signals, reset, and deferred outbound work. Run style, structure,
+      coupling, formatting, and whitespace checks; independently review spec
+      compliance and code quality. Commit only the coherent correction and tests.
+
+Focused command entry points (use the repository's Node 24 runtime):
+
+```sh
+npx vitest run packages/tests/shared/qrtc-peer-connection.test.ts packages/tests/shared/webrtc/ws-rtc-signaling-transport.test.ts packages/tests/shared/webrtc-connection-service.test.ts --maxWorkers=1
+node scripts/check-tests-typecheck.mjs
+npx tsc -p packages/shared/tsconfig.json --noEmit
+npx tsc -p packages/shared-web/tsconfig.json --noEmit
+npx tsc -p packages/shared-server/tsconfig.json --noEmit
+npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts --maxWorkers=1
+npm --workspace ar-eye-hunter-v1 run build
+npm --workspace relic-hunters-v1 run build
+```
+
+**Exit:** Matching answers apply, stale answers cannot change current negotiation,
+old descriptions fail closed, all direct consumers use the one new contract,
+and focused validation plus independent review pass. This is correctness, not
+native convergence or a storage-performance result.
+
+### Task 11: Prove native delayed-answer recovery and unchanged reconnect
+
+**Interfaces:** Consume Task 10's actual shared RTC peer and correlated signaling
+contract. Use the existing Playwright Chromium configuration and browser fixture
+patterns; no test-only production API or app-level handshake.
+
+**Files:** Add `tests/playwright/rallar-black-box/browser-rtc-answer-correlation-fixture.ts`
+and its adjacent `.spec.ts`. The fixture owns real peer lifetimes and controlled
+transport capture; the spec owns observable channel/payload assertions. Reuse
+the existing `/@fs` fixture loading pattern from
+`browser-indexeddb-transaction-writes.spec.ts`, not a new application entry.
+Include the files in a focused strict test project with explicit inherited
+ambient types. Keep the existing full-stack matrix unchanged unless its actual
+failure identifies a harness defect.
+
+- [ ] Extend the existing native peer test boundary with a controlled delayed
+      old answer followed by the matching answer for a replacement. Exercise
+      real native descriptions, then require the replacement data channel to
+      open and a literal payload to arrive under the original deadline. Retain
+      the first failure and compare with the unchanged control case.
+      Preserve the native discriminator's 5,000 ms observation window; it is
+      a test bound, not a new production timeout. Assert real delivery, not only
+      `signalingState === 'stable'`, and close every native peer/channel in
+      independently attempted cleanup even after a failed assertion.
+- [ ] Run the existing all-scenarios/reconnect acceptance once on the reviewed
+      correction, with fresh memory services, one worker, zero retries, original
+      workload/deadlines, and unique per-invocation artifact directories. Do not
+      rerun an unchanged candidate to seek a green result.
+- [ ] Classify the first result from current artifacts, review any harness
+      change independently, and publish the coherent correction and proof to
+      PR #566. A passing result advances to the later retention/performance
+      outcomes; a failing result selects the next evidence-backed correction.
+
+**Exit:** Real native channel opening and payload delivery prove the controlled
+case, and the existing reconnect case has a retained, honestly classified result.
+RTC-B06 and Phase 1 completion remain the larger plan's acceptance decisions.
 
 ## Later outcomes, not additional speculative implementation slices
 
