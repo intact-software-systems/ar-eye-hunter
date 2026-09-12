@@ -29,7 +29,7 @@ describe('outbound planner validation boundary', () => {
             stores,
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent' }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, persist: true, preparedMessages: [] })
+            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const result = await runtime.enqueueIfAbsent(original);
         expect(result).toMatchObject({ status: 'failed', message: original, entries: [] });
@@ -64,7 +64,7 @@ describe('outbound planner validation boundary', () => {
             stores,
             dequeue,
             sendPreparedMessage: async () => ({ status: 'sent' }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, persist: true, preparedMessages: [] })
+            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
 
         await runtime.ready();
@@ -84,7 +84,13 @@ describe('outbound planner validation boundary', () => {
             : original;
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' }),
-            planOutgoingMessage: () => ({ msg: planned, persist: false, preparedMessages: [], dropReason: 'No route' })
+            planOutgoingMessage: () => ({
+                msg: planned,
+                persist: false,
+                preparedMessages: [],
+                dropReason: 'No route',
+                dropReasonCode: 'no-route'
+            })
         });
         const result = await runtime.enqueueIfAbsent(original);
         expect(result.status).toBe(change === 'unchanged' ? 'no-route' : 'failed');

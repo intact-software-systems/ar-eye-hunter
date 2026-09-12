@@ -216,7 +216,7 @@ describe('outbound default send IndexedDB volume', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const })
         });
 

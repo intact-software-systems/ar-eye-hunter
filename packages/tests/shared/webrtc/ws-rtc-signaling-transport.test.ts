@@ -14,6 +14,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -124,8 +125,10 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         let statuses: readonly ALOutboundEnqueueStatus[] = ['rate-limited', 'enqueued'];
         vi.spyOn(service, 'enqueueOutboxIfAbsent').mockImplementation(async (message) => {
             attempts.push(message);
+            const status = statuses[attempts.length - 1] ?? 'failed';
             return {
-                status: statuses[attempts.length - 1] ?? 'failed',
+                status,
+                verdict: toVerdictForOutboundStatus(status),
                 message,
                 entries: [],
                 reason: 'admission-under-test'
@@ -158,7 +161,13 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         const attempts: ALMessage[] = [];
         vi.spyOn(service, 'enqueueOutboxIfAbsent').mockImplementation(async (message) => {
             attempts.push(message);
-            return { status: 'superseded', message, entries: [], reason: 'newer-signal-won' };
+            return {
+                status: 'superseded',
+                verdict: { kind: 'superseded', detail: 'newer-signal-won' },
+                message,
+                entries: [],
+                reason: 'newer-signal-won'
+            };
         });
         let wakes = 0;
         const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
@@ -265,4 +274,32 @@ function createSignalingPayload(): QRtcSignalingMessage {
 
 function createEnvelope(typeId: string, payload: object): ALMessage {
     return newALUnicastMessage('peer-1', newALEventRoute(typeId, 'session-1'), 'session-1', typeId, payload);
+}
+
+/** One representative verdict per fake status this fixture is parametrized over; only `.status` is asserted. */
+function toVerdictForOutboundStatus(status: ALOutboundEnqueueStatus): ALDeliveryAdmissionVerdict {
+    switch (status) {
+        case 'enqueued':
+            return { kind: 'admitted', durable: true, queuedAttempts: 1 };
+        case 'accepted':
+            return { kind: 'admitted', durable: false, queuedAttempts: 1 };
+        case 'duplicate':
+            return { kind: 'duplicate' };
+        case 'pending-admission':
+            return { kind: 'pending' };
+        case 'superseded':
+            return { kind: 'superseded', detail: 'superseded' };
+        case 'expired':
+            return { kind: 'expired', detail: 'expired' };
+        case 'no-route':
+            return { kind: 'unroutable', reason: 'no-route', detail: 'no-route' };
+        case 'rate-limited':
+            return { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' };
+        case 'circuit-open':
+            return { kind: 'unroutable', reason: 'circuit-open', detail: 'circuit-open' };
+        case 'skipped':
+            return { kind: 'skipped', reason: 'planner-drop', detail: 'skipped' };
+        case 'failed':
+            return { kind: 'failed', detail: 'failed' };
+    }
 }

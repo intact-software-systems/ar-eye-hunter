@@ -50,7 +50,7 @@ describe('outbound message expiry', () => {
         const store = stores.admissionStore;
         const read = await store.readOutgoingMessage({
             msg: original,
-            planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
+            planner: () => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -104,7 +104,12 @@ describe('outbound message expiry', () => {
         const msg = createOutboundMessage('commit-expiry', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,
-            planner: () => ({ msg, persist: true, preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })) }),
+            planner: () => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
+            }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -146,7 +151,12 @@ describe('outbound message expiry', () => {
         const msg = createOutboundMessage('held-expiry', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,
-            planner: () => ({ msg, persist: true, preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })) }),
+            planner: () => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
+            }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -211,7 +221,7 @@ describe('outbound message expiry', () => {
             admissionStore: store,
             clock,
             controlAdmission: store.createControlAdmission(workPort, clock),
-            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             planRepairMessage: undefined
         });
         vi.setSystemTime(1_050);
@@ -302,6 +312,7 @@ describe('outbound message expiry', () => {
         });
         const plan: ALOutboundDispatchPlan<OutboundTestPayload> = {
             msg: msg,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: [{ message: JSON.stringify(msg) }]
         };
@@ -342,6 +353,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             planner: () => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
@@ -373,6 +385,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             planner: () => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: []
             }),
@@ -404,6 +417,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             planner: () => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),

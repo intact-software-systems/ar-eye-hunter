@@ -68,7 +68,7 @@ describe('canonical outbound payload storage', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
         onTestFinished(() => runtime.dispose());
@@ -97,7 +97,7 @@ describe('canonical outbound payload storage', () => {
         });
         const otherRuntime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: otherStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' })
         });
         onTestFinished(() => otherRuntime.dispose());
@@ -164,6 +164,7 @@ describe('canonical outbound payload storage', () => {
             stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({
                 msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ peer: 'first' }, { peer: 'second' }, { peer: 'third' }]
             }),
@@ -201,6 +202,7 @@ describe('canonical outbound payload storage', () => {
             stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ peer: 'captured' }]
             }),
@@ -249,7 +251,7 @@ describe('canonical outbound payload storage', () => {
         const createRuntime = () =>
             createDefaultOutboundTestRuntime({
                 stores,
-                planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
                 sendPreparedMessage: async () => {
                     throw new Error('Expired work must never send');
                 }
@@ -327,7 +329,7 @@ describe('canonical outbound payload storage', () => {
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
             stores: { admissionStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
                 return { status: 'sent' };
@@ -391,7 +393,7 @@ describe('canonical outbound payload storage', () => {
             const runtime = createDefaultOutboundTestRuntime({
                 queueEngine: new InboxOutboxEngine(),
                 stores: { admissionStore, workQueue: backend.workQueue },
-                planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ peer: namespace }] }),
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: namespace }] }),
                 sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
             });
             onTestFinished(() => runtime.dispose());

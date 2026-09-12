@@ -68,6 +68,7 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) => ({
                 msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
@@ -101,9 +102,10 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) =>
                 msg.route.resourceId === 'no-route'
-                    ? { msg, persist: false, preparedMessages: [] }
+                    ? { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }
                     : {
                         msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
+                        dropReasonCode: undefined,
                         persist: false,
                         preparedMessages: []
                     },
@@ -131,6 +133,7 @@ describe('AL outbound dequeue work', () => {
             // A rewritten sender fails validation, which the dequeue path rethrows as non-retryable.
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: []
             }),
@@ -155,7 +158,7 @@ describe('AL outbound dequeue work', () => {
             outbox,
             queueEngine,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const })
         });
         await runtime.ready();

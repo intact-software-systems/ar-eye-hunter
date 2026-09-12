@@ -3,6 +3,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -33,6 +34,7 @@ import {
     type ALOutboundComputeIntent,
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
+import { toALOutboundEnqueueStatus } from './to-al-outbound-enqueue-status.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 export namespace ALOutboundDispatchAdmission {
@@ -118,7 +120,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 throw error;
             }
             return {
-                computed: { msg: dispatch.msg, status: 'failed', reason: error.message, entries: [] },
+                computed: toALOutboundVerdictComputed(
+                    { kind: 'failed', detail: error.message },
+                    { msg: dispatch.msg, reason: error.message, entries: [] }
+                ),
                 committed: false
             };
         }
@@ -153,7 +158,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 throw new NonRetryableException(reason);
             }
             return {
-                computed: { msg: input.read.msg, status: 'failed', reason, entries: [] },
+                computed: toALOutboundVerdictComputed(
+                    { kind: 'failed', detail: reason },
+                    { msg: input.read.msg, reason, entries: [] }
+                ),
                 committed: false
             };
         }
@@ -202,7 +210,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
         }
         return {
-            computed: { msg: input.read.msg, status: 'pending-admission', entries: [canonicalEntry] },
+            computed: toALOutboundVerdictComputed(
+                { kind: 'pending' },
+                { msg: input.read.msg, entries: [canonicalEntry] }
+            ),
             committed: false
         };
     }
@@ -237,13 +248,16 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         ) {
             throw new NonRetryableException('Pending outbound admission differs from the supplied captured plan');
         }
+        const reason = isPendingALOutboundWork(entry) ? undefined : 'Pending admission has already terminated';
+        const verdict: ALDeliveryAdmissionVerdict = reason === undefined
+            ? { kind: 'pending' }
+            : { kind: 'skipped', reason: 'pending-terminated', detail: reason };
         return {
-            computed: {
+            computed: toALOutboundVerdictComputed(verdict, {
                 msg: input.read.msg,
-                status: isPendingALOutboundWork(entry) ? 'pending-admission' : 'skipped',
                 entries: [input.outboxEntry],
-                reason: isPendingALOutboundWork(entry) ? undefined : 'Pending admission has already terminated'
-            },
+                reason
+            }),
             committed: false
         };
     }
@@ -253,25 +267,25 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         { computed, msg, intent }: ALOutboundDispatchAdmission.CommitResultInput<TPrepared>
     ): ALOutboundDispatchAdmission.Result<TPrepared> {
         if (status === 'expired') {
+            const reason = 'Message expired before commit';
             return {
-                computed: {
-                    msg: msg,
-                    status: 'expired',
-                    reason: 'Message expired before commit',
+                computed: toALOutboundVerdictComputed({ kind: 'expired', detail: reason }, {
+                    msg,
+                    reason,
                     entries: []
-                },
+                }),
                 committed: false
             };
         }
         if (status === 'conflict') {
             if (intent === 'enqueue') {
+                const reason = 'Outbound commit conflict';
                 return {
-                    computed: {
-                        msg: msg,
-                        status: 'failed',
-                        reason: 'Outbound commit conflict',
+                    computed: toALOutboundVerdictComputed({ kind: 'failed', detail: reason }, {
+                        msg,
+                        reason,
                         entries: []
-                    },
+                    }),
                     committed: false
                 };
             }
@@ -297,11 +311,11 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     private static toDisposedComputed<TPrepared>(): ALOutboundComputedDto<TPrepared> {
-        return {
-            status: 'skipped',
-            entries: [],
-            reason: 'Outbound runtime is disposed.'
-        };
+        const reason = 'Outbound runtime is disposed.';
+        return toALOutboundVerdictComputed(
+            { kind: 'skipped', reason: 'disposed', detail: reason },
+            { reason, entries: [] }
+        );
     }
 
     private async readDispatch(
@@ -435,4 +449,11 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
     }
+}
+
+function toALOutboundVerdictComputed<TPrepared>(
+    verdict: ALDeliveryAdmissionVerdict,
+    fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
+): ALOutboundComputedDto<TPrepared> {
+    return { ...fields, status: toALOutboundEnqueueStatus(verdict), verdict };
 }

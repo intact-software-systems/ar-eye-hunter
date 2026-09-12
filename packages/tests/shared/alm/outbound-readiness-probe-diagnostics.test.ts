@@ -72,7 +72,7 @@ it.each(['memory', 'indexeddb'] as const)(
             queueEngine: engine,
             nowMs: () => clockMs,
             diagnostics: (event) => diagnostics.push(event),
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const })
         });
 
@@ -119,7 +119,7 @@ it('reports the idle owner\'s probes even where its batch has nothing to report'
         queueEngine: engine,
         nowMs: () => clockMs,
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
         sendPreparedMessage: async () => ({ status: 'sent' as const })
     });
 

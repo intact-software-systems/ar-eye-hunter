@@ -33,6 +33,7 @@ describe('AL outbound repair policy', () => {
         const runtime = createDefaultOutboundTestRuntime({
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: scenario.repair
@@ -40,7 +41,7 @@ describe('AL outbound repair policy', () => {
             planRepairMessage: async (msg) =>
                 scenario.noCurrentRecipient
                     ? undefined
-                    : { msg: msg, persist: false, preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
+                    : { msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
 

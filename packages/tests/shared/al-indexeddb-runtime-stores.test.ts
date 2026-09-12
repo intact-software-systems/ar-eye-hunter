@@ -695,6 +695,7 @@ describe('IndexedDB AL runtime stores', () => {
             stores,
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -711,6 +712,7 @@ describe('IndexedDB AL runtime stores', () => {
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [
                     {
@@ -805,6 +807,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
@@ -815,6 +818,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             })),
             planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [
                     {
@@ -838,6 +842,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
 function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
     return (msg) => ({
         msg: msg,
+        dropReasonCode: undefined,
         persist: false,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         repairTracking: {

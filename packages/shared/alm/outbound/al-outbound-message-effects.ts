@@ -54,6 +54,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             msg,
             planner: () => ({
                 msg,
+                dropReasonCode: undefined,
                 persist: pending.policy.persist,
                 preparedMessages: pending.preparedMessages,
                 ackTracking: pending.policy.ackTracking ?? undefined,

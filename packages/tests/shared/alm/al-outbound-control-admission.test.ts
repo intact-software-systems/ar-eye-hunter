@@ -336,7 +336,7 @@ describe('outbound control admission identity', () => {
             stores: { admissionStore, workQueue },
             decodePreparedMessage: decodeALOutboundTransportMessage,
             // The admitted policy carries the retry budget; the planner only re-plans the stored message.
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const })
         });
         await runtime.ready();
@@ -359,7 +359,7 @@ describe('outbound control admission identity', () => {
             // An engine the runtime does not own never ticks, so a claim proves the commit woke a batch.
             queueEngine: new InboxOutboxEngine(),
             decodePreparedMessage: decodeALOutboundTransportMessage,
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const })
         });
         await runtime.ready();
@@ -556,7 +556,7 @@ async function seedObligation(
     const admission = await computeOutboundTestAdmission(
         admissionStore,
         msg,
-        (planned) => ({ msg: planned, persist: true, preparedMessages: [], retryTracking: input.retryTracking })
+        (planned) => ({ msg: planned, dropReasonCode: undefined, persist: true, preparedMessages: [], retryTracking: input.retryTracking })
     );
     await admissionStore.commitBundle({
         ...admission,

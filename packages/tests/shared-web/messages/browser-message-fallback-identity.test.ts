@@ -12,6 +12,7 @@ import { BrowserMessageInputValidator } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDispatchPlan, ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -75,7 +76,8 @@ describe('typed message fallback identity', () => {
                     : msg,
                 persist: false,
                 preparedMessages: [],
-                dropReason: 'No route'
+                dropReason: 'No route',
+                dropReasonCode: 'no-route'
             })
         });
         const result = await fixture.channel.send({ action: 'ready' });
@@ -174,7 +176,8 @@ function createChannel(input: ChannelInput) {
             ...message,
             constraints: { ...message.constraints, expiresAtMs: message.id.ts + selectedLifetimeMs }
         };
-        return { status: attempts.length === 1 ? firstStatus : 'enqueued' as const, message: admitted, entries: [] };
+        const status = attempts.length === 1 ? firstStatus : 'enqueued' as const;
+        return { status, verdict: toVerdictForOutboundStatus(status), message: admitted, entries: [] };
     };
     const context = createDefaultApiMiddlewareTestDouble({
         middleware: {
@@ -215,4 +218,32 @@ function freezeMessage(message: ALMessage): void {
     }
     Object.freeze(message.targets);
     Object.freeze(message);
+}
+
+/** One representative verdict per fake status this fixture is parametrized over; only `.status` is asserted. */
+function toVerdictForOutboundStatus(status: ALOutboundEnqueueStatus): ALDeliveryAdmissionVerdict {
+    switch (status) {
+        case 'enqueued':
+            return { kind: 'admitted', durable: true, queuedAttempts: 1 };
+        case 'accepted':
+            return { kind: 'admitted', durable: false, queuedAttempts: 1 };
+        case 'duplicate':
+            return { kind: 'duplicate' };
+        case 'pending-admission':
+            return { kind: 'pending' };
+        case 'superseded':
+            return { kind: 'superseded', detail: 'superseded' };
+        case 'expired':
+            return { kind: 'expired', detail: 'expired' };
+        case 'no-route':
+            return { kind: 'unroutable', reason: 'no-route', detail: 'no-route' };
+        case 'rate-limited':
+            return { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' };
+        case 'circuit-open':
+            return { kind: 'unroutable', reason: 'circuit-open', detail: 'circuit-open' };
+        case 'skipped':
+            return { kind: 'skipped', reason: 'planner-drop', detail: 'skipped' };
+        case 'failed':
+            return { kind: 'failed', detail: 'failed' };
+    }
 }

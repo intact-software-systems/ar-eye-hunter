@@ -333,7 +333,7 @@ function createOutboxOnlyTestRuntime(
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         decodePreparedMessage: decodeALOutboundPreparedMessage,
-        planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
         sendPreparedMessage: async () => {
             throw new Error('An outbox-only admission must not submit a transport send');
         }

@@ -112,6 +112,7 @@ describe('ALM browser storage snapshot', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             planOutgoingMessage: (msg) => ({
                 msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ message: JSON.stringify(msg) }],
                 supersedenceTracking: {

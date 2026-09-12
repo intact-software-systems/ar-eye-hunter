@@ -6,6 +6,7 @@ import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exc
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -38,6 +39,7 @@ import {
 } from './al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import { toALOutboundEnqueueStatus } from './to-al-outbound-enqueue-status.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -98,9 +100,21 @@ export interface ALOutboundRepairRequest {
     readonly missingSeqs: readonly number[];
 }
 
+/** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
+export type ALOutboundDropReasonCode =
+    | 'unauthorized'
+    | 'not-yet-in-sync'
+    | 'no-route'
+    | 'superseded'
+    | 'expired'
+    | 'duplicate'
+    | 'planner-drop';
+
 export interface ALOutboundDispatchPlan<TPrepared> {
     readonly msg: ALMessage;
     readonly dropReason?: string;
+    /** Required so every planner states its drop code; `undefined` means the plan is not dropping the message. */
+    readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
     readonly persist: boolean;
     readonly preparedMessages: readonly TPrepared[];
     readonly ackTracking?: ALOutboundAckTrackingPlan;
@@ -198,6 +212,7 @@ export type ALOutboundEnqueueStatus =
 
 export interface ALOutboundEnqueueResult {
     readonly status: ALOutboundEnqueueStatus;
+    readonly verdict: ALDeliveryAdmissionVerdict;
     readonly message: ALMessage;
     readonly entry?: ResourceEntry;
     readonly entries: readonly ResourceEntry[];
@@ -386,6 +401,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         });
         return {
             status: computed.status,
+            verdict: computed.verdict,
             message: computed.msg ?? msg,
             entry: computed.entries[0],
             entries: computed.entries,
@@ -420,8 +436,14 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {
+        const verdict: ALDeliveryAdmissionVerdict = {
+            kind: 'skipped',
+            reason: 'disposed',
+            detail: 'Outbound runtime is disposed.'
+        };
         return {
-            status: 'skipped',
+            status: toALOutboundEnqueueStatus(verdict),
+            verdict,
             message: msg,
             entries: [],
             reason: 'Outbound runtime is disposed.'

@@ -16,12 +16,13 @@ import {
     planALMessageHandling,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
+    type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
+import type { ALDeliveryAdmissionVerdict } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundEnqueueResult,
-    ALOutboundEnqueueStatus,
     ALOutboundPreparedSendResult,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundSettledSendResult
@@ -33,7 +34,8 @@ import {
     ALOutboundRepairRequest,
     ALOutboundRepairTrackingPlan,
     ALOutboundRetryTrackingPlan,
-    ALOutboundSupersedenceTrackingPlan
+    ALOutboundSupersedenceTrackingPlan,
+    type ALOutboundDropReasonCode
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -41,6 +43,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
+import { toALOutboundEnqueueStatus } from '../alm/outbound/to-al-outbound-enqueue-status.ts';
 import {
     EnqueuedType,
     OverlayId,
@@ -191,11 +194,11 @@ export class WebRtcOverlayMulticastManager {
                 return RateLimiter.tryToExecuteOrDefault<ALOutboundEnqueueResult>(
                     this.rateLimiter,
                     () => this.outboundRuntime.enqueueIfAbsent(msg),
-                    WebRtcOverlayMulticastManager.toProtectedEnqueueResult(
-                        msg,
-                        'rate-limited',
-                        'RTC enqueue rate limit exceeded'
-                    )
+                    WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                        kind: 'unroutable',
+                        reason: 'rate-limited',
+                        detail: 'RTC enqueue rate limit exceeded'
+                    })
                 );
             },
             WebRtcOverlayMulticastManager.isSuccessfulProtectedEnqueueResult
@@ -224,39 +227,44 @@ export class WebRtcOverlayMulticastManager {
         error: Error
     ): ALOutboundEnqueueResult {
         if (error.message === 'Not allowed to execute') {
-            return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(
-                msg,
-                'circuit-open',
-                'RTC enqueue circuit breaker open'
-            );
+            return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                kind: 'unroutable',
+                reason: 'circuit-open',
+                detail: 'RTC enqueue circuit breaker open'
+            });
         }
 
-        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(
-            msg,
-            'failed',
-            `RTC enqueue failed: ${error.message}`
-        );
+        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+            kind: 'failed',
+            detail: `RTC enqueue failed: ${error.message}`
+        });
     }
 
     private static toProtectedEnqueueResult(
         msg: ALMessage,
-        status: Extract<ALOutboundEnqueueStatus, 'rate-limited' | 'circuit-open' | 'failed'>,
-        reason: string
+        verdict: Extract<ALDeliveryAdmissionVerdict, { kind: 'unroutable' | 'failed'; }>
     ): ALOutboundEnqueueResult {
         return {
-            status,
+            status: toALOutboundEnqueueStatus(verdict),
+            verdict,
             message: msg,
             entries: [],
-            reason
+            reason: verdict.detail
         };
     }
 
     private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {
+        const verdict: ALDeliveryAdmissionVerdict = {
+            kind: 'skipped',
+            reason: 'disposed',
+            detail: 'RTC overlay multicast manager is disposed.'
+        };
         return {
-            status: 'skipped',
+            status: toALOutboundEnqueueStatus(verdict),
+            verdict,
             message: msg,
             entries: [],
-            reason: 'RTC overlay multicast manager is disposed.'
+            reason: verdict.detail
         };
     }
 
@@ -505,6 +513,7 @@ export class WebRtcOverlayMulticastManager {
         if (!context) {
             return {
                 dropReason: `Skipping RTC outbound message ${msg.id.msgId} without overlay context`,
+                dropReasonCode: 'no-route',
                 persist: false,
                 msg,
                 preparedMessages: []
@@ -539,12 +548,14 @@ export class WebRtcOverlayMulticastManager {
         if (!msg.forwarding?.nextHopPeerIds?.length) {
             return {
                 dropReason: `Skipping RTC outbound message ${msg.id.msgId} without targets or next hop`,
+                dropReasonCode: 'no-route',
                 persist: false,
                 msg,
                 preparedMessages: []
             };
         }
         return {
+            dropReasonCode: undefined,
             persist: true,
             msg,
             preparedMessages: [toALOutboundTransportMessage(msg)],
@@ -561,6 +572,7 @@ export class WebRtcOverlayMulticastManager {
         if (plan.handlingPlan.dropReason) {
             return {
                 dropReason: `Skipping planned RTC dispatch: ${plan.handlingPlan.dropReason}`,
+                dropReasonCode: toALOutboundDropReasonCodeFromHandlingPlan(plan.handlingPlan.dropReasonCode),
                 persist: false,
                 msg,
                 preparedMessages: []
@@ -570,6 +582,8 @@ export class WebRtcOverlayMulticastManager {
         if (plan.transportMessages.length === 0) {
             return {
                 dropReason: this.describeNoDispatchReason(plan),
+                // A repair request has a real (if unimplemented) route; only the no-transport default is routeless.
+                dropReasonCode: plan.handlingPlan.repair.enabled ? 'planner-drop' : 'no-route',
                 persist: false,
                 msg,
                 preparedMessages: []
@@ -586,6 +600,7 @@ export class WebRtcOverlayMulticastManager {
             if (missingPeerId) {
                 return {
                     dropReason: `Skipping immediate RTC dispatch without RTC channel for peer ${missingPeerId}`,
+                    dropReasonCode: 'no-route',
                     persist: false,
                     msg,
                     preparedMessages: []
@@ -594,6 +609,7 @@ export class WebRtcOverlayMulticastManager {
         }
 
         return {
+            dropReasonCode: undefined,
             persist: plan.handlingPlan.forwarding.persist,
             msg,
             preparedMessages: plan.transportMessages.map(toALOutboundTransportMessage),
@@ -865,6 +881,7 @@ export class WebRtcOverlayMulticastManager {
         if (admission.kind === 'unauthorized' || admission.kind === 'pending') {
             return {
                 dropReason: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
+                dropReasonCode: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
                 persist: false,
                 msg,
                 preparedMessages: []
@@ -872,6 +889,7 @@ export class WebRtcOverlayMulticastManager {
         }
         const normalized = this.readOutgoingQosPolicy(msg, this.readOverlayContext(msg));
         return {
+            dropReasonCode: undefined,
             persist: false,
             msg,
             preparedMessages: [
@@ -951,4 +969,24 @@ function toALOutboundRtcSettlement(input: ALOutboundRtcSettlementInput): ALOutbo
         return { status: 'not-ready', reason, retryAfterMs: 50 };
     }
     return { status, reason };
+}
+
+/** The five codes shared with inbound handling carry over; an inbound-only code has no outbound route concept. */
+function toALOutboundDropReasonCodeFromHandlingPlan(
+    code: ALMessageDropReasonCode | undefined
+): ALOutboundDropReasonCode {
+    switch (code) {
+        case 'duplicate':
+        case 'superseded':
+        case 'expired':
+        case 'not-yet-in-sync':
+        case 'unauthorized':
+            return code;
+        case 'unmet-requirements':
+        case 'ordering-rejected':
+        case 'resync-required':
+        case 'overloaded':
+        case undefined:
+            return 'planner-drop';
+    }
 }

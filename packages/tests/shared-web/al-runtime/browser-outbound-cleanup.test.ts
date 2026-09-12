@@ -299,6 +299,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
         decodePreparedMessage: decodeALOutboundTransportMessage,
         planOutgoingMessage: (msg) => ({
             msg,
+            dropReasonCode: undefined,
             persist: true,
             preparedMessages: [toALOutboundTransportMessage(msg)]
         }),

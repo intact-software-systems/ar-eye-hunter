@@ -3,6 +3,7 @@ import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
 import type {
     ALOutboundCommitBundle,
@@ -11,8 +12,13 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
-import type { ALOutboundDispatchPhase, ALOutboundEnqueueStatus } from './al-outbound-message-runtime.ts';
+import type {
+    ALOutboundDispatchPhase,
+    ALOutboundDispatchPlan,
+    ALOutboundEnqueueStatus
+} from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundEnqueueStatus } from './to-al-outbound-enqueue-status.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     toALOutboundPendingAckExpireAtTimestamp,
@@ -33,6 +39,7 @@ export interface ALOutboundComputedDto<TPrepared> {
     readonly msg?: ALMessage;
     readonly bundle?: ALOutboundCommitBundle<TPrepared>;
     readonly status: ALOutboundEnqueueStatus;
+    readonly verdict: ALDeliveryAdmissionVerdict;
     readonly reason?: string;
     readonly entries: readonly ResourceEntry[];
 }
@@ -56,7 +63,8 @@ export function computeALOutboundDispatch<TPrepared>(
     const { read, options } = input;
     const repairMutations = computeRepairAttemptMutations(read, options.repairBudget);
     if (repairMutations === 'skip') {
-        return { status: 'skipped', reason: `Skipped outbound dispatch for message ${read.msg.id.msgId}`, entries: [] };
+        const detail = `Skipped outbound dispatch for message ${read.msg.id.msgId}`;
+        return toALOutboundComputedResult({ kind: 'skipped', reason: 'repair-exhausted', detail }, detail);
     }
 
     const awaitPhysicalDispatch = input.intent === 'enqueue' && read.plan.preparedMessages.length === 0;
@@ -66,20 +74,20 @@ export function computeALOutboundDispatch<TPrepared>(
     };
     const mutations = [...computeMessageMutations(read, canonicalEntry), ...repairMutations];
     const durableEffects = computePreparedEffects(input, canonicalEntry);
+    // Captured before the ack-timeout effect (if any) is appended below: only `send-prepared` counts.
+    const queuedAttempts = durableEffects.length;
     if (read.plan.preparedMessages.length > 0) {
         appendAckTrackingMutationsAndEffects(mutations, durableEffects, read);
     }
 
-    const status: ALOutboundEnqueueStatus = awaitPhysicalDispatch || read.plan.persist
-        ? 'enqueued'
-        : read.plan.preparedMessages.length > 0
-        ? 'accepted'
-        : 'no-route';
+    const verdict = computeALOutboundRouteVerdict(read, awaitPhysicalDispatch || read.plan.persist, queuedAttempts);
     return {
+        ...toALOutboundComputedResult(
+            verdict,
+            verdict.kind === 'unroutable' ? verdict.detail : undefined,
+            [canonicalEntry]
+        ),
         msg: read.msg,
-        status,
-        reason: status === 'no-route' ? `No outbound transport route for message ${read.msg.id.msgId}` : undefined,
-        entries: [canonicalEntry],
         bundle: {
             pendingAdmission: options.pendingAdmission,
             senderId: read.msg.id.senderId,
@@ -92,6 +100,29 @@ export function computeALOutboundDispatch<TPrepared>(
             }))
         }
     };
+}
+
+function toALOutboundComputedResult<TPrepared>(
+    verdict: ALDeliveryAdmissionVerdict,
+    reason: string | undefined,
+    entries: readonly ResourceEntry[] = []
+): ALOutboundComputedDto<TPrepared> {
+    return { status: toALOutboundEnqueueStatus(verdict), verdict, reason, entries };
+}
+
+/** A fresh (non-early-exit) dispatch either admits the message or has nowhere to route it. */
+function computeALOutboundRouteVerdict<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>,
+    durable: boolean,
+    queuedAttempts: number
+): ALDeliveryAdmissionVerdict {
+    return durable || read.plan.preparedMessages.length > 0
+        ? { kind: 'admitted', durable, queuedAttempts }
+        : {
+            kind: 'unroutable',
+            reason: 'no-route',
+            detail: `No outbound transport route for message ${read.msg.id.msgId}`
+        };
 }
 
 function computeMessageMutations<TPrepared>(
@@ -162,24 +193,24 @@ function toEarlyDispatchResult<TPrepared>(
         read.storedMessage?.reference.expiresAtMs ?? Infinity
     );
     if (expiresAtMs <= input.dispatchAtMs) {
-        return { status: 'expired', reason: 'Message expired or is too stale', entries: [] };
+        const detail = 'Message expired or is too stale';
+        return toALOutboundComputedResult({ kind: 'expired', detail }, detail);
     }
     if (read.plan.dropReason) {
-        return {
-            status: toALOutboundEnqueueStatusFromReason(read.plan.dropReason),
-            reason: read.plan.dropReason,
-            entries: []
-        };
+        return toALOutboundComputedResult(toALOutboundAdmissionVerdict(read.plan), read.plan.dropReason);
     }
     if (input.intent === 'repair' && read.plan.preparedMessages.length === 0) {
-        return { status: 'no-route', reason: 'Repair has no prepared recipient attempt', entries: [] };
+        const detail = 'Repair has no prepared recipient attempt';
+        return toALOutboundComputedResult({ kind: 'unroutable', reason: 'no-route', detail }, detail);
     }
     if (input.intent === 'enqueue' && read.sentSnapshot) {
         return toDuplicateDispatchResult(read, input.outboxEntry);
     }
-    return read.supersedenceAcceptance?.observation.status === 'superseded'
-        ? { status: 'superseded', reason: `Skipping superseded outbound message ${read.msg.id.msgId}`, entries: [] }
-        : undefined;
+    if (read.supersedenceAcceptance?.observation.status === 'superseded') {
+        const detail = `Skipping superseded outbound message ${read.msg.id.msgId}`;
+        return toALOutboundComputedResult({ kind: 'superseded', detail }, detail);
+    }
+    return undefined;
 }
 
 function toDuplicateDispatchResult<TPrepared>(
@@ -189,11 +220,35 @@ function toDuplicateDispatchResult<TPrepared>(
     const entry = read.sentSnapshot?.outboxKey
         ? { ...outboxEntry, key: read.sentSnapshot.outboxKey }
         : undefined;
-    return {
-        status: 'duplicate',
-        reason: `Duplicate outbound message ${read.msg.id.msgId}`,
-        entries: entry ? [entry] : []
-    };
+    return toALOutboundComputedResult(
+        { kind: 'duplicate' },
+        `Duplicate outbound message ${read.msg.id.msgId}`,
+        entry ? [entry] : []
+    );
+}
+
+/** Keyed on the planner's drop code, never the human-readable `dropReason` string. */
+function toALOutboundAdmissionVerdict(
+    plan: Pick<ALOutboundDispatchPlan<unknown>, 'dropReason' | 'dropReasonCode'>
+): ALDeliveryAdmissionVerdict {
+    const detail = plan.dropReason ?? '';
+    switch (plan.dropReasonCode) {
+        case 'unauthorized':
+            return { kind: 'refused', reason: 'unauthorized', detail };
+        case 'not-yet-in-sync':
+            return { kind: 'deferred', reason: 'not-yet-in-sync', detail };
+        case 'no-route':
+            return { kind: 'unroutable', reason: 'no-route', detail };
+        case 'superseded':
+            return { kind: 'superseded', detail };
+        case 'expired':
+            return { kind: 'expired', detail };
+        case 'duplicate':
+            return { kind: 'duplicate' };
+        case 'planner-drop':
+        case undefined:
+            return { kind: 'skipped', reason: 'planner-drop', detail };
+    }
 }
 
 function computeRepairAttemptMutations<TPrepared>(
@@ -292,35 +347,4 @@ function toSentMessageMutation<TPrepared>(
         } satisfies ALOutboundSentMessageSnapshot,
         expireAtTimestamp: resolveALMessageExpireAtMs(read.msg)
     };
-}
-
-function toALOutboundEnqueueStatusFromReason(
-    reason: string
-): ALOutboundEnqueueStatus {
-    const normalized = reason.toLowerCase();
-    if (normalized.includes('duplicate')) {
-        return 'duplicate';
-    }
-    if (normalized.includes('superseded')) {
-        return 'superseded';
-    }
-    if (normalized.includes('expired') || normalized.includes('too stale')) {
-        return 'expired';
-    }
-    if (
-        normalized.includes('no route') ||
-        normalized.includes('no recipient') ||
-        normalized.includes('without target') ||
-        normalized.includes('without next hop') ||
-        normalized.includes('without overlay context') ||
-        normalized.includes('without planned transport') ||
-        normalized.includes('without rtc channel') ||
-        normalized.includes('without ws connection') ||
-        normalized.includes('cannot route') ||
-        normalized.includes('cannot resolve')
-    ) {
-        return 'no-route';
-    }
-
-    return 'skipped';
 }

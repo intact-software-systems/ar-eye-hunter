@@ -16,6 +16,7 @@ import {
     type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
+import type { ALDeliveryAdmissionVerdict } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -43,6 +44,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { toALOutboundEnqueueStatus } from '../alm/outbound/to-al-outbound-enqueue-status.ts';
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
@@ -251,6 +253,7 @@ export class WsQueueBoxClientService {
         const message = toALOutboundMessage(msg, normalized.effective);
         return {
             msg: message,
+            dropReasonCode: undefined,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
             preparedMessages: [toALOutboundTransportMessage(message)],
             ackTracking: this.toAckTrackingPlan(normalized.effective, msg),
@@ -574,11 +577,17 @@ export class WsQueueBoxClientService {
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
         if (this.closed) {
+            const verdict: ALDeliveryAdmissionVerdict = {
+                kind: 'skipped',
+                reason: 'disposed',
+                detail: 'WS queue-box client is closed.'
+            };
             return {
-                status: 'skipped',
+                status: toALOutboundEnqueueStatus(verdict),
+                verdict,
                 message,
                 entries: [],
-                reason: 'WS queue-box client is closed.'
+                reason: verdict.detail
             };
         }
 

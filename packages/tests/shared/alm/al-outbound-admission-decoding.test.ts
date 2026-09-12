@@ -141,7 +141,7 @@ describe('outbound admission persisted-record validation', () => {
         await expect(
             store.readOutgoingMessage({
                 msg: msg,
-                planner: () => ({ msg: msg, persist: false, preparedMessages: [] }),
+                planner: () => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
                 observedCanonicalEntry: undefined,
                 intent: 'enqueue'
             })
@@ -239,7 +239,7 @@ describe('outbound admission persisted-record validation', () => {
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             sendPreparedMessage: async (_message, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage.id.msgId);
 
@@ -295,7 +295,7 @@ describe('outbound admission persisted-record validation', () => {
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             sendPreparedMessage: async () => {
                 throw new Error('Corrupt replay must never send');
             }
@@ -492,7 +492,7 @@ async function runOutboundWorkBatch(
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-        planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
         sendPreparedMessage: async (_message, _phase, lifecycle) => {
             sent.push(lifecycle.canonicalMessage.id.msgId);
             return { status: 'sent' as const };
