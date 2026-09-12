@@ -52,6 +52,7 @@ function createBrowserWebSocketQueueBoxService(
         inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
         outboundStores,
         outboundDiagnostics: input.outboundDiagnostics,
+        outboundSettlements: undefined,
         inboundDiagnostics: input.inboundDiagnostics,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: {

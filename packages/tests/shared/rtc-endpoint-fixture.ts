@@ -87,6 +87,7 @@ export class RtcEndpointFixture {
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: this.outbound }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),

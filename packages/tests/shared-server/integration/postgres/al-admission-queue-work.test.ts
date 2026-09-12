@@ -567,13 +567,14 @@ async function runOutboundWorkBatch(
     stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>
 ): Promise<void> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
     try {
         await runtime.ready();

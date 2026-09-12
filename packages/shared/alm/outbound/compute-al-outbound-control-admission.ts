@@ -14,6 +14,7 @@ import type {
     ALOutboundVersionedClientRecord
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
+import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
@@ -91,8 +92,41 @@ export function computeALOutboundControlAdmission(
     };
 }
 
+/**
+ * The receipt a committed control moved, as the delivery fact its owner states. A control that
+ * changed no receipt states nothing: the acknowledgement it carried was already counted.
+ */
+export function toALOutboundAcknowledgementSettlement(
+    candidate: ALControlAdmissionCandidate
+): ALOutboundSettlementFact | undefined {
+    const snapshot = resolveAcceptedReceipt(candidate);
+    return snapshot === undefined ? undefined : {
+        kind: 'acknowledgement',
+        msgId: candidate.read.targetMsgId,
+        confirmedHopPeerIds: snapshot.ackedPeerIds,
+        unconfirmedHopPeerIds: snapshot.expectedPeerIds.filter(
+            (peerId) => !snapshot.ackedPeerIds.includes(peerId)
+        ),
+        complete: isALOutboundReceiptComplete(snapshot)
+    };
+}
+
 export function controlTargetMsgId(parsed: ALParsedControlMessage): string {
     return parsed.type === 'ack' ? parsed.payload.ackedMsgId : parsed.payload.msgId;
+}
+
+/** A `set` carries the receipt the commit wrote; a `remove` the one it tore down. */
+function resolveAcceptedReceipt(
+    candidate: ALControlAdmissionCandidate
+): ALOutboundPendingAckSnapshot | undefined {
+    switch (candidate.pending.kind) {
+        case 'set':
+            return candidate.pending.value;
+        case 'remove':
+            return candidate.read.pending;
+        case 'unchanged':
+            return undefined;
+    }
 }
 
 function appendControlHistory(read: ALControlAdmissionRead): ALControlHistory {

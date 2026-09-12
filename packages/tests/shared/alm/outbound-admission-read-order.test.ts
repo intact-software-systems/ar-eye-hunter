@@ -96,7 +96,7 @@ describe('outbound admission observation order', () => {
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'changed' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         await runtime.ready();

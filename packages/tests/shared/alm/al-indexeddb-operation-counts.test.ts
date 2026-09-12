@@ -217,7 +217,7 @@ describe('outbound default send IndexedDB volume', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
         const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage('msg-default-send'));

@@ -303,7 +303,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
             persist: true,
             preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
-        sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
+        sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
     });
     const result = await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs }));
     expect(result.status).toBe('enqueued');

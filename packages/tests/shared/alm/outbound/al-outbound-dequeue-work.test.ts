@@ -74,7 +74,7 @@ describe('AL outbound dequeue work', () => {
             }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         });
         const message = createDequeuedMessage('dequeue-admits');
@@ -109,7 +109,7 @@ describe('AL outbound dequeue work', () => {
                         persist: false,
                         preparedMessages: []
                     },
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         const noRoute = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('no-route'), DEQUEUE_TYPE);
         const failed = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('failed'), DEQUEUE_TYPE);
@@ -137,7 +137,7 @@ describe('AL outbound dequeue work', () => {
                 persist: false,
                 preparedMessages: []
             }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         for (const resourceId of ['charged-1', 'charged-2', 'charged-3']) {
             await outbox.enqueueIfAbsent(
@@ -159,7 +159,7 @@ describe('AL outbound dequeue work', () => {
             queueEngine,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
         for (let charge = 0; charge < 3; charge += 1) {

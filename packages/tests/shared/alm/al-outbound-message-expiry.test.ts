@@ -220,7 +220,7 @@ describe('outbound message expiry', () => {
         const repair = new ALOutboundRepairAdmission({
             admissionStore: store,
             clock,
-            controlAdmission: store.createControlAdmission(workPort, clock),
+            controlAdmission: store.createControlAdmission(workPort, clock, () => {}),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             planRepairMessage: undefined
         });

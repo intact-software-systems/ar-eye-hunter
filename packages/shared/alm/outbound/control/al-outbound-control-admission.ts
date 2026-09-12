@@ -32,7 +32,10 @@ import type {
     ALOutboundNotYetInSyncRetryScheduleResult
 } from '../admission/al-outbound-admission-store.ts';
 import { decodeALOutboundNotYetInSyncRetry } from '../admission/al-outbound-admission-validation.ts';
-import type { ALOutboundMessageRuntime } from '../al-outbound-message-runtime.ts';
+import type {
+    ALOutboundMessageRuntime,
+    ALOutboundSettlementEmitter
+} from '../al-outbound-message-runtime.ts';
 import { toALOutboundPendingControlId } from '../al-outbound-pending-admission.ts';
 import {
     computeALOutboundWorkEntry,
@@ -42,6 +45,7 @@ import {
 import {
     computeALOutboundControlAdmission,
     controlTargetMsgId,
+    toALOutboundAcknowledgementSettlement,
     type ALControlAdmissionCandidate,
     type ALControlAdmissionRead
 } from '../compute-al-outbound-control-admission.ts';
@@ -74,6 +78,7 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly port: ALWorkQueuePort;
+    readonly settlements: ALOutboundSettlementEmitter;
 }
 
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
@@ -85,6 +90,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly port: ALWorkQueuePort;
+    private readonly settlements: ALOutboundSettlementEmitter;
 
     constructor(input: CreateALOutboundControlAdmissionInput<TPrepared>) {
         this.clock = input.clock;
@@ -94,6 +100,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.namespace = input.namespace;
         this.retention = input.retention;
         this.port = input.port;
+        this.settlements = input.settlements;
     }
 
     async admit(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
@@ -119,6 +126,10 @@ export class ALOutboundControlAdmission<TPrepared> {
             return { kind: 'rejected', reason: workIssues.map((issue) => issue.message).join('; ') };
         }
         if (await this.writeControlAdmission(computed, effects)) {
+            const acknowledgement = toALOutboundAcknowledgementSettlement(computed);
+            if (acknowledgement) {
+                this.settlements(acknowledgement);
+            }
             return { kind: 'committed' };
         }
         await this.retainPendingControl(msg, nowMs);

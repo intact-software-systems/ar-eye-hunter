@@ -28,7 +28,7 @@ describe('outbound planner validation boundary', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
             planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const result = await runtime.enqueueIfAbsent(original);
@@ -63,7 +63,7 @@ describe('outbound planner validation boundary', () => {
             outbox,
             stores,
             dequeue,
-            sendPreparedMessage: async () => ({ status: 'sent' }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
             planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
 
@@ -83,7 +83,7 @@ describe('outbound planner validation boundary', () => {
             ? { ...original, targets: { mode: 'unicast', toPeerId: 'other' } }
             : original;
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => ({ status: 'sent' }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
             planOutgoingMessage: () => ({
                 msg: planned,
                 persist: false,

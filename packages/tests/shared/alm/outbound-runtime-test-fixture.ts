@@ -4,6 +4,7 @@ import { expect, onTestFinished, vi } from 'vitest';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsSink, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { computeALOutboundDispatch, type ALOutboundComputeIntent } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
@@ -46,6 +47,9 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
     readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    /** The carrier every settlement this runtime states is stamped with; `ws` unless a test says otherwise. */
+    readonly carrier?: ALDeliveryCarrier;
+    readonly settlements?: ALDeliverySettlementSink;
     readonly nowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
@@ -142,6 +146,8 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             stores: options.stores,
             dequeue: options.dequeue,
             diagnostics: options.diagnostics,
+            carrier: options.carrier ?? 'ws',
+            settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),

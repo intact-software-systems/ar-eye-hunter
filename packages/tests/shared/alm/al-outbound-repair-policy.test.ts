@@ -45,7 +45,7 @@ describe('AL outbound repair policy', () => {
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         });
         await enqueueOutboundOrThrow(runtime, message);

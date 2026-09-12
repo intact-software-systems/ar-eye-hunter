@@ -333,6 +333,7 @@ function createDefaultOutboundRuntime(
 ): ALOutboundMessageRuntime<OutboundTestPayload> {
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            carrier: 'ws',
             outbox: stores.runtimeStores.workQueue,
             stores: stores.runtimeStores,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
@@ -354,7 +355,7 @@ function createDefaultOutboundRuntime(
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         })
     );

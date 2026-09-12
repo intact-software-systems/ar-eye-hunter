@@ -328,6 +328,7 @@ function createOutboxOnlyTestRuntime(
     stores: ALOutboundRuntimeStores<ALMessage>
 ): ALOutboundMessageRuntime<ALMessage> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         outbox: stores.workQueue,
         stores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),

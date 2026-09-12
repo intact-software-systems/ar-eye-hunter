@@ -48,7 +48,7 @@ describe('AL outbound durable effect lifecycle', () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         const stores = createDefaultOutboundTestStores();
-        const send = vi.fn(async () => ({ status: 'sent' as const }));
+        const send = vi.fn(async () => ({ status: 'sent' as const, submissionAttempted: true }));
         vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementation(async () => {
             vi.setSystemTime(2_000);
             return undefined;
@@ -74,13 +74,13 @@ describe('AL outbound durable effect lifecycle', () => {
             stores,
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
-                return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent' };
+                return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent', submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         const message = createOutboundMessage('retained-completion-failure');
         await runtime.enqueueIfAbsent(message);
-        settlement.resolve({ status: 'sent' });
+        settlement.resolve({ status: 'sent', submissionAttempted: true });
         await vi.advanceTimersByTimeAsync(0);
         const retryAt = await peekOutboundTestWork(stores);
         if (retryAt === undefined) {
@@ -107,7 +107,7 @@ describe('AL outbound durable effect lifecycle', () => {
         });
         const message = createOutboundMessage(`retained-${status}`);
         await runtime.enqueueIfAbsent(message);
-        settlement.resolve({ status });
+        settlement.resolve({ status, submissionAttempted: false });
         await vi.advanceTimersByTimeAsync(10_001);
         expect(attempts).toEqual([message.id.msgId]);
         expect(await peekOutboundTestWork(stores)).toBeUndefined();
@@ -123,7 +123,7 @@ describe('AL outbound durable effect lifecycle', () => {
             async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         );
 
@@ -140,7 +140,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
@@ -167,7 +167,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
@@ -238,7 +238,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
@@ -279,7 +279,7 @@ describe('AL outbound durable effect lifecycle', () => {
             async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         );
 
@@ -299,7 +299,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendStarted.resolve();
             await sendBarrier.promise;
 
-            return { status: 'sent' as const };
+            return { status: 'sent' as const, submissionAttempted: true };
         };
         const runtime2 = createDefaultOutboundTestRuntime({
             stores,
@@ -369,7 +369,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
@@ -455,7 +455,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
@@ -512,7 +512,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         });
         runtime.dispose();
@@ -561,7 +561,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
@@ -595,7 +595,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const stores = createDefaultOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
             stores,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
@@ -674,7 +674,7 @@ describe('AL outbound durable effect lifecycle', () => {
             sendPreparedMessage: async (prepared) => {
                 recovered.push(String(prepared.msgId));
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] })
         });

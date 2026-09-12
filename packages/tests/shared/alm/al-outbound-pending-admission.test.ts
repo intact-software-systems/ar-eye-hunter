@@ -111,7 +111,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         sendPreparedMessage: async (prepared, _phase, lifecycle) => {
             sent.push(prepared.peer);
             expect(lifecycle.expiresAtMs).toBe(1_800_000_001_000);
-            return { status: 'sent' };
+            return { status: 'sent', submissionAttempted: true };
         }
     });
     await restarted.ready();

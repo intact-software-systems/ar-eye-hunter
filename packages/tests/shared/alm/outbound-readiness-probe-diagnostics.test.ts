@@ -73,7 +73,7 @@ it.each(['memory', 'indexeddb'] as const)(
             nowMs: () => clockMs,
             diagnostics: (event) => diagnostics.push(event),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
         await runtime.ready();
@@ -120,7 +120,7 @@ it('reports the idle owner\'s probes even where its batch has nothing to report'
         nowMs: () => clockMs,
         diagnostics: (event) => diagnostics.push(event),
         planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
     await runtime.ready();

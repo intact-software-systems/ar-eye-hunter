@@ -234,6 +234,7 @@ describe('outbound admission persisted-record validation', () => {
         await writeRawOutboundWork(backend, valid.effectId, valid);
         const sent: string[] = [];
         const runtime = createDefaultALOutboundMessageRuntime({
+            carrier: 'ws',
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
@@ -243,7 +244,7 @@ describe('outbound admission persisted-record validation', () => {
             sendPreparedMessage: async (_message, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage.id.msgId);
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         });
         try {
@@ -290,6 +291,7 @@ describe('outbound admission persisted-record validation', () => {
             await writeRawOutboundWork(backend, effectId, { effectId, payload });
         });
         const runtime = createDefaultALOutboundMessageRuntime({
+            carrier: 'ws',
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
@@ -487,6 +489,7 @@ async function runOutboundWorkBatch(
     sent: string[] = []
 ): Promise<readonly string[]> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         stores: admission.stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
@@ -495,7 +498,7 @@ async function runOutboundWorkBatch(
         planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
         sendPreparedMessage: async (_message, _phase, lifecycle) => {
             sent.push(lifecycle.canonicalMessage.id.msgId);
-            return { status: 'sent' as const };
+            return { status: 'sent' as const, submissionAttempted: true };
         }
     });
     try {

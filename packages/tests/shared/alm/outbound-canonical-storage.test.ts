@@ -69,7 +69,7 @@ describe('canonical outbound payload storage', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         onTestFinished(() => runtime.dispose());
         const message = createOutboundMessage('public-cleanup', { ttlMs: 1_000 });
@@ -98,7 +98,7 @@ describe('canonical outbound payload storage', () => {
         const otherRuntime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: otherStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         onTestFinished(() => otherRuntime.dispose());
         const otherMessage = createOutboundMessage('other-session-cleanup', { ttlMs: 2_000 });
@@ -168,7 +168,7 @@ describe('canonical outbound payload storage', () => {
                 persist: true,
                 preparedMessages: [{ peer: 'first' }, { peer: 'second' }, { peer: 'third' }]
             }),
-            sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
+            sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
         });
         onTestFinished(() => runtime.dispose());
 
@@ -208,7 +208,7 @@ describe('canonical outbound payload storage', () => {
             }),
             sendPreparedMessage: async () => {
                 sends.push('sent');
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         const original = createOutboundMessage('shorter-admission', { ttlMs: 1_000 });
@@ -332,7 +332,7 @@ describe('canonical outbound payload storage', () => {
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         const admitted = await runtime.enqueueIfAbsent(message);
@@ -394,7 +394,7 @@ describe('canonical outbound payload storage', () => {
                 queueEngine: new InboxOutboxEngine(),
                 stores: { admissionStore, workQueue: backend.workQueue },
                 planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: namespace }] }),
-                sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
+                sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
             });
             onTestFinished(() => runtime.dispose());
             return runtime;

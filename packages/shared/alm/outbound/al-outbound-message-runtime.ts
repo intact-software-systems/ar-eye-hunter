@@ -6,7 +6,12 @@ import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exc
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
+import type {
+    ALDeliveryAdmissionVerdict,
+    ALDeliveryCarrier,
+    ALDeliverySettlement,
+    ALDeliverySettlementSink
+} from '../delivery/al-delivery-lifecycle.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -22,6 +27,7 @@ import {
 } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundDurableEffect,
     ALOutboundEffectSnapshot,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
@@ -50,6 +56,8 @@ export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
 export interface ALOutboundSettledSendResult {
     readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
+    /** Whether the carrier handed the bytes to its transport; a refusal before that never did. */
+    readonly submissionAttempted: boolean;
     readonly reason?: string;
     readonly retryAfterMs?: number;
 }
@@ -197,6 +205,20 @@ export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
 
+/** Every settlement variant without the two fields the runtime stamps for its owners. */
+type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
+    Omit<TSettlement, 'carrier' | 'atMs'> :
+    never;
+
+/** One delivery fact as the owner that observed it states it, before the runtime stamps it. */
+export type ALOutboundSettlementFact = ALOutboundUnstampedSettlement<ALDeliverySettlement>;
+
+/**
+ * The already-guarded sink an outbound owner states one delivery fact to. The runtime owns the only
+ * guard, so a sink that throws never reaches the work that stated the fact.
+ */
+export type ALOutboundSettlementEmitter = (fact: ALOutboundSettlementFact) => void;
+
 export type ALOutboundEnqueueStatus =
     | 'pending-admission'
     | 'enqueued'
@@ -259,6 +281,8 @@ export namespace ALOutboundMessageRuntime {
     }
 
     export interface Dependencies<TPrepared> extends Resources<TPrepared> {
+        /** Which transport this owner drives; every settlement it states is stamped with it. */
+        readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
         readonly readPendingAdmissionAuthority?: (
             msg: ALMessage,
@@ -284,6 +308,7 @@ export namespace ALOutboundMessageRuntime {
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly settlements: ALDeliverySettlementSink | undefined;
     }
 }
 
@@ -311,7 +336,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
             nowMs: () => dependencies.clock.nowMs(),
             random: dependencies.random
         });
-        const controlAdmission = dependencies.admissionStore.createControlAdmission(workPort, dependencies.clock);
+        const settlements: ALOutboundSettlementEmitter = (fact) => this.emitSettlement(fact);
+        const controlAdmission = dependencies.admissionStore.createControlAdmission(
+            workPort,
+            dependencies.clock,
+            settlements
+        );
         this.dispatchAdmission = new ALOutboundDispatchAdmission({
             admissionStore: dependencies.admissionStore,
             workPort,
@@ -351,7 +381,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             runtime: dependencies,
             dispatchAdmission: this.dispatchAdmission,
             commitDispatchPlan: (dispatch) => this.commitDispatchPlan(dispatch),
-            sendSignal: this.sendAbortController.signal
+            sendSignal: this.sendAbortController.signal,
+            settlements
         });
     }
 
@@ -478,9 +509,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {
-        if (this.hasReachedDeadline(claim.entry)) {
-            return { status: 'completed' };
-        }
         try {
             const work = await this.readExpirableOutboundWork(claim.entry);
             return work === undefined ? { status: 'completed' } : await this.runDurableEffect(work);
@@ -523,6 +551,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         effect: ALOutboundEffectSnapshot<TPrepared>
     ): Promise<ALWorkAttemptResult> {
         if (effect.expireAtTimestamp <= this.readNowMs()) {
+            this.emitWorkExpiry(effect);
             return { status: 'completed' };
         }
 
@@ -534,15 +563,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             case 'admit-control':
                 return await this.repairAdmission.replayControlAdmission(effect.payload);
             case 'send-prepared':
-                if (!effect.canonicalMessage) {
-                    throw new NonRetryableException('Prepared work has no canonical message');
-                }
-                return await this.effects.writePreparedMessage(effect.payload, {
-                    canonicalMessage: effect.canonicalMessage,
-                    signal: this.sendSignal,
-                    expiresAtMs: effect.expireAtTimestamp,
-                    leaseUntilMs: effect.leaseUntilMs
-                }, effect.attempts);
+                return await this.runPreparedSend(effect, effect.payload);
             case 'ack-timeout':
                 await this.repairAdmission.retryPendingAck(effect.payload.msgId);
                 return { status: 'completed' };
@@ -558,6 +579,59 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     attemptIdentity: effect.effectId
                 });
                 return { status: 'completed' };
+        }
+    }
+
+    /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */
+    private async runPreparedSend(
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }>
+    ): Promise<ALWorkAttemptResult> {
+        const canonicalMessage = effect.canonicalMessage;
+        if (!canonicalMessage) {
+            throw new NonRetryableException('Prepared work has no canonical message');
+        }
+        this.emitSettlement({
+            kind: 'attempt-started',
+            msgId: canonicalMessage.id.msgId,
+            attemptId: effect.effectId
+        });
+        return await this.effects.writePreparedMessage({
+            attemptId: effect.effectId,
+            payload,
+            lifecycle: {
+                canonicalMessage,
+                signal: this.sendSignal,
+                expiresAtMs: effect.expireAtTimestamp,
+                leaseUntilMs: effect.leaseUntilMs
+            },
+            attempts: effect.attempts
+        });
+    }
+
+    /** The deadline the work carries passed before its attempt ran; work with no message states nothing. */
+    private emitWorkExpiry(effect: ALOutboundEffectSnapshot<TPrepared>): void {
+        const msgId = effect.canonicalMessage?.id.msgId;
+        if (msgId !== undefined) {
+            this.emitSettlement({
+                kind: 'expired',
+                msgId,
+                detail: 'Outbound work reached its deadline before its attempt ran.'
+            });
+        }
+    }
+
+    /** The one guard over every settlement this owner states: a throwing sink changes no work. */
+    private emitSettlement(fact: ALOutboundSettlementFact): void {
+        try {
+            this.dependencies.settlements?.({
+                ...fact,
+                carrier: this.dependencies.carrier,
+                atMs: this.readNowMs()
+            });
+        }
+        catch (error) {
+            console.error('AL outbound delivery settlement sink failed', error);
         }
     }
 

@@ -121,7 +121,7 @@ describe('ALM browser storage snapshot', () => {
                     key: toSupersedenceKey(msg)
                 }
             }),
-            sendPreparedMessage: async () => ({ status: 'sent' })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         await runtime.ready();
 

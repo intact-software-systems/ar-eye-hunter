@@ -631,7 +631,7 @@ describe('IndexedDB AL runtime stores', () => {
             sendStarted.resolve();
             await sendBarrier.promise;
 
-            return { status: 'sent' as const };
+            return { status: 'sent' as const, submissionAttempted: true };
         };
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
         const runtime3 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
@@ -796,6 +796,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
     const { dbName, namespace, sent } = input;
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            carrier: 'ws',
             outbox: new InMemoryQueueBox(new Map()),
             stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
                 dbName,
@@ -831,7 +832,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             sendPreparedMessage: input.sendPreparedMessage ?? (async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             })
         })
     );

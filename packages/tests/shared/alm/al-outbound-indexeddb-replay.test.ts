@@ -62,7 +62,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
-            sendPreparedMessage: async () => ({ status: 'sent' })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
 
         await runtime.ready();
@@ -137,7 +137,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             },
             sendPreparedMessage: async (message) => {
                 sent.push(message.text ?? '');
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         await runtime2.ready();
@@ -165,7 +165,9 @@ describe('outbound IndexedDB durable queue replay', () => {
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ text: 'engine-owned' }] }),
             sendPreparedMessage: async (message) => {
                 sent.push(message.text ?? '');
-                return sent.length === 1 ? { status: 'not-ready', retryAfterMs: 20 } : { status: 'sent' };
+                return sent.length === 1
+                    ? { status: 'not-ready', submissionAttempted: false, retryAfterMs: 20 }
+                    : { status: 'sent', submissionAttempted: true };
             }
         });
         await runtime.enqueueIfAbsent(createOutboundMessage('engine-owned'));
@@ -311,7 +313,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             sendPreparedMessage: async (prepared, _phase, lifecycle) => {
                 sent.push(prepared.text!);
                 expect(lifecycle.canonicalMessage).toEqual(msg);
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         await runtime2.ready();
@@ -414,7 +416,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ text: 'replanned' }] }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared.text ?? '');
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         await runtime2.ready();

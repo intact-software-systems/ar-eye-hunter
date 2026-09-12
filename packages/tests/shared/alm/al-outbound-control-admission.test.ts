@@ -337,7 +337,7 @@ describe('outbound control admission identity', () => {
             decodePreparedMessage: decodeALOutboundTransportMessage,
             // The admitted policy carries the retry budget; the planner only re-plans the stored message.
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
         vi.spyOn(backend, 'write').mockImplementationOnce(() => {
@@ -360,7 +360,7 @@ describe('outbound control admission identity', () => {
             queueEngine: new InboxOutboxEngine(),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
         const claimed = vi.spyOn(workQueue, 'reserveEntries');
