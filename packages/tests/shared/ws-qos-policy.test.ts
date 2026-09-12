@@ -9,6 +9,7 @@ import {
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -514,6 +515,13 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const engine = new shared.InboxOutboxEngine();
+        const readinessByEffect = new Map<string, boolean>();
+        const readReadiness = ALInboundAdmittedDelivery.prototype.readReadiness;
+        vi.spyOn(ALInboundAdmittedDelivery.prototype, 'readReadiness').mockImplementation(async function (this: ALInboundAdmittedDelivery, effect, nowMs) {
+            const readiness = await readReadiness.call(this, effect, nowMs);
+            readinessByEffect.set(effect.payload.kind, readiness.ready);
+            return readiness;
+        });
         let overloaded = true;
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
@@ -571,6 +579,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(callbackCount).toBe(0);
         const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
+        await expect.poll(() => [...readinessByEffect]).toEqual([['dispatch-local', false]]);
         expect(await stores.workQueue.getItem(keys[0])).toMatchObject({
             status: shared.EntityStatus.NEW,
             dequeueAudit: { attempts: 0 }
