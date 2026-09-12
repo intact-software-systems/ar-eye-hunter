@@ -18,7 +18,7 @@ import {
     QRtcSignalingMessage,
     QRtcSignalingMsgType,
     QRtcSignalingType
-} from '@shared/webrtc/QRtcSignalingContracts.ts';
+} from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import {
     createNativeRtcConnectionFixture,
@@ -67,6 +67,7 @@ function offer(peerId = 'z-peer'): QRtcSignalingMessage {
         sessionId: peerId,
         token: 'private-peer-token',
         signalType: QRtcSignalingType.Offer,
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: 'private-offer-sdp' }, candidate: null }
     };
 }
@@ -95,7 +96,12 @@ describe('WebRtcConnectionService signaling and creation', () => {
         await fixture.service.connectSignaler();
         await fixture.receive(offer());
         await fixture.receive({
-            ...offer(),
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'z-peer',
+            toId: 'a-self',
+            sessionId: 'z-peer',
+            token: 'private-peer-token',
             signalType: QRtcSignalingType.IceCandidate,
             payload: { description: null, candidate: { candidate: 'private-candidate', sdpMid: '0', sdpMLineIndex: 0 } }
         });
@@ -111,6 +117,11 @@ describe('WebRtcConnectionService signaling and creation', () => {
         { signalType: 'unknown' },
         { fromId: '' },
         { token: 1 },
+        { offerId: undefined },
+        { offerId: null },
+        { offerId: '' },
+        { offerId: '   ' },
+        { offerId: 17 },
         { payload: { description: { type: 'offer', sdp: 42 }, candidate: null } },
         { payload: { description: { type: 'answer', sdp: 'sdp' }, candidate: null } },
         { payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: { candidate: 'extra' } } },
@@ -132,9 +143,32 @@ describe('WebRtcConnectionService signaling and creation', () => {
         expect(runtime.createdConnections).toHaveLength(0);
     });
 
+    it('rejects an uncorrelated old answer before it reaches the current native offer', async () => {
+        const fixture = createFixture();
+        await fixture.service.connectSignaler();
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        const native = fixture.nativePeer('z-peer');
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await expect(fixture.receiveResource(JSON.stringify({
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'z-peer',
+            toId: 'a-self',
+            sessionId: 'z-peer',
+            token: 'test-token',
+            signalType: 'Answer',
+            payload: { description: { type: 'answer', sdp: 'old-answer' }, candidate: null }
+        }))).rejects.toThrow('Invalid RTC signaling message');
+        expect(native.receivedDescriptions).toEqual([]);
+        expect(native.signalingState).toBe('have-local-offer');
+    });
+
     it('validates direct accepted-peer signaling before allocating native resources', async () => {
         const fixture = createFixture(budgetInput());
-        const result = await fixture.service.acceptPeerIfAbsent('z-peer', { ...offer(), payload: { description: 17, candidate: null } });
+        const result = await fixture.service.acceptPeerIfAbsent(
+            'z-peer',
+            JSON.parse(JSON.stringify({ ...offer(), payload: { description: 17, candidate: null } }))
+        );
         expect(result.left?.kind).toBe('signal-handle-failed');
         expect(runtime.createdConnections).toHaveLength(0);
         expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
@@ -145,14 +179,28 @@ describe('WebRtcConnectionService signaling and creation', () => {
         await fixture.service.connectSignaler();
         await expect(fixture.receive({ ...offer(), toId: 'other' })).rejects.toThrow('RTC signaling identity does not match its AL envelope');
         await fixture.receive(offer('a-self'));
-        await fixture.receive({ ...offer(), signalType: 'Answer', payload: { description: { type: 'answer', sdp: 'answer' }, candidate: null } });
+        await fixture.receive({
+            ...offer(),
+            signalType: 'Answer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'answer', sdp: 'answer' }, candidate: null }
+        });
         expect(runtime.createdConnections).toHaveLength(0);
     });
 
     it('queues legitimate early ICE until an offer supplies the remote description', async () => {
         const fixture = createFixture();
         await fixture.service.connectSignaler();
-        await fixture.receive({ ...offer(), signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 'ice' } } });
+        await fixture.receive({
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'z-peer',
+            toId: 'a-self',
+            sessionId: 'z-peer',
+            token: 'private-peer-token',
+            signalType: 'IceCandidate',
+            payload: { description: null, candidate: { candidate: 'ice' } }
+        });
         expect(fixture.nativePeer('z-peer').receivedCandidates).toEqual([]);
         await fixture.receive(offer());
         expect(fixture.nativePeer('z-peer').receivedCandidates).toEqual([{ candidate: 'ice' }]);

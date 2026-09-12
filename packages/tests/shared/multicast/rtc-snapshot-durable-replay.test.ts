@@ -1,3 +1,13 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -5,20 +15,14 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundPlanner } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
 interface ReplayObservedState {
@@ -31,7 +35,6 @@ interface ReplayFixture {
     readonly stores: ALInboundRuntimeStores;
     readonly engine: InboxOutboxEngine;
     readonly observed: ReplayObservedState;
-    readonly planner: ALInboundPlanner;
     readonly delivered: string[];
     readonly forwarded: string[];
     readonly controls: ALMessage[];
@@ -59,6 +62,13 @@ describe('RTC admitted-message consumption', () => {
         'retries durable delivery and forwarding after %s changes between admission and consumption',
         async (fault) => {
             const fixture = createReplayFixture(true);
+            const readinessByEffect = new Map<string, boolean>();
+            const readReadiness = ALInboundAdmittedDelivery.prototype.readReadiness;
+            vi.spyOn(ALInboundAdmittedDelivery.prototype, 'readReadiness').mockImplementation(async function (this: ALInboundAdmittedDelivery, effect, nowMs) {
+                const readiness = await readReadiness.call(this, effect, nowMs);
+                readinessByEffect.set(effect.payload.kind, readiness.ready);
+                return readiness;
+            });
             const commit = fixture.stores.admissionStore.commitBundle.bind(fixture.stores.admissionStore);
             vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
                 const result = await commit(bundle);
@@ -71,34 +81,40 @@ describe('RTC admitted-message consumption', () => {
                 return result;
             });
             const message = createMessage({ seq: 1, versioned: true, acknowledge: false });
+            fixture.engine.start();
             try {
                 await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+                await expect.poll(() => [...readinessByEffect].sort()).toEqual([
+                    ['dispatch-local', false],
+                    ['forward-message', false]
+                ]);
+                const keys = await fixture.stores.workQueue.getAllKeys();
+                expect(keys).toHaveLength(2);
+                for (const key of keys) {
+                    expect(await fixture.stores.workQueue.getItem(key)).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
+                }
                 expect(fixture.delivered).toEqual([]);
                 expect(fixture.forwarded).toEqual([]);
 
                 fixture.observed.snapshot = createCurrentSnapshot();
                 fixture.observed.overloaded = false;
-                await fixture.engine.executeOnce();
-                await expect.poll(async () => {
-                    await fixture.engine.executeOnce();
-                    return fixture.delivered;
-                }).toEqual([message.id.msgId]);
-                await expect.poll(async () => {
-                    await fixture.engine.executeOnce();
-                    return fixture.forwarded;
-                }).toEqual([message.id.msgId]);
+                await expect.poll(() => fixture.delivered).toEqual([message.id.msgId]);
+                await expect.poll(() => fixture.forwarded).toEqual([message.id.msgId]);
                 expect(fixture.forwarded).toEqual([message.id.msgId]);
                 await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
                 expect(fixture.delivered).toEqual([message.id.msgId]);
             }
             finally {
                 fixture.runtime.dispose();
+                fixture.engine.stop();
             }
         }
     );
 
     it('retains a buffered message and withholds its ACK until its snapshot catches up', async () => {
         const fixture = createReplayFixture(false);
+        fixture.engine.start();
+        onTestFinished(() => fixture.engine.stop());
         const second = createMessage({ seq: 2, versioned: true, acknowledge: true });
         const first = createMessage({ seq: 1, versioned: false, acknowledge: true });
         const trackKey = toALOrderingTrackKey(second);
@@ -111,7 +127,7 @@ describe('RTC admitted-message consumption', () => {
             await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
             await expect.poll(() => fixture.delivered).toEqual([first.id.msgId]);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeDefined();
-            expect(acknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
+            expect(toAcknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
 
             fixture.observed.snapshot = createCurrentSnapshot();
             await fixture.engine.executeOnce();
@@ -121,7 +137,7 @@ describe('RTC admitted-message consumption', () => {
             }).toEqual([first.id.msgId, second.id.msgId]);
             await expect.poll(async () => {
                 await fixture.engine.executeOnce();
-                return acknowledgedIds(fixture.controls);
+                return toAcknowledgedIds(fixture.controls);
             }).toContain(second.id.msgId);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeUndefined();
         }
@@ -293,11 +309,33 @@ describe('RTC admitted-message consumption', () => {
     });
 
     it('leaves claimed work unconsumed when disposed while its storage read is in flight', async () => {
-        const fixture = createReplayFixture(false);
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        let reservedCount = 0;
+        const batchFinished = Promise.withResolvers<void>();
+        const includeTask = engine.includeTask.bind(engine);
+        vi.spyOn(engine, 'includeTask').mockImplementation((id, task) =>
+            includeTask(id, {
+                ...task,
+                runnable: async () => {
+                    try {
+                        await task.runnable();
+                    }
+                    finally {
+                        if (reservedCount > 0) {
+                            batchFinished.resolve();
+                        }
+                    }
+                }
+            })
+        );
+        const fixture = createReplayFixture(false, createDefaultInMemoryALInboundRuntimeStores(), engine);
+        onTestFinished(() => fixture.runtime.dispose());
         const reserve = fixture.stores.workQueue.reserveEntries.bind(fixture.stores.workQueue);
         vi.spyOn(fixture.stores.workQueue, 'reserveEntries').mockImplementation(async (request) => {
             const reserved = await reserve(request);
             if (reserved.size > 0) {
+                reservedCount = reserved.size;
                 fixture.runtime.dispose();
             }
             return reserved;
@@ -305,17 +343,62 @@ describe('RTC admitted-message consumption', () => {
 
         await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
 
+        engine.start();
+        await expect.poll(() => reservedCount).toBeGreaterThan(0);
+        await batchFinished.promise;
         expect(fixture.delivered).toEqual([]);
-        expect(vi.getTimerCount()).toBe(0);
+        expect(fixture.forwarded).toEqual([]);
+        expect(fixture.controls).toEqual([]);
+        const keys = await fixture.stores.workQueue.getAllKeys();
+        expect(keys).toHaveLength(2);
+        for (const key of keys) {
+            expect(await fixture.stores.workQueue.getItem(key)).toMatchObject({ status: 'RESERVED', dequeueAudit: { attempts: 1 } });
+        }
+        expect(
+            (await fixture.runtime.admitIncomingMessage(createMessage({ seq: 2, versioned: true, acknowledge: false }), {
+                kind: 'rtc-peer',
+                peerId: 'sender'
+            })).right
+        ).toEqual({ kind: 'disposed' });
     });
 });
 
-function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInboundRuntimeStores()): ReplayFixture {
+function createReplayFixture(
+    relay: boolean,
+    stores = createDefaultInMemoryALInboundRuntimeStores(),
+    engine = new InboxOutboxEngine()
+): ReplayFixture {
     const observed: ReplayObservedState = { snapshot: createCurrentSnapshot(), overloaded: false };
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const controls: ALMessage[] = [];
-    const planner: ALInboundPlanner = (message, source, observations) =>
+    const planner = createReplayPlanner(relay, observed);
+    const runtime = createDefaultALInboundMessageRuntime({
+        selfPeerId: 'receiver',
+        stores,
+        queueEngine: engine,
+        planIncomingMessage: planner,
+        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
+        dispatchInboxEntry: async (entry) => {
+            delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
+        },
+        forwardMessage: async (message) => {
+            forwarded.push(message.id.msgId);
+        },
+        sendControlMessage: async (message) => {
+            controls.push(message);
+        },
+        diagnostics: undefined
+    });
+    onTestFinished(() => {
+        runtime.dispose();
+        engine.stop();
+    });
+    return { runtime, stores, engine, observed, delivered, forwarded, controls };
+}
+
+function createReplayPlanner(relay: boolean, observed: ReplayObservedState): ALInboundPlanner {
+    return (message, source, observations) =>
         planRtcRoomSnapshotAdmission({
             message,
             plan: planALMessageHandling(message, {
@@ -348,25 +431,6 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
             },
             nowMs: observations.nowMs
         });
-    const engine = new InboxOutboxEngine();
-    const runtime = createDefaultALInboundMessageRuntime({
-        selfPeerId: 'receiver',
-        stores,
-        queueEngine: engine,
-        planIncomingMessage: planner,
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
-        dispatchInboxEntry: async (entry) => {
-            delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
-        },
-        forwardMessage: async (message) => {
-            forwarded.push(message.id.msgId);
-        },
-        sendControlMessage: async (message) => {
-            controls.push(message);
-        },
-        diagnostics: undefined
-    });
-    return { runtime, stores, engine, observed, planner, delivered, forwarded, controls };
 }
 
 function createMessage(input: ReplayMessageInput): ALMessage {
@@ -386,7 +450,7 @@ function createMessage(input: ReplayMessageInput): ALMessage {
     );
 }
 
-function acknowledgedIds(controls: readonly ALMessage[]): string[] {
+function toAcknowledgedIds(controls: readonly ALMessage[]): string[] {
     return controls.flatMap((message) => {
         const control = parseALControlMessage(message);
         return control?.type === 'ack' ? [control.payload.ackedMsgId] : [];

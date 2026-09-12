@@ -1,4 +1,3 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -7,15 +6,18 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -25,7 +27,7 @@ import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
-import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -55,6 +57,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         const rejectedPage = await fixture.stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
             status: EntityStatus.NON_RETRYABLE,
@@ -89,6 +92,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         });
 
         await expect.poll(() => fixture.stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         expect(delivered).toEqual([message.id.msgId]);
     });
 
@@ -131,6 +135,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         expect(delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
     });
 
@@ -150,6 +155,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         const retryPage = await fixture.stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
             status: EntityStatus.RETRY,
@@ -215,6 +221,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         fixture.service.dispose();
         resume.resolve();
         await receiving;
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
 
         expect(delivered).toEqual([]);
     });
@@ -232,8 +239,9 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(message, 'peer-1');
         await fixture.receive(message, 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         expect(delivered).toEqual([message.id.msgId]);
-        expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
+        await expect.poll(async () => (await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
             type: 'ack',
             payload: expect.objectContaining({ ackedMsgId: message.id.msgId, toPeerId: 'peer-1', status: 'delivered' })
         });
@@ -297,6 +305,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(createUnicast({ acknowledge: false, exclusive: true }), 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         expect(delivered).toEqual([specific ? 'specific' : 'catch-all']);
     });
 
@@ -314,11 +323,12 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(second, 'peer-1');
 
         expect(delivered).toEqual([]);
-        expect(
-            (await fixture.outbound()).flatMap((message) => {
-                const control = shared.parseALControlMessage(message);
-                return control ? [control.type] : [];
-            }).sort()
+        await expect.poll(
+            async () =>
+                (await fixture.outbound()).flatMap((message) => {
+                    const control = shared.parseALControlMessage(message);
+                    return control ? [control.type] : [];
+                }).sort()
         ).toEqual(['nack', 'repair']);
 
         await fixture.receive(first, 'peer-1');
@@ -349,6 +359,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             }),
             'peer-2'
         );
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         expect((await fixture.outbound()).filter((outgoing) => shared.parseALControlMessage(outgoing)?.type === 'ack')).toEqual([]);
 
         await fixture.receive(
@@ -363,7 +374,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         );
 
         expect(delivered).toEqual([message.id.msgId]);
-        expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
+        await expect.poll(async () => (await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
             type: 'ack',
             payload: expect.objectContaining({ status: 'subtree-complete', toPeerId: 'peer-1', ackedMsgId: message.id.msgId })
         });
@@ -402,10 +413,7 @@ function createRtcReceiveFixture(
     return {
         service,
         stores,
-        async receive(message: shared.ALMessage, peerId: string): Promise<void> {
-            await transport.receive(message, peerId);
-            await waitForALInboundWork();
-        },
+        receive: transport.receive,
         async outbound(): Promise<shared.ALMessage[]> {
             return [...transport.sent];
         }
@@ -439,7 +447,7 @@ function createRtcReceiveTransport(): RtcReceiveTransport {
         iceCandidates,
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, new DeterministicRtcOfferIds());
     vi.spyOn(connections, 'readyPeerIdsForLane').mockImplementation(() => [...peers.keys()]);
     vi.spyOn(connections, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     for (const peerId of ['peer-1', 'peer-2', 'peer-3']) {
@@ -466,7 +474,7 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
         token: 'test-token',
         iceCandidates: ports.iceCandidates,
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new shared.QRtcDataChannel(connection, {
         faultPort: createPassThroughTransportFaultPort(),
         peerId,
@@ -497,10 +505,11 @@ function createRtcRoomMulticast(
     const groupCache = new shared.LatestRepository<string, GroupSnapshot>();
     groupCache.accept('group-1', {
         ...snapshot,
+        group: { ...snapshot.group, acceptedLayoutIdentity: { ...snapshot.causalRevision, version: 1, state: 'active' } },
         activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
     });
     const overlayCache = new shared.LatestRepository<string, shared.OverlayInfo>();
-    overlayCache.accept('group-1', {
+    overlayCache.accept(toScopedOverlayId(roomRef), {
         sourceGroupStateCausalRevision: snapshot.causalRevision,
         provenance: 'server',
         state: 'active',
@@ -529,7 +538,12 @@ function createRtcRoomMulticast(
     });
 }
 
-function createUnicast(input: { readonly acknowledge: boolean; readonly exclusive: boolean; }): shared.ALMessage {
+interface UnicastMessageInput {
+    readonly acknowledge: boolean;
+    readonly exclusive: boolean;
+}
+
+function createUnicast(input: UnicastMessageInput): shared.ALMessage {
     return shared.newALUnicastMessage('peer-1', { topicId: 'tasks', resourceId: 'job', contextId: 'queue' }, 'self', 'tasks.job.v1', { text: 'hello' }, {
         qos: {
             ack: { algo: input.acknowledge ? 'hop' : 'none' },
@@ -538,11 +552,13 @@ function createUnicast(input: { readonly acknowledge: boolean; readonly exclusiv
     });
 }
 
-function createMulticast(input: {
+interface MulticastMessageInput {
     readonly seq: number;
     readonly acknowledgeSubtree: boolean;
     readonly minSnapshotVersion?: number;
-}): shared.ALMessage {
+}
+
+function createMulticast(input: MulticastMessageInput): shared.ALMessage {
     return shared.newALMulticastMessage(
         'peer-1',
         {
@@ -580,7 +596,7 @@ describe('RTC receiver consumer dispatch', () => {
                 receivedByType.push(message.id.msgId);
             }
         });
-        const message = exclusiveMessage();
+        const message = createExclusiveMessage();
 
         await sender.sendAndWaitForDelivery(message);
         await sender.sendAndWaitForDelivery(message);
@@ -591,7 +607,7 @@ describe('RTC receiver consumer dispatch', () => {
 
     it('delivers exclusive messages to the wildcard consumer when no type consumer exists', async () => {
         const { sender, receiver } = createConnectedEndpoints();
-        const message = exclusiveMessage();
+        const message = createExclusiveMessage();
 
         await sender.sendAndWaitForDelivery(message);
 
@@ -651,7 +667,7 @@ function createConnectedEndpoints(): ConnectedEndpoints {
     return { sender, receiver };
 }
 
-function exclusiveMessage() {
+function createExclusiveMessage(): shared.ALMessage {
     return newALUnicastMessage(
         'sender',
         {

@@ -22,6 +22,7 @@ import {
 import {
     peekOutboundWorkReadyAt
 } from '../alm/outbound-runtime-test-fixture.ts';
+import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -288,7 +289,7 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}, peerId
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     peer.connect();
     const channel = new QRtcDataChannel(peer, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'alm', flowControl });
     channel.connect(true);

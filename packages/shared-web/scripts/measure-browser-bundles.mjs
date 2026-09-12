@@ -28,23 +28,12 @@ const esbuildBin = path.join(
 
 const entries = [
     {
-        // Maintainer approved necessary ALM growth; the queue box's paged terminal sweep and
-        // split readiness probe measure 201.043 KiB. Merging the RTC group-snapshot refresh and
-        // transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
-        // Splitting the outbound commit hold into its read and write phases measures 202.896 KiB.
-        // Leasing a claim from the reservation the queue stamped measures 203.065 KiB, so the
-        // ceiling moves to 204. Naming the hop that drops an RTC offer -- the peer's signaling
-        // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
-        // Main's canonical room-readiness owner (#557) measures 200.324 KiB on its own; merging
-        // it with the ALM runtime measures 204.873 KiB, so the 205 ceiling still holds.
-        // Subscribing the RTC lifecycle runtime to the typed signaling failure measures
-        // 205.186 KiB, so the ceiling moves to 206.
-        // F2b Task 3 (the carried eligibility read and the replay announcement) measured
-        // 206.198 KiB on the Branch Release Gate, so the ceiling moves to 207.
+        // Maintainer-approved ceiling: the measured payload is 207.16796875 KiB, so the strict
+        // budget is 208 KiB.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 207
+        brotliBudgetKiB: 208
     },
     {
         label: 'browser/rallar-core.ts',

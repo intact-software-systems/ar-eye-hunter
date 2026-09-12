@@ -13,7 +13,7 @@ import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contra
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
-import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { QRtcSignalingType } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
 

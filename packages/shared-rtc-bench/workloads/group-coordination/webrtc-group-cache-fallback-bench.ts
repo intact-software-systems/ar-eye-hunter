@@ -169,7 +169,7 @@ export function runWebRtcGroupCacheFallback(
             dataChannelName: 'realtime',
             faultPort: createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc'
-        }),
+        }, { createOfferId: () => crypto.randomUUID() }),
         {
             ...targetScope,
             groupId: targetGroupId

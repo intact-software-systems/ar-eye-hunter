@@ -19,6 +19,13 @@ import {
     type LiveRtcAgentDiagnostics
 } from './live-rtc-agent-diagnostics.ts';
 import {
+    toCausalAgentReference,
+    toCausalIdentity,
+    toCausalPeerIds,
+    toLiveRtcCausalEvents,
+    toLiveRtcReadinessHealth
+} from './live-rtc-causal-diagnostics.ts';
+import {
     jsonRecord,
     normalizeJson,
     optionalJsonArray,
@@ -28,13 +35,18 @@ import {
     requiredString,
     stringArrayValue,
     stringValue,
+    toLiveRtcRuntimeEvent,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+import {
+    summarizeLiveRtcSendResult,
+    summarizeNackSendResult,
+    toFailedControlResult
+} from './live-rtc-failure-diagnostics.ts';
 import type {
     LiveRtcAttemptFailureDiagnostic,
     LiveRtcDiagnosticFailure,
     LiveRtcDiagnosticsCheckpoint,
-    LiveRtcFailedControlResult,
     LiveRtcFailureAgentHealth,
     LiveRtcMessageFailureAgentHealth,
     LiveRtcMessageFailureDiagnostic,
@@ -43,9 +55,7 @@ import type {
     LiveRtcNackEventClassification,
     LiveRtcNackFailureDiagnostic,
     LiveRtcNackProbeStage,
-    LiveRtcNackResultClassification,
-    LiveRtcNackSendResultSummary,
-    LiveRtcSendResultSummary
+    LiveRtcNackResultClassification
 } from './live-rtc-performance-evidence.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 
@@ -165,9 +175,14 @@ export namespace LiveRtcControlClient {
     export interface WaitForRtcReadinessInput {
         runId: string;
         agent: Pick<FormationAgent, 'agentId' | 'prefix' | 'refreshRoom'>;
+        participantAgents: readonly Pick<FormationAgent, 'agentId'>[];
         expectedPeerIds: readonly string[];
         suffix: string;
         startedAtMs: number;
+    }
+
+    export interface RecordReadinessFailureInput extends WaitForRtcReadinessInput {
+        readonly attempt: number;
     }
 
     export interface CaptureAttemptFailureInput {
@@ -208,6 +223,11 @@ interface ToMessageFailureDiagnosticInput {
     readonly healthByAgentId: Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>;
     readonly runCapture: LiveRtcControlClient.RunCapture;
     readonly capturedAtEpochMs: number;
+}
+
+interface ReadinessFailureHealthCapture {
+    readonly agentReference: string;
+    readonly result: LiveRtcControlClient.Result | undefined;
 }
 
 const MESSAGE_DELIVERY_FAILURE: LiveRtcDiagnosticFailure = {
@@ -336,7 +356,7 @@ export class LiveRtcControlClient {
 
     runtimeTopics(run: LiveRtcControlClient.RunSnapshot): readonly string[] {
         return run.events
-            .map((event) => stringValue(runtimeEventPayload(event).topic))
+            .map((event) => stringValue(toLiveRtcRuntimeEvent(event.payload).topic))
             .filter((topic): topic is string => Boolean(topic));
     }
 
@@ -441,23 +461,34 @@ export class LiveRtcControlClient {
         input: LiveRtcControlClient.WaitForMessageInput
     ): Promise<Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>> {
         const agentIds = [...new Set([input.senderAgentId, input.agentId])];
+        const receiverOrdinal = Math.max(
+            0,
+            this.#firstMessageFailureCase?.possibleReceiverAgentIds.indexOf(
+                input.agentId
+            ) ?? 0
+        ) + 1;
         const healthEntries = await Promise.all(
-            agentIds.map((agentId) => this.#captureMessageFailureAgentHealth(input, agentId))
+            agentIds.map((agentId, index) =>
+                this.#captureMessageFailureAgentHealth(
+                    input,
+                    agentId,
+                    `health-message-failure-${safeFileName(input.matrixId)}-${receiverOrdinal}-${index + 1}`
+                )
+            )
         );
         return Object.fromEntries(healthEntries);
     }
 
     async #captureMessageFailureAgentHealth(
         input: LiveRtcControlClient.WaitForMessageInput,
-        agentId: string
+        agentId: string,
+        commandId: string
     ): Promise<readonly [string, LiveRtcMessageFailureAgentHealth]> {
         try {
             const health = await this.executeResult({
                 runId: input.runId,
                 agentId,
-                commandId: `health-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}-${
-                    safeFileName(agentId)
-                }`,
+                commandId,
                 command: { kind: 'health', includeRtcDiagnostics: true },
                 timeoutMs: 15_000
             });
@@ -475,13 +506,7 @@ export class LiveRtcControlClient {
         }
     }
 
-    waitForPeerReadiness(
-        input: LiveRtcControlClient.WaitForRtcReadinessInput
-    ): Promise<number> {
-        return this.#waitForRtcReadiness(input);
-    }
-
-    async #waitForRtcReadiness(
+    async waitForPeerReadiness(
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> {
         const deadlineMs = this.#monotonicNow() + 60_000;
@@ -521,7 +546,7 @@ export class LiveRtcControlClient {
         }
         catch (cause) {
             try {
-                await this.#recordReadinessFailure(input, attempt, toError(cause));
+                await this.recordReadinessFailure({ ...input, attempt });
             }
             catch (diagnosticCause) {
                 console.error(
@@ -572,36 +597,95 @@ export class LiveRtcControlClient {
         return input.expectedPeerIds.every((peerId) => readyPeerIds.includes(peerId));
     }
 
-    async #recordReadinessFailure(
-        input: LiveRtcControlClient.WaitForRtcReadinessInput,
-        attempt: number,
-        failure: Error
+    async recordReadinessFailure(
+        input: LiveRtcControlClient.RecordReadinessFailureInput
     ): Promise<void> {
         if (!this.#diagnosticsOutDir) {
             return;
         }
-        const health = await this.executeResult({
-            runId: input.runId,
-            agentId: input.agent.agentId,
-            commandId: `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt}`,
-            command: { kind: 'health', includeRtcDiagnostics: true },
-            timeoutMs: 15_000
+        const runCapture = await this.#captureRun(input.runId);
+        const agentIds = [input.agent.agentId, ...input.participantAgents.map((agent) => agent.agentId)]
+            .filter((agentId, index, all) => all.indexOf(agentId) === index).slice(0, 3);
+        const agentReferences = new Map(
+            agentIds.map((agentId, index) => [agentId, toCausalAgentReference(agentId, index + 1)])
+        );
+        const failedAgentReference = toCausalAgentReference(input.agent.agentId, 1);
+        const healthResults = await this.#readReadinessFailureHealthResults(input, agentReferences);
+        const peerIds = toCausalPeerIds([
+            ...input.expectedPeerIds,
+            ...healthResults.flatMap((capture) => {
+                const sessionId = toReadinessHealthSessionId(capture.result);
+                return sessionId ? [sessionId] : [];
+            })
+        ]);
+        const healthByAgentId = Object.fromEntries(
+            healthResults.map((capture) => [
+                capture.agentReference,
+                toLiveRtcReadinessHealth(capture.result, peerIds)
+            ])
+        );
+        const causalEventProjection = toLiveRtcCausalEvents({
+            events: runCapture.run?.events ?? [],
+            agentReferences,
+            peerIds
         });
         await this.#writeDiagnosticsArtifact(
-            `live-rtc-readiness-failure-${safeFileName(input.agent.agentId)}-${safeFileName(input.suffix)}.json`,
+            `live-rtc-readiness-failure-agent-${input.agent.prefix.toLowerCase()}-${safeFileName(input.suffix)}.json`,
             JSON.stringify(
                 {
                     runId: input.runId,
-                    agentId: input.agent.agentId,
-                    expectedPeerIds: input.expectedPeerIds,
+                    agentId: failedAgentReference,
+                    expectedPeerIds: toCausalPeerIds([...input.expectedPeerIds]),
                     capturedAtEpochMs: this.#epochNow(),
-                    failure: { name: failure.name, message: failure.message },
-                    health
+                    failure: { name: 'readiness-failed', message: 'RTC peer readiness observation failed.' },
+                    health: healthByAgentId[failedAgentReference],
+                    healthByAgentId,
+                    runCaptureSucceeded: runCapture.succeeded,
+                    causalOrdinalScope: 'retained-event-tail',
+                    causalEventCoverage: causalEventProjection.coverage,
+                    causalEvents: causalEventProjection.events
                 },
                 null,
                 2
             )
         );
+    }
+
+    async #readReadinessFailureHealthResults(
+        input: LiveRtcControlClient.RecordReadinessFailureInput,
+        agentReferences: ReadonlyMap<string, string>
+    ): Promise<readonly ReadinessFailureHealthCapture[]> {
+        return await Promise.all(
+            [...agentReferences].map(async ([agentId, agentReference], index) => ({
+                agentReference,
+                result: await this.#readReadinessFailureHealthResult(
+                    input,
+                    agentId,
+                    `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${input.attempt}-${
+                        index + 1
+                    }`
+                )
+            }))
+        );
+    }
+
+    async #readReadinessFailureHealthResult(
+        input: LiveRtcControlClient.WaitForRtcReadinessInput,
+        agentId: string,
+        commandId: string
+    ): Promise<LiveRtcControlClient.Result | undefined> {
+        try {
+            return await this.executeResult({
+                runId: input.runId,
+                agentId,
+                commandId,
+                command: { kind: 'health', includeRtcDiagnostics: true },
+                timeoutMs: 15_000
+            });
+        }
+        catch {
+            return undefined;
+        }
     }
 
     async captureAttemptFailure(
@@ -836,20 +920,27 @@ export class LiveRtcControlClient {
     ): Promise<Readonly<Record<string, LiveRtcFailureAgentHealth>>> {
         const agentIds = [...new Set([input.senderAgentId, input.targetAgentId])];
         const entries = await Promise.all(
-            agentIds.map((agentId) => this.#captureNackAgentHealth(input, agentId))
+            agentIds.map((agentId, index) =>
+                this.#captureNackAgentHealth(
+                    input,
+                    agentId,
+                    `health-nack-failure-${safeFileName(input.commandId)}-${index + 1}`
+                )
+            )
         );
         return Object.fromEntries(entries);
     }
 
     async #captureNackAgentHealth(
         input: LiveRtcControlClient.CaptureNackFailureInput,
-        agentId: string
+        agentId: string,
+        commandId: string
     ): Promise<readonly [string, LiveRtcFailureAgentHealth]> {
         try {
             const health = await this.executeResult({
                 runId: input.runId,
                 agentId,
-                commandId: `health-nack-failure-${safeFileName(input.commandId)}-${safeFileName(agentId)}`,
+                commandId,
                 command: { kind: 'health', includeRtcDiagnostics: true },
                 timeoutMs: 15_000
             });
@@ -952,19 +1043,22 @@ function decodeControlRunSnapshot(
     return { agents, results, events };
 }
 
-function runtimeEventPayload(
-    event: LiveRtcControlClient.Event
-): LiveRtcJsonRecord {
-    const payload = jsonRecord(event.payload) ?? {};
-    return typeof payload.kind === 'string'
-        ? payload
-        : (jsonRecord(payload.payload) ?? payload);
-}
-
 function messageData(event: LiveRtcControlClient.Event): LiveRtcJsonRecord {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = toLiveRtcRuntimeEvent(event.payload);
     const runtimePayload = jsonRecord(runtimeEvent.payload) ?? {};
     return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
+}
+
+function toReadinessHealthSessionId(
+    result: LiveRtcControlClient.Result | undefined
+): string | null {
+    const rallar = result?.ok ? jsonRecord(jsonRecord(result.result?.value)?.rallar) : null;
+    const causalState = jsonRecord(rallar?.rtcCausalState);
+    return toCausalIdentity(
+        jsonRecord(rallar?.rtcDiagnostics)?.sessionId ??
+            causalState?.localSessionId ??
+            jsonRecord(rallar?.session)?.sessionId
+    );
 }
 
 function summarizeLiveRtcFailureAgentHealth(
@@ -1065,7 +1159,7 @@ function classifyNackEvent(
     event: LiveRtcControlClient.Event,
     input: LiveRtcControlClient.CaptureNackFailureInput
 ): LiveRtcNackEventClassification {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = toLiveRtcRuntimeEvent(event.payload);
     const data = messageData(event);
     return {
         agentRole: classifyNackAgentRole(event.agentId, input),
@@ -1133,7 +1227,7 @@ function classifyNackDeliveryMode(
 function summarizeMessageFailureEvent(
     event: LiveRtcControlClient.Event
 ): LiveRtcMessageFailureEventSummary {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = toLiveRtcRuntimeEvent(event.payload);
     const data = messageData(event);
     return {
         agentId: event.agentId ?? null,
@@ -1145,135 +1239,8 @@ function summarizeMessageFailureEvent(
     };
 }
 
-const MAX_RETAINED_SEND_ENTRY_STATUSES = 20;
 const MAX_RETAINED_MESSAGE_FAILURES = 2;
 const MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS = 100;
-
-function summarizeNackSendResult(
-    result: LiveRtcControlClient.Result | undefined,
-    probeMessageId: string | null
-): LiveRtcNackSendResultSummary | undefined {
-    if (!result) {
-        return undefined;
-    }
-    const summary = summarizeLiveRtcSendResult(result);
-    if (!summary) {
-        return undefined;
-    }
-    return {
-        ...summary,
-        messageIdMatchesProbe: probeMessageId === null
-            ? null
-            : messageIdFromSendResult(result) === probeMessageId
-    };
-}
-
-function classifyNackRuntimeStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['runtimeStatus'] {
-    return value === undefined ? 'missing' : value === 'sent' ? 'sent' : 'other';
-}
-
-function classifyNackReason(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['reason'] {
-    return value === undefined
-        ? 'missing'
-        : value === 'not-yet-in-sync'
-        ? value
-        : 'other';
-}
-
-function classifyNackAdmissionStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['admissionStatus'] {
-    switch (value) {
-        case 'accepted':
-        case 'enqueued':
-        case 'skipped':
-        case 'duplicate':
-        case 'pending-admission':
-        case 'superseded':
-        case 'expired':
-        case 'no-route':
-        case 'rate-limited':
-        case 'circuit-open':
-        case 'failed':
-            return value;
-        default:
-            return value === undefined ? 'missing' : 'other';
-    }
-}
-
-function classifyNackEntryStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['entryStatuses'][number] {
-    switch (value) {
-        case 'NEW':
-        case 'RETRY':
-        case 'RESERVED':
-        case 'COMPLETED':
-        case 'FAILED':
-        case 'ABORTED':
-        case 'NON_RETRYABLE':
-        case 'PARTITIONED':
-        case 'MERGED':
-            return value;
-        default:
-            return 'other';
-    }
-}
-
-function summarizeLiveRtcSendResult(
-    result: LiveRtcControlClient.Result | undefined
-): LiveRtcSendResultSummary | undefined {
-    if (!result) {
-        return undefined;
-    }
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    const entries = Array.isArray(admission.entries) ? admission.entries : [];
-    return {
-        ok: result.ok,
-        runtimeStatus: classifyNackRuntimeStatus(stringValue(diagnostics.status)),
-        admissionStatus: classifyNackAdmissionStatus(stringValue(admission.status)),
-        reason: classifyNackReason(stringValue(admission.reason)),
-        messageIdPresent: messageIdFromSendResult(result) !== undefined,
-        entryCount: entries.length,
-        entryStatuses: entries
-            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
-            .map((entry) => classifyNackEntryStatus(stringValue(jsonRecord(entry)?.status)))
-    };
-}
-
-function messageIdFromSendResult(
-    result: LiveRtcControlClient.Result
-): string | undefined {
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    return stringValue(jsonRecord(jsonRecord(admission.message)?.id)?.msgId);
-}
-
-function toFailedControlResult(
-    result: LiveRtcControlClient.Result & { ok: false; }
-): LiveRtcFailedControlResult {
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    const entries = Array.isArray(admission.entries) ? admission.entries : [];
-    return {
-        agentId: result.agentId ?? null,
-        commandId: result.commandId,
-        ok: false,
-        runtimeStatus: stringValue(diagnostics.status) ?? null,
-        admissionStatus: stringValue(admission.status) ?? null,
-        reason: stringValue(admission.reason) ?? null,
-        entryCount: entries.length,
-        entryStatuses: entries
-            .map((entry) => stringValue(jsonRecord(entry)?.status))
-            .filter((status): status is string => Boolean(status))
-            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
-    };
-}
 
 export interface LiveRtcObservedDeliveries {
     readonly events: readonly LiveRtcControlClient.Event[];
@@ -1301,7 +1268,7 @@ function isMessageFor(
     event: LiveRtcControlClient.Event,
     input: LiveRtcControlClient.WaitForMessageInput
 ): boolean {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = toLiveRtcRuntimeEvent(event.payload);
     const data = messageData(event);
     return (
         event.agentId === input.agentId &&

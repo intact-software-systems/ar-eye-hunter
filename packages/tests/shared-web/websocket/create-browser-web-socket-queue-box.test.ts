@@ -121,6 +121,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
+        qboxEngine.start();
         onTestFinished(() => qboxEngine.stop());
         const controller = new AbortController();
         onTestFinished(() => controller.abort());

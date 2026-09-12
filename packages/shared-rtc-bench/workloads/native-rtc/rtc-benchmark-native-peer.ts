@@ -70,7 +70,7 @@ export class RtcBenchmarkNativePeer extends EventTarget implements RTCPeerConnec
     }
 
     async setLocalDescription(description?: RTCLocalSessionDescriptionInit): Promise<void> {
-        const type = description?.type ?? (this.remoteDescription?.type === 'offer' ? 'answer' : 'offer');
+        const type = description?.type ?? (this.signalingState === 'have-remote-offer' ? 'answer' : 'offer');
         this.localDescription = new NativeSessionDescription({ type, sdp: description?.sdp ?? `${type}-sdp` });
         this.signalingState = type === 'offer' ? 'have-local-offer' : 'stable';
     }
@@ -244,7 +244,7 @@ export function createRtcBenchmarkPeerConnection(peerSessionId: string): RtcBenc
             peerSessionId,
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
             isPolite: true
-        });
+        }, { createOfferId: () => crypto.randomUUID() });
         peer.connect();
         const native = runtime.peers[0];
         if (!native) {

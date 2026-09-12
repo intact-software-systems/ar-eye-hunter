@@ -1,16 +1,17 @@
 import { request, type APIRequestContext } from '@playwright/test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
-import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
+import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 describe('live RTC control client', () => {
     let server: Server;
     let api: APIRequestContext;
+    let baseUrl: string;
     let control: LiveRtcControlClient;
     let nowMs: number;
     let readyPeerIds: string[];
@@ -19,6 +20,10 @@ describe('live RTC control client', () => {
     let events: LiveRtcControlClient.Event[];
     let healthCommandFailure: { agentId: string; body: string; } | undefined;
     let holdHealthCommand: ((agentId: string) => Promise<void>) | undefined;
+    let healthValues: Record<string, LiveRtcJsonRecord>;
+    let runAgentIds: string[];
+    let readinessHealthAgents: string[];
+    let failureHealthCommandIds: string[];
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
@@ -32,6 +37,10 @@ describe('live RTC control client', () => {
         events = [];
         healthCommandFailure = undefined;
         holdHealthCommand = undefined;
+        healthValues = {};
+        runAgentIds = ['agent-a'];
+        readinessHealthAgents = [];
+        failureHealthCommandIds = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
                 const chunks: Buffer[] = [];
@@ -50,47 +59,56 @@ describe('live RTC control client', () => {
                     response.writeHead(400).end();
                     return;
                 }
-                const agentId = incoming.url?.split('/')[4];
+                const encodedAgentId = incoming.url?.split('/')[4];
+                const agentId = encodedAgentId === undefined ? undefined : decodeURIComponent(encodedAgentId);
+                if (command.commandId.startsWith('health-readiness-failure-')) {
+                    readinessHealthAgents.push(agentId ?? 'missing-agent');
+                }
+                if (/^health-(message|readiness|nack)-failure-/u.test(command.commandId)) {
+                    failureHealthCommandIds.push(command.commandId);
+                }
                 if (
                     healthCommandFailure &&
                     agentId === healthCommandFailure.agentId &&
-                    command.commandId.startsWith('health-message-failure-')
+                    /health-(message|readiness)-failure-/.test(command.commandId)
                 ) {
                     response.writeHead(500).end(healthCommandFailure.body);
                     return;
                 }
-                if (holdHealthCommand && command.commandId.startsWith('health-message-failure-')) {
+                if (holdHealthCommand && /health-(message|readiness)-failure-/.test(command.commandId)) {
                     await holdHealthCommand(agentId ?? 'missing-agent');
                 }
-                results.push({
-                    agentId,
-                    commandId: command.commandId,
-                    ok: true,
-                    result: {
-                        value: {
-                            rallar: {
-                                rtcStatus: {
-                                    activePeerIds: readyPeerIds,
-                                    readyPeerIds
-                                },
-                                rtcDiagnostics: {
-                                    sessionId: 'health-session',
-                                    generatedAtEpochMs: 0,
-                                    peerCount: 0,
-                                    connectedPeerCount: 0,
-                                    relayPeerCount: 0,
-                                    peers: []
+                if (!results.some((result) => result.commandId === command.commandId)) {
+                    results.push({
+                        agentId,
+                        commandId: command.commandId,
+                        ok: true,
+                        result: {
+                            value: healthValues[agentId ?? ''] ?? {
+                                rallar: {
+                                    rtcStatus: {
+                                        activePeerIds: readyPeerIds,
+                                        readyPeerIds
+                                    },
+                                    rtcDiagnostics: {
+                                        sessionId: 'health-session',
+                                        generatedAtEpochMs: 0,
+                                        peerCount: 0,
+                                        connectedPeerCount: 0,
+                                        relayPeerCount: 0,
+                                        peers: []
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                }
                 response.writeHead(202).end('{}');
                 return;
             }
             response
                 .writeHead(200, { 'content-type': 'application/json' })
-                .end(JSON.stringify({ results, events }));
+                .end(JSON.stringify({ agents: runAgentIds.map((agentId) => ({ agentId })), results, events }));
         });
         await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
         const address = server.address();
@@ -98,9 +116,10 @@ describe('live RTC control client', () => {
             throw new Error('Expected a local control HTTP port.');
         }
         api = await request.newContext();
+        baseUrl = `http://127.0.0.1:${address.port}`;
         control = new LiveRtcControlClient({
             request: api,
-            baseUrl: `http://127.0.0.1:${address.port}`,
+            baseUrl,
             diagnosticsOutDir: diagnosticsRoot,
             monotonicNow: () => nowMs,
             epochNow: () => 0
@@ -133,6 +152,7 @@ describe('live RTC control client', () => {
             .waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b', 'session-c'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -165,35 +185,106 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-refresh-retry',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b', 'session-c'],
                 suffix: 'delayed-topology',
                 startedAtMs: 100
             })
         ).resolves.toBe(200);
+        expect(readdirSync(diagnosticsRoot)).toEqual([]);
     });
 
-    it('captures bounded failed command facts without retaining payloads or credentials', async () => {
-        results.push({
-            agentId: 'agent-a',
-            commandId: 'send-broadcast',
-            ok: false,
-            result: {
-                value: {
-                    credential: 'must-not-be-retained',
-                    status: 'sent',
-                    message: {
-                        status: 'no-route',
-                        reason: 'Skipping RTC outbound message without overlay context',
-                        message: { payload: { resource: 'must-not-be-retained' } },
-                        entries: []
+    it('does no failure capture when the readiness sidecar is disabled', async () => {
+        const withoutSidecar = new LiveRtcControlClient({ request: api, baseUrl, monotonicNow: () => nowMs, epochNow: () => 0 });
+        const failure = new Error('refresh failed without diagnostics');
+        refreshRoom.mockRejectedValue(failure);
+        await expect(
+            withoutSidecar.waitForPeerReadiness({
+                runId: 'run-disabled',
+                agent,
+                participantAgents: [agent],
+                expectedPeerIds: ['session-b'],
+                suffix: 'disabled',
+                startedAtMs: 100
+            })
+        ).rejects.toBe(failure);
+        expect(results).toEqual([]);
+        expect(readdirSync(diagnosticsRoot)).toEqual([]);
+    });
+
+    it('captures only bounded error-details facts from real failed command envelopes', async () => {
+        results.push(
+            {
+                agentId: 'agent-a',
+                commandId: 'send-broadcast',
+                ok: false,
+                error: {
+                    code: 'RALLAR_BB_RTC_NO_ROUTE',
+                    message: 'producer failure includes must-not-be-retained',
+                    details: {
+                        credential: 'must-not-be-retained',
+                        status: 'sent',
+                        message: {
+                            status: 'no-route',
+                            reason: 'Skipping RTC outbound message without overlay context',
+                            message: {
+                                id: { msgId: 'message-must-not-be-retained' },
+                                payload: { resource: 'must-not-be-retained' }
+                            },
+                            entries: []
+                        }
+                    }
+                }
+            },
+            {
+                agentId: 'agent-a',
+                commandId: 'send-malformed-details',
+                ok: false,
+                error: { details: 'must-not-be-retained' }
+            },
+            {
+                agentId: 'agent-a',
+                commandId: 'send-absent-details',
+                ok: false,
+                error: { code: 'RALLAR_BB_RTC_SEND_FAILED' }
+            },
+            {
+                agentId: 'agent-a',
+                commandId: 'send-contradictory',
+                ok: false,
+                result: {
+                    value: {
+                        status: 'sent',
+                        message: {
+                            status: 'accepted',
+                            reason: 'must-not-be-retained',
+                            entries: [{ status: 'COMPLETED' }]
+                        }
+                    }
+                },
+                error: {
+                    details: {
+                        status: 'unexpected-runtime-status',
+                        message: {
+                            status: 'pending-admission',
+                            reason: 'not-yet-in-sync',
+                            entries: Array.from(
+                                { length: 25 },
+                                (_, index) => ({
+                                    status: index === 0 ? 'RETRY' : 'sensitive-status'
+                                })
+                            )
+                        }
                     }
                 }
             }
-        });
+        );
 
-        expect(
-            await control.captureAttemptFailure({ runId: 'run-failed-send' })
-        ).toEqual({
+        const diagnostic = await control.captureAttemptFailure({
+            runId: 'run-failed-send'
+        });
+        expect(JSON.stringify(diagnostic)).not.toContain('must-not-be-retained');
+        expect(diagnostic).toEqual({
             kind: 'control-result-failures',
             runCaptureSucceeded: true,
             messageFailures: [],
@@ -204,9 +295,42 @@ describe('live RTC control client', () => {
                     ok: false,
                     runtimeStatus: 'sent',
                     admissionStatus: 'no-route',
-                    reason: 'Skipping RTC outbound message without overlay context',
+                    reason: 'other',
                     entryCount: 0,
                     entryStatuses: []
+                },
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-malformed-details',
+                    ok: false,
+                    runtimeStatus: null,
+                    admissionStatus: null,
+                    reason: null,
+                    entryCount: 0,
+                    entryStatuses: []
+                },
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-absent-details',
+                    ok: false,
+                    runtimeStatus: null,
+                    admissionStatus: null,
+                    reason: null,
+                    entryCount: 0,
+                    entryStatuses: []
+                },
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-contradictory',
+                    ok: false,
+                    runtimeStatus: 'other',
+                    admissionStatus: 'pending-admission',
+                    reason: 'not-yet-in-sync',
+                    entryCount: 25,
+                    entryStatuses: [
+                        'RETRY',
+                        ...Array.from({ length: 19 }, () => 'other')
+                    ]
                 }
             ]
         });
@@ -221,6 +345,7 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -238,6 +363,7 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -258,14 +384,432 @@ describe('live RTC control client', () => {
             agentId: 'agent-a',
             expectedPeerIds: ['session-b'],
             health: {
-                ok: true,
-                result: {
-                    value: {
-                        rallar: { rtcStatus: { readyPeerIds: [] } }
+                captureSucceeded: true,
+                commandOk: true,
+                readyPeerIds: []
+            }
+        });
+    });
+
+    it('joins a bounded readiness causal tail to concurrent current health without retaining secrets', async () => {
+        runAgentIds = [
+            'retired-agent-a',
+            'retired-agent-b',
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-outside'
+        ];
+        const sentinel = 'SENTINEL-secret-payload';
+        const entries: Array<{ agentId: string; topic: string; data: LiveRtcJsonRecord; }> = [];
+        for (let index = 0; index < 210; index += 1) {
+            entries.push({ agentId: 'agent-c', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } });
+        }
+        entries.push(
+            { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
+            { agentId: 'agent-b', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
+            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } },
+            {
+                agentId: 'agent-a',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { kind: 'commit-phases', typeId: 'rtc-signaling', msgId: 'signal-1', senderId: 'session-a', commitOutcome: 'committed' }
+            },
+            {
+                agentId: 'agent-b',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { kind: 'admission-outcome', typeId: 'rtc-signaling', msgId: 'signal-1', outcome: 'committed', reason: sentinel }
+            },
+            { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'close', reason: sentinel } },
+            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-timeout', peerId: 'session-b' } },
+            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-deleted', peerId: 'session-b' } },
+            { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
+            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } },
+            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-established', peerId: 'session-b' } },
+            { agentId: 'agent-b', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-a' } }
+        );
+        for (let index = 0; index < 230; index += 1) {
+            entries.push({
+                agentId: 'agent-a',
+                topic: 'unrelated',
+                data: { kind: 'open', payload: sentinel }
+            });
+        }
+        entries.push(
+            {
+                agentId: 'agent-a',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { kind: 'commit-phases', typeId: 'application-message', msgId: 'app-1' }
+            },
+            {
+                agentId: 'agent-b',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { kind: 'admission-outcome', typeId: 'application-message', msgId: 'app-1' }
+            },
+            { agentId: 'agent-outside', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } }
+        );
+        events = entries.map((entry, index) => ({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run-causal',
+            agentId: entry.agentId,
+            atEpochMs: index,
+            eventId: `event-${index}`,
+            payload: {
+                eventId: `event-${index}`,
+                kind: 'diagnostic',
+                topic: entry.topic,
+                atEpochMs: index,
+                severity: 'info',
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: entry.topic,
+                    topic: entry.topic,
+                    severity: 'info',
+                    message: entry.topic,
+                    atEpochMs: index,
+                    data: {
+                        ...entry.data,
+                        payload: sentinel,
+                        credentials: sentinel,
+                        url: 'https://secret.example.test'
                     }
                 }
             }
+        }));
+        healthValues['agent-a'] = {
+            rallar: {
+                session: { sessionId: 'session-a', accessToken: sentinel },
+                rtcStatus: { readyPeerIds: [], knownPeerIds: ['session-b'] },
+                rtcCausalState: {
+                    localSessionId: 'session-a',
+                    desiredPeerIds: ['session-c', 'session-b', 'session-b'],
+                    onlinePeerIds: ['session-c'],
+                    connectablePeerIds: ['session-b'],
+                    knownPeerIds: ['session-b'],
+                    managerDiagnostics: { reconcileRunCount: 7, payload: sentinel },
+                    attempts: [{ peerId: 'session-b', diagnostics: { peerId: 'session-b', attempts: 2, maxAttempts: 3, payload: sentinel } }, {
+                        peerId: 'session-c',
+                        diagnostics: null
+                    }],
+                    arbitrary: sentinel
+                },
+                rtcDiagnostics: {
+                    sessionId: 'session-a',
+                    generatedAtEpochMs: 10,
+                    peers: []
+                },
+                error: sentinel,
+                url: 'https://secret.example.test'
+            }
+        };
+        healthValues['agent-b'] = {
+            rallar: {
+                rtcDiagnostics: {
+                    sessionId: 'session-b',
+                    generatedAtEpochMs: 11,
+                    peers: [{ peerId: 'session-a', connection: { state: 'Connecting' }, lanes: [] }]
+                }
+            }
+        };
+        healthValues['agent-c'] = {
+            rallar: {
+                rtcDiagnostics: {
+                    sessionId: 'session-c',
+                    generatedAtEpochMs: 12,
+                    peers: [{ peerId: 'session-a', connection: { state: 'Connecting' }, lanes: [] }]
+                }
+            }
+        };
+        healthValues['retired-agent-a'] = { rallar: { session: { sessionId: 'retired-session-a' } } };
+        healthValues['retired-agent-b'] = { rallar: { session: { sessionId: 'retired-session-b' } } };
+        const allHealthStarted = Promise.withResolvers<void>();
+        const releaseHealth = Promise.withResolvers<void>();
+        const healthAgents: string[] = [];
+        holdHealthCommand = async (agentId) => {
+            healthAgents.push(agentId);
+            if (healthAgents.length === 3) {
+                allHealthStarted.resolve();
+            }
+            await releaseHealth.promise;
+        };
+        const failure = new Error(sentinel);
+        refreshRoom.mockRejectedValue(failure);
+        const readiness = control.waitForPeerReadiness({
+            runId: 'run-causal',
+            agent,
+            participantAgents: [
+                agent,
+                { agentId: 'agent-b' },
+                { agentId: 'agent-c' }
+            ],
+            expectedPeerIds: ['session-c', 'session-b'],
+            suffix: 'causal',
+            startedAtMs: 100
         });
+        const rejection = expect(readiness).rejects.toThrow(sentinel);
+        try {
+            await Promise.race([allHealthStarted.promise, new Promise<void>((resolve) => setTimeout(resolve, 200))]);
+            expect(healthAgents.sort()).toEqual(['agent-a', 'agent-b', 'agent-c']);
+        }
+        finally {
+            releaseHealth.resolve();
+            await rejection;
+        }
+        const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-causal.json'), 'utf8');
+        const sidecar = JSON.parse(serialized);
+        expect(readinessHealthAgents.sort()).toEqual(['agent-a', 'agent-b', 'agent-c']);
+        expect(serialized).not.toMatch(
+            /SENTINEL|secret\.example|accessToken|credentials|payload|application-message|app-1|agent-outside|retired/u
+        );
+        expect(sidecar.failure).toEqual({ name: 'readiness-failed', message: 'RTC peer readiness observation failed.' });
+        expect(sidecar.causalEvents).toHaveLength(200);
+        expect(sidecar.causalEvents[0]).toMatchObject({ atEpochMs: 22 });
+        expect(
+            sidecar.causalEvents.slice(-12).map((
+                event: { agentId: string; kind: string; wsGeneration: number | null; peerLifetime?: number; }
+            ) => [event.agentId, event.kind, event.wsGeneration, event.peerLifetime ?? null])
+        ).toEqual([
+            ['agent-a', 'open', 1, null],
+            ['agent-b', 'open', 1, null],
+            ['agent-a', 'peer-created', 1, 1],
+            ['agent-a', 'commit-phases', 1, null],
+            ['agent-b', 'admission-outcome', 1, null],
+            ['agent-a', 'close', 1, null],
+            ['agent-a', 'peer-timeout', 1, 1],
+            ['agent-a', 'peer-deleted', 1, 1],
+            ['agent-a', 'open', 2, null],
+            ['agent-a', 'peer-created', 2, 2],
+            ['agent-a', 'peer-established', 2, 2],
+            ['agent-b', 'peer-created', 1, 1]
+        ]);
+        expect(sidecar.healthByAgentId['agent-b'].rtcDiagnostics.peers).toMatchObject([
+            { peerId: 'session-a' }
+        ]);
+        expect(sidecar.healthByAgentId['agent-c'].rtcDiagnostics.peers).toMatchObject([
+            { peerId: 'session-a' }
+        ]);
+        expect(sidecar.causalEvents.filter((event: { msgId?: string; }) => event.msgId === 'signal-1')).toMatchObject([
+            { agentId: 'agent-a', commitOutcome: 'committed' },
+            { agentId: 'agent-b', outcome: 'committed' }
+        ]);
+        expect(sidecar.healthByAgentId['agent-a']).toMatchObject({
+            localSessionId: 'session-a',
+            rtcCausalState: {
+                desiredPeerIds: ['session-b', 'session-c'],
+                managerDiagnostics: { reconcileRunCount: 7 },
+                attempts: [{ peerId: 'session-b', diagnostics: { attempts: 2 } }, { peerId: 'session-c', diagnostics: null }]
+            }
+        });
+    });
+
+    it.each([
+        {
+            failedAgentId: `credential=SENTINEL-failed-${'x'.repeat(10_000)}`,
+            discoveredAgentIds: [`credential=SENTINEL-discovered-${'y'.repeat(10_000)}`, 'causal-agent-1'],
+            references: ['@causal-agent-1', '@causal-agent-2', 'causal-agent-1']
+        },
+        {
+            failedAgentId: 'causal-agent-1',
+            discoveredAgentIds: ['@causal-agent-1', 'credential=SENTINEL-discovered'],
+            references: ['causal-agent-1', '@causal-agent-2', '@causal-agent-3']
+        }
+    ])('retains distinct bounded agent references for hostile metadata, case %#', async ({ failedAgentId, discoveredAgentIds, references }) => {
+        const selectedAgentIds = [failedAgentId, ...discoveredAgentIds];
+        runAgentIds = [...discoveredAgentIds, 'agent-outside'];
+        events = [...selectedAgentIds, 'agent-outside'].map((agentId, index) => ({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run-hostile-agents',
+            agentId,
+            atEpochMs: index,
+            eventId: `event-${index}`,
+            payload: {
+                eventId: `event-${index}`,
+                kind: 'diagnostic',
+                topic: 'rallar.browser.ws.lifecycle',
+                atEpochMs: index,
+                severity: 'info',
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: 'rallar.browser.ws.lifecycle',
+                    topic: 'rallar.browser.ws.lifecycle',
+                    severity: 'info',
+                    message: 'rallar.browser.ws.lifecycle',
+                    atEpochMs: index,
+                    data: { kind: 'open' }
+                }
+            }
+        }));
+        selectedAgentIds.forEach((agentId, index) => {
+            healthValues[agentId] = { rallar: { session: { sessionId: `session-${index}` } } };
+        });
+        const allHealthStarted = Promise.withResolvers<void>();
+        const releaseHealth = Promise.withResolvers<void>();
+        holdHealthCommand = async () => {
+            if (readinessHealthAgents.length === 3) {
+                allHealthStarted.resolve();
+            }
+            await releaseHealth.promise;
+        };
+        const failure = new Error('SENTINEL-readiness-error');
+        refreshRoom.mockRejectedValue(failure);
+        const readiness = control.waitForPeerReadiness({
+            runId: 'run-hostile-agents',
+            agent: { ...agent, agentId: failedAgentId },
+            participantAgents: selectedAgentIds.map((agentId) => ({ agentId })),
+            expectedPeerIds: ['session-b'],
+            suffix: 'hostile',
+            startedAtMs: 100
+        });
+        const rejection = expect(readiness).rejects.toBe(failure);
+        try {
+            await Promise.race([allHealthStarted.promise, new Promise<void>((resolve) => setTimeout(resolve, 200))]);
+            expect(readinessHealthAgents).toHaveLength(3);
+            expect(new Set(readinessHealthAgents)).toEqual(new Set(selectedAgentIds));
+        }
+        finally {
+            releaseHealth.resolve();
+            await rejection;
+        }
+        const artifactFiles = readdirSync(diagnosticsRoot);
+        expect(artifactFiles).toHaveLength(1);
+        expect(artifactFiles[0]?.length).toBeLessThan(200);
+        expect(artifactFiles.join()).not.toMatch(/SENTINEL|credential/);
+        const serialized = readFileSync(path.join(diagnosticsRoot, artifactFiles[0]!), 'utf8');
+        const sidecar = JSON.parse(serialized);
+        expect(serialized.length).toBeLessThan(10_000);
+        expect(serialized).not.toMatch(/SENTINEL|credential|agent-outside/);
+        expect(sidecar.agentId).toBe(references[0]);
+        expect(Object.keys(sidecar.healthByAgentId)).toEqual(references);
+        expect(Object.values(sidecar.healthByAgentId)).toMatchObject([
+            { captureSucceeded: true, localSessionId: 'session-0' },
+            { captureSucceeded: true, localSessionId: 'session-1' },
+            { captureSucceeded: true, localSessionId: 'session-2' }
+        ]);
+        expect(sidecar.health).toEqual(sidecar.healthByAgentId[references[0]!]);
+        expect(sidecar.causalEvents.map((event: { agentId: string; }) => event.agentId)).toEqual(references);
+        expect(readinessHealthAgents).toHaveLength(3);
+    });
+
+    it('names the sidecar by harness slot for a maximum-length punctuation identity', async () => {
+        const punctuationAgentId = ':'.repeat(128);
+        runAgentIds = [];
+        healthValues[punctuationAgentId] = { rallar: { session: { sessionId: 'session-c' } } };
+        const failure = new Error('SENTINEL-readiness-error');
+        refreshRoom.mockRejectedValue(failure);
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-punctuation',
+            agent: { ...agent, prefix: 'C', agentId: punctuationAgentId },
+            participantAgents: [{ agentId: punctuationAgentId }],
+            expectedPeerIds: ['session-b'],
+            suffix: 'punctuation',
+            startedAtMs: 100
+        })).rejects.toBe(failure);
+
+        const fileName = 'live-rtc-readiness-failure-agent-c-punctuation.json';
+        expect(readdirSync(diagnosticsRoot)).toEqual([fileName]);
+        const serialized = readFileSync(path.join(diagnosticsRoot, fileName), 'utf8');
+        expect(serialized).not.toContain('SENTINEL');
+        expect(JSON.parse(serialized)).toMatchObject({
+            agentId: punctuationAgentId,
+            health: { captureSucceeded: true, localSessionId: 'session-c' }
+        });
+    });
+
+    it('keeps separate same-suffix sidecars for hostile identities in different harness slots', async () => {
+        runAgentIds = [];
+        const captures = [
+            { prefix: 'A' as const, agentId: 'credential=SENTINEL-first', sessionId: 'session-a' },
+            { prefix: 'B' as const, agentId: 'credential=SENTINEL-second', sessionId: 'session-b' }
+        ];
+        const failure = new Error('SENTINEL-readiness-error');
+        refreshRoom.mockRejectedValue(failure);
+        for (const capture of captures) {
+            healthValues[capture.agentId] = { rallar: { session: { sessionId: capture.sessionId } } };
+            await expect(control.waitForPeerReadiness({
+                runId: 'run-shared-suffix',
+                agent: { ...agent, prefix: capture.prefix, agentId: capture.agentId },
+                participantAgents: [{ agentId: capture.agentId }],
+                expectedPeerIds: ['session-c'],
+                suffix: 'shared',
+                startedAtMs: 100
+            })).rejects.toBe(failure);
+        }
+
+        const fileNames = readdirSync(diagnosticsRoot).sort();
+        expect(fileNames).toEqual([
+            'live-rtc-readiness-failure-agent-a-shared.json',
+            'live-rtc-readiness-failure-agent-b-shared.json'
+        ]);
+        const sidecars = fileNames.map((fileName) => {
+            expect(fileName.length).toBeLessThan(100);
+            expect(fileName).not.toMatch(/SENTINEL|credential/);
+            const serialized = readFileSync(path.join(diagnosticsRoot, fileName), 'utf8');
+            expect(serialized).not.toMatch(/SENTINEL|credential/);
+            return JSON.parse(serialized);
+        });
+        expect(sidecars).toMatchObject([
+            { agentId: '@causal-agent-1', health: { captureSucceeded: true, localSessionId: 'session-a' } },
+            { agentId: '@causal-agent-1', health: { captureSucceeded: true, localSessionId: 'session-b' } }
+        ]);
+    });
+
+    it('retains only a fixed category when readiness health capture fails', async () => {
+        healthCommandFailure = { agentId: 'agent-a', body: 'SENTINEL-health-response' };
+        refreshRoom.mockRejectedValue(new Error('SENTINEL-readiness-error'));
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-health',
+            agent,
+            participantAgents: [agent],
+            expectedPeerIds: ['session-b'],
+            suffix: 'health',
+            startedAtMs: 100
+        })).rejects
+            .toThrow('SENTINEL-readiness-error');
+        const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-health.json'), 'utf8');
+        expect(serialized).not.toContain('SENTINEL');
+        expect(JSON.parse(serialized).health).toMatchObject({ captureSucceeded: false, failure: 'health-capture-failed' });
+        expect(readinessHealthAgents).toEqual(['agent-a']);
+    });
+
+    it('uses collision-free bounded command identities for concurrent readiness health', async () => {
+        runAgentIds = ['agent-a'];
+        healthValues['agent:a'] = {
+            rallar: { session: { sessionId: 'session-colon' } }
+        };
+        healthValues['agent-a'] = {
+            rallar: { session: { sessionId: 'session-hyphen' } }
+        };
+        const failure = new Error('readiness failed');
+        refreshRoom.mockRejectedValue(failure);
+
+        await expect(
+            control.waitForPeerReadiness({
+                runId: 'run-readiness-command-collision',
+                agent: { ...agent, agentId: 'agent:a' },
+                participantAgents: [{ agentId: 'agent:a' }, { agentId: 'agent-a' }],
+                expectedPeerIds: ['session-hyphen'],
+                suffix: 'command-collision',
+                startedAtMs: 100
+            })
+        ).rejects.toBe(failure);
+
+        const sidecar = JSON.parse(
+            readFileSync(
+                path.join(
+                    diagnosticsRoot,
+                    'live-rtc-readiness-failure-agent-a-command-collision.json'
+                ),
+                'utf8'
+            )
+        );
+        expect(sidecar.healthByAgentId).toMatchObject({
+            'agent:a': { localSessionId: 'session-colon' },
+            'agent-a': { localSessionId: 'session-hyphen' }
+        });
+        expect(failureHealthCommandIds).toHaveLength(2);
+        expect(new Set(failureHealthCommandIds).size).toBe(2);
+        expect(failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
     });
 
     it('retains sender and receiver health when message delivery times out', async () => {
@@ -370,18 +914,30 @@ describe('live RTC control client', () => {
         results.push({
             agentId: 'agent-a',
             commandId: 'send-direct-timeout',
-            ok: true,
+            ok: false,
             result: {
                 value: {
+                    status: 'must-not-be-retained',
+                    message: {
+                        status: 'accepted',
+                        reason: 'must-not-be-retained',
+                        entries: [{ status: 'COMPLETED' }]
+                    }
+                }
+            },
+            error: {
+                code: 'RALLAR_BB_RTC_NO_ROUTE',
+                message: 'must-not-be-retained',
+                details: {
                     status: 'sent',
                     message: {
-                        status: 'pending-admission',
-                        reason: 'awaiting a durable admission retry',
+                        status: 'no-route',
+                        reason: 'Skipping RTC outbound message without overlay context',
                         message: {
                             id: { msgId: 'message-direct-timeout' },
                             payload: { resource: 'must-not-be-retained' }
                         },
-                        entries: [{ status: 'NEW', resource: 'must-not-be-retained' }]
+                        entries: []
                     },
                     credential: 'must-not-be-retained'
                 }
@@ -389,7 +945,7 @@ describe('live RTC control client', () => {
         });
         const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
             request: api,
-            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            baseUrl,
             monotonicNow: () => nowMs,
             epochNow: () => 0
         });
@@ -438,12 +994,13 @@ describe('live RTC control client', () => {
                         'agent-b': { captureSucceeded: true, commandSucceeded: true }
                     },
                     sendResult: {
+                        ok: false,
                         runtimeStatus: 'sent',
-                        admissionStatus: 'pending-admission',
+                        admissionStatus: 'no-route',
                         reason: 'other',
                         messageIdPresent: true,
-                        entryCount: 1,
-                        entryStatuses: ['NEW']
+                        entryCount: 0,
+                        entryStatuses: []
                     }
                 }
             ]
@@ -457,7 +1014,7 @@ describe('live RTC control client', () => {
         };
         const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
             request: api,
-            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            baseUrl,
             monotonicNow: () => nowMs,
             epochNow: () => 0
         });
@@ -496,6 +1053,91 @@ describe('live RTC control client', () => {
         });
     });
 
+    it('uses collision-free bounded command identities for concurrent message-failure health', async () => {
+        healthValues['agent:a'] = rtcHealthValue('session-colon', 1);
+        healthValues['agent-a'] = rtcHealthValue('session-hyphen', 2);
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-command-collision',
+                senderAgentId: 'agent:a',
+                agentId: 'agent-a',
+                transport: 'messages.rtc',
+                matrixId: 'message-command-collision',
+                deliveryMode: 'direct',
+                possibleReceiverAgentIds: ['agent-a'],
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('message-command-collision');
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-message-command-collision' });
+        expect(attemptFailure.messageFailures[0]?.healthByAgentId).toMatchObject({
+            'agent:a': { peerCount: 1 },
+            'agent-a': { peerCount: 2 }
+        });
+        expect(failureHealthCommandIds).toHaveLength(2);
+        expect(new Set(failureHealthCommandIds).size).toBe(2);
+        expect(failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
+    });
+
+    it('separates colliding receiver identities across retained message-failure captures', async () => {
+        healthValues['sender'] = rtcHealthValue('session-sender', 1);
+        healthValues['agent:a'] = rtcHealthValue('session-colon', 2);
+        healthValues['agent-a'] = rtcHealthValue('session-hyphen', 3);
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+        const possibleReceiverAgentIds = ['agent:a', 'agent-a'];
+
+        for (const receiverAgentId of possibleReceiverAgentIds) {
+            await expect(
+                controlWithoutDiagnosticsDirectory.waitForMessage({
+                    runId: 'run-receiver-command-collision',
+                    senderAgentId: 'sender',
+                    agentId: receiverAgentId,
+                    transport: 'messages.rtc',
+                    matrixId: 'receiver-command-collision',
+                    deliveryMode: 'multicast',
+                    possibleReceiverAgentIds,
+                    startedAtMs: 100,
+                    timeoutMs: 10
+                })
+            ).rejects.toThrow('receiver-command-collision');
+        }
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-receiver-command-collision' });
+        expect(attemptFailure.messageFailures).toMatchObject([
+            {
+                receiverAgentId: 'agent:a',
+                healthByAgentId: {
+                    sender: { peerCount: 1 },
+                    'agent:a': { peerCount: 2 }
+                }
+            },
+            {
+                receiverAgentId: 'agent-a',
+                healthByAgentId: {
+                    sender: { peerCount: 1 },
+                    'agent-a': { peerCount: 3 }
+                }
+            }
+        ]);
+        expect(failureHealthCommandIds).toHaveLength(4);
+        expect(new Set(failureHealthCommandIds).size).toBe(4);
+    });
+
     it('waits for both first-case receiver captures before returning attempt failure evidence', async () => {
         const releaseDelayedHealth = Promise.withResolvers<void>();
         const delayedHealthStarted = Promise.withResolvers<void>();
@@ -507,7 +1149,7 @@ describe('live RTC control client', () => {
         };
         const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
             request: api,
-            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            baseUrl,
             monotonicNow: () => nowMs,
             epochNow: () => 0
         });
@@ -720,4 +1362,51 @@ describe('live RTC control client', () => {
             ok: true
         });
     });
+
+    it('uses collision-free bounded command identities for concurrent NACK health', async () => {
+        healthValues['agent:a'] = rtcHealthValue('session-colon', 1);
+        healthValues['agent-a'] = rtcHealthValue('session-hyphen', 2);
+
+        const diagnostic = await control.captureNackFailure({
+            runId: 'run-nack-command-collision',
+            senderAgentId: 'agent:a',
+            targetAgentId: 'agent-a',
+            commandId: 'nack-command-collision',
+            stage: 'receive',
+            messageId: 'message',
+            senderSessionId: 'session-colon',
+            targetSessionId: 'session-hyphen',
+            frames: []
+        });
+
+        expect(diagnostic.healthByAgentId).toMatchObject({
+            'agent:a': { peerCount: 1 },
+            'agent-a': { peerCount: 2 }
+        });
+        expect(failureHealthCommandIds).toHaveLength(2);
+        expect(new Set(failureHealthCommandIds).size).toBe(2);
+        expect(failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
+    });
 });
+
+function rtcHealthValue(
+    sessionId: string,
+    peerCount: number
+): LiveRtcJsonRecord {
+    return {
+        rallar: {
+            rtcStatus: {
+                activePeerIds: [],
+                readyPeerIds: []
+            },
+            rtcDiagnostics: {
+                sessionId,
+                generatedAtEpochMs: 0,
+                peerCount,
+                connectedPeerCount: 0,
+                relayPeerCount: 0,
+                peers: []
+            }
+        }
+    };
+}

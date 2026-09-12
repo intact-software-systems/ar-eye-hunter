@@ -8,7 +8,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import { QRtcSignalingChannel, QRtcSignalingMsgType, QRtcSignalingType, type QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { QRtcSignalingChannel, QRtcSignalingMsgType, QRtcSignalingType, type QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime,
@@ -284,6 +284,7 @@ function offer(peerId: string): QRtcSignalingMessage {
         sessionId: peerId,
         token: 'fixture-token',
         signalType: QRtcSignalingType.Offer,
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: `${peerId}-offer` }, candidate: null }
     };
 }

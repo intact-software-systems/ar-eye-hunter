@@ -975,6 +975,9 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             input.expectedPeerIds
         );
     };
+    recordReadinessFailure = async (
+        _input: LiveRtcControlClient.RecordReadinessFailureInput
+    ): Promise<void> => undefined;
 
     private async recordFormationReadiness(
         input: LiveRtcControlClient.ExecuteInput

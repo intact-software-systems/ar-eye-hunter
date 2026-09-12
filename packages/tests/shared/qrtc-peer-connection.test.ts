@@ -1,4 +1,3 @@
-import { getEventListeners } from 'node:events';
 import {
     afterEach,
     describe,
@@ -7,17 +6,19 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
-    DecodedRtcSignalingMessage,
     decodeRtcSignalingMessage
 } from '@shared/webrtc/decode-rtc-signaling-message.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { QRtcSignalingAdmissionError } from '@shared/webrtc/qrtc-signaling-admission.ts';
 import {
+    QRtcSignal,
+    QRtcSignalingMessage,
     QRtcSignalingSender,
     QRtcSignalingType
-} from '@shared/webrtc/QRtcSignalingContracts.ts';
+} from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import {
     installNativeRtcRuntime,
@@ -35,6 +36,247 @@ describe('QRtcPeerConnection', () => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.useRealTimers();
+    });
+
+    it('does not apply a previous offer answer to a successive local offer', async () => {
+        const { peer, native } = createPeerFixture(true);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal({
+            signalType: QRtcSignalingType.Answer,
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'answer', sdp: 'first-answer' },
+                candidate: null
+            }
+        });
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal({
+            signalType: QRtcSignalingType.Answer,
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'answer', sdp: 'first-answer' },
+                candidate: null
+            }
+        });
+        expect(native.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'first-answer' }]);
+        expect(native.signalingState).toBe('have-local-offer');
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-2',
+            payload: {
+                description: { type: 'answer', sdp: 'second-answer' },
+                candidate: null
+            }
+        });
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-2',
+            payload: {
+                description: { type: 'answer', sdp: 'second-answer' },
+                candidate: null
+            }
+        });
+        expect(native.receivedDescriptions).toEqual([
+            { type: 'answer', sdp: 'first-answer' },
+            { type: 'answer', sdp: 'second-answer' }
+        ]);
+        expect(peer.readDiagnostics().staleAnswerIgnoredCount).toBe(2);
+    });
+
+    it('does not emit an offer whose native creation finished after reset', async () => {
+        const { peer, native, sentSignals } = createPeerFixture(true);
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const setLocalDescription = native.setLocalDescription.bind(native);
+        vi.spyOn(native, 'setLocalDescription').mockImplementationOnce(async () => {
+            started.resolve();
+            await release.promise;
+            await setLocalDescription();
+        });
+        const negotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await started.promise;
+        peer.reset();
+        peer.connect();
+        release.resolve();
+        await negotiation;
+        expect(sentSignals).toEqual([]);
+        expect(peer.status.pc?.signalingState).toBe('stable');
+    });
+
+    it('echoes the accepted remote offer and invalidates a politely rolled back local offer', async () => {
+        const { peer, native, sentSignals } = createPeerFixture(true);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote-offer-id',
+            payload: {
+                description: { type: 'offer', sdp: 'remote-offer' },
+                candidate: null
+            }
+        });
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'answer', sdp: 'rolled-back-answer' },
+                candidate: null
+            }
+        });
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'remote-offer' }]);
+        expect(sentSignals).toMatchObject([
+            { signalType: 'Offer', offerId: 'offer-1' },
+            { signalType: 'Answer', offerId: 'remote-offer-id' },
+            { signalType: 'Offer', offerId: 'offer-2' }
+        ]);
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-2',
+            payload: {
+                description: { type: 'answer', sdp: 'current-answer' },
+                candidate: null
+            }
+        });
+        expect(native.receivedDescriptions.at(-1)).toEqual({ type: 'answer', sdp: 'current-answer' });
+    });
+
+    it.each(['Offer', 'Answer'] as const)('retires queued signals and post-native work when reset interrupts %s application', async (signalType) => {
+        const { peer, native, sentSignals } = createPeerFixture(true);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const setRemoteDescription = native.setRemoteDescription.bind(native);
+        vi.spyOn(native, 'setRemoteDescription').mockImplementationOnce(async (description) => {
+            started.resolve();
+            await release.promise;
+            await setRemoteDescription(description);
+        });
+        const applying = signalType === 'Offer'
+            ? peer.handleSignal({
+                signalType,
+                offerId: 'remote-offer',
+                payload: {
+                    description: { type: 'offer', sdp: 'old-offer' },
+                    candidate: null
+                }
+            })
+            : peer.handleSignal({
+                signalType,
+                offerId: 'offer-1',
+                payload: {
+                    description: { type: 'answer', sdp: 'old-answer' },
+                    candidate: null
+                }
+            });
+        await started.promise;
+        const queued = peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'queued-offer',
+            payload: {
+                description: { type: 'offer', sdp: 'queued-old-offer' },
+                candidate: null
+            }
+        });
+        const queuedNegotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        peer.reset();
+        peer.connect();
+        const replacement = peer.status.pc;
+        if (!(replacement instanceof SimulatedNativeRtcPeerConnection)) {
+            throw new Error('Expected replacement native peer');
+        }
+        release.resolve();
+        await Promise.all([applying, queued, queuedNegotiation]);
+        expect(replacement.receivedDescriptions).toEqual([]);
+        expect(replacement.receivedCandidates).toEqual([]);
+        expect(sentSignals).toHaveLength(1);
+        await replacement.onnegotiationneeded?.call(replacement, new Event('negotiationneeded'));
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-2',
+            payload: {
+                description: { type: 'answer', sdp: 'replacement-answer' },
+                candidate: null
+            }
+        });
+        expect(replacement.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'replacement-answer' }]);
+    });
+
+    it('drops deferred outbound candidates from a retired native peer', async () => {
+        const runtime = installNativeRtcRuntime();
+        const sentSignals: QRtcSignalingMessage[] = [];
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const peer = new QRtcPeerConnection(
+            {
+                send: async (signal) => {
+                    sentSignals.push(signal);
+                    started.resolve();
+                    await release.promise;
+                }
+            },
+            createPeerInput(true),
+            new DeterministicRtcOfferIds()
+        );
+        onTestFinished(() => {
+            release.resolve();
+            peer.reset();
+            runtime.dispose();
+        });
+        peer.connect();
+        const native = runtime.createdConnections[0];
+        const negotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await started.promise;
+        const candidate = native.onicecandidate?.call(native, new NativeIceCandidateEvent('retired-candidate'));
+        peer.reset();
+        peer.connect();
+        release.resolve();
+        await Promise.all([negotiation, candidate]);
+        expect(sentSignals).toMatchObject([{ signalType: 'Offer', offerId: 'offer-1' }]);
+        expect(peer.status.pc?.signalingState).toBe('stable');
+    });
+
+    it('does not send an answer when reset interrupts native answer creation', async () => {
+        const { peer, native, sentSignals } = createPeerFixture(true);
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const setLocalDescription = native.setLocalDescription.bind(native);
+        vi.spyOn(native, 'setLocalDescription').mockImplementationOnce(async () => {
+            started.resolve();
+            await release.promise;
+            await setLocalDescription();
+        });
+        const applying = peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote-offer-id',
+            payload: {
+                description: { type: 'offer', sdp: 'retired-remote-offer' },
+                candidate: null
+            }
+        });
+        await started.promise;
+        peer.reset();
+        peer.connect();
+        release.resolve();
+        await applying;
+        expect(sentSignals).toEqual([]);
+        expect(peer.status.pc?.signalingState).toBe('stable');
+    });
+
+    it('consumes a matching answer only after native application succeeds', async () => {
+        const { peer, native } = createPeerFixture(true);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        const failure = new Error('Native answer application failed');
+        vi.spyOn(native, 'setRemoteDescription').mockRejectedValueOnce(failure);
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const answer = {
+            signalType: 'Answer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'answer', sdp: 'matching-answer' }, candidate: null }
+        } satisfies QRtcSignal;
+        await expect(peer.handleSignal(answer)).rejects.toBe(failure);
+        expect(native.receivedDescriptions).toEqual([]);
+        await peer.handleSignal(answer);
+        expect(native.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'matching-answer' }]);
     });
 
     it('negotiates offers, forwards ICE candidates, and dispatches remote events', async () => {
@@ -74,6 +316,7 @@ describe('QRtcPeerConnection', () => {
                 sessionId: 'self',
                 token: 'token-1',
                 signalType: 'Offer',
+                offerId: 'offer-1',
                 payload: {
                     description: { type: 'offer', sdp: 'offer-sdp' },
                     candidate: null
@@ -124,9 +367,12 @@ describe('QRtcPeerConnection', () => {
     it('queues ice candidates until a remote description exists and answers remote offers', async () => {
         const { peer, native, sentSignals } = createPeerFixture(true);
         for (const candidate of ['queued-ice-1', 'queued-ice-2']) {
-            await peer.handleSignal(QRtcSignalingType.IceCandidate, {
-                description: null,
-                candidate: { candidate }
+            await peer.handleSignal({
+                signalType: QRtcSignalingType.IceCandidate,
+                payload: {
+                    description: null,
+                    candidate: { candidate }
+                }
             });
         }
 
@@ -137,9 +383,13 @@ describe('QRtcPeerConnection', () => {
             pendingIceCandidateQueueLength: 2
         });
 
-        await peer.handleSignal(QRtcSignalingType.Offer, {
-            description: { type: 'offer', sdp: 'remote-offer' },
-            candidate: null
+        await peer.handleSignal({
+            signalType: QRtcSignalingType.Offer,
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'offer', sdp: 'remote-offer' },
+                candidate: null
+            }
         });
 
         expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'remote-offer' }]);
@@ -162,6 +412,7 @@ describe('QRtcPeerConnection', () => {
             sessionId: 'self',
             token: 'token-1',
             signalType: 'Answer',
+            offerId: 'offer-1',
             payload: {
                 description: { type: 'answer', sdp: 'answer-sdp' },
                 candidate: null
@@ -172,7 +423,7 @@ describe('QRtcPeerConnection', () => {
     it('accounts successful queued ICE against diagnostics reset during a native addition', async () => {
         const { peer, native } = createPeerFixture(true);
         for (const candidate of ['first', 'second']) {
-            await peer.handleSignal(QRtcSignalingType.IceCandidate, { description: null, candidate: { candidate } });
+            await peer.handleSignal({ signalType: QRtcSignalingType.IceCandidate, payload: { description: null, candidate: { candidate } } });
         }
         const additionStarted = Promise.withResolvers<void>();
         const releaseAddition = Promise.withResolvers<void>();
@@ -182,9 +433,13 @@ describe('QRtcPeerConnection', () => {
             await releaseAddition.promise;
             await addIceCandidate(candidate);
         });
-        const offer = peer.handleSignal(QRtcSignalingType.Offer, {
-            description: { type: 'offer', sdp: 'remote-offer' },
-            candidate: null
+        const offer = peer.handleSignal({
+            signalType: QRtcSignalingType.Offer,
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'offer', sdp: 'remote-offer' },
+                candidate: null
+            }
         });
         await additionStarted.promise;
         try {
@@ -206,51 +461,49 @@ describe('QRtcPeerConnection', () => {
         });
     });
 
-    it('ignores stale answers without clearing negotiation collision flags', async () => {
-        const { peer, native, sentSignals } = createPeerFixture(false);
-        const localDescriptionStarted = Promise.withResolvers<void>();
-        const releaseLocalDescription = Promise.withResolvers<void>();
-        const setLocalDescription = native.setLocalDescription.bind(native);
-        vi.spyOn(native, 'setLocalDescription').mockImplementationOnce(async (description) => {
-            localDescriptionStarted.resolve();
-            await releaseLocalDescription.promise;
-            await setLocalDescription(description);
-        });
-        const negotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
-        await localDescriptionStarted.promise;
-
-        try {
-            await peer.handleSignal(QRtcSignalingType.Offer, {
+    it('ignores stale answers without clearing an impolite collision or its current offer', async () => {
+        const { peer, native } = createPeerFixture(false);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote-offer',
+            payload: {
                 description: { type: 'offer', sdp: 'colliding-offer' },
                 candidate: null
-            });
-            await peer.handleSignal(QRtcSignalingType.Answer, {
+            }
+        });
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'stale-offer',
+            payload: {
                 description: { type: 'answer', sdp: 'stale-answer' },
                 candidate: null
-            });
-            await peer.handleSignal(QRtcSignalingType.IceCandidate, {
+            }
+        });
+        await peer.handleSignal({
+            signalType: 'IceCandidate',
+            payload: {
                 description: null,
                 candidate: { candidate: 'ignored-collision-ice' }
-            });
-            await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
-
-            expect(native.receivedDescriptions).toEqual([]);
-            expect(native.receivedCandidates).toEqual([]);
-            expect(sentSignals).toEqual([]);
-            expect(peer.readDiagnostics()).toMatchObject({
-                inboundAnswerCount: 1,
-                staleAnswerIgnoredCount: 1,
-                ignoredOfferCollisionCount: 1,
-                ignoredIceCandidateForIgnoredOfferCount: 1,
-                pendingIceCandidateQueueLength: 0,
-                negotiationSkippedCount: 1
-            });
-        }
-        finally {
-            releaseLocalDescription.resolve();
-            await negotiation;
-        }
-        expect(sentSignals.map((message) => message.signalType)).toEqual([QRtcSignalingType.Offer]);
+            }
+        });
+        expect(native.receivedDescriptions).toEqual([]);
+        expect(native.receivedCandidates).toEqual([]);
+        expect(native.signalingState).toBe('have-local-offer');
+        await peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'answer', sdp: 'matching-answer' },
+                candidate: null
+            }
+        });
+        expect(native.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'matching-answer' }]);
+        expect(peer.readDiagnostics()).toMatchObject({
+            staleAnswerIgnoredCount: 1,
+            ignoredOfferCollisionCount: 1,
+            ignoredIceCandidateForIgnoredOfferCount: 1
+        });
     });
 
     it('ignores offer collisions when impolite and retries with ICE restart on failure', async () => {
@@ -258,9 +511,13 @@ describe('QRtcPeerConnection', () => {
         const { peer, native } = createPeerFixture(false);
         const restartIce = vi.spyOn(native, 'restartIce');
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
-        await peer.handleSignal(QRtcSignalingType.Offer, {
-            description: { type: 'offer', sdp: 'colliding-offer' },
-            candidate: null
+        await peer.handleSignal({
+            signalType: QRtcSignalingType.Offer,
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'offer', sdp: 'colliding-offer' },
+                candidate: null
+            }
         });
 
         expect(native.receivedDescriptions).toEqual([]);
@@ -315,7 +572,7 @@ describe('QRtcPeerConnection', () => {
                 throw terminal;
             }
         };
-        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true), new DeterministicRtcOfferIds());
         onTestFinished(() => {
             peer.reset();
         });
@@ -350,7 +607,7 @@ describe('QRtcPeerConnection', () => {
                 throw terminal;
             }
         };
-        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true), new DeterministicRtcOfferIds());
         onTestFinished(() => {
             peer.reset();
         });
@@ -358,9 +615,13 @@ describe('QRtcPeerConnection', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
 
-        await expect(peer.handleSignal(QRtcSignalingType.Offer, {
-            description: { type: 'offer', sdp: 'remote-offer' },
-            candidate: null
+        await expect(peer.handleSignal({
+            signalType: QRtcSignalingType.Offer,
+            offerId: 'offer-1',
+            payload: {
+                description: { type: 'offer', sdp: 'remote-offer' },
+                candidate: null
+            }
         })).rejects.toBe(terminal);
 
         // A lost answer strands the offerer in have-local-offer exactly as a lost offer does.
@@ -379,7 +640,7 @@ describe('QRtcPeerConnection', () => {
         const runtime = installNativeRtcRuntime();
         onTestFinished(() => runtime.dispose());
         const signaler: QRtcSignalingSender = { send: async () => {} };
-        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true), new DeterministicRtcOfferIds());
         onTestFinished(() => {
             peer.reset();
         });
@@ -402,15 +663,13 @@ describe('QRtcPeerConnection', () => {
         }]);
     });
 
-    it('cleans up peer connection handlers and listeners on reset', () => {
+    it('closes the native peer and clears its event handlers on reset', () => {
         const { peer, native } = createPeerFixture(true);
-        expect(getEventListeners(native, 'icegatheringstatechange')).toHaveLength(1);
 
         peer.reset();
 
         expect(native.connectionState).toBe('closed');
         expect(peer.readDiagnostics().closedPeerConnectionCount).toBe(1);
-        expect(getEventListeners(native, 'icegatheringstatechange')).toHaveLength(0);
         expect(native.onnegotiationneeded).toBeNull();
         expect(native.onicecandidate).toBeNull();
         expect(native.ondatachannel).toBeNull();
@@ -434,7 +693,7 @@ describe('QRtcPeerConnection', () => {
                 return pendingSend;
             }
         };
-        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true), new DeterministicRtcOfferIds());
         const failures: QRtcPeerConnection.SignalingFailure[] = [];
         peer.connect({ onSignalingFailed: (failure) => failures.push(failure) });
         const native = runtime.createdConnections[0];
@@ -482,7 +741,7 @@ describe('QRtcPeerConnection', () => {
     it('adds and replaces local tracks and toggles media state', async () => {
         vi.stubGlobal('RTCPeerConnection', SimulatedNativeMediaPeerConnection);
         const signaler: QRtcSignalingSender = { send: async () => {} };
-        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true), new DeterministicRtcOfferIds());
         onTestFinished(() => {
             peer.reset();
         });
@@ -521,18 +780,18 @@ describe('QRtcPeerConnection', () => {
 interface PeerConnectionFixture {
     readonly peer: QRtcPeerConnection;
     readonly native: SimulatedNativeRtcPeerConnection;
-    readonly sentSignals: readonly DecodedRtcSignalingMessage[];
+    readonly sentSignals: readonly QRtcSignalingMessage[];
 }
 
 function createPeerFixture(isPolite: boolean, callbacks: QRtcPeerConnection.StateCallbacks = {}): PeerConnectionFixture {
     const runtime = installNativeRtcRuntime();
-    const sentSignals: DecodedRtcSignalingMessage[] = [];
+    const sentSignals: QRtcSignalingMessage[] = [];
     const signaler: QRtcSignalingSender = {
         send: async (message) => {
             sentSignals.push(decodeRtcSignalingMessage(JSON.stringify(message)));
         }
     };
-    const peer = new QRtcPeerConnection(signaler, createPeerInput(isPolite));
+    const peer = new QRtcPeerConnection(signaler, createPeerInput(isPolite), new DeterministicRtcOfferIds());
     onTestFinished(() => {
         try {
             peer.reset();

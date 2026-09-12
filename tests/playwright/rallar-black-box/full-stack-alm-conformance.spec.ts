@@ -18,8 +18,14 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { BROWSER_AL_RUNTIME_DB_NAME } from '../../../packages/shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    runAlmNativeObservationLifecycle,
+    type AlmNativeObservationArtifact
+} from './browser-alm-native-observation.ts';
 import {
     createTwoAgentRun,
+    FULL_STACK_SPA_ORIGIN,
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     uniqueSuffix,
@@ -39,6 +45,10 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
+const NATIVE_OBSERVATION_SAMPLE_CAPACITY = 50_000;
+const NATIVE_RECORDER_MODULE_URL = `/@fs${
+    path.resolve('tests/playwright/rallar-black-box/browser-native-indexeddb-timing-recorder.ts')
+}`;
 // 4 scenarios x 18s deadline x 2 (sender+receiver) + 60s RTC readiness = 204s expected; kept at
 // 300s for slow-CI slack rather than rounded down to the expected figure.
 const CARRIER_TEST_TIMEOUT_MS = 300_000;
@@ -57,6 +67,26 @@ const OBSERVATION_DIRECTORY_NAME = 'alm-observation';
  * plus the 13-character runtime identity consume 85 of those, so the run id gets the other 43.
  */
 const RUN_ID_BUDGET = 43;
+
+interface RecordAlmObservationInput {
+    readonly run: TwoAgentRun;
+    readonly testInfo: TestInfo;
+    readonly carrier: AlmConformanceCarrier;
+    readonly cellOutcome: ALMObservationCellOutcome;
+}
+
+interface WriteAlmObservationFilesInput {
+    readonly testInfo: TestInfo;
+    readonly carrier: AlmConformanceCarrier;
+    readonly regime: ALMObservationRegime;
+    readonly snapshot: ControlRunSnapshot;
+}
+
+interface WriteAlmNativeObservationFileInput {
+    readonly testInfo: TestInfo;
+    readonly carrier: AlmConformanceCarrier;
+    readonly artifact: AlmNativeObservationArtifact;
+}
 
 /** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
 function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
@@ -92,23 +122,50 @@ test.describe('ALM conformance lane', () => {
                 runId: `alm-${carrier}-${uniqueSuffix()}`.slice(0, RUN_ID_BUDGET)
             });
 
-            let scenarioFailed = false;
-            try {
-                await runAlmConformanceScenarios(run, carrier);
-            }
-            catch (scenarioError) {
-                scenarioFailed = true;
-                throw scenarioError;
-            }
-            finally {
-                await recordObservation({
-                    run,
-                    testInfo,
-                    carrier,
-                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
-                });
-                await run.close();
-            }
+            await runAlmNativeObservationLifecycle({
+                runId: run.runId,
+                carrier,
+                scope,
+                retry: testInfo.retry,
+                databaseName: BROWSER_AL_RUNTIME_DB_NAME,
+                sampleCapacity: NATIVE_OBSERVATION_SAMPLE_CAPACITY,
+                recorderModuleUrl: NATIVE_RECORDER_MODULE_URL,
+                sourceLabels: {
+                    runtime: process.env.RALLAR_ALM_NATIVE_TIMING_SOURCE,
+                    instrumentation: process.env.RALLAR_ALM_NATIVE_TIMING_INSTRUMENTATION_SOURCE
+                },
+                environment: {
+                    nodeVersion: process.version,
+                    platform: process.platform,
+                    architecture: process.arch,
+                    apiMode: process.env.RALLAR_BLACK_BOX_API_MODE?.trim() || 'unspecified',
+                    apiBaseUrl: config.apiBaseUrl,
+                    spaBaseUrl: FULL_STACK_SPA_ORIGIN,
+                    configuredWorkerLimit: testInfo.config.workers
+                },
+                participants: [
+                    { role: 'sender', agentId: run.sender.agentId, page: run.sender.page },
+                    { role: 'receiver', agentId: run.receiver.agentId, page: run.receiver.page }
+                ],
+                runScenario: async () => await runAlmConformanceScenarios(run, carrier),
+                writeNativeObservation: async (artifact) =>
+                    await writeNativeObservationFile({
+                        testInfo,
+                        carrier,
+                        artifact
+                    }),
+                recordControlObservation: async (scenarioFailed) =>
+                    await recordObservation({
+                        run,
+                        testInfo,
+                        carrier,
+                        cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    }),
+                reportObservationFailure: (failure) => {
+                    console.warn('Failed non-authoritative ALM observation step', failure);
+                },
+                closeRun: async () => await run.close()
+            });
         });
     }
 });
@@ -144,36 +201,22 @@ function selectScenarios(
     );
 }
 
-/** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */
+/** The lifecycle records observation failure without replacing the cell's recipe outcome. */
 async function recordObservation(
-    cell: Readonly<{
-        run: TwoAgentRun;
-        testInfo: TestInfo;
-        carrier: AlmConformanceCarrier;
-        cellOutcome: ALMObservationCellOutcome;
-    }>
+    cell: RecordAlmObservationInput
 ): Promise<void> {
-    try {
-        const snapshot = await cell.run.readSnapshot();
-        const regime = toObservationRegime(snapshot, cell.carrier, cell.cellOutcome);
-        await writeObservationFiles({
-            testInfo: cell.testInfo,
-            carrier: cell.carrier,
-            regime,
-            snapshot
-        });
-        if (cell.cellOutcome === 'failed') {
-            await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
-        }
-        console.info(toALMObservationRegimeSummary(regime));
+    const snapshot = await cell.run.readSnapshot();
+    const regime = toObservationRegime(snapshot, cell.carrier, cell.cellOutcome);
+    await writeObservationFiles({
+        testInfo: cell.testInfo,
+        carrier: cell.carrier,
+        regime,
+        snapshot
+    });
+    if (cell.cellOutcome === 'failed') {
+        await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
     }
-    catch (observationError) {
-        console.warn('Failed to record the ALM conformance observation', {
-            carrier: cell.carrier,
-            runId: cell.run.runId,
-            observationError
-        });
-    }
+    console.info(toALMObservationRegimeSummary(regime));
 }
 
 function toObservationRegime(
@@ -188,12 +231,7 @@ function toObservationRegime(
 }
 
 async function writeObservationFiles(
-    observation: Readonly<{
-        testInfo: TestInfo;
-        carrier: AlmConformanceCarrier;
-        regime: ALMObservationRegime;
-        snapshot: ControlRunSnapshot;
-    }>
+    observation: WriteAlmObservationFilesInput
 ): Promise<void> {
     const directory = path.join(
         observation.testInfo.project.outputDir,
@@ -209,6 +247,20 @@ async function writeObservationFiles(
     await writeFile(
         path.join(directory, `${fileName}-snapshot.json`),
         toJsonText(observation.snapshot),
+        'utf8'
+    );
+}
+
+async function writeNativeObservationFile(observation: WriteAlmNativeObservationFileInput): Promise<void> {
+    const directory = path.join(
+        observation.testInfo.project.outputDir,
+        OBSERVATION_DIRECTORY_NAME
+    );
+    await mkdir(directory, { recursive: true });
+    const fileName = toObservationFileName(observation.carrier, observation.testInfo.retry);
+    await writeFile(
+        path.join(directory, `${fileName}-native-indexeddb.json`),
+        toJsonText(observation.artifact),
         'utf8'
     );
 }
@@ -234,6 +286,8 @@ function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservat
     return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
 }
 
-function toJsonText(value: ALMObservationRegime | ControlRunSnapshot): string {
+function toJsonText(
+    value: ALMObservationRegime | ControlRunSnapshot | AlmNativeObservationArtifact
+): string {
     return JSON.stringify(value, null, 2);
 }

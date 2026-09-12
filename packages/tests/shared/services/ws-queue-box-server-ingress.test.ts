@@ -36,14 +36,13 @@ interface ServerIngressFixture {
     readonly admission: ALAdmissionMemoryState;
     readonly backend: InMemoryAdmissionBackend;
     readonly admissionStore: ALInboundAdmissionStore;
-    readonly engine: InboxOutboxEngine;
     readonly delivered: ALMessage[];
 }
 
 describe('WS server bounded and authorized admission', () => {
     it('rejects invalid envelopes and forged identities without poisoning a valid message identity', async () => {
         const fixture = await createServerIngressFixture();
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         expect((await fixture.service.acceptIncomingMessage({}, 'session-1')).left?.code).toBe('malformed');
         const forged = { ...message, id: { ...message.id, senderId: 'victim' } };
         expect((await fixture.service.acceptIncomingMessage(forged, 'session-1')).left?.code).toBe('unauthorized');
@@ -58,7 +57,7 @@ describe('WS server bounded and authorized admission', () => {
     it('keeps admitted work unclaimed until an application consumer registers', async () => {
         const fixture = await createServerIngressFixture();
         fixture.service.removeAnyInboxMessageCallback('observer');
-        await fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1');
+        await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
@@ -69,15 +68,14 @@ describe('WS server bounded and authorized admission', () => {
         });
 
         await expect.poll(async () => {
-            await fixture.engine.executeOnce();
             return fixture.admission.workQueue.getItem(keys[0]);
         }).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
-        expect(fixture.delivered).toEqual([incomingMessage()]);
+        expect(fixture.delivered).toEqual([createIncomingMessage()]);
     });
 
     it('requires room authority even when a message supplies no snapshot floor', async () => {
         const fixture = await createServerIngressFixture();
-        const message = roomMessage();
+        const message = createRoomMessage();
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left?.code).toBe('unsupported');
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.socket.sent).toEqual([]);
@@ -87,7 +85,7 @@ describe('WS server bounded and authorized admission', () => {
     it('restarts owned delivery without requiring new ingress', async () => {
         const fixture = await createServerIngressFixture();
         fixture.service.removeAnyInboxMessageCallback('observer');
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         await fixture.service.acceptIncomingMessage(message, 'session-1');
         fixture.service.dispose();
         const resumed = createDefaultWsQueueBoxServerService({
@@ -127,7 +125,7 @@ describe('WS server bounded and authorized admission', () => {
                 delivered.push('wildcard');
             }
         });
-        const message = { ...incomingMessage(), constraints: { expiresAtMs } };
+        const message = { ...createIncomingMessage(), constraints: { expiresAtMs } };
 
         await fixture.service.acceptIncomingMessage(message, 'session-1');
 
@@ -165,7 +163,7 @@ describe('WS server bounded and authorized admission', () => {
                 return { authorized: true, groupRecipientPeerIds: effect === 'forward' ? ['recipient'] : [] };
             }
         });
-        const message = { ...roomMessage(), constraints: { expiresAtMs } };
+        const message = { ...createRoomMessage(), constraints: { expiresAtMs } };
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
 
@@ -228,11 +226,12 @@ describe('WS server bounded and authorized admission', () => {
             pending = true;
             return retained;
         });
-        const message = { ...roomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
+        const message = { ...createRoomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('pending-admission');
-        for (let pass = 0; pass < 4; pass++) {
-            await fixture.engine.executeOnce();
-        }
+        await expect.poll(async () => {
+            const keys = await fixture.admission.workQueue.getAllKeys();
+            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
+        }).toBe(reason === 'unauthorized' ? 'COMPLETED' : 'RETRY');
         expect(fixture.admission.data).toEqual(observedMetadata);
         expect(fixture.socket.sent).toEqual([]);
         expect(fixture.delivered).toEqual([]);
@@ -244,16 +243,13 @@ describe('WS server bounded and authorized admission', () => {
             expect(waiting?.dequeueAudit.attempts).toBe(0);
             expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
             nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
-            for (let pass = 0; pass < 4; pass++) {
-                await fixture.engine.executeOnce();
-            }
+            await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
             const stillWaiting = await fixture.admission.workQueue.getItem(keys[0]);
             expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
             expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
             pending = false;
             nowMs = stillWaiting!.dequeueAudit.nextTs!.epochMilliseconds;
             await expect.poll(async () => {
-                await fixture.engine.executeOnce();
                 return fixture.delivered.length;
             }).toBe(1);
             expect(fixture.delivered[0].constraints?.expiresAtMs).toBe(message.constraints.expiresAtMs);
@@ -271,7 +267,7 @@ describe('WS server bounded and authorized admission', () => {
             })
         });
 
-        const message: ALMessage = { ...roomMessage(), qos: { ack: { algo: 'hop' }, durability: { algo: 'local-inbox' } } };
+        const message: ALMessage = { ...createRoomMessage(), qos: { ack: { algo: 'hop' }, durability: { algo: 'local-inbox' } } };
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left?.code).toBe('unauthorized');
         expect(fixture.admission.data.size).toBe(0);
         expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
@@ -302,7 +298,7 @@ describe('WS server bounded and authorized admission', () => {
             authorize: async () => ({ authorized: false, reason, logMessage: 'Room policy denied', sendNack: true })
         });
         for (const msgId of ['x'.repeat(65536), 'é'.repeat(32768), '"'.repeat(32768), '"'.repeat(32700)]) {
-            const message: ALMessage = { ...roomMessage(), id: { ...roomMessage().id, msgId } };
+            const message: ALMessage = { ...createRoomMessage(), id: { ...createRoomMessage().id, msgId } };
             const result = await fixture.service.acceptIncomingMessage(message, 'session-1');
             if (reason === 'unauthorized') {
                 expect(result.left).toEqual({ code: 'unauthorized', message: 'Room policy denied' });
@@ -325,7 +321,7 @@ describe('WS server bounded and authorized admission', () => {
             fixture.service.authorizeInboundMessagesWith({
                 authorize: async () => ({ authorized: false, reason, logMessage: 'Room policy denied', sendNack: true })
             });
-            const message: ALMessage = { ...roomMessage(), id: { ...roomMessage().id, senderId: peerId } };
+            const message: ALMessage = { ...createRoomMessage(), id: { ...createRoomMessage().id, senderId: peerId } };
             const result = await fixture.service.acceptIncomingMessage(message, peerId);
             if (reason === 'unauthorized') {
                 expect(result.left).toEqual({ code: 'unauthorized', message: 'Room policy denied' });
@@ -350,7 +346,7 @@ describe('WS server bounded and authorized admission', () => {
         vi.spyOn(fixture.socket, 'send').mockImplementation(() => {
             throw failure;
         });
-        expect((await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1')).left?.code).toBe('unauthorized');
+        expect((await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1')).left?.code).toBe('unauthorized');
         expect(errors).toHaveBeenCalledWith('Error sending WS server message to session-1', failure);
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
@@ -371,8 +367,15 @@ describe('WS server bounded and authorized admission', () => {
             }
         });
 
-        await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1');
+        await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1');
 
+        await expect.poll(() => {
+            fixture.admission.workQueue.cleanup();
+            return fixture.admission.workQueue.getAllKeys();
+        }).toHaveLength(1);
+        const [pendingKey] = await fixture.admission.workQueue.getAllKeys();
+        const pending = await fixture.admission.workQueue.getItem(pendingKey);
+        expect(decodeALInboundWorkEntry(pending!, fixture.admissionStore.namespace).payload.kind).toBe('dispatch-local');
         expect(recipient.sent).toEqual([]);
     });
 
@@ -388,7 +391,7 @@ describe('WS server bounded and authorized admission', () => {
             })
         });
 
-        expect((await fixture.service.acceptIncomingMessage(roomMessage(), 'session-1')).right).toEqual({
+        expect((await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1')).right).toEqual({
             kind: 'not-admitted',
             reason: 'not-yet-in-sync'
         });
@@ -399,7 +402,7 @@ describe('WS server bounded and authorized admission', () => {
 
     it('does not parse an oversized native wire message or admit its decoded equivalent', async () => {
         const fixture = await createServerIngressFixture();
-        const message = incomingMessage();
+        const message = createIncomingMessage();
         const serialized = ' '.repeat(AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes) + JSON.stringify(message);
         const parse = vi.spyOn(JSON, 'parse');
         onTestFinished(() => parse.mockRestore());
@@ -421,7 +424,7 @@ describe('WS server bounded and authorized admission', () => {
                 return { authorized: true };
             }
         });
-        const receiving = fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1');
+        const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
         const replacement = new SimulatedWebSocket('ws://replacement');
         await replacement.open();
         fixture.server.addConnection(new ConnectionContext({ id: 'session-1', socket: replacement }));
@@ -437,7 +440,7 @@ describe('WS server bounded and authorized admission', () => {
         const authorize = vi.fn(async () => ({ authorized: true as const }));
         fixture.service.authorizeInboundMessagesWith({ authorize });
 
-        expect((await fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1')).left?.code).toBe('malformed');
+        expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left?.code).toBe('malformed');
         expect(authorize).not.toHaveBeenCalled();
         expect(fixture.admission.data.size).toBe(0);
     });
@@ -452,7 +455,7 @@ describe('WS server bounded and authorized admission', () => {
                     ? { authorized: true }
                     : { authorized: false, reason: 'unauthorized', logMessage: 'Membership removed', sendNack: false }
         });
-        const message: ALMessage = { ...roomMessage(), qos: { durability: { algo: 'local-inbox' } } };
+        const message: ALMessage = { ...createRoomMessage(), qos: { durability: { algo: 'local-inbox' } } };
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
         expect(await fixture.admission.workQueue.getAllKeys()).toHaveLength(1);
         expect(fixture.delivered).toEqual([]);
@@ -460,7 +463,6 @@ describe('WS server bounded and authorized admission', () => {
 
         claim.mockRestore();
         await expect.poll(async () => {
-            await fixture.engine.executeOnce();
             const keys = await fixture.admission.workQueue.getAllKeys();
             return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
         }).toBe('COMPLETED');
@@ -477,20 +479,19 @@ describe('WS server bounded and authorized admission', () => {
                     ? { authorized: false, reason: 'not-yet-in-sync', logMessage: 'Waiting for room snapshot', sendNack: false }
                     : { authorized: true }
         });
-        const message: ALMessage = { ...roomMessage(), qos: { durability: { algo: 'local-inbox' } } };
+        const message: ALMessage = { ...createRoomMessage(), qos: { durability: { algo: 'local-inbox' } } };
         await fixture.service.acceptIncomingMessage(message, 'session-1');
         catchingUp = true;
 
         claim.mockRestore();
-        await fixture.engine.executeOnce();
 
         expect(fixture.delivered).toEqual([]);
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         await expect.poll(async () => {
-            await fixture.engine.executeOnce();
             return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
         }).toBe('RETRY');
+        expect(fixture.delivered).toEqual([]);
     });
 
     it('fences an authorization result that arrives after disposal', async () => {
@@ -502,7 +503,7 @@ describe('WS server bounded and authorized admission', () => {
                 return { authorized: true };
             }
         });
-        const receiving = fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1');
+        const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
         fixture.service.dispose();
         gate.resolve();
 
@@ -521,7 +522,7 @@ describe('WS server bounded and authorized admission', () => {
             await release.promise;
             return await read(...input);
         });
-        const receiving = fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1');
+        const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
         await started.promise;
         fixture.service.dispose();
         release.resolve();
@@ -533,7 +534,7 @@ describe('WS server bounded and authorized admission', () => {
 
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {
         const fixture = await createServerIngressFixture();
-        const message: ALMessage = { ...incomingMessage(), qos: { durability: { algo: 'local-inbox' } } };
+        const message: ALMessage = { ...createIncomingMessage(), qos: { durability: { algo: 'local-inbox' } } };
         fixture.service.onAnyInboxMessageDo('observer', {
             onMessage: async () => {
                 throw new Error('Temporary application failure');
@@ -544,7 +545,6 @@ describe('WS server bounded and authorized admission', () => {
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         await expect.poll(async () => {
-            await fixture.engine.executeOnce();
             return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
         }).toBe('RETRY');
     });
@@ -562,6 +562,7 @@ async function createServerIngressFixture(
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(nowMs()));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs())));
     const engine = new InboxOutboxEngine();
+    engine.start();
     const backend = new InMemoryAdmissionBackend(admission, nowMs);
     const admissionStore = createALInboundAdmissionStore({
         namespace: 'ws-server-ingress',
@@ -590,12 +591,13 @@ async function createServerIngressFixture(
     });
     onTestFinished(() => {
         service.dispose();
+        engine.stop();
         vi.restoreAllMocks();
     });
-    return { service, server, socket, admission, backend, admissionStore, engine, delivered };
+    return { service, server, socket, admission, backend, admissionStore, delivered };
 }
 
-function incomingMessage(): ALMessage {
+function createIncomingMessage(): ALMessage {
     return {
         id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'session-1' },
         route: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },
@@ -603,9 +605,9 @@ function incomingMessage(): ALMessage {
     };
 }
 
-function roomMessage(): ALMessage {
+function createRoomMessage(): ALMessage {
     return {
-        ...incomingMessage(),
+        ...createIncomingMessage(),
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room-1' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
     };

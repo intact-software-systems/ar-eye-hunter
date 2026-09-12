@@ -131,7 +131,8 @@ export async function initialiseRtcConnectionService(
             },
             maxPeerConnections: input.maxPeerConnections,
             faultPort: input.faultPort
-        }
+        },
+        { createOfferId: () => crypto.randomUUID() }
     );
 
     rtcQBox.setInboundPeerCreationPolicy(() => ({

@@ -254,7 +254,7 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         dataChannelName: 'benchmark',
         faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc'
-    });
+    }, { createOfferId: () => crypto.randomUUID() });
     return {
         service,
         dispose: () => {
