@@ -14,6 +14,8 @@ Native performance proof and complete RTC lifecycle proof remain unresolved.
 The maintainer has also approved implementing the narrow delayed-answer protocol
 correction below, including its fail-closed compatibility consequence and no
 legacy fallback. Native and reconnect proof remain required.
+Independent review accepts correlation behavior but requires the public-contract
+amendment below, which awaits separate approval, plus internal cleanup/cohesion fixes.
 
 The first all-scenarios local RTC command on the current correction exits after
 211 seconds: C's `messages.rtc` formation-readiness command exhausts its remaining
@@ -388,8 +390,60 @@ ownership. The new ID flows through the existing serialized RTC payload once.
 
 ### Acceptance and execution horizon
 
-The next implementation slice must include the protocol
-change and its semantic regression tests together in PR #566. Prove an old
+#### Review amendment: public contract closure awaiting approval
+
+Independent Task 10 review accepts the answer-correlation behavior but requires
+exception-safe retired-peer cleanup, a cohesive native media-policy owner, and
+correction of behavior-bearing public DTOs. The first two are internal closure;
+the third is an additional public source-contract decision beyond the approved
+wire change and required offer-ID source. These contracts are exported by
+`packages/shared/mod.ts`; browser runtime and maintained fixtures use them.
+No external package consumer is assumed or asserted.
+
+The recommended coordinated correction is:
+
+- Replace `QRtcPeerDto` with the canonical `WebRtcConnectionService.Peer`
+  runtime-handle contract. Preserve its peer/channel/media field meanings and
+  ownership; a live runtime handle is not a serializable DTO.
+- Replace `QRtcSignalingTransportInputDto` with
+  `QRtcSignalingTransportInput`, a connection-registration input containing the
+  same session values and named callback port. This is a replacement canonical
+  declaration, not an alias or alternate connect overload.
+- Keep `WebRtcConnectionService.InputDto` as a genuinely data-only contract:
+  remove `faultPort` from it and from the public `service.input` projection.
+  Supply the existing fault port alongside `createOfferId` in a required
+  `WebRtcConnectionService.Dependencies` third constructor argument. No new
+  capability is introduced; composition supplies each existing capability once.
+- Update the barrel, all verified production consumers, benchmarks and maintained
+  tests together. Remove old type names and signatures; do not leave aliases,
+  old-shape constructors, optional dependency fallbacks, or a migration path.
+
+The source compatibility consequence is explicit: imports of the two removed
+DTO names must change, and constructor callers move `faultPort` from the second
+argument to the third. Code reading `service.input.faultPort` must use its actual
+owned capability rather than the data projection. No additional RTC wire or
+persisted-format change is proposed. The already-approved fail-closed offer-ID
+contract and existing QueueBox/retry/ICE semantics remain unchanged.
+
+A name-only cleanup of the service input would leave a behavior dependency in
+the data/configuration bundle instead of the existing dependency boundary.
+Keeping deprecated names through aliases or retaining behavior-bearing DTOs
+would preserve the reported violation or require a deliberate exception. Neither
+is the selected approach under the maintainer's no-legacy requirement. The
+coordinated canonical replacement is the smallest complete correction.
+
+On approval, cover cleanup failures through the existing native test port,
+extract media policy without moving negotiation guards away from native writes,
+and verify consumer typing, semantic tests and unchanged strict bundle ceilings.
+Record only the independently reviewed exact decoder/directory findings; do not
+suppress the real peer-cohesion finding. Correct the evidence statement to say
+native failure preserves identity for a later explicit matching delivery, not
+that automatic inbound retry has been proved. Re-review the actual fix before
+the native-browser proof. This amendment is design-only pending maintainer
+approval; it does not authorize implementation by its presence in the document.
+
+The protocol correction and its semantic regression tests must stay together
+in PR #566. Prove an old
 answer held by a real admission conflict is ignored after replacement while the
 matching current answer reaches the native port. Also cover successive offers
 on the same peer, duplicate answers, polite rollback, impolite collision,

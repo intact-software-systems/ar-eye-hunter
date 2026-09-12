@@ -889,18 +889,33 @@ remains unselected and is not part of these tasks.
 
 ### Task 10: Correlate answers with the offer owned by the current peer
 
-The coherent correction is implemented locally and under independent review.
+The coherent correction is implemented locally and independently reviewed.
 Its final focused candidate passes 115 tests including both unchanged strict
 bundle boundaries. The affected suites pass 340 tests; benchmark checks pass
 414 tests; maintained typing covers 1,199 files with no errors. Package checks
 and both game builds pass, with builds preceding the final console-only observer
 removal; final lifecycle, bundle and shared/test typing checks cover that removal.
 Three initial semantic REDs reproduced stale native application and retired offer
-publication. Five changed-style findings remain open (strict decoder boundary,
-peer cognitive load, service density and two prefix clusters); no dispositions
-or standards exceptions have been added. Native exceptional cleanup is also in
-review. This is not accepted completion, a browser convergence result, or PR
-readiness. The task's implementation/review exit remains unchecked below.
+publication. Review accepts the correlation behavior but requests three fixes:
+exception-safe retired native cleanup, separation of cohesive media policy, and
+truthful public DTO/dependency contracts. The decoder boundary and three directory/
+prefix prompts have narrow reviewed keep judgments; peer cohesion is a genuine
+unresolved finding, not a suppression candidate. No dispositions or standards
+exceptions have been added. The report's automatic inbound-retry claim is not
+proved; native failure only preserves identity for a later explicit matching
+delivery. This is not accepted completion, browser convergence, or PR readiness.
+
+**Current decision:** the spec's `Review amendment: public contract closure
+awaiting approval` proposes replacing `QRtcPeerDto` with
+`WebRtcConnectionService.Peer`, replacing `QRtcSignalingTransportInputDto` with
+`QRtcSignalingTransportInput`, and moving `faultPort` from the public service
+data input to its existing third dependency argument alongside `createOfferId`.
+These exported name/input-shape changes exceed the approved offer-ID change.
+Obtain one explicit approval for this coordinated replacement, with all repo
+consumers updated and no legacy aliases/overloads retained. The internal cleanup
+and media-policy fixes will be handled in the same task's reviewed fix loop;
+Task 11 remains the following proof slice. Do not restart completed tasks or
+interpret this decision as a request to freeze main or wait for branch gates.
 
 **Files and owners:**
 
