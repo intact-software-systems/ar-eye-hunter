@@ -610,7 +610,12 @@ beside the reducer, `computeALDeliveryDeadline(lifecycle, nowMs)` and
 settlements, because a settlement carries a carrier the registry does not have (ruling R11). `open`
 records the first carrier the sender will try and the entry remembers the last carrier seen; the
 handle's `cancel()` calls the port first and records its own `cancelled` only if the owners' own
-emission has not already terminated the entry (ruling R12).
+emission has not already terminated the entry (ruling R12). `cancel()`, `wait()`'s `timeout` and
+`aborted` outcomes, and every terminality decision apply the deadline first; `wait`'s deadline timer
+re-arms when the clock still lags the deadline at fire time; eviction collects its victims before
+notifying anyone; `releaseAll()` resolves entries without removing them, and retention ages them on
+the next `open()` (ruling R14). The facade ceiling moved to 209 KiB when Tasks 2–4 measured
+208.094 KiB on the branch (ruling R13).
 
 Retention is applied on `open()`: terminal entries older than `retainTerminalMs` are dropped, then
 the oldest terminal entries until `maxEntries` holds, then the oldest non-terminal entries, each
