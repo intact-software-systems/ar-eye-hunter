@@ -19,19 +19,28 @@ release by release and proven slice by slice through the black-box conformance l
 
 ### Decision record
 
-Decided with the maintainer on 2026-09-08. Each later section applies these; none is restated as
-a question.
+Decided with the maintainer on 2026-09-08 (D1–D8) and on 2026-09-12 (D9–D16, the S1 design
+questions and the slice sequencing). Each later section applies these; none is restated as a
+question.
 
-| #  | Decision                                                                                                                                                                                                                                                                   |
-| -- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1 | Target is the full general product, conformance-driven: every capability in the product description, with acceptance defined by the conformance suite over both carriers.                                                                                                  |
-| D2 | A typed send with no options is reliable, receipted, and volatile: at-least-once, the receipt chosen by the channel's purpose, retried within the deadline, kept in memory only. Durability is an explicit per-channel opt-in.                                             |
-| D3 | There are no real users yet. Incompatible ALM browser storage is deleted on schema mismatch; no data migration, no compatibility window.                                                                                                                                   |
-| D4 | Both existing reliable paths become real ALM consumers: the game authority client awaits receipts, and the Relic server's snapshot publish moves to the durable outbox. The two games may be changed in any way that helps prove ALM.                                      |
-| D5 | Every declared capability is implemented, including principal, world, all, and fixed audiences, group-leader ACK, membership fencing on group-state authority, exclusive ownership, and reply correlation with trace propagation.                                          |
-| D6 | PRs are medium by default; a large coordinated PR is allowed where a cutover genuinely couples contracts, consumers, and harness. Each PR is reviewed and merged by the maintainer.                                                                                        |
-| D7 | Sequencing is foundation first: the conformance lane and the storage consolidation land before new capabilities.                                                                                                                                                           |
-| D8 | No legacy is retained anywhere in this series; unused code is deleted in the same PR. Search `packages/**` for an existing library before writing one; ask the maintainer before adding an internal library; never add a third-party dependency beyond those already used. |
+| #   | Decision                                                                                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Target is the full general product, conformance-driven: every capability in the product description, with acceptance defined by the conformance suite over both carriers.                                                                                                                                                 |
+| D2  | A typed send with no options is reliable, receipted, and volatile: at-least-once, the receipt chosen by the channel's purpose, retried within the deadline, kept in memory only. Durability is an explicit per-channel opt-in.                                                                                            |
+| D3  | There are no real users yet. Incompatible ALM browser storage is deleted on schema mismatch; no data migration, no compatibility window.                                                                                                                                                                                  |
+| D4  | Both existing reliable paths become real ALM consumers: the game authority client awaits receipts, and the Relic server's snapshot publish moves to the durable outbox. The two games may be changed in any way that helps prove ALM.                                                                                     |
+| D5  | Every declared capability is implemented, including principal, world, all, and fixed audiences, group-leader ACK, membership fencing on group-state authority, exclusive ownership, and reply correlation with trace propagation.                                                                                         |
+| D6  | PRs are medium by default; a large coordinated PR is allowed where a cutover genuinely couples contracts, consumers, and harness. Each PR is reviewed and merged by the maintainer.                                                                                                                                       |
+| D7  | Sequencing is foundation first: the conformance lane and the storage consolidation land before new capabilities.                                                                                                                                                                                                          |
+| D8  | No legacy is retained anywhere in this series; unused code is deleted in the same PR. Search `packages/**` for an existing library before writing one; ask the maintainer before adding an internal library; never add a third-party dependency beyond those already used.                                                |
+| D9  | S1 handle evidence is hop-level and honest: the admission result plus each carrier's transport settlement per attempt, with confirmed and unconfirmed peer lists filled from what the hop saw under names that say hop. Logical receipts and the frozen audience stay S2.                                                 |
+| D10 | `pending-authority` is the bounded wait for room or group authority only (`not-yet-in-sync`, `minSnapshotVersion`, the retained-until-refresh case). The handle's initial state is `submitted`; a retained admission conflict awaiting replay is not a public state; `pending-admission` leaves the public vocabulary.    |
+| D11 | The WS ordering block (`seq`, `orderingKey`) lands in S2 with the session-logical namespace; S1's lifecycle matrix records that WS has no ordering settlements.                                                                                                                                                           |
+| D12 | S1's game proof is AR Eye Hunter's match send consuming the handle; Relic's REST-to-`command` move is S3's, beside the durable outbox and receipts it needs.                                                                                                                                                              |
+| D13 | No reload-surviving handle in S1: the lifecycle is a volatile projection with zero new IndexedDB operations on the default send; after a reload the work resumes from storage and the lost observation resolves to a distinct `unobservable` outcome, never `failed`; durable survival is a named sink seam for S3 or I2. |
+| D14 | `RallarMessageSendResult` and its browser exposure are deleted when the handle arrives, and `ALOutboundEnqueueStatus` is retired before the S1 plan finishes: the server WS router and RTC signaling admission are re-typed onto the shared lifecycle vocabulary, so no legacy union survives S1.                         |
+| D15 | `RallarGameSendResult` converges on the handle; `rallar.realtime` stays the volatile lane without a handle.                                                                                                                                                                                                               |
+| D16 | S1 starts from `main` in parallel with F2c (the inbound fence and batched releases); F2c merges first and S1 merges `main` in before its final gate.                                                                                                                                                                      |
 
 ### Standing direction
 
@@ -197,11 +206,12 @@ stall segment is uninstrumented on the server side.
 
 ## Release map
 
-Thirteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
-not on each other. Release 2 is delivered. F2b is file-level concrete
-(`plans/alm-f2b-inbound-owner-implementation-plan.md`); S1's design proposal
-([alm-s1-design-proposal.md](alm-s1-design-proposal.md)) waits on the maintainer's answers to its
-section 4 before its plan is written; S2 and S3 are named by outcome; later releases are
+Fourteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
+not on each other. Release 2 and F2b are delivered. F2c (the inbound fence and batched releases,
+F2b's ruling R20) and S1 are the concrete horizon: S1's plan is
+`plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md`, arguing from the maintainer's
+decisions D9–D16 folded into [alm-s1-design-proposal.md](alm-s1-design-proposal.md) section 4;
+F2c's plan lands with its own slice. S2 and S3 are named by outcome; later releases are
 outcome-shaped with exit evidence.
 
 | Release       | PR                                                    | Size   | Completion criteria served |
@@ -209,6 +219,7 @@ outcome-shaped with exit evidence.
 | 2 Foundation  | F1 Conformance lane and messaging entry point         | medium | 1 (lane), 5 (migration)    |
 | 2 Foundation  | F2 One work owner and split stores                    | large  | 5, 8, 10 (reset)           |
 | 3 Slice 2     | F2b The inbound owner on slow storage                 | small  | 1 (lane), 5                |
+| 3 Slice 2     | F2c The inbound fence and batched releases            | small  | 1 (lane), 5                |
 | 3 Slice 2     | S1 Delivery lifecycle and handle                      | large  | 3, 9                       |
 | 3 Slice 2     | S2 One identity and receipted audiences               | large  | 1, 3, 6, 9                 |
 | 3 Slice 2     | S3 Defaults, fallback, volatile path, consumer proofs | medium | 3, 4                       |
@@ -344,14 +355,65 @@ replay plus the readiness/dispatch pair, not the write phase; the RTC answer is 
 outbound owner (treated in F2 Task 13), so the inbound fix is necessary but not the emitting side;
 the 63–65 % pending share is the RTC cells (47 % on ws); probe-every-round is deliberate.
 
+### Release 3, S1: delivery lifecycle and handle
+
+**Outcome:** a typed send returns a handle with a stable message id before admission resolves, and
+the handle observes the message's whole delivery lifecycle from a settlement stream the outbound
+owner emits; the public send result and the internal admission-status union are gone; the black-box
+ledger is a projection of the same stream; AR Eye Hunter's match capability consumes the handle.
+
+**Owners:** a new [alm/delivery](../../packages/shared/alm/delivery/) vocabulary (the state union,
+the settlement-event union, the structured admission verdict, the evidence shape, the pure reducer),
+[alm/outbound](../../packages/shared/alm/outbound/) for the emissions and the per-message cancel,
+`packages/shared-web/browser/messages/` for the registry, the handle, and the sender, the black-box
+ledger in `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/`, and the
+conformance generator. Plan: `plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md`;
+design: [alm-s1-design-proposal.md](alm-s1-design-proposal.md) (approach C, decisions D9–D16).
+
+**Changes:**
+
+1. Twelve states — `submitted`, `rejected`, `pending-authority`, `accepted`, `queued`,
+   `transport-accepted`, `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`,
+   `unobservable` — declared once in `packages/shared/alm/delivery/` with a settlement-event union, a
+   structured admission verdict (so `unauthorized` and `not-yet-in-sync` stop collapsing into
+   `skipped`), hop-level evidence under hop names (D9), and a pure reducer whose terminal guard turns a
+   late settlement into evidence. `transport-accepted` is terminal only for a best-effort send.
+2. The outbound owner emits settlements where it decides delivery facts today and throws them away:
+   the pending replay's verdict, attempt start and settlement (the transport result restructured to
+   carry `submissionAttempted`), acknowledgement with the acked and expected hop peers, expiry at the
+   claim, and cancellation. Settlements travel through a second sink beside the diagnostics sink, never
+   through the diagnostics relay, and add no queue, registry, or timer to the owner.
+3. Per-message cancellation narrows the runtime-wide abort to the message's own signal; the transport's
+   per-send `AbortSignal` needs no change. Cancellation is held for the owner's lifetime (D13).
+4. A browser-owned in-memory registry with bounded retention, constructed once in the facade
+   composition, fed by both carrier owners at every connect through the same path as the diagnostics
+   ports and fenced at detach, hands out the handle: `lifecycle()`, `onEvent`, `wait({ timeoutMs,
+   signal, until })`, `cancel()`. Zero new IndexedDB operations on the default send; a lost observation
+   is `unobservable` (D13). `send()` resolves the handle before admission; the sender records the first
+   verdict and, when its strategy has no carrier left, `attempts-exhausted`.
+5. `RallarMessageSendResult` is deleted with its entry-point exposure; the director relay, call
+   signaling, AI broadcast, and `RallarGameSendResult` carry the handle (D15); the three admission
+   predicates collapse to one shared one with the director relay's `superseded` exception documented.
+   `ALOutboundEnqueueStatus` is retired before the plan finishes: the server WS router and RTC signaling
+   admission are re-typed onto the verdict (D14).
+6. The black-box ledger stores handles and projects them: the 25 ms admission poll and its port are
+   deleted, `messages.observe` waits on the handle, `messages.cancel` cancels, receipts carry the hop
+   lists, an unknown handle after a reload reads `unobservable`, and the two duplicated state lists
+   derive from the shared constant. Two generated scenarios, `delivery-lifecycle` (smoke) and
+   `delivery-reload` (full), join the family beside a sender-side `expired` observe in `deadline-expiry`.
+
+**Acceptance:** the reducer's transition table pinned over both ack modes; the settlement stream
+pinned over memory and IndexedDB with the operation counts of one default send unchanged against
+`main`; per-message cancel proven without regressing the transport's per-key cancel; the handle's
+`wait` resolving on terminal, listed, timed-out, aborted, and deadline-expired paths; the public API
+snapshots and both bundle ceilings recorded; the ledger producing `transport-accepted` and
+`acknowledged` for the first time with `attempts` counted; the lifecycle matrix green locally over the
+three carriers and read on the runner under the regime rule; `deno task check` and `test:deno` green
+after the server publish result changes; no new cognitive-load pin under `packages/shared/alm` or
+`packages/shared-web/browser/messages`.
+
 ### Release 3, Slice 2: outcomes
 
-- **S1 Delivery lifecycle and handle.** An internal per-message lifecycle fed by every RTC and WS
-  settlement; a public handle with states `rejected`, `pending-authority`, `accepted`, `queued`,
-  `transport-accepted`, `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, an event
-  subscription, a terminal promise with evidence, and `cancel()`. The current send result and its
-  status union are removed with examples, apps, and black-box contracts updated together. Late
-  events never reopen a terminal state.
 - **S2 One identity and receipted audiences.** Session-logical inbound namespace for dedup,
   ordering, supersedence, and message-owner keys; carrier-tagged control and ACK histories only.
   The logical audience is frozen at admission from the channel's addressed sessions and the
@@ -455,15 +517,15 @@ changes for the next slice, the maintainer's call.
 Gameplay realtime traffic stays on `realtime.room`. Each release changes at least one game so the
 new capability runs in a real UI with its own conformance recipe.
 
-| Release  | AR Eye Hunter (browser-director)                                                                                                           | Relic Hunters (server-authoritative)                                                                                 |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| 3 S1     | The match capability's WS send shows pending, confirmed, and failed states from the handle.                                                | Commands move from the REST `POST` to a `command` channel over WS addressed to the server; the UI shows the outcome. |
-| 3 S2     | Match lifecycle notifications (start, end, score) become a `notification` channel over RTC with WS fallback with frozen-audience receipts. | Server events become a room notification with per-session confirmation visible in server diagnostics.                |
-| 3 S3     | Match commands become a `command` channel with a real director receipt, volatile, zero IndexedDB proven.                                   | Snapshots move from live-only to the durable WS outbox with receipts.                                                |
-| 4 R1, R2 | Round-start notifications fenced on the current roster.                                                                                    | Round transitions use an ordering key per round with range repair.                                                   |
-| 5 A1, A2 | The director is the group leader: leader ACK on match-critical notifications; pickup-style actions use exclusive ownership.                | AI suggestions addressed to a principal audience; per-player private events.                                         |
-| 6 V1     | Manifests at 15, 30, and 50 agents using the match payload shapes.                                                                         | Long-run manifest with snapshot fan-out.                                                                             |
-| 7 I1, I2 | Multi-tab claim of the match session.                                                                                                      | AI planning request and reply on `awaitReply` with correlation and trace.                                            |
+| Release  | AR Eye Hunter (browser-director)                                                                                                           | Relic Hunters (server-authoritative)                                                                                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 3 S1     | The match capability's WS send shows pending, confirmed, and failed states from the handle.                                                | No change in S1 (D12); the REST-to-`command` move is S3's.                                                                                                                                       |
+| 3 S2     | Match lifecycle notifications (start, end, score) become a `notification` channel over RTC with WS fallback with frozen-audience receipts. | Server events become a room notification with per-session confirmation visible in server diagnostics.                                                                                            |
+| 3 S3     | Match commands become a `command` channel with a real director receipt, volatile, zero IndexedDB proven.                                   | Commands move from the REST `POST` to a `command` channel over WS addressed to the server with the UI showing the outcome; snapshots move from live-only to the durable WS outbox with receipts. |
+| 4 R1, R2 | Round-start notifications fenced on the current roster.                                                                                    | Round transitions use an ordering key per round with range repair.                                                                                                                               |
+| 5 A1, A2 | The director is the group leader: leader ACK on match-critical notifications; pickup-style actions use exclusive ownership.                | AI suggestions addressed to a principal audience; per-player private events.                                                                                                                     |
+| 6 V1     | Manifests at 15, 30, and 50 agents using the match payload shapes.                                                                         | Long-run manifest with snapshot fan-out.                                                                                                                                                         |
+| 7 I1, I2 | Multi-tab claim of the match session.                                                                                                      | AI planning request and reply on `awaitReply` with correlation and trace.                                                                                                                        |
 
 ## Requirement-to-evidence matrix
 
@@ -531,9 +593,9 @@ artifacts in the lanes.
 ## Continuing from a fresh session
 
 Read this roadmap, then the open pull request's Goal, Acceptance, Validation, and Follow-up
-sections, then run `npm run pr:delivery -- status`. The current delivery is the open F2b pull
-request from branch `claude/alm-f2b-inbound-owner`; its implementation plan is
-`plans/alm-f2b-inbound-owner-implementation-plan.md`, beside the ticked F1 and F2 plans. Start the
+sections, then run `npm run pr:delivery -- status`. The current delivery is S1 from branch `claude/alm-s1-delivery-handle`; its implementation plan is
+`plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md`, beside the ticked F1, F2, and F2b
+plans; F2c runs as its own slice from `main`. Start the
 next slice from merged `main` on a new branch. Recover the current owner, entry,
 dataflow, failure boundary, and tests from the repository before editing; this roadmap is not a
 navigation map. When a release completes, move the next two slices into the concrete horizon here
@@ -549,3 +611,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-11: Release 2 delivered (F2 merged as `f8db93762`); F2b moved into the concrete horizon with
   its plan under `plans/` and the measurement corrections folded in; the S1 design proposal recorded
   beside this roadmap.
+- 2026-09-12: F2b delivered (merged as `a336ad41c`); the S1 design questions and the slice sequencing
+  settled as D9–D16 and folded into the proposal; S1 moved into the concrete horizon with its plan
+  under `plans/`; F2c named as its own slice beside it.

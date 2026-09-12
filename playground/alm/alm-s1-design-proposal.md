@@ -2,8 +2,9 @@
 
 Prepared 2026-09-11 against `claude/alm-f2-work-owner` head `6f01cae7d` (F2 plus `main` `bf67bacb9`).
 Read-only survey; a proposal for approval or redirection, not a plan and not code.
-F2 has since merged as `f8db93762` with no change to the surfaces named here. Status: the seven
-questions in section 4 await the maintainer; the S1 implementation plan is written from the answers.
+F2 has since merged as `f8db93762` and F2b as `a336ad41c` with no change to the surfaces named here.
+Status: the seven questions of section 4 are settled (D9 to D16, 2026-09-12); the S1 implementation
+plan `plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md` argues from them.
 
 ## 1. The problem
 
@@ -195,43 +196,43 @@ And the registry stays an _observation_ store with bounded retention: the outbou
 settlement introducing "no additional queue, pending-work registry, or timer", so it must never
 become a second source of retry truth.
 
-## 4. Open questions only the maintainer can settle
+## 4. Maintainer decisions (2026-09-12)
 
-1. **What is the handle's evidence in S1?** Admission result plus transport settlements, or also
-   receipts? The ledger already has `confirmedPeerIds`/`unconfirmedPeerIds` and they are always empty.
-   S1 can fill them honestly _at the hop_ and leave the logical audience to S2, or ship them empty a
-   second time. Recommendation: hop-level and honest, with names that say so.
-2. **Does `pending-authority` map onto today's `pending-admission`?** Or is it specifically "waiting
-   for group/room authority" (the `not-yet-in-sync` / `minSnapshotVersion` case), with
-   `pending-admission` folding into `queued`? This decides the transition table and the harness
-   mapping. The word appears nowhere in the code today.
-3. **Does the WS path gain `seq`/`orderingKey` in S1 or S2?** `RallarWsSendInput` (:60-66) has
-   neither. The conformance generator already works around it: `RTC_CARRIERS`
-   (`conformance/alm/create-alm-conformance-recipes.ts:90-91`) excludes `ws` from `ordering-resync`
-   with the comment that `RallarWsSendInput` carries no ordering block. A lifecycle matrix "over every
-   settlement" would have ordering settlements on RTC and nothing on WS.
-4. **Do both games migrate in S1?** The consumer-proof table assigns AR Eye Hunter's match WS send
-   _and_ Relic's REST-to-`command`-channel move to S1. The first is ~5 lines
-   (`game/match/match-capability.ts:70-81`; the app discards the result at
-   `use-arena-director-appointment.ts:74`). The second is net-new plumbing: `api.ts` is a plain
-   `fetch` boundary with no message, handle, or status concept at all. Defer Relic to S3?
-5. **Is a reload-surviving handle required in S1?** The whole A/B/C choice reduces to this if the
-   answer is yes — and it is testable, because F1's `agent.reload` keeps IndexedDB. If the answer is
-   no, S1 still owes a decision the roadmap has not made: a reload loses the _observation_ while the
-   work resumes from storage, so the lost handle must resolve to something that does not claim
-   failure. Recommendation: a distinct `unobservable` outcome rather than folding it into `failed`.
-6. **How far does "the status union is removed" reach?** `ALOutboundEnqueueStatus` is not a
-   shared-web public export; it is also the admission vocabulary of the server WS router
-   (`shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts:41`) and RTC
-   signaling admission (`shared/webrtc/qrtc-signaling-admission.ts:10,23`) — the RTC facade already
-   widened it to `status: string` to avoid the coupling. Recommendation: delete
-   `RallarMessageSendResult` and the browser exposure, keep the union internal. The alternative pulls
-   two unrelated subsystems into this slice.
-7. **Do the other send-status unions converge?** `RallarGameSendResult` has its own 8-literal union
-   and _wraps_ `RallarMessageSendResult` as an optional `ws` field
-   (`game/transport/rallar-game-send-result.ts:7-22`, 10 files). Recommendation: rework the game
-   result, but leave `realtime` alone — it is deliberately the volatile lane with no logical receipt
-   per the purpose table, so a handle there would be a different kind of lie.
+The seven questions this section carried were settled with the maintainer on 2026-09-12, together
+with the slice's sequencing; the roadmap's decision record holds them as D9 to D16, and the S1
+implementation plan argues from them.
+
+1. **Handle evidence is hop-level and honest (D9).** The handle carries the admission result and
+   each carrier's transport settlement per attempt; `confirmedPeerIds` and `unconfirmedPeerIds` are
+   filled from what the hop saw, under names that say hop. Logical receipts and the frozen audience
+   stay S2.
+2. **`pending-authority` is the authority wait only (D10).** It names the bounded wait for room or
+   group authority (`not-yet-in-sync`, `minSnapshotVersion`, the retained-until-refresh case F2
+   carried in). A retained admission conflict awaiting replay is not a public state: the handle keeps
+   its initial pre-admission state, `submitted`, until the replay yields `accepted`, `rejected`, or
+   `pending-authority`. `submitted` joins the state list; `pending-admission` leaves the public
+   vocabulary.
+3. **The WS ordering block lands in S2 (D11).** `RallarWsSendInput` gains `seq` and `orderingKey`
+   with S2's session-logical namespace; S1's lifecycle matrix records that WS has no ordering
+   settlements.
+4. **AR Eye Hunter migrates in S1, Relic in S3 (D12).** The match capability's WS send consumes the
+   handle as S1's consumer proof; Relic's REST-to-`command` move lands in S3 beside the durable
+   outbox and receipts it needs.
+5. **No reload survival in S1; a lost handle is `unobservable` (D13).** Approach C as recommended:
+   volatile projection, no lifecycle row, zero new IndexedDB operations on the default send. After a
+   reload the work resumes from storage and the lost observation resolves to a distinct
+   `unobservable` outcome, never `failed`. Durable survival remains a named sink seam for S3 or I2.
+6. **The public result goes first; the internal union goes before the plan finishes (D14).**
+   `RallarMessageSendResult` and its browser exposure are deleted when the handle arrives.
+   `ALOutboundEnqueueStatus` does not survive S1 either: a late task re-types the server WS router's
+   and RTC signaling admission's outcomes onto the shared lifecycle vocabulary, so no legacy union is
+   retained (D8).
+7. **`RallarGameSendResult` converges on the handle; `realtime` does not (D15).** The game result
+   carries the handle instead of wrapping the removed result; `rallar.realtime` stays the volatile
+   lane without a handle, because a handle there would promise receipts it cannot have.
+
+Sequencing (D16): S1 starts from `main` in parallel with F2c, the inbound fence and batched releases;
+F2c merges first and S1 merges `main` in before its final gate.
 
 ## 5. Acceptance evidence S1 would carry
 
@@ -247,7 +248,7 @@ become a second source of retry truth.
   lists no longer constant-empty, `cancelDelivery` actually cancelling.
 - **A late-event fence proof**: a settlement after a terminal state leaves the state unchanged and
   increments the recorded late count. Paired with an `agent.reload` scenario proving the reload
-  answer chosen in question 5 — the lane can already reload an agent with its IndexedDB intact.
+  answer of decision 5 (D13) — the lane can already reload an agent with its IndexedDB intact.
 - **`storage.counters` unchanged per typed send** against F2's baseline — the "no new default write"
   claim proven, not asserted — plus the standard-workload storage snapshot.
 - **Public API snapshots** for `rallar.ts`, `rallar-core.ts`, `rallar-messages.ts`, `game/mod.ts`
@@ -275,11 +276,11 @@ become a second source of retry truth.
 6. **Composition and connection-epoch fencing** — construction in the messaging composer,
    re-subscription across connect/reconnect without reopening terminal states.
 7. **Send-result removal** — delete `RallarMessageSendResult`, draw the `ALOutboundEnqueueStatus`
-   boundary decided in question 6, update entry points and snapshots.
+   boundary decided in decision 6 (D14), update entry points and snapshots.
 8. **Shared-web consumer cutover** — the three real status branches, call signaling, the director
    relay, and `RallarGameSendResult`.
 9. **Game consumer proof** — AR Eye Hunter's match capability shows pending, confirmed, and failed
-   from the handle (Relic's scope per question 4).
+   from the handle (Relic's scope per decision 4, D12).
 10. **Black-box operations and ledger** — `messages.observe`/`cancel`/`receipts` against the handle;
     the ledger becomes a projection and imports the shared state union.
 11. **The S1 conformance scenarios** — the state matrix added to the generator, landed together.
