@@ -97,6 +97,16 @@ test('retains database identity and excludes native timing from other databases'
     expect(result.methodsRestored).toBe(true);
 });
 
+test('closes its database and restores native hooks after a rejected semantics operation', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate(async (moduleUrl) => {
+        const fixture: typeof import('./browser-native-indexeddb-timing-recorder.ts') = await import(moduleUrl);
+        return await fixture.runNativeIndexedDbTimingFailureCleanupProbe(crypto.randomUUID());
+    }, `/@fs${NATIVE_INDEXED_DB_FIXTURE_PATH}`);
+
+    expect(result).toEqual({ probeRejected: true, databaseDeleted: true });
+});
+
 test('does not treat a returned retry release as durable completion', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate<NativeAlmRetryReleaseSemanticsProbe, string>(

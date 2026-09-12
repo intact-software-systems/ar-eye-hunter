@@ -111,6 +111,11 @@ export interface NativeIndexedDbTimingDatabaseFilterProbe extends NativeIndexedD
     readonly methodsRestored: boolean;
 }
 
+export interface NativeIndexedDbTimingFailureCleanupProbe {
+    readonly probeRejected: boolean;
+    readonly databaseDeleted: boolean;
+}
+
 interface NativeIndexedDbTransactionState {
     readonly captureGeneration: number;
     readonly databaseName: string;
@@ -238,6 +243,12 @@ export class NativeIndexedDbTimingRecorder {
     }
 
     private installRequestObservation(): void {
+        this.installTimedRequestObservation();
+        this.installObjectStoreInventoryObservation();
+        this.installIndexCursorObservation();
+    }
+
+    private installTimedRequestObservation(): void {
         const recorder = this;
         const originalGet = this.#originalGet;
         IDBObjectStore.prototype.get = function (this: IDBObjectStore, query: IDBValidKey | IDBKeyRange) {
@@ -258,7 +269,10 @@ export class NativeIndexedDbTimingRecorder {
             recorder.observeRequest({ store: this, request, operation: 'put', startedAtMs });
             return request;
         } as typeof IDBObjectStore.prototype.put;
+    }
 
+    private installObjectStoreInventoryObservation(): void {
+        const recorder = this;
         const originalOpenCursor = this.#originalOpenCursor;
         IDBObjectStore.prototype.openCursor = function (
             this: IDBObjectStore,
@@ -289,7 +303,10 @@ export class NativeIndexedDbTimingRecorder {
             recorder.observeUntimedRequest(this.transaction, request);
             return request;
         } as typeof IDBObjectStore.prototype.getAll;
+    }
 
+    private installIndexCursorObservation(): void {
+        const recorder = this;
         const originalIndexOpenCursor = this.#originalIndexOpenCursor;
         IDBIndex.prototype.openCursor = function (
             this: IDBIndex,
@@ -602,20 +619,16 @@ export async function runNativeIndexedDbTimingSemanticsProbe(
 ): Promise<NativeIndexedDbTimingSemanticsProbe> {
     const database = await openProbeDatabase(`playwright-indexeddb-timing-${databaseId}`);
     const recorder = new NativeIndexedDbTimingRecorder(3);
-    recorder.start();
-    let synchronousPutErrorName: string | null = null;
     try {
+        recorder.start();
+        let synchronousPutErrorName: string | null = null;
         await writeProbeValue(database, 'committed', 'committed');
         await writeStructuredCloneProbeValue(database);
         synchronousPutErrorName = await observeInvalidPutError(database);
         await writeThenAbortProbeValue(database, 'aborted', 'aborted');
         await readFirstProbeCursor(database);
         await exerciseProbeRequestInventory(database);
-    }
-    finally {
         recorder.stop();
-    }
-    try {
         return {
             ...recorder.snapshot(),
             durableCommittedValue: await readProbeValue(database, 'committed'),
@@ -626,6 +639,7 @@ export async function runNativeIndexedDbTimingSemanticsProbe(
         };
     }
     finally {
+        recorder.stop();
         database.close();
     }
 }
@@ -635,16 +649,16 @@ export async function runNativeIndexedDbTimingDisposalProbe(
 ): Promise<NativeIndexedDbTimingDisposalProbe> {
     const database = await openProbeDatabase(`playwright-indexeddb-disposal-${databaseId}`);
     const recorder = new NativeIndexedDbTimingRecorder(20);
-    recorder.start();
-    const transaction = database.transaction('entries', 'readwrite');
-    transaction.objectStore('entries').put({ value: 'completed-after-stop' }, 'pending');
-    const completion = readTransaction(transaction);
-    recorder.stop();
-    const samplesAtStop = recorder.snapshot().samples.length;
-    await completion;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const stopped = recorder.snapshot();
     try {
+        recorder.start();
+        const transaction = database.transaction('entries', 'readwrite');
+        transaction.objectStore('entries').put({ value: 'completed-after-stop' }, 'pending');
+        const completion = readTransaction(transaction);
+        recorder.stop();
+        const samplesAtStop = recorder.snapshot().samples.length;
+        await completion;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const stopped = recorder.snapshot();
         return {
             samplesAtStop,
             samplesAfterCompletion: stopped.samples.length,
@@ -654,6 +668,7 @@ export async function runNativeIndexedDbTimingDisposalProbe(
         };
     }
     finally {
+        recorder.stop();
         database.close();
     }
 }
@@ -662,22 +677,22 @@ export async function runNativeIndexedDbTimingPreCaptureTransactionProbe(
     databaseId: string
 ): Promise<NativeIndexedDbTimingPreCaptureTransactionProbe> {
     const database = await openProbeDatabase(`playwright-indexeddb-pre-capture-${databaseId}`);
-    const transaction = database.transaction('entries', 'readwrite');
-    const completion = readTransaction(transaction);
     const recorder = new NativeIndexedDbTimingRecorder(20);
-    recorder.start();
-    let operationResult: 'returned' | 'threw' = 'returned';
-    let operationError: string | null = null;
     try {
-        transaction.objectStore('entries').put({ value: 'persisted' }, 'pre-capture');
-    }
-    catch (error) {
-        operationResult = 'threw';
-        operationError = error instanceof Error ? error.message : String(error);
-    }
-    const transactionOutcome = await completion.then(() => 'complete' as const, () => 'abort' as const);
-    recorder.stop();
-    try {
+        const transaction = database.transaction('entries', 'readwrite');
+        const completion = readTransaction(transaction);
+        recorder.start();
+        let operationResult: 'returned' | 'threw' = 'returned';
+        let operationError: string | null = null;
+        try {
+            transaction.objectStore('entries').put({ value: 'persisted' }, 'pre-capture');
+        }
+        catch (error) {
+            operationResult = 'threw';
+            operationError = error instanceof Error ? error.message : String(error);
+        }
+        const transactionOutcome = await completion.then(() => 'complete' as const, () => 'abort' as const);
+        recorder.stop();
         return {
             operationResult,
             operationError,
@@ -688,6 +703,7 @@ export async function runNativeIndexedDbTimingPreCaptureTransactionProbe(
         };
     }
     finally {
+        recorder.stop();
         database.close();
     }
 }
@@ -698,17 +714,15 @@ export async function runNativeIndexedDbTimingDatabaseFilterProbe(
     const includedDatabaseName = `playwright-indexeddb-filter-included-${databaseId}`;
     const excludedDatabaseName = `playwright-indexeddb-filter-excluded-${databaseId}`;
     const includedDatabase = await openProbeDatabase(includedDatabaseName);
-    const excludedDatabase = await openProbeDatabase(excludedDatabaseName);
-    const recorder = new NativeIndexedDbTimingRecorder(20, includedDatabaseName);
-    recorder.start();
+    let excludedDatabase: IDBDatabase | undefined;
+    let recorder: NativeIndexedDbTimingRecorder | undefined;
     try {
+        excludedDatabase = await openProbeDatabase(excludedDatabaseName);
+        recorder = new NativeIndexedDbTimingRecorder(20, includedDatabaseName);
+        recorder.start();
         await writeProbeValue(includedDatabase, 'included', 'included');
         await writeProbeValue(excludedDatabase, 'excluded', 'excluded');
-    }
-    finally {
         recorder.stop();
-    }
-    try {
         return {
             ...recorder.snapshot(),
             includedDatabaseName,
@@ -717,9 +731,46 @@ export async function runNativeIndexedDbTimingDatabaseFilterProbe(
         };
     }
     finally {
+        recorder?.stop();
         includedDatabase.close();
-        excludedDatabase.close();
+        excludedDatabase?.close();
     }
+}
+
+export async function runNativeIndexedDbTimingFailureCleanupProbe(
+    databaseId: string
+): Promise<NativeIndexedDbTimingFailureCleanupProbe> {
+    const databaseName = `playwright-indexeddb-timing-${databaseId}`;
+    const originalOpenCursor = IDBObjectStore.prototype.openCursor;
+    let probeRejected = false;
+    IDBObjectStore.prototype.openCursor = function () {
+        throw new Error('injected cursor failure');
+    } as typeof IDBObjectStore.prototype.openCursor;
+    try {
+        await runNativeIndexedDbTimingSemanticsProbe(databaseId);
+    }
+    catch {
+        probeRejected = true;
+    }
+    finally {
+        IDBObjectStore.prototype.openCursor = originalOpenCursor;
+    }
+    return { probeRejected, databaseDeleted: await deleteProbeDatabase(databaseName) };
+}
+
+async function deleteProbeDatabase(databaseName: string): Promise<boolean> {
+    return await new Promise<boolean>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(databaseName);
+        const timeout = setTimeout(() => resolve(false), 1_000);
+        request.addEventListener('success', () => {
+            clearTimeout(timeout);
+            resolve(true);
+        }, { once: true });
+        request.addEventListener('error', () => {
+            clearTimeout(timeout);
+            reject(request.error);
+        }, { once: true });
+    });
 }
 
 async function openProbeDatabase(dbName: string): Promise<IDBDatabase> {

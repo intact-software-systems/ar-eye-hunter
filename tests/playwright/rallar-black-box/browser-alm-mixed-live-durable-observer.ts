@@ -145,6 +145,7 @@ export interface MixedLiveDurableObservationSemanticsProbe {
     readonly queuePhases: readonly MixedLiveDurableQueuePhase[];
     readonly completedAfterParent: readonly string[];
     readonly completedAfterRetry: readonly string[];
+    readonly afterRetryObservation: MixedLiveDurableLiveObservation;
     readonly completedDurableIdentities: readonly string[];
     readonly refusedIdentityObserved: boolean;
     readonly queueHookModuleIdentityObserved: boolean;
@@ -249,7 +250,13 @@ export class MixedLiveDurableObservation {
         this.#inboundNamespace = input.inboundNamespace;
         this.#nativeRecorder = new NativeIndexedDbTimingRecorder(NATIVE_SAMPLE_CAPACITY, input.databaseName);
         this.#nativeRecorder.start();
-        this.installQueueObservation();
+        try {
+            this.installQueueObservation();
+        }
+        catch (error) {
+            this.#nativeRecorder.stop();
+            throw error;
+        }
     }
 
     diagnosticsPorts(): RallarDiagnosticsPortsInput {
@@ -354,6 +361,30 @@ export class MixedLiveDurableObservation {
     snapshot(): MixedLiveDurableObservationSnapshot {
         return {
             schema: 'rallar.browser-alm-mixed-live-durable-observation.v1',
+            ...this.readEnvironmentSnapshot(),
+            inboundNamespace: this.#inboundNamespace ?? null,
+            databaseName: this.#databaseName,
+            storeName: this.#storeName,
+            durableTypeId: this.#durableTypeId,
+            queuePhases: this.#queuePhases.filter((phase) => this.#markedDurableIdentities.has(phase.identity)),
+            liveObservations: this.readScopedLiveObservations(),
+            durableCallbacks: [...this.#durableCallbacks],
+            inboundDiagnostics: [...this.#inboundDiagnostics],
+            outboundDiagnostics: [...this.#outboundDiagnostics],
+            logicalOperationCounts: this.#logicalObserver.getCounts(),
+            nativeTiming: this.#nativeRecorder.snapshot(),
+            completedDurableIdentities: [...this.#completedDurableIdentities]
+                .filter((identity) => this.#markedDurableIdentities.has(identity))
+                .sort(),
+            ...this.readBoundedCaptureSnapshot(),
+            ...this.readTerminalReadbackSnapshot(),
+            ...this.readBoundarySnapshot(),
+            methodsRestored: this.methodsRestored()
+        };
+    }
+
+    private readEnvironmentSnapshot(): Pick<MixedLiveDurableObservationSnapshot, 'environment' | 'clockProvenance'> {
+        return {
             environment: {
                 userAgent: navigator.userAgent,
                 hardwareConcurrency: navigator.hardwareConcurrency,
@@ -365,29 +396,38 @@ export class MixedLiveDurableObservation {
                 publicReceive: 'Rallar public receivedAtEpochMs',
                 callback: 'receiver Date.now epoch milliseconds',
                 nativeDuration: 'receiver performance.now monotonic milliseconds'
-            },
-            inboundNamespace: this.#inboundNamespace ?? null,
-            databaseName: this.#databaseName,
-            storeName: this.#storeName,
-            durableTypeId: this.#durableTypeId,
-            queuePhases: this.#queuePhases.filter((phase) => this.#markedDurableIdentities.has(phase.identity)),
-            liveObservations: this.#liveObservations.map((observation) => {
-                const overlappingReturnedClaimIdentities = observation.overlappingReturnedClaimIdentities
-                    .filter((identity) => this.#markedDurableIdentities.has(identity));
-                return {
-                    ...observation,
-                    overlappingReturnedClaimIdentities,
-                    overlappingReturnedClaimCount: overlappingReturnedClaimIdentities.length
-                };
-            }),
-            durableCallbacks: [...this.#durableCallbacks],
-            inboundDiagnostics: [...this.#inboundDiagnostics],
-            outboundDiagnostics: [...this.#outboundDiagnostics],
-            logicalOperationCounts: this.#logicalObserver.getCounts(),
-            nativeTiming: this.#nativeRecorder.snapshot(),
-            completedDurableIdentities: [...this.#completedDurableIdentities]
-                .filter((identity) => this.#markedDurableIdentities.has(identity))
-                .sort(),
+            }
+        };
+    }
+
+    private readScopedLiveObservations(): readonly MixedLiveDurableLiveObservation[] {
+        return this.#liveObservations.map((observation) => {
+            const overlappingReturnedClaimIdentities = observation.overlappingReturnedClaimIdentities
+                .filter((identity) => this.#markedDurableIdentities.has(identity));
+            return {
+                ...observation,
+                overlappingReturnedClaimIdentities,
+                overlappingReturnedClaimCount: overlappingReturnedClaimIdentities.length
+            };
+        });
+    }
+
+    private readBoundedCaptureSnapshot(): Pick<
+        MixedLiveDurableObservationSnapshot,
+        | 'droppedQueuePhaseCount'
+        | 'droppedLiveObservationCount'
+        | 'droppedDurableCallbackCount'
+        | 'droppedInboundDiagnosticCount'
+        | 'droppedOutboundDiagnosticCount'
+        | 'droppedMarkedIdentityCount'
+        | 'droppedReturnedClaimCount'
+        | 'droppedCompletedIdentityCount'
+        | 'queueHookModuleIdentityObserved'
+        | 'callbackOverlapProbeCount'
+        | 'observationSampleCapacity'
+        | 'returnedClaimCapacity'
+    > {
+        return {
             droppedQueuePhaseCount: this.#droppedQueuePhaseCount,
             droppedLiveObservationCount: this.#droppedLiveObservationCount,
             droppedDurableCallbackCount: this.#droppedDurableCallbackCount,
@@ -399,11 +439,30 @@ export class MixedLiveDurableObservation {
             queueHookModuleIdentityObserved: this.#queueHookModuleIdentityObserved,
             callbackOverlapProbeCount: this.#callbackOverlapProbeCount,
             observationSampleCapacity: OBSERVATION_SAMPLE_CAPACITY,
-            returnedClaimCapacity: OBSERVATION_SAMPLE_CAPACITY,
+            returnedClaimCapacity: OBSERVATION_SAMPLE_CAPACITY
+        };
+    }
+
+    private readTerminalReadbackSnapshot(): Pick<
+        MixedLiveDurableObservationSnapshot,
+        | 'terminalReadbackRowCapacity'
+        | 'terminalReadbackObservationCount'
+        | 'terminalReadbackScannedRowCount'
+        | 'terminalReadbackCensoredByRowCapacity'
+    > {
+        return {
             terminalReadbackRowCapacity: TERMINAL_READBACK_ROW_CAPACITY,
             terminalReadbackObservationCount: this.#terminalReadbackObservationCount,
             terminalReadbackScannedRowCount: this.#terminalReadbackScannedRowCount,
-            terminalReadbackCensoredByRowCapacity: this.#terminalReadbackCensoredByRowCapacity,
+            terminalReadbackCensoredByRowCapacity: this.#terminalReadbackCensoredByRowCapacity
+        };
+    }
+
+    private readBoundarySnapshot(): Pick<
+        MixedLiveDurableObservationSnapshot,
+        'capturedBoundaries' | 'uncapturedPhases'
+    > {
+        return {
             capturedBoundaries: [
                 'scoped dispatch-local queue page returned',
                 'scoped dispatch-local reservation returned with observed lease',
@@ -419,8 +478,7 @@ export class MixedLiveDurableObservation {
                 'internal callback-only phases',
                 'request-to-message causality',
                 'exact scheduler timer causality'
-            ],
-            methodsRestored: this.methodsRestored()
+            ]
         };
     }
 
@@ -721,9 +779,58 @@ export function readMixedLiveDurableObservation(): MixedLiveDurableObservation {
     return observation;
 }
 
+interface MixedLiveDurableSemanticsContext {
+    readonly databaseName: string;
+    readonly storeName: string;
+    readonly inboundNamespace: string;
+    readonly identity: string;
+    readonly nowMs: number;
+    readonly observation: MixedLiveDurableObservation;
+    readonly queue: IndexedDbQueueBox;
+}
+
+interface MixedLiveDurableInitialDispatch {
+    readonly entry: ResourceEntry;
+    readonly page: ResourceInboxWorkPage;
+    readonly noClaimObservation: MixedLiveDurableLiveObservation;
+}
+
+interface MixedLiveDurableClaimProbe {
+    readonly overlapObservation: MixedLiveDurableLiveObservation;
+    readonly completedAfterRetry: readonly string[];
+    readonly afterRetryObservation: MixedLiveDurableLiveObservation;
+}
+
 export async function runMixedLiveDurableObservationSemanticsProbe(
     databaseId: string
 ): Promise<MixedLiveDurableObservationSemanticsProbe> {
+    const context = createMixedLiveDurableSemanticsContext(databaseId);
+    let input: Parameters<typeof toMixedLiveDurableSemanticsProbe>[0] | undefined;
+    let snapshot: MixedLiveDurableObservationSnapshot | undefined;
+    try {
+        const initial = await observeInitialDispatch(context);
+        const completedAfterParent = await observeCompletedAdmissionParent(context);
+        const claim = await observeDispatchClaimAndRetry(context, initial);
+        await observeCompletedDispatchEffect(context);
+        const doubleInstallationRejected = rejectDoubleObservationInstallation(context);
+        input = {
+            initial,
+            claim,
+            completedAfterParent,
+            doubleInstallationRejected,
+            snapshot: context.observation.snapshot()
+        };
+    }
+    finally {
+        snapshot = context.observation.dispose();
+    }
+    if (input === undefined || snapshot === undefined) {
+        throw new Error('Mixed live/durable semantics probe did not produce an observation');
+    }
+    return toMixedLiveDurableSemanticsProbe({ ...input, snapshot });
+}
+
+function createMixedLiveDurableSemanticsContext(databaseId: string): MixedLiveDurableSemanticsContext {
     const databaseName = `playwright-mixed-live-durable-${databaseId}`;
     const storeName = 'entries';
     const inboundNamespace = `mixed-live-durable:${databaseId}:inbound:admission`;
@@ -737,132 +844,158 @@ export async function runMixedLiveDurableObservationSemanticsProbe(
         inboundNamespace
     });
     const queue = new IndexedDbQueueBox({ dbName: databaseName, storeName, observer });
-    let noClaimObservation: MixedLiveDurableLiveObservation;
-    let overlapObservation: MixedLiveDurableLiveObservation;
-    let completedAfterParent: readonly string[] = [];
-    let completedAfterRetry: readonly string[] = [];
-    let doubleInstallationRejected = false;
+    return { databaseName, storeName, inboundNamespace, identity, nowMs: Date.now(), observation, queue };
+}
+
+async function observeInitialDispatch(
+    context: MixedLiveDurableSemanticsContext
+): Promise<MixedLiveDurableInitialDispatch> {
+    const write = computeDispatchEntry(context, `effect-${context.identity}`);
+    await context.queue.enqueueIfAbsent(write.entry);
+    const noClaimObservation = context.observation.observeLiveMessage({
+        identity: 'live-probe',
+        sequence: 1,
+        sentAtEpochMs: context.nowMs,
+        receivedAtEpochMs: Date.now(),
+        markedForOverlap: true
+    });
+    const page = await context.queue.readWorkPage({
+        typeId: write.entry.typeId,
+        status: EntityStatus.NEW,
+        maxToRead: 1,
+        cursor: null
+    });
+    return { entry: write.entry, page, noClaimObservation };
+}
+
+async function observeCompletedAdmissionParent(
+    context: MixedLiveDurableSemanticsContext
+): Promise<readonly string[]> {
+    const originalMessage = newALUnicastMessage(
+        'sender',
+        { topicId: 'room.mixed-durable', resourceId: context.identity, contextId: 'room' },
+        'receiver',
+        'room.mixed-durable.v1',
+        { identity: context.identity },
+        { ttlMs: 30_000 }
+    );
+    const message = {
+        ...originalMessage,
+        constraints: { ...originalMessage.constraints, expiresAtMs: context.nowMs + 30_000 }
+    };
+    const parent = computeALInboundWorkEntry({
+        namespace: context.inboundNamespace,
+        effectId: toALInboundPendingAdmissionId(message),
+        payload: { kind: 'admit-message', msg: message, source: { kind: 'ws-client', peerId: 'sender' } },
+        observedAtMs: context.nowMs,
+        expireAtTimestamp: context.nowMs + 30_000
+    });
+    await context.queue.enqueueIfAbsent(parent.entry);
+    const reserved = await context.queue.reserveEntries({
+        typeIds: new Set([parent.entry.typeId]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: [parent.entry]
+    });
+    await context.queue.releaseEntries([...reserved.values()], { status: EntityStatus.COMPLETED, delayMs: null });
+    return context.observation.snapshot().completedDurableIdentities;
+}
+
+async function observeDispatchClaimAndRetry(
+    context: MixedLiveDurableSemanticsContext,
+    initial: MixedLiveDurableInitialDispatch
+): Promise<MixedLiveDurableClaimProbe> {
+    const reserved = await context.queue.reserveEntries({
+        typeIds: new Set([initial.entry.typeId]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: initial.page.entries
+    });
+    const overlapObservation = context.observation.observeLiveMessage({
+        identity: 'live-probe-after-claim',
+        sequence: 2,
+        sentAtEpochMs: context.nowMs,
+        receivedAtEpochMs: Date.now(),
+        markedForOverlap: true
+    });
+    await context.queue.releaseEntries([...reserved.values()], { status: EntityStatus.RETRY, delayMs: 30_000 });
+    const completedAfterRetry = context.observation.snapshot().completedDurableIdentities;
+    const afterRetryObservation = context.observation.observeLiveMessage({
+        identity: 'live-probe-after-retry',
+        sequence: 3,
+        sentAtEpochMs: context.nowMs,
+        receivedAtEpochMs: Date.now(),
+        markedForOverlap: true
+    });
+    return { overlapObservation, completedAfterRetry, afterRetryObservation };
+}
+
+async function observeCompletedDispatchEffect(context: MixedLiveDurableSemanticsContext): Promise<void> {
+    const completedWrite = computeDispatchEntry(context, `completed-effect-${context.identity}`);
+    await context.queue.enqueueIfAbsent(completedWrite.entry);
+    const completedPage = await context.queue.readWorkPage({
+        typeId: completedWrite.entry.typeId,
+        status: EntityStatus.NEW,
+        maxToRead: 8,
+        cursor: null
+    });
+    const reserved = await context.queue.reserveEntries({
+        typeIds: new Set([completedWrite.entry.typeId]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: completedPage.entries.filter((entry) =>
+            entry.key.contextId === completedWrite.entry.key.contextId
+        )
+    });
+    await context.queue.releaseEntries([...reserved.values()], { status: EntityStatus.COMPLETED, delayMs: null });
+}
+
+function computeDispatchEntry(context: MixedLiveDurableSemanticsContext, effectId: string) {
+    return computeALInboundWorkEntry({
+        namespace: context.inboundNamespace,
+        effectId,
+        payload: {
+            kind: 'dispatch-local',
+            message: { senderId: 'sender', msgId: context.identity }
+        },
+        observedAtMs: context.nowMs,
+        expireAtTimestamp: context.nowMs + 30_000
+    });
+}
+
+function rejectDoubleObservationInstallation(context: MixedLiveDurableSemanticsContext): boolean {
     try {
-        const nowMs = Date.now();
-        const write = computeALInboundWorkEntry({
-            namespace: inboundNamespace,
-            effectId: `effect-${identity}`,
-            payload: {
-                kind: 'dispatch-local',
-                message: { senderId: 'sender', msgId: identity }
-            },
-            observedAtMs: nowMs,
-            expireAtTimestamp: nowMs + 30_000
+        installMixedLiveDurableObservation({
+            databaseName: context.databaseName,
+            storeName: context.storeName,
+            durableTypeId: 'room.mixed-durable.v1',
+            markedDurableIdentities: [context.identity],
+            inboundNamespace: context.inboundNamespace
         });
-        await queue.enqueueIfAbsent(write.entry);
-        noClaimObservation = await observation.observeLiveMessage({
-            identity: 'live-probe',
-            sequence: 1,
-            sentAtEpochMs: nowMs,
-            receivedAtEpochMs: Date.now(),
-            markedForOverlap: true
-        });
-        const dispatchPage = await queue.readWorkPage({
-            typeId: write.entry.typeId,
-            status: EntityStatus.NEW,
-            maxToRead: 1,
-            cursor: null
-        });
-        const originalParentMessage = newALUnicastMessage(
-            'sender',
-            { topicId: 'room.mixed-durable', resourceId: identity, contextId: 'room' },
-            'receiver',
-            'room.mixed-durable.v1',
-            { identity },
-            { ttlMs: 30_000 }
-        );
-        const parentMessage = {
-            ...originalParentMessage,
-            constraints: { ...originalParentMessage.constraints, expiresAtMs: nowMs + 30_000 }
-        };
-        const parent = computeALInboundWorkEntry({
-            namespace: inboundNamespace,
-            effectId: toALInboundPendingAdmissionId(parentMessage),
-            payload: { kind: 'admit-message', msg: parentMessage, source: { kind: 'ws-client', peerId: 'sender' } },
-            observedAtMs: nowMs,
-            expireAtTimestamp: nowMs + 30_000
-        });
-        await queue.enqueueIfAbsent(parent.entry);
-        const reservedParent = await queue.reserveEntries({
-            typeIds: new Set([parent.entry.typeId]),
-            statusIds: new Set([EntityStatus.NEW]),
-            reservationInput: 1,
-            observedEntries: [parent.entry]
-        });
-        await queue.releaseEntries([...reservedParent.values()], { status: EntityStatus.COMPLETED, delayMs: null });
-        completedAfterParent = observation.snapshot().completedDurableIdentities;
-        const reserved = await queue.reserveEntries({
-            typeIds: new Set([write.entry.typeId]),
-            statusIds: new Set([EntityStatus.NEW]),
-            reservationInput: 1,
-            observedEntries: dispatchPage.entries
-        });
-        overlapObservation = await observation.observeLiveMessage({
-            identity: 'live-probe-after-claim',
-            sequence: 2,
-            sentAtEpochMs: nowMs,
-            receivedAtEpochMs: Date.now(),
-            markedForOverlap: true
-        });
-        await queue.releaseEntries([...reserved.values()], { status: EntityStatus.RETRY, delayMs: 30_000 });
-        completedAfterRetry = observation.snapshot().completedDurableIdentities;
-        const completedWrite = computeALInboundWorkEntry({
-            namespace: inboundNamespace,
-            effectId: `completed-effect-${identity}`,
-            payload: {
-                kind: 'dispatch-local',
-                message: { senderId: 'sender', msgId: identity }
-            },
-            observedAtMs: nowMs,
-            expireAtTimestamp: nowMs + 30_000
-        });
-        await queue.enqueueIfAbsent(completedWrite.entry);
-        const completedPage = await queue.readWorkPage({
-            typeId: completedWrite.entry.typeId,
-            status: EntityStatus.NEW,
-            maxToRead: 8,
-            cursor: null
-        });
-        const reservedCompleted = await queue.reserveEntries({
-            typeIds: new Set([completedWrite.entry.typeId]),
-            statusIds: new Set([EntityStatus.NEW]),
-            reservationInput: 1,
-            observedEntries: completedPage.entries.filter((entry) =>
-                entry.key.contextId === completedWrite.entry.key.contextId
-            )
-        });
-        await queue.releaseEntries([...reservedCompleted.values()], {
-            status: EntityStatus.COMPLETED,
-            delayMs: null
-        });
-        try {
-            installMixedLiveDurableObservation({
-                databaseName,
-                storeName,
-                durableTypeId: 'room.mixed-durable.v1',
-                markedDurableIdentities: [identity],
-                inboundNamespace
-            });
-        }
-        catch {
-            doubleInstallationRejected = true;
-        }
+        return false;
     }
-    finally {
-        observation.stopNativeMeasurement();
+    catch {
+        return true;
     }
-    const snapshot = observation.dispose();
+}
+
+function toMixedLiveDurableSemanticsProbe(
+    input: Readonly<{
+        initial: MixedLiveDurableInitialDispatch;
+        claim: MixedLiveDurableClaimProbe;
+        completedAfterParent: readonly string[];
+        doubleInstallationRejected: boolean;
+        snapshot: MixedLiveDurableObservationSnapshot;
+    }>
+): MixedLiveDurableObservationSemanticsProbe {
+    const { initial, claim, completedAfterParent, doubleInstallationRejected, snapshot } = input;
     return {
-        noClaimObservation,
-        overlapObservation,
+        noClaimObservation: initial.noClaimObservation,
+        overlapObservation: claim.overlapObservation,
         queuePhases: snapshot.queuePhases,
         completedAfterParent,
-        completedAfterRetry,
+        completedAfterRetry: claim.completedAfterRetry,
+        afterRetryObservation: claim.afterRetryObservation,
         completedDurableIdentities: snapshot.completedDurableIdentities,
         refusedIdentityObserved: snapshot.queuePhases.some((phase) => phase.identity === 'refused-probe') ||
             snapshot.completedDurableIdentities.includes('refused-probe') ||

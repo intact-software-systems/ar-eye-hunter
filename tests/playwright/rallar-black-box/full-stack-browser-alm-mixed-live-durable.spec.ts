@@ -3,11 +3,26 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type {
+    MixedClientCleanupFailure,
+    MixedDurablePayload,
+    MixedLivePayload,
+    MixedReceiverProgress
+} from './browser-alm-mixed-live-durable-client.ts';
+import {
+    classifyMixedLiveDurableSends,
+    evaluateMixedLiveDurableCoverage,
+    evaluateMixedLiveDurableExecutionBoundary,
+    readAdmittedMixedLiveDurableIds,
+    type MixedLiveDurableCoverage,
+    type MixedLiveDurableExecutionBoundary
+} from './browser-alm-mixed-live-durable-coverage.ts';
+import type {
     MixedLiveDurableObservationSnapshot,
     MixedLiveDurableTerminalIdentity
 } from './browser-alm-mixed-live-durable-observer.ts';
 import {
     expectFullStackApiReady,
+    FULL_STACK_SPA_ORIGIN,
     readFullStackConfig,
     uniqueSuffix,
     type FullStackUser
@@ -22,6 +37,12 @@ const observerModuleUrl = `/@fs${
         'tests/playwright/rallar-black-box/browser-alm-mixed-live-durable-observer.ts'
     )
 }`;
+const clientModuleUrl = `/@fs${
+    path.join(
+        repoRoot,
+        'tests/playwright/rallar-black-box/browser-alm-mixed-live-durable-client.ts'
+    )
+}`;
 
 const CORRECTNESS_DEADLINE_MS = 30_000;
 const DURABLE_BURST_COUNT = 64;
@@ -30,30 +51,14 @@ const OVERLAP_PROBE_SEQUENCES = new Set([0, 7, 15, 23]);
 const DURABLE_TOPIC_ID = 'room.mixed-durable';
 const DURABLE_TYPE_ID = 'room.mixed-durable.v1';
 const LIVE_LANE_ID = 'realtime';
-const RUNTIME_SOURCE_COMMIT = '4c5435b3f95cf48287f39076eeff56b02fabe239';
+const EXPECTED_DATABASE_NAME = 'ar-eye-hunter-al-runtime';
+const CLEANUP_FAILURE_CAPACITY = 20;
 
 interface MixedClient {
     readonly role: 'a' | 'b' | 'c';
     readonly context: BrowserContext;
     readonly page: Page;
-    readonly sessionId: string;
-}
-
-interface MixedLivePayload {
-    readonly identity: string;
-    readonly sequence: number;
-    readonly sentAtEpochMs: number;
-    readonly probeOverlap: boolean;
-    readonly roomRef: {
-        readonly applicationId: string;
-        readonly workspaceId: string;
-        readonly groupId: string;
-    };
-}
-
-interface MixedDurablePayload {
-    readonly identity: string;
-    readonly sentAtEpochMs: number;
+    sessionId: string | null;
 }
 
 interface MixedReadiness {
@@ -90,25 +95,6 @@ interface MixedReconnectSummary {
     readonly sendStatus: string;
 }
 
-interface MixedReceiverProgress {
-    readonly durableMessageIds: readonly string[];
-    readonly liveSequences: readonly number[];
-    readonly postReconnectReceived: boolean;
-}
-
-interface MixedReceiverState {
-    readonly durableMessageIds: string[];
-    readonly liveSequences: number[];
-    readPostReconnectReceived(): boolean;
-    unsubscribe(): void;
-}
-
-declare global {
-    interface Window {
-        __rallarMixedReceiver?: MixedReceiverState;
-    }
-}
-
 interface MixedScenarioEvidence {
     readonly roomId: string | null;
     readonly clients: readonly Pick<MixedClient, 'role' | 'sessionId'>[];
@@ -126,16 +112,26 @@ interface MixedScenarioFailure {
     readonly name: string;
 }
 
+interface MixedScenarioCleanupFailure {
+    readonly role: MixedClient['role'];
+    readonly stage: MixedClientCleanupFailure['stage'] | 'client-cleanup-call' | 'context-close';
+    readonly name: string;
+}
+
 interface MixedScenarioArtifact {
-    readonly schema: 'rallar.browser-alm-mixed-live-durable-proof.v1';
-    readonly runtimeSourceCommit: string;
-    readonly instrumentationSource: string;
+    readonly schema: 'rallar.browser-alm-mixed-live-durable-proof.v2';
+    readonly executionBoundary: MixedLiveDurableExecutionBoundary;
+    readonly sources: {
+        readonly runtime: { readonly identity: string; readonly verification: 'operator-supplied-unverified'; };
+        readonly instrumentation: { readonly identity: string; readonly verification: 'operator-supplied-unverified'; };
+    };
     readonly environment: {
         readonly nodeVersion: string;
         readonly platform: string;
         readonly architecture: string;
-        readonly apiMode: 'memory';
-        readonly workerCount: 1;
+        readonly apiMode: string;
+        readonly workerCount: number;
+        readonly workerIndex: number;
     };
     readonly workload: {
         readonly durableBurstCount: number;
@@ -149,8 +145,11 @@ interface MixedScenarioArtifact {
         readonly reconnectingNonProofReceiverRole: 'c';
     };
     readonly failure: MixedScenarioFailure | null;
+    readonly cleanupFailures: readonly MixedScenarioCleanupFailure[];
+    readonly droppedCleanupFailureCount: number;
     readonly evidence: MixedScenarioEvidence;
     readonly observations: Readonly<Record<MixedClient['role'], MixedLiveDurableObservationSnapshot | null>>;
+    readonly coverage: MixedLiveDurableCoverage;
 }
 
 test.describe('browser ALM mixed live and durable progress', () => {
@@ -161,6 +160,19 @@ test.describe('browser ALM mixed live and durable progress', () => {
         request
     }, testInfo) => {
         test.setTimeout(180_000);
+        const executionBoundary = evaluateMixedLiveDurableExecutionBoundary({
+            apiMode: process.env.RALLAR_BLACK_BOX_API_MODE,
+            nodeVersion: process.version,
+            apiBaseUrl: config.apiBaseUrl,
+            spaBaseUrl: FULL_STACK_SPA_ORIGIN,
+            workerCount: testInfo.config.workers,
+            runtimeSource: process.env.RALLAR_ALM_MIXED_RUNTIME_SOURCE,
+            instrumentationSource: process.env.RALLAR_ALM_MIXED_INSTRUMENTATION_SOURCE
+        });
+        test.skip(
+            executionBoundary.verdict === 'failed',
+            `Mixed proof requires explicit local memory source boundary: ${executionBoundary.reasons.join(', ')}`
+        );
         await expectFullStackApiReady(request, config);
 
         const suffix = uniqueSuffix();
@@ -168,18 +180,21 @@ test.describe('browser ALM mixed live and durable progress', () => {
             { length: DURABLE_BURST_COUNT },
             (_, index) => `durable-${String(index).padStart(3, '0')}`
         );
-        let clients: readonly MixedClient[] = [];
+        const clients: MixedClient[] = [];
         let scenario = emptyScenarioEvidence(clients);
         const observations: Record<MixedClient['role'], MixedLiveDurableObservationSnapshot | null> = {
             a: null,
             b: null,
             c: null
         };
+        const cleanupFailures: MixedScenarioCleanupFailure[] = [];
+        let droppedCleanupFailureCount = 0;
         let stage = 'connect-clients';
         let failure: MixedScenarioFailure | null = null;
 
         try {
-            clients = await createMixedClients(browser, suffix, observations);
+            await createMixedClients(browser, clients);
+            await connectMixedClients(clients, suffix);
             scenario = emptyScenarioEvidence(clients);
             stage = 'create-room';
             const roomId = await createRoom(clients[0].page, suffix);
@@ -200,7 +215,7 @@ test.describe('browser ALM mixed live and durable progress', () => {
             const liveSendPromise = sendLiveSequence(clients[0].page, roomId);
             const reconnectPromise = reconnectAndSend(clients[2].page, roomId);
             scenario.durableSends.push(...await durableSendsPromise);
-            scenario.durableDisposition = classifyDurableSends(scenario.durableSends);
+            scenario.durableDisposition = classifyMixedLiveDurableSends(scenario.durableSends);
             await markReceiverDurableIdentities(
                 clients[1].page,
                 scenario.durableSends.map((send) => send.msgId)
@@ -212,7 +227,7 @@ test.describe('browser ALM mixed live and durable progress', () => {
             stage = 'wait-for-public-progress';
             scenario.receiverProgress = await waitForReceiverProgress(
                 clients[1].page,
-                admittedDurableIds(scenario.durableSends)
+                readAdmittedMixedLiveDurableIds(scenario.durableSends)
             );
             stage = 'stop-native-measurement';
             await Promise.all(clients.map((client) => stopNativeMeasurement(client.page)));
@@ -228,22 +243,54 @@ test.describe('browser ALM mixed live and durable progress', () => {
             failure = { stage, name: error instanceof Error ? error.name : 'UnknownFailure' };
         }
         finally {
-            await Promise.all(clients.map(async (client) => {
-                observations[client.role] = await disposeClient(client.page);
-                await client.context.close();
-            }));
+            const cleanup = await disposeMixedClients(clients);
+            Object.assign(observations, cleanup.observations);
+            for (const cleanupFailure of cleanup.failures) {
+                if (cleanupFailures.length < CLEANUP_FAILURE_CAPACITY) {
+                    cleanupFailures.push(cleanupFailure);
+                }
+                else {
+                    droppedCleanupFailureCount += 1;
+                }
+            }
         }
 
+        const coverage = evaluateMixedLiveDurableCoverage({
+            expectedDurableSendCount: DURABLE_BURST_COUNT,
+            expectedLatestLiveSequence: LIVE_SEQUENCE_COUNT - 1,
+            expectedDatabaseName: EXPECTED_DATABASE_NAME,
+            scenarioFailure: failure,
+            cleanupFailureCount: cleanupFailures.length + droppedCleanupFailureCount,
+            readiness: scenario.readiness,
+            durableSends: scenario.durableSends,
+            durableDisposition: scenario.durableDisposition,
+            liveAcceptedCount: scenario.liveSend?.acceptedCount ?? null,
+            reconnect: scenario.reconnect,
+            receiverProgress: scenario.receiverProgress,
+            terminalIdentities: scenario.terminalIdentities,
+            receiverObservation: observations.b,
+            observations
+        });
         const artifact: MixedScenarioArtifact = {
-            schema: 'rallar.browser-alm-mixed-live-durable-proof.v1',
-            runtimeSourceCommit: RUNTIME_SOURCE_COMMIT,
-            instrumentationSource: process.env.RALLAR_ALM_MIXED_INSTRUMENTATION_SOURCE ?? 'working-tree',
+            schema: 'rallar.browser-alm-mixed-live-durable-proof.v2',
+            executionBoundary,
+            sources: {
+                runtime: {
+                    identity: executionBoundary.runtimeSource,
+                    verification: executionBoundary.sourceVerification
+                },
+                instrumentation: {
+                    identity: executionBoundary.instrumentationSource,
+                    verification: executionBoundary.sourceVerification
+                }
+            },
             environment: {
                 nodeVersion: process.version,
                 platform: process.platform,
                 architecture: process.arch,
-                apiMode: 'memory',
-                workerCount: 1
+                apiMode: executionBoundary.apiMode,
+                workerCount: executionBoundary.workerCount,
+                workerIndex: testInfo.workerIndex
             },
             workload: {
                 durableBurstCount: DURABLE_BURST_COUNT,
@@ -257,8 +304,11 @@ test.describe('browser ALM mixed live and durable progress', () => {
                 reconnectingNonProofReceiverRole: 'c'
             },
             failure,
+            cleanupFailures,
+            droppedCleanupFailureCount,
             evidence: scenario,
-            observations
+            observations,
+            coverage
         };
         const artifactPath = await writeUniqueArtifact(artifact, testInfo);
         await testInfo.attach('browser-alm-mixed-live-durable-proof.json', {
@@ -266,40 +316,39 @@ test.describe('browser ALM mixed live and durable progress', () => {
             contentType: 'application/json'
         });
 
-        expect(failure, `payload-free failure evidence: ${artifactPath}`).toBeNull();
-        assertMixedScenarioCoverage(artifact, artifactPath);
+        expect(coverage, `payload-free bounded coverage evidence: ${artifactPath}`).toEqual({
+            verdict: 'passed',
+            reasons: []
+        });
     });
 });
 
 async function createMixedClients(
     browser: Browser,
-    suffix: string,
-    observations: Record<MixedClient['role'], MixedLiveDurableObservationSnapshot | null>
-): Promise<readonly MixedClient[]> {
+    clients: MixedClient[]
+): Promise<void> {
     const roles = ['a', 'b', 'c'] as const;
-    const users = [config.userA, config.userB, config.userC];
-    const clients: MixedClient[] = [];
-    for (const [index, role] of roles.entries()) {
+    for (const role of roles) {
         const context = await browser.newContext();
-        const page = await context.newPage();
         try {
-            const sessionId = await connectClient(
-                page,
-                uniqueRegisteredUser(users[index], `mixed-${role}`, suffix)
-            );
-            clients.push({ role, context, page, sessionId });
+            const page = await context.newPage();
+            clients.push({ role, context, page, sessionId: null });
         }
-        catch (error) {
-            observations[role] = await disposeClient(page);
+        catch {
             await context.close();
-            await Promise.all(clients.map(async (client) => {
-                observations[client.role] = await disposeClient(client.page);
-                await client.context.close();
-            }));
-            throw error;
+            throw new Error(`Failed to create mixed client page for role ${role}`);
         }
     }
-    return clients;
+}
+
+async function connectMixedClients(clients: readonly MixedClient[], suffix: string): Promise<void> {
+    const users = [config.userA, config.userB, config.userC];
+    for (const [index, client] of clients.entries()) {
+        client.sessionId = await connectClient(
+            client.page,
+            uniqueRegisteredUser(users[index], `mixed-${client.role}`, suffix)
+        );
+    }
 }
 
 async function connectClient(
@@ -367,71 +416,10 @@ async function createRoom(page: Page, suffix: string): Promise<string> {
 
 async function joinReceiver(page: Page, roomId: string): Promise<void> {
     await page.evaluate(async (input) => {
-        const fixture: typeof import('./browser-alm-mixed-live-durable-observer.ts') = await import(input.observerUrl);
-        const observation = fixture.readMixedLiveDurableObservation();
-        const rallarModule: typeof import('../../../packages/shared-web/browser/rallar.ts') = await import(
-            input.rallarUrl
-        );
-        const { rallar } = rallarModule;
-        await rallar.rooms.join(input.roomId, { timeoutMs: input.timeoutMs, maxAttempts: 3 });
-        const room = rallar.rooms.session(input.roomId);
-        const durableMessageIds: string[] = [];
-        const liveSequences: number[] = [];
-        let postReconnectReceived = false;
-        const durable = room.message<MixedDurablePayload>({
-            topicId: input.durableTopicId,
-            typeId: input.durableTypeId
-        });
-        const realtime = room.realtime<MixedLivePayload>(input.liveLaneId);
-        const unsubscribeDurable = durable.onRtc((payload, message) => {
-            const target = message.raw.targets;
-            if (
-                target === undefined ||
-                target.mode !== 'multicast' ||
-                target.groupRef.applicationId !== room.roomRef.applicationId ||
-                target.groupRef.workspaceId !== room.roomRef.workspaceId ||
-                target.groupRef.groupId !== room.roomRef.groupId
-            ) {
-                return;
-            }
-            durableMessageIds.push(message.raw.id.msgId);
-            observation.observeDurableCallback({
-                identity: message.raw.id.msgId,
-                sentAtEpochMs: payload.sentAtEpochMs,
-                receivedAtEpochMs: message.receivedAtEpochMs
-            });
-        });
-        const unsubscribeLive = realtime.on(async (message) => {
-            const sourceRoom = message.data.roomRef;
-            if (
-                sourceRoom.applicationId !== room.roomRef.applicationId ||
-                sourceRoom.workspaceId !== room.roomRef.workspaceId ||
-                sourceRoom.groupId !== room.roomRef.groupId
-            ) {
-                return;
-            }
-            liveSequences.push(message.data.sequence);
-            postReconnectReceived ||= message.data.identity === 'post-reconnect';
-            await observation.observeLiveMessage({
-                identity: message.data.identity,
-                sequence: message.data.sequence,
-                sentAtEpochMs: message.data.sentAtEpochMs,
-                receivedAtEpochMs: message.receivedAtEpochMs,
-                markedForOverlap: message.data.probeOverlap
-            });
-        });
-        window.__rallarMixedReceiver = {
-            durableMessageIds,
-            liveSequences,
-            readPostReconnectReceived: () => postReconnectReceived,
-            unsubscribe: () => {
-                unsubscribeDurable();
-                unsubscribeLive();
-            }
-        };
+        const client: typeof import('./browser-alm-mixed-live-durable-client.ts') = await import(input.clientUrl);
+        await client.installMixedLiveDurableReceiver(input);
     }, {
-        observerUrl: observerModuleUrl,
-        rallarUrl: rallarModuleUrl,
+        clientUrl: clientModuleUrl,
         roomId,
         durableTopicId: DURABLE_TOPIC_ID,
         durableTypeId: DURABLE_TYPE_ID,
@@ -523,7 +511,7 @@ async function sendLiveSequence(page: Page, roomId: string): Promise<MixedLiveSe
         const channel = room.realtime<MixedLivePayload>(input.laneId);
         let acceptedCount = 0;
         for (let sequence = 0; sequence < input.sequenceCount; sequence += 1) {
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            await new Promise<number>((resolve) => requestAnimationFrame(resolve));
             const sent = await channel.send({
                 identity: `live-${sequence}`,
                 sequence,
@@ -606,17 +594,10 @@ async function waitForReceiverProgress(
 }
 
 async function readReceiverProgress(page: Page): Promise<MixedReceiverProgress> {
-    return await page.evaluate(() => {
-        const receiver = window.__rallarMixedReceiver;
-        if (receiver === undefined) {
-            throw new Error('Mixed live/durable receiver subscription is missing');
-        }
-        return {
-            durableMessageIds: [...receiver.durableMessageIds],
-            liveSequences: [...receiver.liveSequences],
-            postReconnectReceived: receiver.readPostReconnectReceived()
-        };
-    });
+    return await page.evaluate(async (clientUrl) => {
+        const client: typeof import('./browser-alm-mixed-live-durable-client.ts') = await import(clientUrl);
+        return client.readMixedLiveDurableReceiverProgress();
+    }, clientModuleUrl);
 }
 
 async function stopNativeMeasurement(page: Page): Promise<void> {
@@ -644,18 +625,60 @@ async function readTerminalIdentities(page: Page): Promise<readonly MixedLiveDur
     }, observerModuleUrl);
 }
 
-async function disposeClient(page: Page): Promise<MixedLiveDurableObservationSnapshot | null> {
-    return await page.evaluate(async (input) => {
-        const receiver = window.__rallarMixedReceiver;
-        receiver?.unsubscribe();
-        const rallarModule: typeof import('../../../packages/shared-web/browser/rallar.ts') = await import(
-            input.rallarUrl
-        );
-        const { rallar } = rallarModule;
-        await rallar.disconnect().catch(() => undefined);
-        const fixture: typeof import('./browser-alm-mixed-live-durable-observer.ts') = await import(input.observerUrl);
-        return fixture.readMixedLiveDurableObservation().dispose();
-    }, { rallarUrl: rallarModuleUrl, observerUrl: observerModuleUrl }).catch(() => null);
+async function disposeMixedClients(clients: readonly MixedClient[]): Promise<
+    Readonly<{
+        observations: Record<MixedClient['role'], MixedLiveDurableObservationSnapshot | null>;
+        failures: readonly MixedScenarioCleanupFailure[];
+    }>
+> {
+    const observations: Record<MixedClient['role'], MixedLiveDurableObservationSnapshot | null> = {
+        a: null,
+        b: null,
+        c: null
+    };
+    const failures: MixedScenarioCleanupFailure[] = [];
+    await Promise.all(clients.map(async (client) => {
+        const cleanup = await disposeMixedClient(client);
+        observations[client.role] = cleanup.observation;
+        failures.push(...cleanup.failures);
+    }));
+    return { observations, failures };
+}
+
+async function disposeMixedClient(client: MixedClient): Promise<
+    Readonly<{
+        observation: MixedLiveDurableObservationSnapshot | null;
+        failures: readonly MixedScenarioCleanupFailure[];
+    }>
+> {
+    let observation: MixedLiveDurableObservationSnapshot | null = null;
+    const failures: MixedScenarioCleanupFailure[] = [];
+    try {
+        const cleanup = await client.page.evaluate(async (clientUrl) => {
+            const module: typeof import('./browser-alm-mixed-live-durable-client.ts') = await import(clientUrl);
+            return await module.disposeMixedLiveDurableClient();
+        }, clientModuleUrl);
+        observation = cleanup.observation;
+        failures.push(...cleanup.failures.map((failure) => ({ role: client.role, ...failure })));
+    }
+    catch (error) {
+        failures.push({
+            role: client.role,
+            stage: 'client-cleanup-call',
+            name: error instanceof Error ? error.name : 'UnknownFailure'
+        });
+    }
+    try {
+        await client.context.close();
+    }
+    catch (error) {
+        failures.push({
+            role: client.role,
+            stage: 'context-close',
+            name: error instanceof Error ? error.name : 'UnknownFailure'
+        });
+    }
+    return { observation, failures };
 }
 
 function emptyScenarioEvidence(clients: readonly MixedClient[]): MutableMixedScenarioEvidence {
@@ -682,97 +705,6 @@ interface MutableMixedScenarioEvidence {
     reconnect: MixedReconnectSummary | null;
     receiverProgress: MixedReceiverProgress | null;
     readonly terminalIdentities: MixedLiveDurableTerminalIdentity[];
-}
-
-function assertMixedScenarioCoverage(artifact: MixedScenarioArtifact, artifactPath: string): void {
-    const receiver = artifact.observations.b;
-    expect(receiver, `receiver observation missing: ${artifactPath}`).not.toBeNull();
-    expect(artifact.evidence.readiness.every((ready) => ready.status === 'open' && ready.readyPeerCount > 0)).toBe(
-        true
-    );
-    expect(artifact.evidence.durableSends).toHaveLength(DURABLE_BURST_COUNT);
-    expect(artifact.evidence.durableDisposition?.offeredCount).toBe(DURABLE_BURST_COUNT);
-    expect(artifact.evidence.durableDisposition?.unexpectedCount).toBe(0);
-    expect(artifact.evidence.durableDisposition?.admittedCount).toBeGreaterThan(0);
-    expect(artifact.evidence.liveSend?.acceptedCount).toBeGreaterThan(0);
-    expect(artifact.evidence.receiverProgress?.liveSequences).toContain(LIVE_SEQUENCE_COUNT - 1);
-    expect(artifact.evidence.reconnect).toMatchObject({
-        refreshContainedRoom: true,
-        laneStatus: 'open',
-        sendStatus: 'sent'
-    });
-    expect(artifact.evidence.receiverProgress?.postReconnectReceived).toBe(true);
-    expect(artifact.evidence.terminalIdentities).toHaveLength(DURABLE_BURST_COUNT);
-    assertDurableDispositionCoverage(artifact, receiver, artifactPath);
-    expect(receiver?.queuePhases.map((phase) => phase.phase)).toEqual(expect.arrayContaining([
-        'queue-read',
-        'claim-reserved',
-        'release-completed'
-    ]));
-    expect(receiver?.nativeTiming.capturedDatabaseNames).toEqual(['ar-eye-hunter-al-runtime']);
-    expect(receiver?.queueHookModuleIdentityObserved).toBe(true);
-    expect(receiver?.terminalReadbackCensoredByRowCapacity).toBe(false);
-    expect(receiver?.droppedQueuePhaseCount).toBe(0);
-    expect(receiver?.droppedLiveObservationCount).toBe(0);
-    expect(receiver?.droppedDurableCallbackCount).toBe(0);
-    expect(receiver?.droppedMarkedIdentityCount).toBe(0);
-    expect(receiver?.droppedReturnedClaimCount).toBe(0);
-    expect(receiver?.droppedCompletedIdentityCount).toBe(0);
-    for (const role of ['a', 'b', 'c'] as const) {
-        const observation = artifact.observations[role];
-        expect(observation, `${role} observation missing: ${artifactPath}`).not.toBeNull();
-        expect(observation?.methodsRestored).toBe(true);
-        expect(observation?.nativeTiming.uncapturedInFlightObservationCount).toBe(0);
-    }
-}
-
-function classifyDurableSends(sends: readonly MixedDurableSend[]): MixedDurableDisposition {
-    const admittedCount = admittedDurableIds(sends).length;
-    const refusedCount = sends.filter((send) => send.status === 'rate-limited' && send.entryCount === 0).length;
-    return {
-        offeredCount: sends.length,
-        admittedCount,
-        refusedCount,
-        unexpectedCount: sends.length - admittedCount - refusedCount
-    };
-}
-
-function admittedDurableIds(sends: readonly MixedDurableSend[]): readonly string[] {
-    return sends
-        .filter((send) => ['accepted', 'enqueued'].includes(send.status) && send.entryCount > 0)
-        .map((send) => send.msgId);
-}
-
-function assertDurableDispositionCoverage(
-    artifact: MixedScenarioArtifact,
-    receiver: MixedLiveDurableObservationSnapshot | null,
-    artifactPath: string
-): void {
-    const admitted = new Set(admittedDurableIds(artifact.evidence.durableSends));
-    const refused = new Set(
-        artifact.evidence.durableSends
-            .filter((send) => send.status === 'rate-limited' && send.entryCount === 0)
-            .map((send) => send.msgId)
-    );
-    const callbackIds = new Set(receiver?.durableCallbacks.map((callback) => callback.identity));
-    const completedReleaseIds = new Set(receiver?.completedDurableIdentities);
-    const terminalByIdentity = new Map(
-        artifact.evidence.terminalIdentities.map((identity) => [identity.identity, identity])
-    );
-    expect([...admitted].every((identity) => callbackIds.has(identity)), artifactPath).toBe(true);
-    expect([...admitted].every((identity) => completedReleaseIds.has(identity)), artifactPath).toBe(true);
-    expect([...admitted].every((identity) => terminalByIdentity.get(identity)?.completed === true), artifactPath)
-        .toBe(true);
-    expect([...refused].every((identity) => !callbackIds.has(identity)), artifactPath).toBe(true);
-    expect([...refused].every((identity) => !completedReleaseIds.has(identity)), artifactPath).toBe(true);
-    expect([...refused].every((identity) => terminalByIdentity.get(identity)?.rowCount === 0), artifactPath).toBe(true);
-    expect(receiver?.queuePhases.every((phase) => !refused.has(phase.identity)), artifactPath).toBe(true);
-    expect(
-        receiver?.liveObservations.some((observation) =>
-            observation.overlappingReturnedClaimIdentities.some((identity) => admitted.has(identity))
-        ),
-        artifactPath
-    ).toBe(true);
 }
 
 async function writeUniqueArtifact(artifact: MixedScenarioArtifact, testInfo: TestInfo): Promise<string> {
