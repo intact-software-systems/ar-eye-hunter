@@ -32,6 +32,13 @@ interface CapturedMessagePayload {
     readonly issues: readonly RallarValidationIssue[];
 }
 
+interface CreateRtcMessageInput<T> {
+    readonly input: RallarRtcSendInput<T>;
+    readonly payloadValidation: CapturedMessagePayload;
+    readonly target: ResolvedRtcMessageTarget;
+    readonly session: AuthSession;
+}
+
 export namespace BrowserRallarMessageSender {
     /** Canonical AL constructors own message ID, clock, serialization and deadline policy. */
     export interface Creation {
@@ -115,7 +122,12 @@ export class BrowserRallarMessageSender {
         const target = this.resolveRtcMessageTarget(input, []);
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
-        const message = this.createRtcMessage(input, payloadValidation, target, this.input.requireSession());
+        const message = this.createRtcMessage({
+            input,
+            payloadValidation,
+            target,
+            session: this.input.requireSession()
+        });
         return this.startDelivery({
             context,
             carrier: 'rtc',
@@ -209,7 +221,7 @@ export class BrowserRallarMessageSender {
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
         const message = toRoomFallbackMessage(
-            this.createRtcMessage(input, payloadValidation, target, this.input.requireSession()),
+            this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession() }),
             input.exceptPeerIds
         );
         return this.startDelivery({
@@ -271,12 +283,7 @@ export class BrowserRallarMessageSender {
         return { room, roomId, roomRef };
     }
 
-    private createRtcMessage<T>(
-        input: RallarRtcSendInput<T>,
-        payloadValidation: CapturedMessagePayload,
-        target: ResolvedRtcMessageTarget,
-        session: AuthSession
-    ): ALMessage {
+    private createRtcMessage<T>({ input, payloadValidation, target, session }: CreateRtcMessageInput<T>): ALMessage {
         return this.input.creation.createMulticast(
             session.sessionId,
             newALRoute(
