@@ -3,9 +3,10 @@
 **Status:** Selected design under implementation in PR #566. The landed PR #567
 supplies replay notifications and grouped reads. The branch's scan-progress
 correction, RTC/WS integration fixes, and semantic negative tests are reviewed.
-Local semantic and ordinary native-browser checks pass. An explicit facade-budget
-decision, native performance proof, and the complete RTC lifecycle proof remain
-outstanding.
+Local semantic and ordinary native-browser checks pass. The maintainer-approved
+strict 208 KiB facade ceiling passes its focused checks. Hosted server tests,
+the separate headless bundle budget, ALM conformance, native performance proof,
+and the complete RTC lifecycle proof remain unresolved.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
@@ -57,6 +58,15 @@ them with behavior assertions before retaining the test as regression coverage;
 keep payload-free traces available on failure. The projected +33,009 ms for a
 PR #567-style restart was an unexecuted inference, not evidence that its actual
 implementation is insufficient. Withdraw the earlier stronger claim.
+
+The corrected branch's hosted ALM observation still fails: WS misses delivery,
+while RTC and fallback connect commands time out at 30,000 ms. A recorded
+12-claim batch lasts 32,120 ms, including 18,795 ms running claims and 11,558 ms
+releasing them. Its selection is carried into the batch; zero selection time
+inside that event does not prove prior readiness/probe work was free. These
+intervals do not identify individual request latency or establish IndexedDB as
+the cause. Measure the original claim/run/release path as well as rediscovery;
+the continuation candidate cannot eliminate the former.
 
 Relevant owners, relative to the repository root:
 

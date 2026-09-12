@@ -57,12 +57,26 @@ passes all three carriers, and the ordinary three-browser RTC matrix passes;
 all-scenarios and 100-cycle retention still need to run. These are correctness
 results, not native storage timing or B06 observation evidence.
 
-The browser facade remains **207.16796875 KiB against a strict 207 KiB ceiling**
-after a legitimate selector ownership consolidation. The remaining 172-byte
-overage needs an explicit maintainer budget decision or a separately justified
-optimization; the ceiling is unchanged. Do not restore scan rewinds or weaken
-tests to fit it. The next two concrete pieces of work are finishing this reviewed
-integration/budget closure and the native measurement slice below.
+The maintainer explicitly approved raising only the browser facade ceiling to
+**strict `<208 KiB`**. The measured payload remains **207.16796875 KiB**;
+the five bundle tests and measurement command pass under Node 24. This changes
+the approved budget, not runtime performance. Other entry budgets and bundle
+settings remain unchanged.
+
+Hosted validation still exposes unresolved integration evidence: server WS
+router/admission tests fail, the headless bundle measures **260.556640625 KiB
+against strict `<260 KiB`**, and ALM conformance fails all three carriers despite
+the local pass. The facade approval does not authorize a headless budget change.
+Classify and repair the affected checks before claiming integration closure;
+do not assume they are all storage regressions or all obsolete tests.
+
+The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
+18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
+not native IndexedDB request timings. The connection commands still time out at
+30,000 ms. This evidence makes phase attribution necessary: successor discovery
+cannot remove time spent executing and releasing original claims. The next two
+concrete pieces of work are the remaining integration closure and native
+measurement below; no deadline relaxation or unconditional continuation follows.
 
 | Owner                                                                                                                                           | Planned responsibility                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -164,11 +178,18 @@ and test usages remain its only consumers.
       two test paths. Investigate the browser-facade overage within the affected
       production surface; report any genuinely necessary budget decision instead
       of weakening the gate. Review this coherent follow-on fix independently.
-- [ ] Resolve the remaining facade-budget decision before accepting Slice 1.
-      The measured required payload is 207.16796875 KiB; the unchanged gate is
-      strict `<207 KiB`. Obtain explicit approval for a new ceiling, or select
-      a separately justified reduction within the affected production surface.
-      Do not treat approval of the lifecycle design as budget approval.
+- [x] Apply the explicit facade-budget approval: strict `<208 KiB` in the
+      measurement script and matching bundle test. Preserve other budgets,
+      entrypoints, compression/build settings, and runtime behavior. The five
+      bundle tests, measurement command, and shared-web typecheck pass. Full-file
+      review also closes unchecked manifest/metafile JSON boundaries in the test;
+      valid/invalid envelope checks and maintained test typechecking pass.
+- [ ] Diagnose the hosted server WS router/admission failures and headless
+      bundle overage. Reproduce focused failures and classify production
+      regressions versus obsolete test assumptions before changing behavior.
+      Keep the headless ceiling unchanged without its own explicit approval;
+      investigate justified reductions in the affected surface first. Preserve
+      the failed hosted ALM evidence for Slice 2's causal measurement.
 
 Run the focused tests above together with:
 
