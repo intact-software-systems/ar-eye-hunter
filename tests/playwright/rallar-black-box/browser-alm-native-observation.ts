@@ -379,9 +379,33 @@ async function runNonAuthoritativeObservationStep(
     }
     catch (error) {
         const observationError = error instanceof Error ? error : new Error(String(error));
-        reportFailure({
+        reportNonAuthoritativeObservationFailure({
             stage,
             name: observationError.name.length > 0 ? observationError.name.slice(0, 80) : 'Error'
-        });
+        }, reportFailure);
+    }
+}
+
+function reportNonAuthoritativeObservationFailure(
+    failure: AlmNativeObservationStepFailure,
+    reportFailure: (failure: AlmNativeObservationStepFailure) => void
+): void {
+    try {
+        reportFailure(failure);
+    }
+    catch (error) {
+        const reportingError = error instanceof Error ? error : new Error(String(error));
+        try {
+            console.warn('Failed to report non-authoritative ALM observation failure', {
+                observationFailure: failure,
+                reportingFailureName: reportingError.name.length > 0
+                    ? reportingError.name.slice(0, 80)
+                    : 'Error'
+            });
+        }
+        catch (warningError) {
+            // A last-resort diagnostic transport must not become the authoritative run outcome.
+            void (warningError instanceof Error ? warningError : new Error(String(warningError)));
+        }
     }
 }

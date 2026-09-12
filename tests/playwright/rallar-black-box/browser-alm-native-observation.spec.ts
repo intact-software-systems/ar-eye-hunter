@@ -22,6 +22,13 @@ interface LifecycleTestState {
     observationFailures: AlmNativeObservationStepFailure[];
 }
 
+interface ThrowingReporterScenarioResult {
+    readonly recipeError: Error;
+    readonly closeError: Error;
+    readonly observedError: Error | undefined;
+    readonly fallbackWarnings: string[];
+}
+
 test('restores the first participant when the second native recorder cannot start', async ({ context, page }) => {
     await page.goto('/');
     const closedPage = await context.newPage();
@@ -149,6 +156,86 @@ test('returns the close error when the recipe and observations succeed', async (
     expect(state.closeRan).toBe(true);
     expect(state.observationFailures).toEqual([]);
 });
+
+test('keeps cleanup and recipe authority when the observation failure reporter throws', async ({ context, page }) => {
+    await page.goto('/');
+    const receiverPage = await context.newPage();
+    await receiverPage.goto('/');
+    const state = createLifecycleTestState();
+    const result = await runThrowingFailureReporterScenario(page, receiverPage, state);
+
+    expect(result.observedError).toBe(result.recipeError);
+    expect(result.observedError).not.toBe(result.closeError);
+    expect(state.controlObservationScenarioFailed).toBe(true);
+    expect(state.closeRan).toBe(true);
+    expect(result.fallbackWarnings).toEqual([
+        'Failed to report non-authoritative ALM observation failure ' + JSON.stringify({
+            observationFailure: { stage: 'write', name: 'RangeError' },
+            reportingFailureName: 'URIError'
+        }),
+        'Failed to report non-authoritative ALM observation failure ' + JSON.stringify({
+            observationFailure: { stage: 'control-observation', name: 'TypeError' },
+            reportingFailureName: 'URIError'
+        })
+    ]);
+    expect(state.artifact?.participants).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            role: 'sender',
+            methodsRestored: true,
+            nativeTiming: expect.objectContaining({
+                capturedDatabaseNames: [TARGET_DATABASE_NAME]
+            })
+        })
+    ]));
+    expect(await canReinstallNativeRecorder(page)).toBe(true);
+});
+
+async function runThrowingFailureReporterScenario(
+    senderPage: Page,
+    receiverPage: Page,
+    state: LifecycleTestState
+): Promise<ThrowingReporterScenarioResult> {
+    const recipeError = new Error('recipe failed');
+    const closeError = new Error('close failed');
+    const fallbackWarnings: string[] = [];
+    const originalConsoleWarn = console.warn;
+    let observedError: Error | undefined;
+    console.warn = (message, evidence) => {
+        fallbackWarnings.push(`${String(message)} ${JSON.stringify(evidence)}`);
+    };
+    try {
+        await runAlmNativeObservationLifecycle({
+            ...toLifecycleTestInput(senderPage, receiverPage, state),
+            runScenario: async () => {
+                state.scenarioRan = true;
+                await writeTargetDatabaseValue(senderPage);
+                throw recipeError;
+            },
+            writeNativeObservation: async (artifact) => {
+                state.artifact = artifact;
+                throw new RangeError('native artifact payload must stay private');
+            },
+            recordControlObservation: async (scenarioFailed) => {
+                state.controlObservationScenarioFailed = scenarioFailed;
+                throw new TypeError('control observation payload must stay private');
+            },
+            reportObservationFailure: () => {
+                throw new URIError('reporter payload must stay private');
+            },
+            closeRun: async () => {
+                state.closeRan = true;
+                throw closeError;
+            }
+        });
+    }
+    catch (error) {
+        observedError = error instanceof Error ? error : new Error(String(error));
+    }
+    finally {
+        console.warn = originalConsoleWarn;
+    }
+    return { recipeError, closeError, observedError, fallbackWarnings };
+}
 
 function createLifecycleTestState(): LifecycleTestState {
     return {
