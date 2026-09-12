@@ -79,6 +79,7 @@ describe('outbound shared supersedence decisions', () => {
             msg: createMessage('observer', 4),
             planner: (message) => ({
                 msg: message,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [],
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
@@ -131,6 +132,7 @@ async function readDecision(
         msg: message,
         planner: () => ({
             msg: message,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: [{ text: message.id.msgId }],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }

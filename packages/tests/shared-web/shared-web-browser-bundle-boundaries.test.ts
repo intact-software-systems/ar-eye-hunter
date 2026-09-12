@@ -51,10 +51,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         // 205.185546875 KiB, so the ceiling moves to 206.
         // F2b Task 3 (the carried eligibility read and the replay announcement) measured
         // 206.198 KiB on the Branch Release Gate, so the ceiling moves to 207.
+        // S1 Tasks 2-4 (the structured admission verdict, the settlement stream, and per-message
+        // cancel reaching the facade graph) measure 208.09375 KiB, so the ceiling moves to 209.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 207
+        brotliBudgetKiB: 209
     },
     {
         label: 'browser/rallar-core.ts',

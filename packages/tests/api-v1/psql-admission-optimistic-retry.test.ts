@@ -328,12 +328,13 @@ function createOutboxOnlyTestRuntime(
     stores: ALOutboundRuntimeStores<ALMessage>
 ): ALOutboundMessageRuntime<ALMessage> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         outbox: stores.workQueue,
         stores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         decodePreparedMessage: decodeALOutboundPreparedMessage,
-        planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
         sendPreparedMessage: async () => {
             throw new Error('An outbox-only admission must not submit a transport send');
         }

@@ -15,6 +15,7 @@ import {
     type ALMessagePlanningObservations,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -70,6 +71,7 @@ export namespace WsQueueBoxServerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+        readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
@@ -95,6 +97,7 @@ export namespace WsQueueBoxServerService {
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly outboundSettlements: ALDeliverySettlementSink | undefined;
         readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
@@ -181,11 +184,13 @@ export class WsQueueBoxServerService {
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
+            carrier: 'ws',
             dequeue: {
                 types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
                 resilience: dependencies.dequeueResilience
             },
             diagnostics: dependencies.outboundDiagnostics,
+            settlements: dependencies.outboundSettlements,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(
                     message,
@@ -553,17 +558,21 @@ export class WsQueueBoxServerService {
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
         if (prepared.kind === 'cluster-local-complete') {
-            return { status: 'sent' };
+            return { status: 'sent', submissionAttempted: true };
         }
         const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
-        if (lifecycle.signal.aborted || this.clock.nowMs() >= (lifecycle.expiresAtMs ?? 0)) {
-            return { status: 'expired' };
+        if (lifecycle.signal.aborted) {
+            return { status: 'cancelled', submissionAttempted: false };
+        }
+        if (this.clock.nowMs() >= (lifecycle.expiresAtMs ?? 0)) {
+            return { status: 'expired', submissionAttempted: false };
         }
         try {
             const encoded = this.socket.encode(message);
             if (!this.socket.connections.get(prepared.connectionId)?.isOpen) {
                 return {
                     status: 'not-ready',
+                    submissionAttempted: false,
                     retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS,
                     reason: 'WS connection is not open before native submission'
                 };
@@ -578,7 +587,7 @@ export class WsQueueBoxServerService {
                 topicId: message.route.topicId,
                 payloadBytes: encoded.text.length
             });
-            return { status: 'sent' };
+            return { status: 'sent', submissionAttempted: true };
         }
         catch (error) {
             const runtimeError = error instanceof Error ? error : new Error(String(error));
@@ -710,6 +719,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
+        outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,

@@ -10,7 +10,10 @@ import {
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALOutboundSettledSendResult
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
@@ -51,6 +54,8 @@ describe('ALOutboundMessageRuntime', () => {
         const queueEngine = new InboxOutboxEngine();
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             decodePreparedMessage: decodeOutboundTestPayload,
+            carrier: 'ws',
+            settlements: undefined,
             admissionStore,
             workQueue: stores.workQueue,
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
@@ -63,13 +68,15 @@ describe('ALOutboundMessageRuntime', () => {
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
-            planDequeuedMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
+            planDequeuedMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             afterDequeueAdmission: undefined,
             planRepairMessage: undefined,
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared.resourceId);
-                return sent.length === 1 ? { status: 'not-ready', retryAfterMs: 25 } : { status: 'sent' };
+                return sent.length === 1
+                    ? { status: 'not-ready', submissionAttempted: false, retryAfterMs: 25 }
+                    : { status: 'sent', submissionAttempted: true };
             }
         });
         onTestFinished(() => runtime.dispose());
@@ -96,19 +103,19 @@ describe('ALOutboundMessageRuntime', () => {
         const stores = createDefaultOutboundTestStores();
         const admissionStore = stores.admissionStore;
         const release = vi.spyOn(stores.workQueue, 'releaseEntries');
-        const settlement = Promise.withResolvers<{ status: 'not-ready'; retryAfterMs: number; }>();
+        const settlement = Promise.withResolvers<ALOutboundSettledSendResult>();
         const send = vi.fn(async () => ({ status: 'queued' as const, settled: settlement.promise }));
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
         });
         onTestFinished(() => runtime.dispose());
         const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
         await runtime.enqueueIfAbsent(message);
         await vi.advanceTimersByTimeAsync(0);
         vi.setSystemTime(1_000 + elapsedMs);
-        settlement.resolve({ status: 'not-ready', retryAfterMs: 60_000 });
+        settlement.resolve({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 });
         await vi.advanceTimersByTimeAsync(0);
         // A settlement past the deadline is dropped, never rescheduled.
         expect(release.mock.calls.map((call) => call[1].status)).toEqual([EntityStatus.COMPLETED]);
@@ -120,9 +127,10 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 dropReason: 'No route for outbound enqueue',
+                dropReasonCode: 'no-route',
                 msg: msg,
                 persist: false,
                 preparedMessages: []
@@ -132,6 +140,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-dropped'));
 
         expect(result.status).toBe('no-route');
+        expect(result.verdict).toEqual({ kind: 'unroutable', reason: 'no-route', detail: 'No route for outbound enqueue' });
         expect(result.reason).toBe('No route for outbound enqueue');
         expect(result.entries).toEqual([]);
         runtime.dispose();
@@ -145,10 +154,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: []
             })
@@ -171,10 +181,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -184,6 +195,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(msg);
 
         expect(result.status).toBe('accepted');
+        expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         expect(result.entries).toMatchObject([{ status: EntityStatus.COMPLETED }]);
         await expect.poll(() => sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
@@ -200,9 +212,10 @@ describe('ALOutboundMessageRuntime', () => {
         const admissionStore = stores.admissionStore;
         const runtime = createDefaultOutboundTestRuntime({
             stores,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }],
                 ackTracking: {
@@ -218,7 +231,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
-        const plan = (msg: ALMessage) => ({ msg: msg, persist: false, preparedMessages: [] });
+        const plan = (msg: ALMessage) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] });
         const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         await runtime.acceptControlMessage(newALAckControlMessage(
             { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
@@ -271,11 +284,13 @@ describe('ALOutboundMessageRuntime', () => {
             stores,
             sendPreparedMessage: async () => ({
                 status: 'not-ready',
+                submissionAttempted: false,
                 reason: 'RTC lane warming',
                 retryAfterMs: 25
             }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
@@ -291,9 +306,9 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(24);
@@ -315,10 +330,12 @@ describe('ALOutboundMessageRuntime', () => {
             stores,
             sendPreparedMessage: async () => ({
                 status: 'no-targets',
+                submissionAttempted: false,
                 reason: 'solo room'
             }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -335,9 +352,9 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async () => {
                 sent.push('replayed');
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);
@@ -359,9 +376,10 @@ describe('ALOutboundMessageRuntime', () => {
             }
         });
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -403,10 +421,11 @@ describe('ALOutboundMessageRuntime', () => {
                 await sendGate.promise;
                 events.push('send-end');
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -442,12 +461,13 @@ describe('ALOutboundMessageRuntime', () => {
                     await secondGate.promise;
                 }
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => {
                 planned.push(msg.route.resourceId);
                 return {
                     msg: msg,
+                    dropReasonCode: undefined,
                     persist: false,
                     preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }]
                 };
@@ -484,9 +504,10 @@ describe('ALOutboundMessageRuntime', () => {
                 nowMs += 5;
                 return nowMs;
             },
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
             })
@@ -530,9 +551,10 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: []
             })
@@ -558,9 +580,10 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: []
             })
@@ -572,6 +595,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(first.status).toBe('enqueued');
         expect(second.status).toBe('duplicate');
+        expect(second.verdict).toEqual({ kind: 'duplicate' });
         expect(second.entry?.key).toEqual(first.entry?.key);
         expect(second.entries).toHaveLength(1);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
@@ -582,9 +606,10 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -615,6 +640,10 @@ describe('ALOutboundMessageRuntime', () => {
         const superseded = await runtime.enqueueIfAbsent(older);
 
         expect(superseded.status).toBe('superseded');
+        expect(superseded.verdict).toEqual({
+            kind: 'superseded',
+            detail: `Skipping superseded outbound message ${older.id.msgId}`
+        });
         expect(superseded.entries).toEqual([]);
         const stored = await reserveOutbox(outbox);
         expect(stored).toHaveLength(1);
@@ -634,10 +663,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
@@ -654,6 +684,7 @@ describe('ALOutboundMessageRuntime', () => {
             }),
             planRepairMessage: async (msg, request) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [
                     {
@@ -695,10 +726,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
@@ -710,6 +742,7 @@ describe('ALOutboundMessageRuntime', () => {
             }),
             planRepairMessage: async (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
             })
@@ -728,10 +761,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
@@ -793,10 +827,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -850,12 +885,13 @@ describe('ALOutboundMessageRuntime', () => {
                 sent.push({ ...prepared, phase });
                 persistRetry = true;
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) =>
                 persistRetry
                     ? {
                         msg: msg,
+                        dropReasonCode: undefined,
                         persist: true,
                         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
@@ -866,6 +902,7 @@ describe('ALOutboundMessageRuntime', () => {
                     }
                     : {
                         msg: msg,
+                        dropReasonCode: undefined,
                         persist: false,
                         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
@@ -909,10 +946,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -967,10 +1005,11 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
@@ -1022,9 +1061,10 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -1080,9 +1120,10 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' as const }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [],
                 supersedenceTracking: {
@@ -1160,10 +1201,11 @@ describe('ALOutboundMessageRuntime', () => {
                 sendStarted.resolve();
                 await sendCompleted.promise;
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
@@ -1180,6 +1222,7 @@ describe('ALOutboundMessageRuntime', () => {
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [
                     {
@@ -1227,10 +1270,11 @@ describe('ALOutboundMessageRuntime', () => {
 
                 sent.push(String(prepared.peerId));
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [
                     { peerId: 'peer-1' },
@@ -1254,10 +1298,11 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             },
             planOutgoingMessage: (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
@@ -1268,6 +1313,7 @@ describe('ALOutboundMessageRuntime', () => {
             }),
             planRepairMessage: async (msg) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })

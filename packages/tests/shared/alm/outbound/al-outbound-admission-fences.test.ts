@@ -110,7 +110,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
                 payload: {
                     kind: 'admit-message',
                     message: toALOutboundMessageReference(fixture.store.canonicalScope, canonicalEntry, message),
-                    policy: captureALOutboundPolicy({ msg: message, persist: false, preparedMessages: [{ peer: 'held' }] }),
+                    policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, persist: false, preparedMessages: [{ peer: 'held' }] }),
                     preparedMessages: [{ peer: 'held' }]
                 }
             })
@@ -385,6 +385,7 @@ async function readSupersedingBundle(
 ): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
     return await computeOutboundTestAdmission(store, message, (msg) => ({
         msg,
+        dropReasonCode: undefined,
         persist: false,
         preparedMessages: [{ text: msg.id.msgId }],
         supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
@@ -414,7 +415,7 @@ async function readPendingAdmissionBundle(
 ): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
     const read = await input.store.readOutgoingMessage({
         msg: input.message,
-        planner: (msg) => ({ msg, persist: false, preparedMessages: [{ peer: 'held' }] }),
+        planner: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ peer: 'held' }] }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });

@@ -38,6 +38,7 @@ const TRANSACTION_NAMESPACE = 'admission-transactions';
 /** Tracks the supersedence pair, so a re-admission walks both of its dependent read hops. */
 const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
+    dropReasonCode: undefined,
     persist: true,
     preparedMessages: [{ text: msg.id.msgId }],
     supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
@@ -45,6 +46,7 @@ const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 
 const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
+    dropReasonCode: undefined,
     persist: true,
     preparedMessages: [{ text: msg.id.msgId }]
 });

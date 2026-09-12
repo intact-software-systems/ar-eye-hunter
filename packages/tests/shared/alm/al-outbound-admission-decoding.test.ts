@@ -141,7 +141,7 @@ describe('outbound admission persisted-record validation', () => {
         await expect(
             store.readOutgoingMessage({
                 msg: msg,
-                planner: () => ({ msg: msg, persist: false, preparedMessages: [] }),
+                planner: () => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
                 observedCanonicalEntry: undefined,
                 intent: 'enqueue'
             })
@@ -234,16 +234,17 @@ describe('outbound admission persisted-record validation', () => {
         await writeRawOutboundWork(backend, valid.effectId, valid);
         const sent: string[] = [];
         const runtime = createDefaultALOutboundMessageRuntime({
+            carrier: 'ws',
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             sendPreparedMessage: async (_message, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage.id.msgId);
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         });
         try {
@@ -290,12 +291,13 @@ describe('outbound admission persisted-record validation', () => {
             await writeRawOutboundWork(backend, effectId, { effectId, payload });
         });
         const runtime = createDefaultALOutboundMessageRuntime({
+            carrier: 'ws',
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
             toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-            planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             sendPreparedMessage: async () => {
                 throw new Error('Corrupt replay must never send');
             }
@@ -487,15 +489,16 @@ async function runOutboundWorkBatch(
     sent: string[] = []
 ): Promise<readonly string[]> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         stores: admission.stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
-        planOutgoingMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
         sendPreparedMessage: async (_message, _phase, lifecycle) => {
             sent.push(lifecycle.canonicalMessage.id.msgId);
-            return { status: 'sent' as const };
+            return { status: 'sent' as const, submissionAttempted: true };
         }
     });
     try {

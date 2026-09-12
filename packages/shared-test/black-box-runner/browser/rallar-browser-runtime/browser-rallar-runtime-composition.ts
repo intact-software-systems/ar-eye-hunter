@@ -308,6 +308,7 @@ export async function readBlackBoxRtcMessageNacks(
         messageId,
         (msg) => ({
             msg,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: []
         })

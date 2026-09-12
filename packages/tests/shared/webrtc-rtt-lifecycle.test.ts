@@ -206,6 +206,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         },
         qosProvider: undefined,
         outboundDiagnostics: undefined,
+        outboundSettlements: undefined,
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),

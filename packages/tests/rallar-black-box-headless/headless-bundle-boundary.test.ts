@@ -76,7 +76,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // Measured 259.0634765625 KiB brotli after the Task 13 evidence round -- the named
         // room-authority denial, the outbound readiness probe and the inbound rotation's liveness
         // witness; the limit was raised to 260.
-        expect(result.brotliKiB).toBeLessThan(260);
+        // Measured 260.3701171875 KiB brotli after the outbound owner started computing a
+        // structured ALDeliveryAdmissionVerdict beside its status string (S1 Task 2); the limit
+        // was raised to 261.
+        expect(result.brotliKiB).toBeLessThan(261);
     });
 });
 

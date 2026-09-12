@@ -41,7 +41,8 @@ import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
-    ALOutboundRepairTrigger
+    ALOutboundRepairTrigger,
+    ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 import {
     retainALOutboundPendingAdmission,
@@ -273,7 +274,8 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** The control-admission owner of this scope; the port carries the control it must replay. */
     readonly createControlAdmission: (
         port: ALWorkQueuePort,
-        clock: ALOutboundMessageRuntime.Clock
+        clock: ALOutboundMessageRuntime.Clock,
+        settlements: ALOutboundSettlementEmitter
     ) => ALOutboundControlAdmission<TPrepared>;
 }
 
@@ -332,10 +334,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     createControlAdmission(
         port: ALWorkQueuePort,
-        clock: ALOutboundMessageRuntime.Clock
+        clock: ALOutboundMessageRuntime.Clock,
+        settlements: ALOutboundSettlementEmitter
     ): ALOutboundControlAdmission<TPrepared> {
         return new ALOutboundControlAdmission({
             clock,
+            settlements,
             backend: this.backend,
             effectStore: this.effectStore,
             reads: this.reads,

@@ -378,7 +378,7 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 enqueuedWsTypeIds.push(message.payload.typeId);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>({
@@ -466,13 +466,13 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`ws:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`rtc:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.initialiseApiMiddleware.mockImplementation(async () => {
@@ -515,13 +515,13 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`ws:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`rtc:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.initialiseApiMiddleware.mockImplementation(async () => {
@@ -601,7 +601,7 @@ function resetDirectorRtcDoubles(): void {
     mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
     mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', message, entries: [] })
+        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
     );
     mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.rtcRxStreamer
@@ -613,6 +613,7 @@ function mockRtcNoRoute(): void {
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
         async (message) => ({
             status: 'no-route',
+            verdict: { kind: 'unroutable' as const, reason: 'no-route' as const, detail: `No outbound transport route for message ${message.id.msgId}` },
             message,
             entries: [],
             reason: `No outbound transport route for message ${message.id.msgId}`
@@ -622,7 +623,7 @@ function mockRtcNoRoute(): void {
 
 function resetDirectorWsDoubles(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', message, entries: [] })
+        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
     );
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox

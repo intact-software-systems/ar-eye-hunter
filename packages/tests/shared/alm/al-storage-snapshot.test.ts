@@ -112,6 +112,7 @@ describe('ALM browser storage snapshot', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             planOutgoingMessage: (msg) => ({
                 msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ message: JSON.stringify(msg) }],
                 supersedenceTracking: {
@@ -120,7 +121,7 @@ describe('ALM browser storage snapshot', () => {
                     key: toSupersedenceKey(msg)
                 }
             }),
-            sendPreparedMessage: async () => ({ status: 'sent' })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         await runtime.ready();
 

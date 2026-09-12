@@ -61,6 +61,7 @@ export function initialiseRtcOverlayMulticastManager(
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
+        outboundSettlements: undefined,
         qosProvider: undefined,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()

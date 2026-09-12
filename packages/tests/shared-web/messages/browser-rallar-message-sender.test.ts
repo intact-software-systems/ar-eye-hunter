@@ -231,6 +231,7 @@ describe('Rallar message send', () => {
         webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
             status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
         }));
@@ -238,6 +239,7 @@ describe('Rallar message send', () => {
         rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
             status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
         }));
@@ -356,6 +358,11 @@ describe('Rallar message send', () => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'no-route',
+                verdict: {
+                    kind: 'unroutable' as const,
+                    reason: 'no-route' as const,
+                    detail: 'Skipping RTC outbound dispatch without planned transport messages'
+                },
                 message,
                 entries: [],
                 reason: 'Skipping RTC outbound dispatch without planned transport messages'
@@ -431,6 +438,7 @@ describe('Rallar message send', () => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'enqueued',
+                verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
                 message,
                 entries: []
             })
@@ -538,6 +546,7 @@ describe('Rallar message send', () => {
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'accepted',
+                verdict: { kind: 'admitted' as const, durable: false, queuedAttempts: 1 },
                 message,
                 entries: []
             })
@@ -586,6 +595,7 @@ describe('Rallar message send', () => {
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'enqueued',
+                verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
                 message,
                 entries: []
             })

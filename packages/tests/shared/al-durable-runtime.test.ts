@@ -333,6 +333,7 @@ function createDefaultOutboundRuntime(
 ): ALOutboundMessageRuntime<OutboundTestPayload> {
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            carrier: 'ws',
             outbox: stores.runtimeStores.workQueue,
             stores: stores.runtimeStores,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
@@ -341,6 +342,7 @@ function createDefaultOutboundRuntime(
             planOutgoingMessage: planOutboundTestMessage,
             planRepairMessage: async (msg, request) => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [
                     {
@@ -353,7 +355,7 @@ function createDefaultOutboundRuntime(
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
 
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         })
     );
@@ -365,6 +367,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
     if (msg.payload.typeId === 'presence.state.v1') {
         return {
             msg,
+            dropReasonCode: undefined,
             persist: true,
             preparedMessages: [],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: `presence:${msg.route.contextId}` }
@@ -372,6 +375,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
     }
     return {
         msg,
+        dropReasonCode: undefined,
         persist: false,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'] },
