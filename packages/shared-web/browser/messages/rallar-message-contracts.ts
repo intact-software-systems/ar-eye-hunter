@@ -2,9 +2,7 @@ import type { RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-fa
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'realtime' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
 
@@ -67,15 +65,6 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
     readonly exceptPeerIds?: readonly string[];
 }
 
-export interface RallarMessageSendResult {
-    readonly transport: RallarMessageTransport;
-    readonly status: ALOutboundEnqueueStatus;
-    readonly message: ALMessage;
-    readonly entry?: ResourceEntry;
-    readonly entries: readonly ResourceEntry[];
-    readonly reason?: string;
-}
-
 export type RallarMessageDeliveryListener = (
     lifecycle: ALDeliveryLifecycle
 ) => void | Promise<void>;
@@ -101,7 +90,7 @@ export interface RallarMessageHandle {
 }
 
 export interface RallarMessageLane<TSendInput, TSelector = string> {
-    send<T>(input: TSendInput & RallarMessageSendBase<T>): Promise<RallarMessageSendResult>;
+    send<T>(input: TSendInput & RallarMessageSendBase<T>): Promise<RallarMessageHandle>;
     onMessage<T = never>(selector: TSelector, handler: RallarMessageHandler<T>): RallarUnsubscribe;
 }
 
@@ -125,9 +114,9 @@ export interface RallarTypedMessageSendOptions<T>
 }
 
 export interface RallarTypedMessageChannel<T> {
-    send(payload: T, options?: RallarTypedMessageSendOptions<T>): Promise<RallarMessageSendResult>;
-    sendRtc(payload: T, options?: RallarTypedRtcSendOptions<T>): Promise<RallarMessageSendResult>;
-    sendWs(payload: T, options?: RallarTypedWsSendOptions<T>): Promise<RallarMessageSendResult>;
+    send(payload: T, options?: RallarTypedMessageSendOptions<T>): Promise<RallarMessageHandle>;
+    sendRtc(payload: T, options?: RallarTypedRtcSendOptions<T>): Promise<RallarMessageHandle>;
+    sendWs(payload: T, options?: RallarTypedWsSendOptions<T>): Promise<RallarMessageHandle>;
     onRtc(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
     onWs(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
 }

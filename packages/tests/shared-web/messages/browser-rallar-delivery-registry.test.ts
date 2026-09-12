@@ -3,8 +3,7 @@ import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-me
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
-    type ALDeliverySettlement,
-    type ALDeliverySettlementSink
+    type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     afterEach,
@@ -30,7 +29,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
     describe('open', () => {
         it('returns a submitted handle carrying the envelope identity', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
 
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
 
@@ -42,7 +41,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('returns the same handle when the same envelope is opened again', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const message = toTestMessage('msg-1');
 
             const first = harness.registry.open(message, 'rtc');
@@ -53,7 +52,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('defaults the ack mode to none when the envelope carries no delivery block', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
 
             const handle = harness.registry.open(toBestEffortTestMessage('msg-1'), 'rtc');
 
@@ -61,10 +60,10 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('arms no timer for an opened message', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
 
             harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 5_000), 'rtc');
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             expect(vi.getTimerCount()).toBe(0);
         });
@@ -72,52 +71,52 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
     describe('record', () => {
         it('moves the lifecycle through admission, attempt start, and transport acceptance', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
 
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
             expect(handle.lifecycle().state).toBe('accepted');
 
-            harness.sink(toAttemptStartedSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptStartedSettlement('msg-1', START_MS));
             expect(handle.lifecycle().state).toBe('accepted');
             expect(handle.lifecycle().evidence.attempts).toHaveLength(1);
 
-            harness.sink(toAttemptSentSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptSentSettlement('msg-1', START_MS));
             expect(handle.lifecycle().state).toBe('transport-accepted');
         });
 
         it('notifies a listener once per settlement, in order', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const states: string[] = [];
             handle.onEvent((lifecycle) => {
                 states.push(lifecycle.state);
             });
 
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
-            harness.sink(toAttemptStartedSettlement('msg-1', START_MS));
-            harness.sink(toAttemptSentSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptStartedSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptSentSettlement('msg-1', START_MS));
 
             expect(states).toEqual(['accepted', 'accepted', 'transport-accepted']);
         });
 
         it('stops notifying a listener after it unsubscribes', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const states: string[] = [];
 
             const unsubscribe = handle.onEvent((lifecycle) => {
                 states.push(lifecycle.state);
             });
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
             unsubscribe();
-            harness.sink(toAttemptStartedSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptStartedSettlement('msg-1', START_MS));
 
             expect(states).toEqual(['accepted']);
         });
 
         it('does not await an async listener', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             let listenerSettled = false;
             handle.onEvent(async () => {
@@ -125,50 +124,29 @@ describe('BrowserRallarDeliveryRegistry', () => {
                 listenerSettled = true;
             });
 
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             expect(listenerSettled).toBe(false);
             expect(handle.lifecycle().state).toBe('accepted');
         });
 
         it('ignores a settlement for a msgId it never opened', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
 
-            harness.sink(toAdmittedSettlement('msg-unknown', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-unknown', START_MS));
 
             expect(harness.registry.size()).toBe(0);
-        });
-
-        it('drops settlements written into a closed sink', () => {
-            const harness = createHarness();
-            const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
-
-            harness.closeSink();
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
-
-            expect(handle.lifecycle().state).toBe('submitted');
-        });
-
-        it('keeps delivering through a second sink after the first is closed', () => {
-            const harness = createHarness();
-            const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            const second = harness.registry.createSink();
-
-            harness.closeSink();
-            second.sink(toAdmittedSettlement('msg-1', START_MS));
-
-            expect(handle.lifecycle().state).toBe('accepted');
         });
     });
 
     describe('wait', () => {
         it('resolves settled at the first terminal state', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
 
             const pending = handle.wait();
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
-            harness.sink(toAcknowledgementSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
 
             const outcome = await pending;
             expect(outcome.status).toBe('settled');
@@ -176,10 +154,10 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('resolves settled without arming a timer when the condition already holds', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
-            harness.sink(toAcknowledgementSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
 
             const pending = handle.wait({ timeoutMs: 1_000 });
             expect(vi.getTimerCount()).toBe(0);
@@ -188,11 +166,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('resolves settled at an admitted state listed in until', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
 
             const pending = handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             const outcome = await pending;
             expect(outcome.status).toBe('settled');
@@ -200,9 +178,9 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('resolves timeout with the current lifecycle after timeoutMs', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             const pending = handle.wait({ timeoutMs: 500 });
             await harness.advanceMs(500);
@@ -214,7 +192,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('resolves aborted when the signal aborts while the wait is armed', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const controller = new AbortController();
 
@@ -228,7 +206,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('resolves aborted without arming a timer when the signal already aborted', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
 
             const pending = handle.wait({ timeoutMs: 5_000, signal: AbortSignal.abort() });
@@ -238,12 +216,12 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('clears both timers when a settlement resolves the wait', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 5_000), 'rtc');
 
             const pending = handle.wait({ timeoutMs: 1_000 });
             expect(vi.getTimerCount()).toBe(2);
-            harness.sink(toCancelledSettlement('msg-1', START_MS));
+            harness.registry.record(toCancelledSettlement('msg-1', START_MS));
 
             expect((await pending).status).toBe('settled');
             expect(vi.getTimerCount()).toBe(0);
@@ -252,7 +230,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
     describe('the message deadline', () => {
         it('reads expired once the deadline has elapsed', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS - 1), 'rtc');
 
             const lifecycle = handle.lifecycle();
@@ -262,7 +240,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('notifies listeners when a lazy read crosses the deadline', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
             const states: string[] = [];
             handle.onEvent((lifecycle) => {
@@ -278,7 +256,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('re-arms the deadline timer when it fires before the clock reaches the deadline', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
 
             const pending = handle.wait();
@@ -296,7 +274,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('reports the deadline-applied lifecycle in a timeout outcome', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
 
             const pending = handle.wait({ timeoutMs: 50 });
@@ -310,7 +288,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('reports the deadline-applied lifecycle in an aborted outcome', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
             const controller = new AbortController();
 
@@ -325,7 +303,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('expires a pending wait when the deadline timer fires', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
 
             const pending = handle.wait();
@@ -340,9 +318,9 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
     describe('cancel', () => {
         it('calls the port once and records cancelled with the last seen carrier', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             handle.cancel();
 
@@ -353,14 +331,14 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('records nothing more when the owner cancelled synchronously inside the port call', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const states: string[] = [];
             handle.onEvent((lifecycle) => {
                 states.push(lifecycle.state);
             });
             harness.onCancel((msgId) => {
-                harness.sink(toCancelledSettlement(msgId, START_MS));
+                harness.registry.record(toCancelledSettlement(msgId, START_MS));
             });
 
             handle.cancel();
@@ -370,7 +348,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('is a no-op once the deadline has elapsed and does not call the port', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
             const states: string[] = [];
             handle.onEvent((lifecycle) => {
@@ -386,9 +364,9 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('is a no-op on a terminal handle and does not call the port', () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            harness.sink(toAcknowledgementSettlement('msg-1', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
 
             handle.cancel();
 
@@ -399,7 +377,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
     describe('retention', () => {
         it('releases the oldest non-terminal entry unobservable once maxEntries is exceeded', async () => {
-            const harness = createHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
             const oldest = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const pending = oldest.wait();
             harness.registry.open(toTestMessage('msg-2'), 'rtc');
@@ -415,7 +393,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('settles the map before it notifies, so a re-sending listener sees the eviction', () => {
-            const harness = createHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
             const oldest = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const sizesDuringRelease: number[] = [];
             let retried: RallarMessageHandle | undefined;
@@ -436,19 +414,19 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('ignores later settlements for a released entry', () => {
-            const harness = createHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
             const released = harness.registry.open(toTestMessage('msg-1'), 'rtc');
 
             harness.registry.open(toTestMessage('msg-2'), 'rtc');
-            harness.sink(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             expect(released.lifecycle().state).toBe('unobservable');
         });
 
         it('drops terminal entries older than retainTerminalMs', () => {
-            const harness = createHarness({ retainTerminalMs: 1_000, maxEntries: MAX_ENTRIES });
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: 1_000, maxEntries: MAX_ENTRIES });
             harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            harness.sink(toAcknowledgementSettlement('msg-1', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
 
             harness.setNowMs(START_MS + 1_001);
             harness.registry.open(toTestMessage('msg-2'), 'rtc');
@@ -457,9 +435,9 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('keeps a terminal entry until retainTerminalMs elapses', () => {
-            const harness = createHarness({ retainTerminalMs: 1_000, maxEntries: MAX_ENTRIES });
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: 1_000, maxEntries: MAX_ENTRIES });
             harness.registry.open(toTestMessage('msg-1'), 'rtc');
-            harness.sink(toAcknowledgementSettlement('msg-1', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
 
             harness.setNowMs(START_MS + 1_000);
             harness.registry.open(toTestMessage('msg-2'), 'rtc');
@@ -468,10 +446,10 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
 
         it('drops the oldest terminal entry before releasing a younger non-terminal one', () => {
-            const harness = createHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
             harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const live = harness.registry.open(toTestMessage('msg-2'), 'rtc');
-            harness.sink(toAcknowledgementSettlement('msg-1', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
 
             harness.registry.open(toTestMessage('msg-3'), 'rtc');
 
@@ -482,10 +460,10 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
     describe('releaseAll', () => {
         it('resolves every non-terminal entry unobservable and keeps the entries', async () => {
-            const harness = createHarness();
+            const harness = new DeliveryRegistryHarness();
             const live = harness.registry.open(toTestMessage('msg-1'), 'rtc');
             const settled = harness.registry.open(toTestMessage('msg-2'), 'rtc');
-            harness.sink(toAcknowledgementSettlement('msg-2', START_MS));
+            harness.registry.record(toAcknowledgementSettlement('msg-2', START_MS));
             const pending = live.wait();
 
             harness.registry.releaseAll();
@@ -498,58 +476,50 @@ describe('BrowserRallarDeliveryRegistry', () => {
     });
 });
 
-interface DeliveryRegistryHarness {
+namespace DeliveryRegistryHarness {
+    export interface Limits {
+        readonly retainTerminalMs: number;
+        readonly maxEntries: number;
+    }
+}
+
+class DeliveryRegistryHarness {
     readonly registry: BrowserRallarDeliveryRegistry;
-    /** What crossed the cancel port, in order. */
-    readonly cancelledMsgIds: readonly string[];
-    readonly sink: ALDeliverySettlementSink;
-    closeSink(): void;
-    /** Stands in for a carrier owner that states its own `cancelled` inside the port call. */
-    onCancel(emit: (msgId: string) => void): void;
-    setNowMs(nowMs: number): void;
-    advanceMs(durationMs: number): Promise<void>;
-}
+    private currentMs = START_MS;
+    private readonly cancellations: string[] = [];
+    private readonly cancelEmitters = new Set<(msgId: string) => void>();
 
-interface DeliveryRegistryLimits {
-    readonly retainTerminalMs: number;
-    readonly maxEntries: number;
-}
-
-function createHarness(
-    limits: DeliveryRegistryLimits = { retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: MAX_ENTRIES }
-): DeliveryRegistryHarness {
-    let currentMs = START_MS;
-    const cancelledMsgIds: string[] = [];
-    const cancelEmitters = new Set<(msgId: string) => void>();
-    const registry = new BrowserRallarDeliveryRegistry({
-        nowMs: () => currentMs,
-        retainTerminalMs: limits.retainTerminalMs,
-        maxEntries: limits.maxEntries,
-        cancel: (msgId) => {
-            cancelledMsgIds.push(msgId);
-            for (const emit of cancelEmitters) {
-                emit(msgId);
+    constructor(limits: DeliveryRegistryHarness.Limits = { retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: MAX_ENTRIES }) {
+        this.registry = new BrowserRallarDeliveryRegistry({
+            nowMs: () => this.currentMs,
+            retainTerminalMs: limits.retainTerminalMs,
+            maxEntries: limits.maxEntries,
+            cancel: (msgId) => {
+                this.cancellations.push(msgId);
+                for (const emit of this.cancelEmitters) {
+                    emit(msgId);
+                }
             }
-        }
-    });
-    const carrier = registry.createSink();
+        });
+    }
 
-    return {
-        registry,
-        cancelledMsgIds,
-        sink: carrier.sink,
-        closeSink: () => carrier.close(),
-        onCancel: (emit) => {
-            cancelEmitters.add(emit);
-        },
-        setNowMs: (nowMs) => {
-            currentMs = nowMs;
-        },
-        advanceMs: async (durationMs) => {
-            currentMs += durationMs;
-            await vi.advanceTimersByTimeAsync(durationMs);
-        }
-    };
+    get cancelledMsgIds(): readonly string[] {
+        return this.cancellations;
+    }
+
+    /** Models a carrier's synchronous cancellation settlement. */
+    onCancel(emit: (msgId: string) => void): void {
+        this.cancelEmitters.add(emit);
+    }
+
+    setNowMs(nowMs: number): void {
+        this.currentMs = nowMs;
+    }
+
+    async advanceMs(durationMs: number): Promise<void> {
+        this.currentMs += durationMs;
+        await vi.advanceTimersByTimeAsync(durationMs);
+    }
 }
 
 function toTestMessage(msgId: string): ALMessage {

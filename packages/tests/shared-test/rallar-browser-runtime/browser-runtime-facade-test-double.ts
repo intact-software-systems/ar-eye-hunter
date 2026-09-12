@@ -12,10 +12,11 @@ import {
     type BlackBoxBrowserWsDependency,
     type BlackBoxDiagnosticsRelay
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessagePayload,
-    RallarMessageSendResult,
     RallarRoomMessageChannelDefinition,
     RallarTypedMessageChannel,
     RallarTypedMessageSendOptions,
@@ -29,6 +30,7 @@ import type {
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -92,7 +94,7 @@ export interface BrowserRuntimeFacadeRecords {
     readonly directorAppointments: Array<Parameters<BlackBoxBrowserDirectorDependency['appoint']>>;
 }
 
-const records: BrowserRuntimeFacadeRecords = {
+export const facadeRecords: BrowserRuntimeFacadeRecords = {
     configurationWrites: [],
     defaultWrites: [],
     loginAttempts: [],
@@ -183,7 +185,7 @@ export const facadeBehavior = {
         (
             payload: RallarMessagePayload,
             options: RallarTypedMessageSendOptions<RallarMessagePayload> | undefined
-        ) => Promise<RallarMessageSendResult>
+        ) => Promise<RallarMessageHandle>
     >(),
     crdtOpen: vi.fn<BlackBoxBrowserCrdtDependency['open']>(),
     directorAppoint: vi.fn<BlackBoxBrowserDirectorDependency['appoint']>(),
@@ -192,56 +194,36 @@ export const facadeBehavior = {
     directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>()
 };
 
-const defaultRtcMessageSendResult: RallarMessageSendResult = {
-    transport: 'rtc',
-    status: 'accepted',
-    message: {
-        id: { v: 2, msgId: 'test-message', ts: 0, senderId: 'client-1' },
-        route: { topicId: 'test', contextId: 'test', resourceId: 'test' },
-        payload: {
-            typeId: 'test',
-            contentType: 'application/json',
-            resource: '{}'
-        }
-    },
-    entries: []
-};
-
-const defaultWsMessageSendResult: RallarMessageSendResult = {
-    ...defaultRtcMessageSendResult,
-    transport: 'ws'
-};
-
 const auth: BlackBoxBrowserAuthDependency = {
     login: async (request, options) => {
-        records.loginAttempts.push([request, options]);
+        facadeRecords.loginAttempts.push([request, options]);
         return await facadeBehavior.login(request, options);
     },
     registerAndLogin: async (request, options) => {
-        records.registrationAttempts.push([request, options]);
+        facadeRecords.registrationAttempts.push([request, options]);
         return await facadeBehavior.registerAndLogin(request, options);
     },
     logout: async (options) => {
-        records.logoutAttempts.push([options]);
+        facadeRecords.logoutAttempts.push([options]);
         await facadeBehavior.logout(options);
     },
     restore: () => {
-        records.restoreCount += 1;
+        facadeRecords.restoreCount += 1;
         return facadeBehavior.restore();
     }
 };
 
 const rooms: BlackBoxBrowserRoomsDependency = {
     join: async (room, options) => {
-        records.roomJoins.push([room, options]);
+        facadeRecords.roomJoins.push([room, options]);
         return await facadeBehavior.roomJoin(room, options);
     },
     leave: async (input) => {
-        records.roomLeaves.push([input]);
+        facadeRecords.roomLeaves.push([input]);
         return await facadeBehavior.roomLeave(input);
     },
     refresh: async (input) => {
-        records.roomRefreshes.push([input]);
+        facadeRecords.roomRefreshes.push([input]);
         return await facadeBehavior.roomRefresh(input);
     },
     formation: (room) => facadeBehavior.roomFormation(room)
@@ -249,15 +231,15 @@ const rooms: BlackBoxBrowserRoomsDependency = {
 
 const realtime: BlackBoxBrowserRealtimeDependency = {
     sendJson: async (input) => {
-        records.realtimeSends.push([input]);
+        facadeRecords.realtimeSends.push([input]);
         return await facadeBehavior.realtimeSend(input);
     },
     onJson: (laneId, handler) => {
         const recordedHandler = toRecordedRealtimeHandler(handler);
-        records.realtimeSubscriptions.push([laneId, recordedHandler]);
+        facadeRecords.realtimeSubscriptions.push([laneId, recordedHandler]);
         const unsubscribe = facadeBehavior.realtimeOnJson(laneId, recordedHandler);
         return () => {
-            records.realtimeUnsubscribeCount += 1;
+            facadeRecords.realtimeUnsubscribeCount += 1;
             unsubscribe();
         };
     },
@@ -268,41 +250,41 @@ const messages: BlackBoxBrowserMessagesDependency = {
     room: <T>(
         definition: RallarRoomMessageChannelDefinition
     ): RallarTypedMessageChannel<T> => {
-        records.typedChannelOpens.push(definition);
+        facadeRecords.typedChannelOpens.push(definition);
         return createTypedChannelTestDouble<T>();
     },
     rtc: {
         send: async (input) => {
-            records.rtcMessageSends.push([input]);
+            facadeRecords.rtcMessageSends.push([input]);
             return await facadeBehavior.rtcMessageSend(input);
         },
         onMessage: (selector, handler) => {
             const recordedHandler = toRecordedMessageHandler(handler);
-            records.rtcMessageSubscriptions.push([selector, recordedHandler]);
+            facadeRecords.rtcMessageSubscriptions.push([selector, recordedHandler]);
             const unsubscribe = facadeBehavior.rtcMessageOnMessage(
                 selector,
                 recordedHandler
             );
             return () => {
-                records.rtcMessageUnsubscribeCount += 1;
+                facadeRecords.rtcMessageUnsubscribeCount += 1;
                 unsubscribe();
             };
         }
     },
     ws: {
         send: async (input) => {
-            records.wsMessageSends.push([input]);
+            facadeRecords.wsMessageSends.push([input]);
             return await facadeBehavior.wsMessageSend(input);
         },
         onMessage: (selector, handler) => {
             const recordedHandler = toRecordedMessageHandler(handler);
-            records.wsMessageSubscriptions.push([selector, recordedHandler]);
+            facadeRecords.wsMessageSubscriptions.push([selector, recordedHandler]);
             const unsubscribe = facadeBehavior.wsMessageOnMessage(
                 selector,
                 recordedHandler
             );
             return () => {
-                records.wsMessageUnsubscribeCount += 1;
+                facadeRecords.wsMessageUnsubscribeCount += 1;
                 unsubscribe();
             };
         }
@@ -314,12 +296,12 @@ const rtc: BlackBoxBrowserRtcDependency = {
     onStatus: (listener, options) => facadeBehavior.rtcOnStatus(listener, options),
     roomStatus: (room, options) => facadeBehavior.rtcRoomStatus(room, options),
     waitForRoom: async (room, options) => {
-        records.rtcRoomWaits.push([room, options]);
+        facadeRecords.rtcRoomWaits.push([room, options]);
         return await facadeBehavior.rtcWaitForRoom(room, options);
     },
     status: (options) => facadeBehavior.rtcStatus(options),
     diagnostics: async (options) => {
-        records.rtcDiagnosticsReads.push([options]);
+        facadeRecords.rtcDiagnosticsReads.push([options]);
         return await facadeBehavior.rtcDiagnostics(options);
     }
 };
@@ -344,7 +326,7 @@ const crdt: BlackBoxBrowserCrdtDependency = {
 
 const director: BlackBoxBrowserDirectorDependency = {
     appoint: async (room, options) => {
-        records.directorAppointments.push([room, options]);
+        facadeRecords.directorAppointments.push([room, options]);
         return await facadeBehavior.directorAppoint(room, options);
     },
     resign: async (room, options) => await facadeBehavior.directorResign(room, options),
@@ -380,23 +362,23 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     readRtcMessageNacks: async () => [],
     hasMessageAdmission: async (messageId, transport) => await facadeBehavior.messageAdmission(messageId, transport),
     configure: (config) => {
-        records.configurationWrites.push(config);
+        facadeRecords.configurationWrites.push(config);
         facadeBehavior.configure(config);
     },
     setDefaults: (defaults) => {
-        records.defaultWrites.push(defaults);
+        facadeRecords.defaultWrites.push(defaults);
         facadeBehavior.setDefaults(defaults);
     },
     connect: async (options) => {
-        records.connectionAttempts.push([options]);
+        facadeRecords.connectionAttempts.push([options]);
         return await facadeBehavior.connect(options);
     },
     disconnect: async () => {
-        records.disconnectCount += 1;
+        facadeRecords.disconnectCount += 1;
         await facadeBehavior.disconnect();
     },
     refreshRoomState: async (roomRef, options) => {
-        records.roomStateRefreshes.push([roomRef, options]);
+        facadeRecords.roomStateRefreshes.push([roomRef, options]);
         await facadeBehavior.roomStateRefresh(roomRef, options);
     },
     status: () => 'connected',
@@ -444,7 +426,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
             void listener({ kind: 'snapshot', atEpochMs: 123, status: rtc.status() });
         }
         return () => {
-            records.rtcLifecycleUnsubscribeCount += 1;
+            facadeRecords.rtcLifecycleUnsubscribeCount += 1;
         };
     });
     facadeBehavior.wsOnLifecycle.mockImplementation((listener, options) => {
@@ -452,57 +434,57 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
             void listener({ kind: 'snapshot', atEpochMs: 123, status: ws.status() });
         }
         return () => {
-            records.wsLifecycleUnsubscribeCount += 1;
+            facadeRecords.wsLifecycleUnsubscribeCount += 1;
         };
     });
     facadeBehavior.realtimeSend.mockResolvedValue([]);
     facadeBehavior.realtimeOnJson.mockReturnValue(() => undefined);
-    facadeBehavior.rtcMessageSend.mockResolvedValue(defaultRtcMessageSendResult);
+    facadeBehavior.rtcMessageSend.mockImplementation(async () => createMessageHandle('rtc'));
     facadeBehavior.rtcMessageOnMessage.mockReturnValue(() => undefined);
-    facadeBehavior.wsMessageSend.mockResolvedValue(defaultWsMessageSendResult);
+    facadeBehavior.wsMessageSend.mockImplementation(async () => createMessageHandle('ws'));
     facadeBehavior.wsMessageOnMessage.mockReturnValue(() => undefined);
-    facadeBehavior.typedSend.mockResolvedValue(defaultWsMessageSendResult);
+    facadeBehavior.typedSend.mockImplementation(async () => createMessageHandle('ws'));
 }
 
 function clearRecords(): void {
     for (
         const entries of [
-            records.configurationWrites,
-            records.defaultWrites,
-            records.loginAttempts,
-            records.registrationAttempts,
-            records.logoutAttempts,
-            records.connectionAttempts,
-            records.roomStateRefreshes,
-            records.roomJoins,
-            records.roomLeaves,
-            records.roomRefreshes,
-            records.realtimeSubscriptions,
-            records.realtimeSends,
-            records.rtcMessageSubscriptions,
-            records.rtcMessageSends,
-            records.wsMessageSubscriptions,
-            records.wsMessageSends,
-            records.typedChannelOpens,
-            records.typedSends,
-            records.typedWsHandlers,
-            records.typedRtcHandlers,
-            records.rtcDiagnosticsReads,
-            records.rtcRoomWaits,
-            records.crdtOpens,
-            records.directorAppointments
+            facadeRecords.configurationWrites,
+            facadeRecords.defaultWrites,
+            facadeRecords.loginAttempts,
+            facadeRecords.registrationAttempts,
+            facadeRecords.logoutAttempts,
+            facadeRecords.connectionAttempts,
+            facadeRecords.roomStateRefreshes,
+            facadeRecords.roomJoins,
+            facadeRecords.roomLeaves,
+            facadeRecords.roomRefreshes,
+            facadeRecords.realtimeSubscriptions,
+            facadeRecords.realtimeSends,
+            facadeRecords.rtcMessageSubscriptions,
+            facadeRecords.rtcMessageSends,
+            facadeRecords.wsMessageSubscriptions,
+            facadeRecords.wsMessageSends,
+            facadeRecords.typedChannelOpens,
+            facadeRecords.typedSends,
+            facadeRecords.typedWsHandlers,
+            facadeRecords.typedRtcHandlers,
+            facadeRecords.rtcDiagnosticsReads,
+            facadeRecords.rtcRoomWaits,
+            facadeRecords.crdtOpens,
+            facadeRecords.directorAppointments
         ]
     ) {
         entries.length = 0;
     }
-    records.restoreCount = 0;
-    records.disconnectCount = 0;
-    records.wsLifecycleUnsubscribeCount = 0;
-    records.rtcLifecycleUnsubscribeCount = 0;
-    records.realtimeUnsubscribeCount = 0;
-    records.rtcMessageUnsubscribeCount = 0;
-    records.wsMessageUnsubscribeCount = 0;
-    records.typedUnsubscribeCount = 0;
+    facadeRecords.restoreCount = 0;
+    facadeRecords.disconnectCount = 0;
+    facadeRecords.wsLifecycleUnsubscribeCount = 0;
+    facadeRecords.rtcLifecycleUnsubscribeCount = 0;
+    facadeRecords.realtimeUnsubscribeCount = 0;
+    facadeRecords.rtcMessageUnsubscribeCount = 0;
+    facadeRecords.wsMessageUnsubscribeCount = 0;
+    facadeRecords.typedUnsubscribeCount = 0;
 }
 
 function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
@@ -514,7 +496,7 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
     return {
         send: async (payload, options) => {
             const sendOptions = options as RallarTypedMessageSendOptions<RallarMessagePayload> | undefined;
-            records.typedSends.push([payload as RallarMessagePayload, sendOptions]);
+            facadeRecords.typedSends.push([payload as RallarMessagePayload, sendOptions]);
             return await facadeBehavior.typedSend(
                 payload as RallarMessagePayload,
                 sendOptions
@@ -523,31 +505,29 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
         sendRtc: unsupported,
         sendWs: unsupported,
         onWs: (handler) => {
-            records.typedWsHandlers.push(
+            facadeRecords.typedWsHandlers.push(
                 handler as RallarTypedPayloadHandler<RallarMessagePayload>
             );
             return () => {
-                records.typedUnsubscribeCount += 1;
+                facadeRecords.typedUnsubscribeCount += 1;
             };
         },
         onRtc: (handler) => {
-            records.typedRtcHandlers.push(
+            facadeRecords.typedRtcHandlers.push(
                 handler as RallarTypedPayloadHandler<RallarMessagePayload>
             );
             return () => {
-                records.typedUnsubscribeCount += 1;
+                facadeRecords.typedUnsubscribeCount += 1;
             };
         }
     };
 }
 
-export { records as facadeRecords };
-
 async function openCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
     name: string,
     options?: RallarCrdtOpenOptions<TValue, TPayload>
 ): Promise<RallarCrdtDocument<TValue, TPayload>> {
-    records.crdtOpens.push([name, options]);
+    facadeRecords.crdtOpens.push([name, options]);
     const document = await facadeBehavior.crdtOpen(name, options);
     return document as RallarCrdtDocument<TValue, TPayload>;
 }
@@ -608,4 +588,26 @@ function createIdleRoomTransportStatus(): RallarRoomTransportStatus {
             laneId: 'lane'
         }
     };
+}
+
+function createMessageHandle(carrier: ALDeliveryCarrier): RallarMessageHandle {
+    const registry = new BrowserRallarDeliveryRegistry({ nowMs: () => 0, retainTerminalMs: 60_000, maxEntries: 1, cancel: () => {} });
+    const handle = registry.open({
+        id: { v: 2, msgId: 'test-message', ts: 0, senderId: 'client-1' },
+        route: { topicId: 'test', contextId: 'test', resourceId: 'test' },
+        payload: { typeId: 'test', contentType: 'application/json', resource: '{}' }
+    }, carrier);
+    registry.record({ kind: 'attempt-started', msgId: handle.msgId, carrier, atMs: 0, attemptId: 'test-attempt' });
+    registry.record({
+        kind: 'attempt-settled',
+        msgId: handle.msgId,
+        carrier,
+        atMs: 0,
+        attemptId: 'test-attempt',
+        outcome: 'sent',
+        submissionAttempted: true,
+        detail: undefined,
+        willRetry: false
+    });
+    return handle;
 }

@@ -173,6 +173,7 @@ describe('browser RTC runtime composition', () => {
         const qboxEngine = new InboxOutboxEngine();
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
+            outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine
         });

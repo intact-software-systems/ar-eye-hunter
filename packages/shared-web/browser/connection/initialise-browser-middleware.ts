@@ -27,11 +27,12 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
-import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
+import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
+import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 import { readSession } from '@shared/api/auth.ts';
 import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
@@ -60,6 +61,7 @@ import {
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 
 export interface MiddlewareInitOptions {
+    readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
@@ -233,6 +235,7 @@ async function initialiseBrowserWebSocketTransport(
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
         newConnectionRequestId: () => crypto.randomUUID(),
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        outboundSettlements: input.options.deliverySettlements.ws,
         inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
     }).catch((caught) => {
         const error = toError(caught);
@@ -246,24 +249,33 @@ function createBrowserWebSocketClient(
     input: InitialiseBrowserTransportInput,
     apiConfig: ApiConfig
 ): JsonWebSocketClient {
-    return new JsonWebSocketClient(async (connectOptions) => {
-        if (!connectOptions.requestId) {
-            throw new Error('WebSocket connection request identity is missing.');
-        }
-        const wsTicket = await createWebSocketTicket({
-            requestId: connectOptions.requestId,
-            signal: connectOptions.signal
-        });
-        if (wsTicket.sessionId !== input.session.sessionId) {
-            throw new Error('WebSocket ticket does not match the current session.');
-        }
-        return toCreateWsUrl({
-            apiConfig,
-            session: input.session,
-            ticket: wsTicket.ticket,
-            scope: input.options.scope
-        });
-    }, input.options.diagnosticsPorts.transportFaultPort);
+    return new JsonWebSocketClient(
+        async (options) => await createBrowserWebSocketUrl(input, apiConfig, options),
+        input.options.diagnosticsPorts.transportFaultPort
+    );
+}
+
+async function createBrowserWebSocketUrl(
+    input: InitialiseBrowserTransportInput,
+    apiConfig: ApiConfig,
+    connectOptions: WebSocketConnectOptions
+): Promise<string> {
+    if (!connectOptions.requestId) {
+        throw new Error('WebSocket connection request identity is missing.');
+    }
+    const wsTicket = await createWebSocketTicket({
+        requestId: connectOptions.requestId,
+        signal: connectOptions.signal
+    });
+    if (wsTicket.sessionId !== input.session.sessionId) {
+        throw new Error('WebSocket ticket does not match the current session.');
+    }
+    return toCreateWsUrl({
+        apiConfig,
+        session: input.session,
+        ticket: wsTicket.ticket,
+        scope: input.options.scope
+    });
 }
 
 async function initialiseBrowserRtcTransport(
@@ -281,7 +293,8 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcConnectionService,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
+            outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+            outboundSettlements: input.options.deliverySettlements.rtc
         }
     );
     const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
@@ -312,55 +325,74 @@ function createBrowserRtcGroupSnapshotRefresh(
     input: InitialiseBrowserRtcTransportInput
 ): RtcGroupSnapshotRefresh {
     return new RtcGroupSnapshotRefresh({
-        refreshGroupSnapshot: async (roomRef, minSnapshotVersion, signal) => {
-            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
-            const scope = toStateScope(roomRef);
-            const { snapshot } = await new Command(
-                async (commandSignal) =>
-                    await readStateGroupSnapshot(
-                        roomRef.groupId,
-                        scope,
-                        {
-                            authSession: input.session,
-                            signal: commandSignal,
-                            minCausalRevision: {
-                                groupRevision: minSnapshotVersion,
-                                presenceRevision: 0
-                            }
-                        }
-                    ),
-                { signal, timeoutMs: input.options.timeoutMs }
-            ).run();
-            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
-            await acceptAuthoritativeGroupStateSnapshot(
-                snapshot,
+        refreshGroupSnapshot: async (roomRef, minSnapshotVersion, signal) =>
+            await refreshBrowserRtcGroupSnapshot(input, { roomRef, minSnapshotVersion, signal })
+    });
+}
+
+interface BrowserRtcGroupSnapshotRequest {
+    readonly roomRef: GroupRef;
+    readonly minSnapshotVersion: number;
+    readonly signal: AbortSignal;
+}
+
+async function refreshBrowserRtcGroupSnapshot(
+    input: InitialiseBrowserRtcTransportInput,
+    request: BrowserRtcGroupSnapshotRequest
+): Promise<void> {
+    const { roomRef, minSnapshotVersion, signal } = request;
+    assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+    const scope = toStateScope(roomRef);
+    const { snapshot } = await new Command(
+        async (commandSignal) =>
+            await readStateGroupSnapshot(
+                roomRef.groupId,
                 scope,
                 {
-                    assertCanMutate: () => assertRtcGroupSnapshotRefreshIsCurrent(input, signal),
-                    rereadGroupSnapshots: async (refreshScope) => {
-                        const groups = await new Command(
-                            async (commandSignal) =>
-                                await listStateGroups(
-                                    refreshScope,
-                                    {
-                                        authSession: input.session,
-                                        signal: commandSignal
-                                    }
-                                ),
-                            { signal, timeoutMs: input.options.timeoutMs }
-                        ).run();
-                        assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
-                        validateAuthoritativeGroupSnapshotList(groups, refreshScope);
-                        return groups;
+                    authSession: input.session,
+                    signal: commandSignal,
+                    minCausalRevision: {
+                        groupRevision: minSnapshotVersion,
+                        presenceRevision: 0
                     }
                 }
-            );
-            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
-            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
-            assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
-            input.webSocketTransport.qboxEngine.wake();
+            ),
+        { signal, timeoutMs: input.options.timeoutMs }
+    ).run();
+    assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+    await acceptAuthoritativeGroupStateSnapshot(
+        snapshot,
+        scope,
+        {
+            assertCanMutate: () => assertRtcGroupSnapshotRefreshIsCurrent(input, signal),
+            rereadGroupSnapshots: async (refreshScope) => await rereadBrowserRtcGroups(input, refreshScope, signal)
         }
-    });
+    );
+    assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+    await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+    assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+    input.webSocketTransport.qboxEngine.wake();
+}
+
+async function rereadBrowserRtcGroups(
+    input: InitialiseBrowserRtcTransportInput,
+    refreshScope: StateScope,
+    signal: AbortSignal
+): Promise<readonly GroupSnapshot[]> {
+    const groups = await new Command(
+        async (commandSignal) =>
+            await listStateGroups(
+                refreshScope,
+                {
+                    authSession: input.session,
+                    signal: commandSignal
+                }
+            ),
+        { signal, timeoutMs: input.options.timeoutMs }
+    ).run();
+    assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+    validateAuthoritativeGroupSnapshotList(groups, refreshScope);
+    return groups;
 }
 
 function assertRtcGroupSnapshotRefreshIsCurrent(
@@ -401,7 +433,7 @@ function registerBrowserRttEgress(
             void queueBox.webSocketQueueBox.enqueueOutboxIfAbsent(
                 toBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt)
             ).then((result) => {
-                if (result.status === 'enqueued' || result.status === 'duplicate') {
+                if (result.verdict.kind === 'admitted' || result.verdict.kind === 'duplicate') {
                     queueBox.qboxEngine.wake();
                 }
             }).catch((error) => {
@@ -516,18 +548,23 @@ function installBrowserStateResync(
     initGroupStateResyncOnReopen({
         cancelSnapshotAssemblies: () => browserStateCacheLifecycle.cancelSnapshotAssemblies(),
         socket: input.webSocketQueueBox.socket,
-        resyncStateSnapshots: async () => {
-            const refreshed = await refreshStateSnapshots(input.options.scope, {
-                command: toCommandOptions(input.options)
-            });
-            await hydrateBrowserStateCaches(input, stateCacheOptions, refreshed);
-            return refreshed.groups;
-        },
+        resyncStateSnapshots: async () => await resyncBrowserStateSnapshots(input, stateCacheOptions),
         resyncGroupTopologies: async (refreshedGroups) => {
             await hydrateBrowserGroupTopologies(input, refreshedGroups);
         },
         isCurrentGeneration: () => readSession()?.sessionId === input.clientData.sessionId
     });
+}
+
+async function resyncBrowserStateSnapshots(
+    input: InitialiseBrowserStateTransportInput,
+    stateCacheOptions: StateCacheScopeOptions
+): Promise<readonly GroupSnapshot[]> {
+    const refreshed = await refreshStateSnapshots(input.options.scope, {
+        command: toCommandOptions(input.options)
+    });
+    await hydrateBrowserStateCaches(input, stateCacheOptions, refreshed);
+    return refreshed.groups;
 }
 
 function runMiddlewareCommand<T>(

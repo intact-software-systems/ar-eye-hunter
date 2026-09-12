@@ -13,7 +13,6 @@ import {
     type ALDeliveryCarrier,
     type ALDeliveryLifecycle,
     type ALDeliverySettlement,
-    type ALDeliverySettlementSink,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
@@ -39,6 +38,7 @@ interface DeliveryWait {
     resolve(outcome: RallarMessageDeliveryOutcome): void;
     /** Drops the wait from its observation and clears the timers and abort listener it armed. */
     release(): void;
+    updateDeadline(): void;
 }
 
 interface DeliveryEntry {
@@ -49,8 +49,7 @@ interface DeliveryEntry {
 /** What one wait's deadline timer needs to fire, publish, and re-arm itself. */
 interface DeliveryDeadlineTimer {
     readonly observation: DeliveryObservation;
-    readonly expiresAtMs: number;
-    readonly timerIds: ReturnType<typeof setTimeout>[];
+    timerId: ReturnType<typeof setTimeout> | undefined;
 }
 
 export namespace BrowserRallarDeliveryRegistry {
@@ -61,12 +60,6 @@ export namespace BrowserRallarDeliveryRegistry {
         readonly maxEntries: number;
         /** Reaches every carrier owner the message was admitted to; the registry records the `cancelled` settlement itself. */
         cancel(msgId: string): void;
-    }
-
-    /** One carrier owner's settlement stream; closing it drops a batch that outlives the owner. */
-    export interface CarrierSink {
-        readonly sink: ALDeliverySettlementSink;
-        close(): void;
     }
 }
 
@@ -94,18 +87,22 @@ export class BrowserRallarDeliveryRegistry {
         return entry.handle;
     }
 
-    createSink(): BrowserRallarDeliveryRegistry.CarrierSink {
-        let attached = true;
-        return {
-            sink: (settlement) => {
-                if (attached) {
-                    this.record(settlement);
-                }
-            },
-            close: () => {
-                attached = false;
-            }
-        };
+    updateDeadline(message: ALMessage): void {
+        const observation = this.entries.get(message.id.msgId)?.observation;
+        const expiresAtMs = message.constraints?.expiresAtMs;
+        if (
+            !observation || expiresAtMs === undefined ||
+            (observation.lifecycle.expiresAtMs !== undefined && expiresAtMs >= observation.lifecycle.expiresAtMs)
+        ) {
+            return;
+        }
+        this.publishLifecycle(
+            observation,
+            computeALDeliveryDeadline({ ...observation.lifecycle, expiresAtMs }, this.input.nowMs())
+        );
+        for (const wait of observation.waits.values()) {
+            wait.updateDeadline();
+        }
     }
 
     /** A msgId the registry never opened is ignored: it observes only the messages it handed a handle for. */
@@ -122,10 +119,15 @@ export class BrowserRallarDeliveryRegistry {
         );
     }
 
-    /**
-     * Every non-terminal entry resolves `unobservable`; used by logout and facade disposal. The
-     * entries stay so a late `wait()` still reads its evidence; the next `open()` ages them out.
-     */
+    /** Ends one observation whose captured transport no longer exists. */
+    release(msgId: string): void {
+        const observation = this.entries.get(msgId)?.observation;
+        if (observation) {
+            this.releaseObservation(observation);
+        }
+    }
+
+    /** Session end/replacement preserves terminal evidence and releases every live observation. */
     releaseAll(): void {
         for (const entry of [...this.entries.values()]) {
             this.releaseObservation(entry.observation);
@@ -157,7 +159,7 @@ export class BrowserRallarDeliveryRegistry {
         return {
             msgId: observation.lifecycle.msgId,
             typeId: observation.lifecycle.typeId,
-            lifecycle: () => this.publishDeadline(observation),
+            lifecycle: () => this.readLifecycle(observation),
             onEvent: (listener) => subscribeToObservation(observation, listener),
             wait: async (options) => await this.wait(observation, options ?? {}),
             cancel: () => this.cancel(observation)
@@ -176,7 +178,7 @@ export class BrowserRallarDeliveryRegistry {
     }
 
     /** No owner emits the deadline, so a read applies it before answering. */
-    private publishDeadline(observation: DeliveryObservation): ALDeliveryLifecycle {
+    private readLifecycle(observation: DeliveryObservation): ALDeliveryLifecycle {
         const deadlined = computeALDeliveryDeadline(observation.lifecycle, this.input.nowMs());
         if (deadlined !== observation.lifecycle) {
             this.publishLifecycle(observation, deadlined);
@@ -184,7 +186,7 @@ export class BrowserRallarDeliveryRegistry {
         return observation.lifecycle;
     }
 
-    /** Ends an observation the registry can no longer follow: eviction, logout, or disposal. */
+    /** Ends an observation the registry can no longer follow: eviction, session end, or replacement. */
     private releaseObservation(observation: DeliveryObservation): void {
         const released = computeALDeliveryUnobservable(observation.lifecycle);
         if (released !== observation.lifecycle) {
@@ -195,7 +197,7 @@ export class BrowserRallarDeliveryRegistry {
     private cancel(observation: DeliveryObservation): void {
         // The deadline decides terminality here too, so an elapsed message ends `expired` and
         // reaches no owner, whether or not anything read the handle first.
-        if (isALDeliveryTerminal(this.publishDeadline(observation))) {
+        if (isALDeliveryTerminal(this.readLifecycle(observation))) {
             return;
         }
 
@@ -217,7 +219,7 @@ export class BrowserRallarDeliveryRegistry {
         observation: DeliveryObservation,
         options: RallarMessageWaitOptions
     ): Promise<RallarMessageDeliveryOutcome> {
-        const current = this.publishDeadline(observation);
+        const current = this.readLifecycle(observation);
         if (isDeliveryWaitSatisfied(current, options.until)) {
             return { status: 'settled', lifecycle: current };
         }
@@ -226,12 +228,12 @@ export class BrowserRallarDeliveryRegistry {
         }
 
         return await new Promise<RallarMessageDeliveryOutcome>((resolve) => {
-            this.armWait(observation, options, resolve);
+            this.startWait(observation, options, resolve);
         });
     }
 
     /** The only place a timer exists: one for the caller's timeout, one for the message deadline. */
-    private armWait(
+    private startWait(
         observation: DeliveryObservation,
         options: RallarMessageWaitOptions,
         resolve: (outcome: RallarMessageDeliveryOutcome) => void
@@ -240,47 +242,47 @@ export class BrowserRallarDeliveryRegistry {
         const waitId = this.waitCount;
         const armed = new AbortController();
         const timerIds: ReturnType<typeof setTimeout>[] = [];
+        const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
         const release = (): void => {
             observation.waits.delete(waitId);
             armed.abort();
+            clearTimeout(deadline.timerId);
             for (const timerId of timerIds) {
                 clearTimeout(timerId);
             }
         };
 
-        observation.waits.set(waitId, { until: options.until, resolve, release });
+        const updateDeadline = (): void => {
+            clearTimeout(deadline.timerId);
+            this.scheduleDeadlineTimer(deadline);
+        };
+        observation.waits.set(waitId, { until: options.until, resolve, release, updateDeadline });
         options.signal?.addEventListener('abort', () => {
             release();
-            resolve({ status: 'aborted', lifecycle: this.publishDeadline(observation) });
+            resolve({ status: 'aborted', lifecycle: this.readLifecycle(observation) });
         }, { signal: armed.signal });
 
         if (options.timeoutMs !== undefined) {
             timerIds.push(setTimeout(() => {
                 release();
-                resolve({ status: 'timeout', lifecycle: this.publishDeadline(observation) });
+                resolve({ status: 'timeout', lifecycle: this.readLifecycle(observation) });
             }, options.timeoutMs));
         }
 
-        const expiresAtMs = observation.lifecycle.expiresAtMs;
-        if (expiresAtMs !== undefined) {
-            this.armDeadlineTimer(
-                { observation, expiresAtMs, timerIds },
-                Math.max(0, expiresAtMs - this.input.nowMs())
-            );
-        }
+        updateDeadline();
     }
 
-    /**
-     * A timer can fire before the wall clock reaches the deadline, and nothing else is scheduled
-     * behind it, so a firing that publishes no terminal state re-arms for the remaining distance.
-     */
-    private armDeadlineTimer(deadline: DeliveryDeadlineTimer, delayMs: number): void {
-        deadline.timerIds.push(setTimeout(() => {
-            if (isALDeliveryTerminal(this.publishDeadline(deadline.observation))) {
-                return;
+    /** Re-read the current deadline if a timer fires before the wall clock reaches it. */
+    private scheduleDeadlineTimer(deadline: DeliveryDeadlineTimer): void {
+        const expiresAtMs = deadline.observation.lifecycle.expiresAtMs;
+        if (expiresAtMs === undefined) {
+            return;
+        }
+        deadline.timerId = setTimeout(() => {
+            if (!isALDeliveryTerminal(this.readLifecycle(deadline.observation))) {
+                this.scheduleDeadlineTimer(deadline);
             }
-            this.armDeadlineTimer(deadline, Math.max(1, deadline.expiresAtMs - this.input.nowMs()));
-        }, delayMs));
+        }, Math.max(1, expiresAtMs - this.input.nowMs()));
     }
 
     /** Retention runs only here: aged terminal entries, then the oldest terminal, then the oldest live ones. */

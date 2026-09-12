@@ -12,6 +12,7 @@ import {
     validateRallarNonNegativeInteger,
     validateRallarRouteId,
     validateRallarWsUserTopicId,
+    type RallarJsonPayloadValidationResult,
     type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
 
@@ -43,6 +44,15 @@ export class BrowserMessageInputValidator {
 
     public constructor(input: BrowserMessageInputValidatorInput) {
         this.input = input;
+    }
+
+    public readPayloadValidation<T>(payload: T): RallarJsonPayloadValidationResult {
+        const validation = validateRallarJsonPayload(payload, {
+            path: '$.payload',
+            maxBytes: this.input.readMaxPayloadBytes()
+        });
+        this.throwIfIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
+        return validation;
     }
 
     public assertRtc<T>(
@@ -185,12 +195,6 @@ export class BrowserMessageInputValidator {
         });
         this.pushOptionalNonNegativeInteger(input.ttlHops, '$.ttlHops', issues);
         this.pushOptionalNonNegativeInteger(input.ttlMs, '$.ttlMs', issues);
-        issues.push(
-            ...validateRallarJsonPayload(input.payload, {
-                path: '$.payload',
-                maxBytes: this.input.readMaxPayloadBytes()
-            }).issues
-        );
     }
 
     private pushWsScopeIssues<T>(

@@ -85,7 +85,7 @@ while F2c runs in its own slice.
   `CONFORMANCE_DEADLINE_MS` 18 000, `NON_EXPIRING_SEND_TIMEOUT_MS` 10 000, `EXPIRY_TTL_MS` 7 500, the
   regime thresholds 30/35 ms per operation stay as they are.
 - Tasks 6 to 9 are one cutover: between Task 6's commit and Task 9's, the consumers Task 6 lists
-  (director, calls, AI, game, the black-box app, the harness) may fail their package typecheck;
+  (director, calls, CRDT transport, AI, game, the black-box app, the harness) may fail their package typecheck;
   `npm run typecheck` is green again when Task 9 completes and stays green at every later commit.
   Every other task keeps its package typecheck green at each commit.
 - Every commit keeps focused Vitest, `npx dprint check <files>`, and the package typecheck green;
@@ -595,10 +595,12 @@ export class BrowserRallarDeliveryRegistry {
     constructor(input: BrowserRallarDeliveryRegistry.Input);
     /** Returns the existing handle for the same msgId (fallback re-sends the same envelope). */
     open(message: ALMessage, carrier: ALDeliveryCarrier): RallarMessageHandle;
-    /** The sink one carrier owner writes into; a sink is closed by `closeSink` when its owner is detached (a batch that outlives dispose must not reach the registry). */
-    createSink(): { readonly sink: ALDeliverySettlementSink; close(): void; };
+    /** Adopt a shorter effective admitted deadline on the same observation and active waits. */
+    updateDeadline(message: ALMessage): void;
     record(settlement: ALDeliverySettlement): void;
-    /** Every non-terminal entry resolves `unobservable`; used by logout and facade disposal. */
+    /** Release the single observation whose captured middleware disappeared before admission. */
+    release(msgId: string): void;
+    /** Every non-terminal entry resolves `unobservable`; used by session end/replacement. */
     releaseAll(): void;
     size(): number;
 }
@@ -620,7 +622,11 @@ the next `open()` (ruling R14). The facade ceiling moved to 209 KiB when Tasks 2
 Retention is applied on `open()`: terminal entries older than `retainTerminalMs` are dropped, then
 the oldest terminal entries until `maxEntries` holds, then the oldest non-terminal entries, each
 resolved `unobservable` before removal. Defaults are decided in Task 6's composition root
-(`retainTerminalMs: 60_000`, `maxEntries: 512`). No timer runs per entry: `wait()` arms one timer for
+(`retainTerminalMs: 60_000`, `maxEntries: 512`), with one volatile registry shared browser-wide
+by the existing session/carrier transport owner. Facade disconnect retains its entries; actual session
+end or replacement releases the matching session observations. These are browser-wide bounds, not
+per-facade capacity. Page replacement loses this volatile observation; unknown IDs are unobservable.
+No timer runs per entry: `wait()` arms one timer for
 its own timeout and one for the message deadline when it is nearer; `lifecycle()` compares the
 deadline on read. `cancel()` on a terminal handle is a no-op.
 
@@ -632,7 +638,7 @@ deadline on read. `cancel()` on a terminal handle is a no-op.
       the current lifecycle after `timeoutMs`; `wait({ until: AL_DELIVERY_ADMITTED_STATES })` resolves at
       `accepted`; an aborted `signal` resolves `aborted`; (d) a deadline in the past turns
       `lifecycle().state` into `expired` on read and resolves pending waits; (e) `cancel()` calls the
-      port once and records `cancelled`; (f) a closed sink's settlements are dropped; (g) retention:
+      port once and records `cancelled`; (f) epoch sink fencing is proved at the actual Task 6 transport owner; (g) retention:
       `maxEntries: 2` with three opens resolves the oldest non-terminal `unobservable` and its waiters
       see `settled` with that state; (h) `releaseAll` resolves every non-terminal entry `unobservable`.
       Command: `npx vitest run packages/tests/shared-web/messages/browser-rallar-delivery-registry.test.ts`
@@ -695,14 +701,34 @@ deadline on read. `cancel()` on a terminal handle is a no-op.
   `BrowserRallarMessageSender.Input.deliveries: BrowserRallarDeliveryRegistry`.
 
 Send semantics after this task: the handle promise resolves as soon as the envelope exists and is
-open in the registry (after `connect()`, before admission); admission continues and is recorded as an
-`admission` settlement with the carrier; input validation before an envelope exists still throws
-`RallarValidationError`; `decodeALMessageValue` failure (`malformed`/`oversized`) records
-`admission refused` instead of throwing; a deadline elapsed before admission records `admission expired`;
-`sendRoomWithFallback` keeps one msgId over both carriers (`:191`), records the first carrier's verdict,
-and after `computeFallbackDisposition` says `stop` on an `unroutable` verdict records
-`attempts-exhausted`; a direct `sendWs`/`sendRtc` records `attempts-exhausted` immediately after an
-`unroutable` verdict. `wakeQueueBoxEngineIfQueued` keys on `verdict.kind === 'admitted' || 'duplicate'`.
+open in the registry (after `connect()`, before admission). Admission continues and is recorded as an
+`admission` settlement with the carrier. Payload validation runs the configured size policy once:
+nonserializable or corrupt payloads that cannot form an envelope throw `RallarValidationError`;
+serializable oversized payloads resolve a `rejected` handle with the existing size-policy detail.
+Canonical `decodeALMessageValue` rejection also records `admission refused`. A deadline already
+elapsed before admission records `admission expired`.
+
+The admitted envelope may contain a topic-shortened effective deadline. Before recording its
+admission, update the same live handle's deadline from that envelope and rearm existing caller
+waits. Reuse the canonical deadline reducer; preserve already terminal outcomes. Fallback receives
+the admitted envelope and its effective deadline unchanged. It preserves one msgId and one handle,
+records each carrier's verdict, and records `attempts-exhausted` after a final `unroutable` verdict.
+A queued admission alone is not a transport attempt: evidence gains a second attempt only when the
+second carrier actually emits `attempt-started`. Queue wakes key on `admitted` or `duplicate`.
+
+Observation belongs to one bounded browser-session registry alongside the existing shared browser
+transport, because persisted queues are scoped by session and carrier. The transport owns paired
+synchronous sinks and a fence for each actual middleware epoch, opened before initialization.
+Transport shutdown or failed initialization fences the old epoch. Ordinary facade detach retains
+all observations: another facade's subsequently active owner can settle the original handle and
+waiter. No per-facade registration, fanout, message-routing map, copied settlement history, queue,
+timer, persistence scope, or diagnostic relay is added. The registry's listener notification still
+isolates individual listener failures. Actual session end/replacement releases live observations
+using the canonical client/session identity; stale end cannot clear a newer auth session, stop its
+transport, or release its observations. A sender captures both its actual `ApiMiddleware` identity
+and epoch: a context replaced before admission releases that handle `unobservable`; an admission
+already awaiting an old owner cannot publish through a new epoch. Actual carrier/runtime exceptions
+remain failure values.
 
 - [ ] **Step 1: Failing tests.** Rewrite `browser-rallar-message-sender.test.ts`: the four
       input-validation throws stay (`:282`, `:297`, `:312`); `:326` becomes "an oversized payload
@@ -711,27 +737,34 @@ and after `computeFallbackDisposition` says `stop` on an `unroutable` verdict re
       admission resolves and `queued` after"; the wake cases key on the verdict; a new case pins that
       `send()` resolves before `enqueueOutboxIfAbsent` resolves (a deferred stub). In
       `browser-message-fallback-identity.test.ts` add: an RTC `unroutable` verdict followed by a WS
-      `admitted` verdict leaves one handle with two attempts in evidence and state `queued`; RTC
+      `admitted` verdict leaves one handle `queued`, with a second evidence attempt only after WS emits
+      `attempt-started`; RTC
       `unroutable` with `strategy: 'rtc'` resolves `failed` with the reason. In
       `browser-typed-message-channels.test.ts:206` the fallback case reads the handle.
       Command: `npx vitest run packages/tests/shared-web/messages`
       Expected: FAIL on the new expectations.
-- [ ] **Step 2: Compose and wire.** Construct `BrowserRallarDeliveryRegistry` in
-      `createBrowserFacadeCompositions` before the session composition (its `nowMs` from
-      `foundation.runtime`'s clock, the two defaults above, `cancel` reaching both carrier owners through
-      `session.readMiddleware()` — `rtcRxStreamer.cancelOutbox(msgId)` and `webSocketQueueBox.cancelOutbox(msgId)`,
-      two new one-line pass-throughs to `ALOutboundMessageRuntime.cancel`, mirroring
-      `enqueueOutboxIfAbsent` at `web-rtc-rx-streamer-service.ts:421-423` and
-      `ws-queue-box-client-service.ts:575-586`; a cancel with no middleware records `cancelled` only).
-      Hand the registry to `createBrowserMessagingComposition` → `BrowserRallarMessagesController` →
-      `BrowserRallarMessageSender.Input.deliveries`. Hand `registry.createSink()` pairs to the session
-      composition so `session-auth-lifecycle.ts:97` and `session-connection-lifecycle.ts:182-186` put
-      `deliverySettlements` on `MiddlewareInitOptions`, and `initialise-browser-middleware.ts` passes
-      `deliverySettlements.ws` into `createBrowserWebSocketQueueBox` and `deliverySettlements.rtc` into
-      `initialiseBrowserRtcRuntime`, which pass them to the runtimes' `settlements` dependency. Register
-      a lifecycle participant `{ id: 'message-delivery-registry', order: 35 }` whose `attach` opens the
-      two sinks for the connection and whose `detach` closes them (the R43 fence); `releaseAll()` runs
-      from `session-auth-lifecycle.ts`'s ended-session cleanup (`:260-304`).
+- [ ] **Step 2: Compose and wire.** Construct the completed shared transport first, then one
+      browser-wide `BrowserRallarDeliveryRegistry`, then its `BrowserSessionDeliveries` session owner,
+      then facade session and messaging consumers. The canonical shared delivery composition injects
+      `Date.now`, retains terminal observations for 60 000 ms, and bounds the browser to 512 entries.
+      Cancellation reads the already-completed shared transport directly to reach both
+      `rtcRxStreamer.cancelOutbox(msgId)` and `webSocketQueueBox.cancelOutbox(msgId)`; RTC forwards
+      through its multicast owner to the same `ALOutboundMessageRuntime.cancel`. No later session or
+      facade runtime is forward-captured. A cancel without middleware records `cancelled` locally.
+      Hand the same registry through messaging composition, controller, and sender. The shared
+      transport opens paired epoch sinks while constructing `MiddlewareInitOptions`, before middleware
+      and carrier owners initialize. Pass WS to `createBrowserWebSocketQueueBox` and RTC to
+      `initialiseRtcOverlayMulticastManager`, the actual outbound owner. Facade disconnect closes the
+      actual shared middleware epoch and preserves the shared registry: another facade can reconnect,
+      complete durable work, and settle the original handle and waiter while that facade stays detached.
+      There is no facade registration/fanout layer, settlement history, per-message router, or new
+      public disposal API. Actual auth end/replacement releases affected live observations using the
+      matching client/session identity; stale invalidation cannot release a newer session's handles.
+      Test synchronous early settlements, cached two-facade connection, failed initialization, detach,
+      late old admissions, sibling reconnect completion and acknowledged evidence surviving its deadline,
+      both-carrier cancellation, sibling session end/replacement, and stale session invalidation.
+      Preserve shared transport behavior; this does not introduce independent authentication or cache
+      scopes per facade or change persisted queue identity/storage operations.
       Command: `npx vitest run packages/tests/shared-web/composition packages/tests/shared-web/al-runtime`
       Expected: `browser-runtime-construction.test.ts:58` still green (the registry touches no session
       at construction).
@@ -746,6 +779,16 @@ and after `computeFallbackDisposition` says `stop` on an `unroutable` verdict re
       Expected: green; the three suites that still reference the result (`director`, `game`, black-box)
       fail to typecheck until Tasks 7 and 9 — run them under `--reporter=dot` and list them in the
       report as expected reds, then continue.
+      The harness's alternate composition root remains in Task 9's cutover: its session input lacks
+      `sessionDeliveries`, and its messaging input lacks `deliveries`, `sessionDeliveries`, and `nowMs`.
+      These two named type diagnostics in
+      `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts`
+      are permitted until Task 9. The earlier third lifecycle registration diagnostic disappears with
+      removal of the unnecessary facade observation participant. Task 9 must consume the canonical
+      shared `browser-delivery-composition.ts` when wiring the second root, close that root's diagnostic
+      `setRecorder` construction seam and workflow callbacks in full, and restore package typechecks.
+      Task 6 does not introduce a second registry composition or alter the untouched harness root.
+
 - [ ] **Step 4: Commit** (one commit for composition, one for the sender and the surface is acceptable;
       both keep `npx tsc -p packages/shared-web/tsconfig.json --noEmit` green except the listed
       consumers).

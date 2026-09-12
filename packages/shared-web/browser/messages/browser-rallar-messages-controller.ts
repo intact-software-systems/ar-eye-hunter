@@ -18,10 +18,15 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
+import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
+import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
+import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 
 export namespace BrowserRallarMessagesController {
     export interface Input {
+        readonly deliveries: BrowserRallarDeliveryRegistry;
+        readonly sessionDeliveries: BrowserSessionDeliveries;
+        readonly nowMs: () => number;
         readonly wsInbox: BrowserWebSocketInbox;
         connect(): Promise<ApiMiddleware>;
         readMiddleware(): ApiMiddleware | undefined;
@@ -34,7 +39,7 @@ export namespace BrowserRallarMessagesController {
             room: string | GroupRef | undefined,
             explicitMinSnapshotVersion?: number
         ): number | undefined;
-        readMessageMaxPayloadBytes?(): number;
+        readMessageMaxPayloadBytes(): number;
     }
 }
 
@@ -46,15 +51,20 @@ export class BrowserRallarMessagesController {
 
     public constructor(input: BrowserRallarMessagesController.Input) {
         const inputValidator = new BrowserMessageInputValidator({
-            readMaxPayloadBytes: () =>
-                input.readMessageMaxPayloadBytes?.() ??
-                    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES
+            readMaxPayloadBytes: input.readMessageMaxPayloadBytes
         });
         this.subscriptions = new BrowserRallarMessageSubscriptions({
             wsInbox: input.wsInbox,
             readMiddleware: input.readMiddleware
         });
+        const dispatch = new BrowserRallarMessageDispatch({
+            deliveries: input.deliveries,
+            sessionDeliveries: input.sessionDeliveries,
+            nowMs: input.nowMs
+        });
         this.sender = new BrowserRallarMessageSender({
+            deliveries: input.deliveries,
+            dispatch,
             inputValidator,
             connect: input.connect,
             requireSession: input.requireSession,

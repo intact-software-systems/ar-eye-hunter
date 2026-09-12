@@ -2,6 +2,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
@@ -16,12 +17,13 @@ import type { JsonWebSocketClient } from '@shared/websocket/json-web-socket-clie
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
+        readonly outboundSettlements: ALDeliverySettlementSink;
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
         readonly signal?: AbortSignal;
-        readonly connectTimeoutMs?: number;
-        readonly newConnectionRequestId?: () => string;
+        readonly connectTimeoutMs: number;
+        readonly newConnectionRequestId: (() => string) | undefined;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     }
@@ -52,7 +54,7 @@ function createBrowserWebSocketQueueBoxService(
         inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
         outboundStores,
         outboundDiagnostics: input.outboundDiagnostics,
-        outboundSettlements: undefined,
+        outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: {
@@ -67,8 +69,7 @@ async function connectInitialSocket(
     input: CreateBrowserWebSocketQueueBox.Input
 ): Promise<void> {
     const requestId = input.newConnectionRequestId?.();
-    const connectTimeoutMs = input.connectTimeoutMs ??
-        DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs;
+    const connectTimeoutMs = input.connectTimeoutMs;
     if (connectTimeoutMs <= 0) {
         await socket.connect({
             requestId,

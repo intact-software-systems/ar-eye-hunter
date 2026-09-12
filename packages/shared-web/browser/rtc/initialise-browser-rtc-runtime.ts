@@ -2,6 +2,7 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserRtcRxALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -38,6 +39,7 @@ import type { TransportFaultPort } from '@shared/transport-faults/transport-faul
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
+    readonly outboundSettlements: ALDeliverySettlementSink;
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -61,7 +63,7 @@ export function initialiseRtcOverlayMulticastManager(
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
-        outboundSettlements: undefined,
+        outboundSettlements: input.outboundSettlements,
         qosProvider: undefined,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()

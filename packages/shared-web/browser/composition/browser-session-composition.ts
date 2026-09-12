@@ -1,13 +1,8 @@
-import type {
-    RallarAuthRuntimePort,
-    RallarBrowserFacadeRuntimeContext,
-    RallarConnectionRuntimePort
-} from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
-import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import {
     createRallarSessionController,
     type RallarSessionController
@@ -44,6 +39,7 @@ export interface BrowserCrdtComposition {
 }
 
 export interface CreateBrowserSessionCoreCompositionInput {
+    readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
 }
@@ -69,6 +65,7 @@ export function createBrowserSessionCoreComposition(
         resolveScopeKey: identity.resolveDataScopeKey
     });
     const session = createRallarSessionController({
+        sessionDeliveries: input.sessionDeliveries,
         connectionRuntime: input.foundation.connectionRuntime,
         transportRuntime: input.foundation.transportRuntime,
         authRuntime: input.foundation.authRuntime,

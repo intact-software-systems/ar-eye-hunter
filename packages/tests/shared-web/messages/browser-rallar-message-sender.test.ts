@@ -1,26 +1,13 @@
-import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
-import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
-import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
-import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
-import {
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface GroupSnapshotFixtureScope {
@@ -29,265 +16,48 @@ interface GroupSnapshotFixtureScope {
 }
 
 const mocks = await vi.hoisted(async () => {
-    // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
-    // transform, so a statically imported factory is still in its temporal dead zone here.
-    const { createDefaultApiMiddlewareTestDouble } = await import(
-        '../api-middleware-test-double.ts'
-    );
-    const ctx = createDefaultApiMiddlewareTestDouble();
-    const session = ctx.session;
-    const readMissingClientStateSnapshotRepository = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const readMissingGroupStateSnapshotRepository = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
+    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     return {
-        ctx,
-        readMissingClientStateSnapshotRepository,
-        readMissingGroupStateSnapshotRepository,
-        clearSession: vi.fn<typeof AuthModule.clearSession>(),
-        createAndJoinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.createAndJoinStateGroup>(() => Promise.reject(new Error('create not mocked'))),
-        findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(
-            readMissingClientStateSnapshotRepository
-        ),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(
-            readMissingGroupStateSnapshotRepository
-        ),
-        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(readMissingGroupStateSnapshotRepository),
-        getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(readMissingClientStateSnapshotRepository),
-        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(readMissingGroupStateSnapshotRepository),
-        hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(
-            () => Promise.resolve()
-        ),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
-        joinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
-        leaveStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
-        listStateClientEventPage: vi.fn<typeof StateEventHttpApiModule.listStateClientEventPage>(() =>
-            Promise.reject(new Error('client event page not mocked'))
-        ),
-        listStateClientEvents: vi.fn<typeof StateEventHttpApiModule.listStateClientEvents>(() => Promise.reject(new Error('client events not mocked'))),
-        listStateGroupEventPage: vi.fn<typeof StateEventHttpApiModule.listStateGroupEventPage>(() => Promise.reject(new Error('group event page not mocked'))),
-        listStateGroupEvents: vi.fn<typeof StateEventHttpApiModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
-        loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
-        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() => Promise.resolve({ loggedOut: true })),
-        onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(
-            () => vi.fn()
-        ),
-        readSession: vi.fn<typeof AuthModule.readSession>(() => session),
-        refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
-        registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
-            () =>
-                Promise.resolve({
-                    clientId: 'client-new',
-                    username: 'new-user',
-                    displayName: null,
-                    registeredAtEpochMs: 1_000
-                })
-        ),
-        updateStateGroupMetadata: vi.fn<typeof RoomMutationWorkflowsModule.updateStateGroupMetadata>(() =>
-            Promise.reject(new Error('metadata update not mocked'))
-        ),
-        writeSession: vi.fn<typeof AuthModule.writeSession>()
+        ctx: createDefaultApiMiddlewareTestDouble(),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
+        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
+        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
     };
 });
-
-const qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
-const rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-const webRtcConnectionService = vi.mocked(
-    mocks.ctx.middleware.webRtcConnectionService
-);
-const webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
-const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket);
-
-vi.mock(
-    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
-    })
-);
-
-vi.mock(
-    import('@shared-web/browser/state-read/state-event-http-api.ts'),
-    (): Partial<typeof StateEventHttpApiModule> => ({
-        listStateClientEventPage: mocks.listStateClientEventPage,
-        listStateClientEvents: mocks.listStateClientEvents,
-        listStateGroupEventPage: mocks.listStateGroupEventPage,
-        listStateGroupEvents: mocks.listStateGroupEvents
-    })
-);
-
-vi.mock(
-    import('@shared-web/browser/auth/session-http-api.ts'),
-    (): Partial<typeof AuthApiModule> => ({
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi
-    })
-);
-
-vi.mock(
-    import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
-    (): Partial<typeof RoomGroupStateWorkflowsModule> => ({
-        createAndJoinStateGroup: mocks.createAndJoinStateGroup,
-        joinStateGroup: mocks.joinStateGroup,
-        leaveStateGroup: mocks.leaveStateGroup
-    })
-);
-vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<typeof RefreshStateSnapshotsModule> => ({
-    refreshStateSnapshots: mocks.refreshStateSnapshots
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
+    ...await original(),
+    initialiseMiddleware: async () => mocks.ctx.middleware
 }));
-vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<typeof RoomMutationWorkflowsModule> => ({
-    updateStateGroupMetadata: mocks.updateStateGroupMetadata
+vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
+    ...await original(),
+    readSession: () => mocks.ctx.session,
+    isLoggedIn: () => true
 }));
-
-vi.mock(
-    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
-    (): Partial<typeof StateCacheLifecycleModule> => ({
-        browserStateCacheLifecycle: {
-            hydrate: mocks.hydrateStateCache,
-            onChange: mocks.onCacheChange,
-            initialise: vi.fn(),
-            cancelSnapshotAssemblies: vi.fn(() => undefined)
-        }
-    })
-);
-
-vi.mock(
-    import('@shared/api/auth.ts'),
-    (): Partial<typeof AuthModule> => ({
-        clearSession: mocks.clearSession,
-        isLoggedIn: vi.fn<typeof AuthModule.isLoggedIn>(() => true),
-        readSession: mocks.readSession,
-        writeSession: mocks.writeSession
-    })
-);
-
-vi.mock(
-    import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
-        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
-    })
-);
-
-vi.mock(
-    import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
-        findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
-    })
-);
+vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async (original): Promise<typeof GroupStateSnapshotsRepositoryModule> => ({
+    ...await original(),
+    findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+    findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
+    getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
+}));
+let qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
+let rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
+let webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
 
 describe('Rallar message send', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
-        vi.useRealTimers();
-        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
-        mocks.getAllClientStateSnapshots.mockReturnValue([]);
-        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
-        mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
-        mocks.getAllGroupStateSnapshots.mockReturnValue([]);
-        mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.clearSession.mockImplementation(() => undefined);
-        mocks.readSession.mockReturnValue(mocks.ctx.session);
-        mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });
-        mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
-        mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
-        mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
-        mocks.updateStateGroupMetadata.mockRejectedValue(
-            new Error('metadata update not mocked')
-        );
-        webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue([]);
-        webRtcConnectionService.knownPeerIds.mockReturnValue([]);
-        webRtcConnectionService.activePeerIds.mockReturnValue([]);
-        webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
-        webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
-            (peerId) =>
-                Either.ofLeft({
-                    kind: 'connect-failed',
-                    peerId,
-                    error: new Error('connect not mocked'),
-                    startedSetup: false
-                })
-        );
-        webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
-                status: 'connect-failed',
-                peerId,
-                laneId,
-                error: new Error('connect not mocked')
-            })
-        );
-        webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => webRtcConnectionService);
-        webRtcConnectionService.readPeer.mockReturnValue(undefined);
-        webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
-        rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
-            status: 'enqueued',
-            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
-            message,
-            entries: []
-        }));
-        rtcRxStreamer.onInboxMessageDo.mockReturnValue(rtcRxStreamer);
-        rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
-        webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
-            status: 'enqueued',
-            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
-            message,
-            entries: []
-        }));
-        webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(webSocketQueueBox);
-        webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);
-        webSocketQueueBox.readHealth.mockReturnValue({
-            sessionId: mocks.ctx.session.sessionId,
-            url: 'ws://localhost/ws',
-            readyState: 'missing',
-            isOpen: false,
-            reconnecting: false,
-            reconnectEnabled: false,
-            reconnectAttempts: 0,
-            maxReconnectAttempts: 12,
-            reconnectExhausted: false
-        });
-        webSocketQueueBox.close.mockImplementation((code, reason) => {
-            webSocketClient.close(code, reason);
-        });
-        webSocketClient.onWebsocketCallbacksDo.mockReturnValue(webSocketClient);
-        webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);
-        mocks.registerWithApi.mockResolvedValue({
-            clientId: 'client-new',
-            username: 'new-user',
-            displayName: null,
-            registeredAtEpochMs: 1_000
-        });
-        mocks.listStateClientEvents.mockRejectedValue(
-            new Error('client events not mocked')
-        );
-        mocks.listStateClientEventPage.mockRejectedValue(
-            new Error('client event page not mocked')
-        );
-        mocks.listStateGroupEvents.mockRejectedValue(
-            new Error('group events not mocked')
-        );
-        mocks.listStateGroupEventPage.mockRejectedValue(
-            new Error('group event page not mocked')
-        );
+        configureTestCacheRepositories();
+        const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+        mocks.ctx = createDefaultApiMiddlewareTestDouble();
+        qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
+        rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+        mockGroupSnapshots([]);
     });
 
     it('rejects invalid WS user topics before queueing', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-
         await expect(
-            createRallarFacade().messages.ws.send({
+            createFacade().messages.ws.send({
                 scope: 'all',
                 topicId: 'manual.chat',
                 typeId: 'chat.message.v1',
@@ -297,12 +67,8 @@ describe('Rallar message send', () => {
     });
 
     it('rejects room-scoped WS sends without a room target before queueing', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-
         await expect(
-            createRallarFacade().messages.ws.send({
+            createFacade().messages.ws.send({
                 scope: 'room',
                 topicId: 'room.chat',
                 typeId: 'chat.message.v1',
@@ -312,12 +78,8 @@ describe('Rallar message send', () => {
     });
 
     it('rejects invalid RTC room ids before connecting or queueing', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-
         await expect(
-            createRallarFacade().messages.rtc.send({
+            createFacade().messages.rtc.send({
                 roomId: 'bad room',
                 typeId: 'chat.message.v1',
                 payload: { text: 'invalid room' }
@@ -326,10 +88,7 @@ describe('Rallar message send', () => {
     });
 
     it('rejects corrupt and oversized message payloads before queueing', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        const facade = createRallarFacade();
+        const facade = createFacade();
         facade.setDefaults({
             applicationId: 'app-1',
             messages: {
@@ -343,18 +102,16 @@ describe('Rallar message send', () => {
             typeId: 'chat.message.v1',
             payload: 1n
         })).rejects.toSatisfy(isRallarValidationError);
-        await expect(facade.messages.ws.send({
+        const oversized = await facade.messages.ws.send({
             scope: 'all',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
             payload: { text: 'too large' }
-        })).rejects.toSatisfy(isRallarValidationError);
+        });
+        expect((await oversized.wait()).lifecycle.state).toBe('rejected');
     });
 
-    it('returns RTC send status with the message when multicast enqueue reports no entries', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+    it('records an unroutable RTC failure with the original scoped envelope', async () => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'no-route',
@@ -371,7 +128,7 @@ describe('Rallar message send', () => {
         const room = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
         mockGroupSnapshot(room);
 
-        const result = await createRallarFacade().messages.rtc.send({
+        const result = await createFacade().messages.rtc.send({
             roomId: 'room-1',
             typeId: 'chat.message.v1',
             resourceId: 'msg-quiet',
@@ -380,41 +137,35 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(result).toMatchObject({
-            transport: 'rtc',
-            status: 'no-route',
-            reason: 'Skipping RTC outbound dispatch without planned transport messages',
-            entries: [],
-            message: {
-                id: {
-                    senderId: 'session-1'
-                },
-                route: {
-                    topicId: 'chat.message.v1',
-                    resourceId: 'msg-quiet',
-                    contextId: 'room-1'
-                },
-                targets: {
-                    mode: 'multicast',
-                    groupRef: {
-                        applicationId: 'app-1',
-                        workspaceId: 'workspace-1',
-                        groupId: 'room-1'
-                    }
-                },
-                forwarding: {
-                    overlayId: toScopedOverlayId(room.group)
+        expect((await result.wait()).lifecycle).toMatchObject({
+            state: 'failed',
+            evidence: { reason: 'Skipping RTC outbound dispatch without planned transport messages' }
+        });
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0]).toMatchObject({
+            id: {
+                senderId: 'session-1'
+            },
+            route: {
+                topicId: 'chat.message.v1',
+                resourceId: 'msg-quiet',
+                contextId: 'room-1'
+            },
+            targets: {
+                mode: 'multicast',
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
                 }
+            },
+            forwarding: {
+                overlayId: toScopedOverlayId(room.group)
             }
         });
     });
 
     it('delegates RTC routing when the room cache is temporarily absent', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-
-        const result = await createRallarFacade().messages.rtc.send({
+        const result = await createFacade().messages.rtc.send({
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
@@ -428,13 +179,10 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(result.status).toBe('enqueued');
+        expect((await result.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
     });
 
     it('wakes the queue-box engine when RTC send queues durable outbox work', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'enqueued',
@@ -449,7 +197,7 @@ describe('Rallar message send', () => {
         });
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
 
-        await createRallarFacade().messages.rtc.send({
+        const sent = await createFacade().messages.rtc.send({
             roomId: 'room-1',
             typeId: 'chat.message.v1',
             resourceId: 'msg-queued-rtc',
@@ -458,19 +206,17 @@ describe('Rallar message send', () => {
             }
         });
 
+        await sent.wait({ until: AL_DELIVERY_ADMITTED_STATES });
         expect(engineEvents).toEqual(['wake']);
     });
 
     it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
             7
         ));
 
-        const result = await createRallarFacade().messages.rtc.send({
+        const result = await createFacade().messages.rtc.send({
             roomId: 'room-1',
             typeId: 'chat.message.v1',
             resourceId: 'msg-versioned-rtc',
@@ -479,7 +225,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(result.message.targets).toMatchObject({
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
             groupRef: {
                 applicationId: 'app-1',
@@ -488,13 +234,10 @@ describe('Rallar message send', () => {
             },
             minSnapshotVersion: 7
         });
-        expect(result.message.targets).not.toHaveProperty('groupId');
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).not.toHaveProperty('groupId');
     });
 
     it('uses roomRef scope for cached snapshotVersion on RTC room sends', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(
                 'shared-room',
@@ -517,7 +260,7 @@ describe('Rallar message send', () => {
         );
         mockGroupSnapshots([workspaceA, workspaceB]);
 
-        const result = await createRallarFacade().messages.rtc.send({
+        const result = await createFacade().messages.rtc.send({
             roomId: 'shared-room',
             roomRef: workspaceB.group,
             typeId: 'chat.message.v1',
@@ -527,7 +270,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(result.message.targets).toMatchObject({
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
             groupRef: {
                 applicationId: 'app-1',
@@ -536,13 +279,10 @@ describe('Rallar message send', () => {
             },
             minSnapshotVersion: 11
         });
-        expect(result.message.targets).not.toHaveProperty('groupId');
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).not.toHaveProperty('groupId');
     });
 
-    it('returns WS send status with the message when WS enqueue completes', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+    it('records WS admission and keeps the original broadcast envelope', async () => {
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'accepted',
@@ -556,7 +296,7 @@ describe('Rallar message send', () => {
             engineEvents.push('wake');
         });
 
-        const result = await createRallarFacade().messages.ws.send({
+        const result = await createFacade().messages.ws.send({
             scope: 'all',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
@@ -566,32 +306,25 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(engineEvents).toEqual([]);
-        expect(result).toMatchObject({
-            transport: 'ws',
-            status: 'accepted',
-            entries: [],
-            message: {
-                id: {
-                    senderId: 'session-1'
-                },
-                route: {
-                    topicId: 'app.chat',
-                    resourceId: 'msg-ws',
-                    contextId: 'all'
-                },
-                targets: {
-                    mode: 'broadcast',
-                    scope: 'all'
-                }
+        await result.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+        expect(engineEvents).toEqual(['wake']);
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0]).toMatchObject({
+            id: {
+                senderId: 'session-1'
+            },
+            route: {
+                topicId: 'app.chat',
+                resourceId: 'msg-ws',
+                contextId: 'all'
+            },
+            targets: {
+                mode: 'broadcast',
+                scope: 'all'
             }
         });
     });
 
     it('wakes the queue-box engine when WS send queues durable outbox work', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
                 status: 'enqueued',
@@ -605,7 +338,7 @@ describe('Rallar message send', () => {
             engineEvents.push('wake');
         });
 
-        await createRallarFacade().messages.ws.send({
+        const sent = await createFacade().messages.ws.send({
             scope: 'all',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
@@ -615,19 +348,17 @@ describe('Rallar message send', () => {
             }
         });
 
+        await sent.wait({ until: AL_DELIVERY_ADMITTED_STATES });
         expect(engineEvents).toEqual(['wake']);
     });
 
     it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
             11
         ));
 
-        const result = await createRallarFacade().messages.ws.send({
+        const result = await createFacade().messages.ws.send({
             roomId: 'room-1',
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
@@ -637,7 +368,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(result.message.targets).toMatchObject({
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
             groupRef: {
@@ -650,9 +381,6 @@ describe('Rallar message send', () => {
     });
 
     it('uses roomRef scope for cached snapshotVersion and target groupRef on WS room sends', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(
                 'shared-room',
@@ -675,7 +403,7 @@ describe('Rallar message send', () => {
         );
         mockGroupSnapshots([workspaceA, workspaceB]);
 
-        const result = await createRallarFacade().messages.ws.send({
+        const result = await createFacade().messages.ws.send({
             roomId: 'shared-room',
             roomRef: workspaceB.group,
             topicId: 'room.chat',
@@ -686,7 +414,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(result.message.targets).toMatchObject({
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
             groupRef: {
@@ -743,4 +471,10 @@ function createGroupSnapshot(
         groupId,
         sessionIds
     });
+}
+
+function createFacade() {
+    const facade = createRallarFacade();
+    onTestFinished(() => facade.disconnect());
+    return facade;
 }
