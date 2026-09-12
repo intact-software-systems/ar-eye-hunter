@@ -9,6 +9,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     newALMulticastMessage,
@@ -961,7 +962,7 @@ function createConnectionService(
         dataChannelName: 'test',
         faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, new DeterministicRtcOfferIds());
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => {
         const channel = peersById[peerId]?.channel;
@@ -986,7 +987,7 @@ function createOpenRtcChannel(): CapturedRtcChannel {
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(peerConnection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const health = channel.readHealth();
     const sendCalls: object[][] = [];

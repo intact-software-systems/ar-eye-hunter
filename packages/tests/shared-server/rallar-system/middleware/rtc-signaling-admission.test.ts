@@ -107,6 +107,7 @@ function signalingMessage(): ALMessage {
         sessionId: 'sender',
         token: 'fixture-ticket',
         signalType: 'Offer',
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
     });
 }

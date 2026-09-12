@@ -3,6 +3,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { QRtcDataChannel, type RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 
 export interface BrowserRtcPeerTestInput {
     readonly peerId: string;
@@ -18,7 +19,7 @@ export function createBrowserRtcPeerTestDouble(input: BrowserRtcPeerTestInput): 
         token: 'fixture-token',
         isPolite: false,
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 }
-    });
+    }, new DeterministicRtcOfferIds());
     Object.assign(connection.status, input.status);
     const channels = new Map(input.channels.map(([laneId, overrides]) =>
         [

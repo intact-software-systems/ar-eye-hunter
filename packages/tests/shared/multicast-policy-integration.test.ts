@@ -8,6 +8,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     createDefaultALOutboundDequeueResilience,
@@ -777,7 +778,7 @@ function createConnectionService(connectedPeerIds: readonly string[], readyState
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, new DeterministicRtcOfferIds());
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     return Object.assign(connectionService, { sendByPeerId });
@@ -790,7 +791,7 @@ function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPe
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new shared.QRtcDataChannel(connection, {
         faultPort: createPassThroughTransportFaultPort(),
         peerId,

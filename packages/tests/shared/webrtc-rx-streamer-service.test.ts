@@ -7,6 +7,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     createDefaultALOutboundDequeueResilience,
@@ -128,7 +129,7 @@ function createMediaPeerFixture(): MediaPeerFixture {
         token: 'test-token',
         iceCandidates,
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const media = new QRtcMediaChannel(connection, { peerId: 'peer-1' });
     const subscription = vi.spyOn(connection, 'onRemoteStreamDo');

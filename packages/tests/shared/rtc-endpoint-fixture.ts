@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
@@ -70,7 +71,7 @@ export class RtcEndpointFixture {
             dataChannelName: 'test',
             faultPort: createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc'
-        });
+        }, new DeterministicRtcOfferIds());
         for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {
             const peer = createPeer(sessionId, peerId);
             this.peers.set(peerId, peer);
@@ -213,7 +214,7 @@ function createPeer(sessionId: string, peerId: string): QRtcPeerDto {
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'test' });
     return { peerId, connection, channel, channels: new Map([['reliable', channel]]), media: new QRtcMediaChannel(connection, { peerId }) };
 }

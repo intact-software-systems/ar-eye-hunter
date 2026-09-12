@@ -1,14 +1,12 @@
 import { IceConfig, PeerId } from '../api/api-config.ts';
 import { AsyncCommand, type AsyncCommandTimeoutEvent } from '../cache/AsyncCommand.ts';
-import { CommandCancelledError, CommandTimedOutError } from '../cache/Command.ts';
 import { PullPushCommand } from '../cache/PullPushCommand.ts';
 import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 import {
-    DecodedRtcSignalingMessage,
-    decodeRtcSignalingEnvelope,
-    decodeRtcSignalingPayload
+    decodeRtcSignal,
+    decodeRtcSignalingEnvelope
 } from '../webrtc/decode-rtc-signaling-message.ts';
 import {
     QRtcDataChannel,
@@ -22,8 +20,9 @@ import {
     QRtcSignalingTransport,
     QRtcSignalingTransportCallbacks,
     QRtcSignalingType
-} from '../webrtc/QRtcSignalingContracts.ts';
+} from '../webrtc/qrtc-signaling-contracts.ts';
 import { RtcPeerConnectionAttemptBudget } from './rtc-peer-connection-attempt-budget.ts';
+import { toPeerLaneOpenResultFromError, waitForRtcPeerLane } from './wait-for-rtc-peer-lane.ts';
 
 export const DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY: WebRtcConnectionService.PeerEstablishmentTimeoutPolicy =
     {
@@ -96,33 +95,6 @@ interface PeerCreationAdmission {
     readonly allowed: boolean;
     readonly reason?: string;
     readonly retryInboundSignal?: true;
-}
-
-interface PeerLaneIdentity {
-    readonly peerId: PeerId;
-    readonly laneId: string;
-}
-
-interface PeerLaneWaitInput extends PeerLaneIdentity {
-    readonly connected: WebRtcConnectionService.PeerConnectionResult;
-    readonly timeoutMs: number | undefined;
-    readonly signal: AbortSignal | undefined;
-}
-
-class WebRtcPeerLaneOpenFailure extends Error {
-    readonly status: Exclude<WebRtcConnectionService.PeerLaneOpenStatus, 'open'>;
-    readonly lane: PeerLaneIdentity;
-
-    constructor(
-        status: Exclude<WebRtcConnectionService.PeerLaneOpenStatus, 'open'>,
-        lane: PeerLaneIdentity,
-        options?: ErrorOptions
-    ) {
-        super(`RTC lane ${lane.laneId} for peer ${lane.peerId}: ${status}`, options);
-        this.status = status;
-        this.lane = lane;
-        this.name = 'WebRtcPeerLaneOpenFailure';
-    }
 }
 
 class WebRtcPeerConnectionAttemptExhaustedError extends Error {
@@ -371,13 +343,16 @@ export class WebRtcConnectionService {
 
     public readonly signaler: QRtcSignalingTransport;
     public readonly input: WebRtcConnectionService.InputDto;
+    private readonly offerIdentity: QRtcPeerConnection.Dependencies;
 
     constructor(
         signaler: QRtcSignalingTransport,
-        input: WebRtcConnectionService.InputDto
+        input: WebRtcConnectionService.InputDto,
+        offerIdentity: QRtcPeerConnection.Dependencies
     ) {
         this.signaler = signaler;
         this.input = input;
+        this.offerIdentity = offerIdentity;
     }
 
     setInboundPeerCreationPolicy(
@@ -553,14 +528,14 @@ export class WebRtcConnectionService {
         };
     }
 
-    private async receiveSignal(message: DecodedRtcSignalingMessage): Promise<void | 'retry'> {
+    private async receiveSignal(message: QRtcSignalingMessage): Promise<void | 'retry'> {
         const peerId = message.fromId;
         if (message.toId !== this.input.sessionId || peerId === this.input.sessionId) {
             return;
         }
         const entry = this.reuseOrRemovePeer(peerId);
         if (entry) {
-            await entry.peer.connection.handleSignal(message.signalType, message.payload);
+            await entry.peer.connection.handleSignal(message);
             return;
         }
         const admission = this.shouldCreatePeerFromInboundSignal(peerId, message);
@@ -575,7 +550,7 @@ export class WebRtcConnectionService {
 
     private shouldCreatePeerFromInboundSignal(
         peerId: PeerId,
-        message: DecodedRtcSignalingMessage
+        message: QRtcSignalingMessage
     ): PeerCreationAdmission {
         if (message.signalType === QRtcSignalingType.Answer) {
             return { allowed: false, reason: 'missing-peer-answer' };
@@ -588,7 +563,7 @@ export class WebRtcConnectionService {
         }
 
         try {
-            return this.normalizePeerCreationDecision(
+            return this.toPeerCreationAdmission(
                 this.inboundPeerCreationPolicy({
                     peerId,
                     signalType: message.signalType,
@@ -617,7 +592,7 @@ export class WebRtcConnectionService {
         }
 
         try {
-            return this.normalizePeerCreationDecision(
+            return this.toPeerCreationAdmission(
                 this.outboundDialPolicy({ peerId })
             );
         }
@@ -634,7 +609,7 @@ export class WebRtcConnectionService {
         }
     }
 
-    private normalizePeerCreationDecision(
+    private toPeerCreationAdmission(
         decision: WebRtcConnectionService.InboundPeerCreationDecision
     ): PeerCreationAdmission {
         if (decision === true || decision === 'allow') {
@@ -657,7 +632,7 @@ export class WebRtcConnectionService {
         message: QRtcSignalingMessage
     ): Promise<WebRtcConnectionService.PeerConnectionResult> {
         try {
-            const payload = decodeRtcSignalingPayload(message.signalType, message.payload);
+            const signal = decodeRtcSignal(message);
             const connected = this.ensurePeerConnectionStarted(peerId);
             if (connected.left) {
                 return connected;
@@ -671,7 +646,7 @@ export class WebRtcConnectionService {
                     startedSetup: false
                 });
             }
-            await ensured.peer.connection.handleSignal(message.signalType, payload);
+            await ensured.peer.connection.handleSignal(signal);
             return Either.ofRight(ensured);
         }
         catch (caught) {
@@ -697,7 +672,7 @@ export class WebRtcConnectionService {
 
         let computed: ComputedPeerConnection;
         try {
-            computed = this.computeRtcPeerDtoIfAbsent(peerId);
+            computed = this.createRtcPeerDtoIfAbsent(peerId);
         }
         catch (caught) {
             return Either.ofLeft(toPeerCreationFailure(peerId, toError(caught)));
@@ -781,7 +756,13 @@ export class WebRtcConnectionService {
             const result = await new PullPushCommand<WebRtcConnectionService.PeerConnectionResult, QRtcDataChannel>(
                 () => this.ensurePeerConnectionStarted(peerId, options.isInitiator),
                 (connected, signal) =>
-                    this.waitForPeerLane({ ...lane, connected, timeoutMs: options.timeoutMs, signal }),
+                    waitForRtcPeerLane({
+                        ...lane,
+                        connected,
+                        existingPeer: this.readPeer(peerId),
+                        timeoutMs: options.timeoutMs,
+                        signal
+                    }),
                 {
                     signal: options.signal,
                     timeoutMs: options.timeoutMs,
@@ -796,40 +777,12 @@ export class WebRtcConnectionService {
         }
         catch (caught) {
             const error = toError(caught);
-            const result = this.toPeerLaneOpenResultFromError(error, lane, started?.right?.peer);
+            const result = toPeerLaneOpenResultFromError(error, lane, started?.right?.peer);
             if (options.cleanupOnFailure && result.peer) {
                 this.removePeerIfPresent(result.peer.peerId, { resetAttemptBudget: false });
             }
             return result;
         }
-    }
-
-    private async waitForPeerLane(input: PeerLaneWaitInput): Promise<QRtcDataChannel> {
-        if (input.connected.left) {
-            throw this.toPeerLaneOpenFailureFromConnectLeft(input.connected.left, input.laneId);
-        }
-        const peer = input.connected.right?.peer ?? this.readPeer(input.peerId);
-        if (!peer) {
-            throw new WebRtcPeerLaneOpenFailure('no-peer', input);
-        }
-        const channel = peer.channels.get(input.laneId);
-        if (!channel) {
-            throw new WebRtcPeerLaneOpenFailure('no-lane', input);
-        }
-        const initialHealth = channel.readHealth();
-        if (isOpenRtcChannelHealth(initialHealth)) {
-            return channel;
-        }
-        if (isClosedRtcChannelHealth(initialHealth)) {
-            throw new WebRtcPeerLaneOpenFailure('closed', input);
-        }
-        if (await waitForRtcChannelOpenOrAbort(channel, input.timeoutMs, input.signal)) {
-            return channel;
-        }
-        throw new WebRtcPeerLaneOpenFailure(
-            isClosedRtcChannelHealth(channel.readHealth()) ? 'closed' : 'timeout',
-            input
-        );
     }
 
     private isPeerConnectedOrInProgress(existingPeerDto: QRtcPeerDto): boolean {
@@ -843,39 +796,7 @@ export class WebRtcConnectionService {
             .some((channel) => channel.isReadyToConnect());
     }
 
-    private toPeerLaneOpenFailureFromConnectLeft(
-        left: WebRtcConnectionService.PeerConnectionLeft,
-        laneId: string
-    ): WebRtcPeerLaneOpenFailure {
-        const lane = { peerId: left.peerId, laneId };
-        if (left.kind === 'self') {
-            return new WebRtcPeerLaneOpenFailure('self', lane);
-        }
-        if (left.kind === 'connect-exhausted') {
-            return new WebRtcPeerLaneOpenFailure('exhausted', lane, { cause: left.error });
-        }
-        if (left.kind === 'dial-denied') {
-            return new WebRtcPeerLaneOpenFailure('connect-failed', lane);
-        }
-        return new WebRtcPeerLaneOpenFailure('connect-failed', lane, { cause: left.error });
-    }
-
-    private toPeerLaneOpenResultFromError(
-        error: Error,
-        lane: PeerLaneIdentity,
-        peer: QRtcPeerDto | undefined
-    ): WebRtcConnectionService.PeerLaneOpenResult {
-        const status = error instanceof WebRtcPeerLaneOpenFailure
-            ? error.status
-            : error instanceof CommandTimedOutError
-            ? 'timeout'
-            : error instanceof CommandCancelledError
-            ? 'aborted'
-            : 'failed';
-        return { status, ...lane, peer, error };
-    }
-
-    private computeRtcPeerDtoIfAbsent(peerId: string): ComputedPeerConnection {
+    private createRtcPeerDtoIfAbsent(peerId: string): ComputedPeerConnection {
         const existing = this.reuseOrRemovePeer(peerId);
         if (existing) {
             return {
@@ -955,7 +876,8 @@ export class WebRtcConnectionService {
                 peerSessionId: peerId,
                 iceCandidates: this.input.iceCandidates,
                 isPolite: this.isPolite(peerId)
-            }
+            },
+            this.offerIdentity
         );
         const channels = this.createDataChannels(connection, peerId);
         const reliableChannel = channels.get(DEFAULT_RTC_DATA_CHANNEL_LANE_ID);
@@ -1209,56 +1131,4 @@ function toPeerCreationFailure(peerId: PeerId, error: Error): WebRtcConnectionSe
         return { kind: 'connect-exhausted', peerId, event: error.event, error };
     }
     return { kind: 'connect-failed', peerId, error, startedSetup: false };
-}
-
-function isOpenRtcChannelHealth(
-    health: RtcDataChannelHealth
-): boolean {
-    return health.readyState === 'open' || health.state === 'Open';
-}
-
-function isClosedRtcChannelHealth(
-    health: RtcDataChannelHealth
-): boolean {
-    return health.readyState === 'closing' ||
-        health.readyState === 'closed' ||
-        health.state === 'Closed' ||
-        health.state === 'Failed';
-}
-
-async function waitForRtcChannelOpenOrAbort(
-    channel: QRtcDataChannel,
-    timeoutMs: number | undefined,
-    signal: AbortSignal | undefined
-): Promise<boolean> {
-    const waitUntilOpen = timeoutMs === undefined
-        ? channel.waitUntilOpen()
-        : channel.waitUntilOpen(timeoutMs);
-
-    if (!signal) {
-        return await waitUntilOpen;
-    }
-
-    if (signal.aborted) {
-        throw toError(signal.reason);
-    }
-
-    return await new Promise<boolean>((resolve, reject) => {
-        const onAbort = () => {
-            signal.removeEventListener('abort', onAbort);
-            reject(toError(signal.reason));
-        };
-
-        signal.addEventListener('abort', onAbort, { once: true });
-        waitUntilOpen
-            .then((opened) => {
-                signal.removeEventListener('abort', onAbort);
-                resolve(opened);
-            })
-            .catch((caught) => {
-                const error = toError(caught);
-                signal.removeEventListener('abort', onAbort);
-                reject(error);
-            });
-    });
 }

@@ -22,7 +22,7 @@ import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
     QRtcSignalingType
-} from '../../../shared/webrtc/QRtcSignalingContracts.ts';
+} from '../../../shared/webrtc/qrtc-signaling-contracts.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '../../../shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { JsonWebSocketClient } from '../../../shared/websocket/json-web-socket-client.ts';
 import '../../setup-browser-indexeddb.ts';
@@ -98,7 +98,7 @@ it.each([
                 sessionId: 'self',
                 token: 'test-token',
                 signalType: QRtcSignalingType.IceCandidate,
-                payload: { index, candidate: { candidate: 'test-candidate' } }
+                payload: { description: null, candidate: { candidate: `test-candidate-${index}` } }
             }
         ));
     const sends = Array.from({ length: duplex ? 12 : 0 }, (_, index) =>
@@ -110,7 +110,7 @@ it.each([
             sessionId: 'self',
             token: 'test-token',
             signalType: QRtcSignalingType.IceCandidate,
-            payload: { index, candidate: { candidate: 'test-candidate' } }
+            payload: { description: null, candidate: { candidate: `test-candidate-${index}` } }
         }));
     incoming.forEach((message) => socket.receive(JSON.stringify(message)));
     expect(ingress.mock.results).toHaveLength(12);

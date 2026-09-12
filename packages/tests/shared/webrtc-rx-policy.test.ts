@@ -6,6 +6,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
@@ -446,7 +447,7 @@ function createRtcReceiveTransport(): RtcReceiveTransport {
         iceCandidates,
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, new DeterministicRtcOfferIds());
     vi.spyOn(connections, 'readyPeerIdsForLane').mockImplementation(() => [...peers.keys()]);
     vi.spyOn(connections, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     for (const peerId of ['peer-1', 'peer-2', 'peer-3']) {
@@ -473,7 +474,7 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
         token: 'test-token',
         iceCandidates: ports.iceCandidates,
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new shared.QRtcDataChannel(connection, {
         faultPort: createPassThroughTransportFaultPort(),
         peerId,

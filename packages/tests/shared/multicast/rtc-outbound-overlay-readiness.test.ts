@@ -7,6 +7,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     newALBroadcastMessage,
@@ -665,7 +666,7 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         dataChannelName: 'alm',
         rtcSignalingTopicId: 'rtc',
         faultPort: createPassThroughTransportFaultPort()
-    });
+    }, new DeterministicRtcOfferIds());
     for (const peerId of ['peer-1', 'peer-2']) {
         connection.ensurePeerConnectionStarted(peerId, true);
     }

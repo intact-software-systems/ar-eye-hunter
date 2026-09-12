@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { QRtcPeerDto, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -6,7 +7,7 @@ import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
     QRtcSignalingTransportInputDto
-} from '@shared/webrtc/QRtcSignalingContracts.ts';
+} from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 export interface NativeRtcRuntime {
     readonly createdConnections: readonly SimulatedNativeRtcPeerConnection[];
@@ -58,7 +59,7 @@ export function createNativeRtcConnectionFixture(
             sentSignals.push(message);
         }
     };
-    const service = new WebRtcConnectionService(signaler, input);
+    const service = new WebRtcConnectionService(signaler, input, new DeterministicRtcOfferIds());
     const allocatedPeers: QRtcPeerDto[] = [];
     service.onRtcPeerLifecycleDo('native-fixture', {
         onCreated: (peer) => {
@@ -256,7 +257,7 @@ export class SimulatedNativeRtcPeerConnection extends EventTarget implements RTC
     }
 
     async setLocalDescription(description?: RTCLocalSessionDescriptionInit): Promise<void> {
-        const type = description?.type ?? (this.remoteDescription?.type === 'offer' ? 'answer' : 'offer');
+        const type = description?.type ?? (this.signalingState === 'have-remote-offer' ? 'answer' : 'offer');
         this.localDescription = new NativeSessionDescription({ type, sdp: description?.sdp ?? `${type}-sdp` });
         this.signalingState = type === 'offer' ? 'have-local-offer' : 'stable';
     }

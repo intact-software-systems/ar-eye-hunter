@@ -20,29 +20,49 @@ export const QRtcSignalingMsgType = {
 
 export type QRtcSignalingMsgType = (typeof QRtcSignalingMsgType)[keyof typeof QRtcSignalingMsgType];
 
-export type QRtcSignalingMessage = {
+export type QRtcSignal =
+    | {
+        readonly signalType: 'Offer';
+        readonly offerId: string;
+        readonly payload: {
+            readonly description: { readonly type: 'offer'; readonly sdp: string; };
+            readonly candidate: null;
+        };
+    }
+    | {
+        readonly signalType: 'Answer';
+        readonly offerId: string;
+        readonly payload: {
+            readonly description: { readonly type: 'answer'; readonly sdp: string; };
+            readonly candidate: null;
+        };
+    }
+    | {
+        readonly signalType: 'IceCandidate';
+        readonly payload: { readonly description: null; readonly candidate: RTCIceCandidateInit; };
+    };
+
+export type QRtcSignalingMessage = QRtcSignal & {
     channel: typeof QRtcSignalingChannel.RtcSignal;
     type: typeof QRtcSignalingMsgType.Signal;
     fromId: string;
     toId: string;
     sessionId: string;
     token: string;
-    signalType: QRtcSignalingType;
-    payload: unknown;
 };
 
-export type QRtcSignalingTransportCallbacks = {
+export interface QRtcSignalingTransportCallbacks {
     onOpen: (sessionId: string, token: string) => Promise<void>;
     onError: (sessionId: string, token: string, message: string) => Promise<void>;
     onClose: (sessionId: string, token: string) => Promise<void>;
     onMessage: (sessionId: string, token: string, data: ALMessage) => Promise<void | 'retry'>;
-};
+}
 
-export type QRtcSignalingTransportInputDto = {
+export interface QRtcSignalingTransportInputDto {
     readonly callbacks: QRtcSignalingTransportCallbacks;
     readonly sessionId: string;
     readonly token: string;
-};
+}
 
 export interface QRtcSignalingSender {
     send(payload: QRtcSignalingMessage): Promise<void>;

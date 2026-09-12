@@ -46,7 +46,7 @@ import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
     QRtcSignalingType
-} from '@shared/webrtc/QRtcSignalingContracts.ts';
+} from '@shared/webrtc/qrtc-signaling-contracts.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
@@ -519,7 +519,7 @@ function createRtcSignal(): ALMessage {
             sessionId: 'self',
             token: 'test-token',
             signalType: QRtcSignalingType.IceCandidate,
-            payload: { candidate: { candidate: 'test-candidate' } }
+            payload: { description: null, candidate: { candidate: 'test-candidate' } }
         }
     );
 }

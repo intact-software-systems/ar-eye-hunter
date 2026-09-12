@@ -6,6 +6,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
@@ -442,7 +443,7 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}) {
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     peer.connect();
     peers.push(peer);
     const channel = new QRtcDataChannel(peer, {

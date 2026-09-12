@@ -8,6 +8,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     createDefaultALOutboundDequeueResilience,
@@ -178,7 +179,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         token: 'test-token',
         iceCandidates,
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: peerSessionId, dataChannelName: 'rtc-test' });
     const wire = new LoopbackDataChannel();
     vi.spyOn(connection, 'createDataChannel').mockReturnValue(wire);
@@ -196,7 +197,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         dataChannelName: 'rtc-test',
         faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, new DeterministicRtcOfferIds());
     const multicast = new WebRtcOverlayMulticastManager({
         connectionService: connectionService,
         groupCache: new LatestRepository(),

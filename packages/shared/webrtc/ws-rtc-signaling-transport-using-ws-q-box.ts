@@ -7,7 +7,7 @@ import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
     QRtcSignalingTransportInputDto
-} from './QRtcSignalingContracts.ts';
+} from './qrtc-signaling-contracts.ts';
 
 /** What one admission of a signaling message means for the peer that is waiting on it. */
 type SignalAdmissionOutcome = 'accepted' | 'retryable' | 'terminal';

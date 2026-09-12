@@ -345,7 +345,7 @@ function createConnectionService(peerIds: readonly string[]): RtcMulticastConnec
         rtcSignalingTopicId: 'rtc',
         maxPeerConnections: peerIds.length,
         peerEstablishmentTimeout: { enabled: false, timeoutMs: 5_000 }
-    });
+    }, { createOfferId: () => crypto.randomUUID() });
     const dispose = (): void => {
         for (const peerId of service.knownPeerIds()) {
             service.removePeerIfPresent(peerId);
