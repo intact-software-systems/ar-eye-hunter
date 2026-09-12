@@ -1,4 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -17,6 +26,7 @@ import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-
 import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
+    decodeALInboundWorkEntry,
     toALInboundWorkKey
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -24,15 +34,6 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
-
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -652,7 +653,7 @@ describe('inbound durable effect worker lifecycle', () => {
         expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
     });
 
-    it('dispatches a replayed admission in the batch its own commit schedules', async () => {
+    it('dispatches a replayed admission through the existing worker without another wake', async () => {
         const fixture = createInboundTestRuntime({
             stores: createInboundTestStores({
                 namespace: 'replayed-dispatch',
@@ -662,6 +663,8 @@ describe('inbound durable effect worker lifecycle', () => {
             effectWorkerId: 'al-inbound:replayed-dispatch'
         });
         await fixture.runtime.ready();
+        fixture.queueEngine.start();
+        onTestFinished(() => fixture.queueEngine.stop());
         setNextInboundCommitConflicted(fixture.stores.admissionStore);
 
         const acceptance = await fixture.runtime.admitIncomingMessage(
@@ -670,17 +673,12 @@ describe('inbound durable effect worker lifecycle', () => {
         );
 
         expect(acceptance.right).toEqual({ kind: 'pending-admission' });
-        // The replay runs inside a claim of the page that batch already read, so the dispatch it
-        // commits is behind that page. The engine is never started and no round is ever executed
-        // here: the batch this commit schedules for the end of the replaying one is the only thing
-        // that can have claimed the dispatch.
         await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
     });
 
-    it('sends the control a replayed admission commits in the batch its own commit schedules', async () => {
+    it('sends control work committed by replay through the existing worker without another wake', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            queueEngine: new InboxOutboxEngine(),
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         });
         const controls: ALMessage[] = [];
@@ -708,11 +706,80 @@ describe('inbound durable effect worker lifecycle', () => {
 
         await runtime.ready();
 
-        // The replay runs inside a claim of the page that batch already read, so the acknowledgement
-        // it commits is behind that page. The engine is never started and no round is ever executed
-        // here: the batch this commit schedules for the end of the replaying one is the only thing
-        // that can have claimed the send.
         await expect.poll(() => controls.map((control) => control.payload.typeId)).toHaveLength(1);
+    });
+
+    it('announces replayed control work before a failing after-commit callback', async () => {
+        const engine = new InboxOutboxEngine();
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: engine,
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const tracked = createInboundTestMessage({ msgId: 'control-callback-failure' });
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked);
+        await resources.workQueue.enqueueIfAbsent(toRetainedControlAdmission(resources.admissionStore.namespace, tracked));
+        const wake = vi.spyOn(engine, 'wake');
+        let announcedBeforeCallback = false;
+        const controls: string[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (message) => {
+                controls.push(message.id.msgId);
+            },
+            onControlMessage: async () => {
+                announcedBeforeCallback = wake.mock.calls.length > 0;
+                throw new Error('after-commit callback failed');
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => {
+            runtime.dispose();
+            engine.stop();
+        });
+        await runtime.ready();
+        expect(announcedBeforeCallback).toBe(true);
+        engine.start();
+        await expect.poll(() => controls.length).toBe(1);
+    });
+
+    it('announces retained control work after a conflicting admission', async () => {
+        const engine = new InboxOutboxEngine();
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: engine,
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const tracked = createInboundTestMessage({ msgId: 'retained-control-notify' });
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked);
+        const controls: string[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (message) => {
+                controls.push(message.id.msgId);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => {
+            runtime.dispose();
+            engine.stop();
+        });
+        await runtime.ready();
+        const wake = vi.spyOn(engine, 'wake');
+        vi.spyOn(resources.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        const pending = toRetainedControlAdmission(resources.admissionStore.namespace, tracked);
+        const payload = decodeALInboundWorkEntry(pending, resources.admissionStore.namespace).payload;
+        if (payload.kind !== 'admit-control') {
+            throw new Error('Expected control admission fixture');
+        }
+        expect((await runtime.admitIncomingMessage(payload.msg, { kind: 'ws-client', peerId: 'sender' })).right).toEqual({ kind: 'pending-admission' });
+        expect(wake).toHaveBeenCalled();
+        engine.start();
+        await expect.poll(() => controls.length).toBe(1);
     });
 
     it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {

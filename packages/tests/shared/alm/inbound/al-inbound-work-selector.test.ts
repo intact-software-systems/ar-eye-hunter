@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -9,21 +17,12 @@ import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pe
 import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
-    createALInboundWorkSelector,
-    type ALInboundWorkSelector
-} from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
+    ALInboundWorkSelector
+} from '@shared/alm/inbound/al-inbound-work-selector.ts';
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
-
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
 import { createInboundTestMessage, createInboundTestStores } from '../inbound-runtime-test-fixture.ts';
 
@@ -66,16 +65,14 @@ describe('ALInboundWorkSelector readiness', () => {
         expect(selection.nextReadyAtMs).toBe(NOW_MS);
     });
 
-    it('drops the page a probe cached when a commit restarts the scan', async () => {
+    it('reaches work committed behind a cached empty page on a natural rotation', async () => {
         const fixture = createSelectorFixture();
 
         // The probe over an empty NEW page caches a rotation that still owes RETRY and RESERVED.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
 
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
-        fixture.selector.restartScan();
-
-        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        const selection = await readFirstClaimingSelection(fixture, 6);
         expect(selection.claims).toHaveLength(1);
     });
 });
@@ -154,7 +151,7 @@ function createSelectorFixture(): SelectorFixture {
     return {
         namespace,
         port: createTestALInboundWorkPort({ ...stores, nowMs: () => NOW_MS }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS })
+        selector: new ALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS })
     };
 }
 
@@ -191,13 +188,13 @@ function createTimedSelectorFixture(): SelectorFixture {
                 return claims;
             }
         },
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => nowMs })
+        selector: new ALInboundWorkSelector({ delivery, namespace, nowMs: () => nowMs })
     };
 }
 
 /** The rotation's next few rounds, stopped at the one that took work. */
-async function readFirstClaimingSelection(fixture: SelectorFixture) {
-    for (let round = 0; round < SCAN_STATUS_COUNT; round += 1) {
+async function readFirstClaimingSelection(fixture: SelectorFixture, maxRounds = SCAN_STATUS_COUNT) {
+    for (let round = 0; round < maxRounds; round += 1) {
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         if (selection.claims.length > 0) {
             return selection;
@@ -254,6 +251,6 @@ async function createDispatchPageFixture(): Promise<DispatchPageFixture> {
     return {
         delivery,
         port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now })
+        selector: new ALInboundWorkSelector({ delivery, namespace, nowMs: Date.now })
     };
 }

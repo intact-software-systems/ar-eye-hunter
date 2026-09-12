@@ -32,20 +32,30 @@ import {
     resolveALInboundWorkDueAtMs,
     toALInboundWorkType
 } from './al-inbound-work-entry.ts';
+import {
+    AL_INBOUND_WORK_PAGE_SIZE,
+    ALInboundWorkSelector
+} from './al-inbound-work-selector.ts';
 import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
-import {
-    AL_INBOUND_WORK_PAGE_SIZE,
-    createALInboundWorkSelector,
-    type ALInboundWorkSelector
-} from './read-al-inbound-work-selection.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
     readonly workQueue: QueueBoxResourceEntryRepository;
+}
+
+/** Bounds empty-rotation diagnostics while keeping stalled workers observable. */
+export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
+
+interface ALInboundClaimSettlement {
+    readonly claim: ALWorkClaim;
+    readonly effect: ALPersistedInboundEffect;
+    readonly outcome: ALWorkOutcome;
+    readonly durationMs: number;
+    readonly batchStartedAtMs: number;
 }
 
 export namespace ALInboundMessageRuntime {
@@ -103,14 +113,6 @@ export namespace ALInboundMessageRuntime {
     }
 }
 
-/**
- * How many empty rotation rounds one liveness event stands for. The rotation runs a batch every
- * engine round it still owes a page, so this is roughly one event every few seconds of scanning --
- * enough to separate a rotation that keeps finding nothing from one that stopped running, and far
- * too rare to bring back the per-round cost the empty batches were suppressed for.
- */
-export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
-
 export class ALInboundMessageRuntime {
     private readonly admissionStore: ALInboundAdmissionStore;
     private readonly readyPromise: Promise<void>;
@@ -147,7 +149,7 @@ export class ALInboundMessageRuntime {
             retention: this.admissionStore.retention
         });
         this.delivery = new ALInboundAdmittedDelivery(dependencies);
-        this.workSelector = createALInboundWorkSelector({
+        this.workSelector = new ALInboundWorkSelector({
             delivery: this.delivery,
             namespace: this.admissionStore.namespace,
             nowMs: () => dependencies.clock.nowMs()
@@ -203,16 +205,7 @@ export class ALInboundMessageRuntime {
         return admitted;
     }
 
-    /**
-     * A batch is relayed when it touched work; a probe is not relayed at all. The rotation's probe
-     * reads a page every engine round by construction, and in the conformance lane every relayed
-     * event is a round trip out of the page, so one event per round roughly doubled that page's
-     * traffic and with it its measured per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC
-     * signaling far enough that the delivery baseline received nothing and the lane failed.
-     * Suppressed, the same cell passes at 10-13 ms/op (12.6 measured on the full lane here, 10.3 on
-     * the rtc-only run that isolated this relay). The probe's own `durationMs` is still measured and
-     * the outbound owners, whose probes are the invalidations they can name, still report theirs.
-     */
+    /** Per-round probe relays amplify browser diagnostic traffic; batches carry useful work evidence. */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
             this.recordWorkBatch(event);
@@ -354,9 +347,8 @@ export class ALInboundMessageRuntime {
         return { kind: 'control', handled: acceptance.handled };
     }
 
-    /** A commit lands behind the running rotation; the worker restarts it and never waits for delivery. */
+    /** Announces durable work without rewinding the page or status the rotation already reached. */
     private commitWork(): void {
-        this.workSelector.restartScan();
         this.work.committed();
     }
 
@@ -397,8 +389,8 @@ export class ALInboundMessageRuntime {
 
     /**
      * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
-     * batch already read. Announcing it here is what gives that work the batch this batch's end runs,
-     * instead of the next round the rotation happens to reach.
+     * batch already read. Announcing it schedules the existing follow-up batch; the preserved
+     * rotation reaches rows behind its cursor on its next pass.
      */
     private async runInboundEffect(effect: ALPersistedInboundEffect): Promise<ALWorkOutcome> {
         const payload = effect.payload;
@@ -423,15 +415,6 @@ export class ALInboundMessageRuntime {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         };
     }
-}
-
-/** One settled claim's measurements, so the event that reports them is built from one input. */
-interface ALInboundClaimSettlement {
-    readonly claim: ALWorkClaim;
-    readonly effect: ALPersistedInboundEffect;
-    readonly outcome: ALWorkOutcome;
-    readonly durationMs: number;
-    readonly batchStartedAtMs: number;
 }
 
 function toALInboundReplayOutcome(

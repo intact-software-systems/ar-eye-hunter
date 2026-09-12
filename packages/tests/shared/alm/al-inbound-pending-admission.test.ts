@@ -1,18 +1,3 @@
-import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
-import '../../setup-browser-indexeddb.ts';
-import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
-import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     afterEach,
     expect,
@@ -21,7 +6,23 @@ import {
     vi
 } from 'vitest';
 
+import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
+import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
+import '../../setup-browser-indexeddb.ts';
 
 const PENDING_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
 
@@ -206,22 +207,25 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     expect(controls).toEqual([]);
 });
 
-it('replays a retained conflict in the batch an idle owner runs on its own commit', async () => {
+it('wakes an idle worker and replays a retained conflict through its natural rotation', async () => {
     const stores = createDefaultInMemoryALInboundRuntimeStores();
-    const runtime = new ALInboundMessageRuntime(runtimeDependencies(stores, [], []));
-    onTestFinished(() => runtime.dispose());
+    const dependencies = runtimeDependencies(stores, [], []);
+    const runtime = new ALInboundMessageRuntime(dependencies);
+    onTestFinished(() => {
+        runtime.dispose();
+        dependencies.queueEngine.stop();
+    });
     await runtime.ready();
+    dependencies.queueEngine.start();
 
     setNextInboundCommitConflicted(stores.admissionStore);
     const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'idle-owner' }), PENDING_SOURCE);
 
     expect(acceptance.right).toEqual({ kind: 'pending-admission' });
-    // The engine is never started and no round is ever executed here, so the batch the commit itself
-    // runs is the only thing that can have claimed the retained row.
     await expect.poll(() => readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
 });
 
-it('replays a retained conflict in the batch that follows the one already running', async () => {
+it('replays a retained conflict after an active delivery finishes', async () => {
     const stores = createDefaultInMemoryALInboundRuntimeStores();
     const dependencies = runtimeDependencies(stores, [], []);
     const dispatching = Promise.withResolvers<void>();
@@ -237,9 +241,10 @@ it('replays a retained conflict in the batch that follows the one already runnin
     onTestFinished(() => {
         dispatching.resolve();
         runtime.dispose();
+        dependencies.queueEngine.stop();
     });
     await runtime.ready();
-    // The first message's own commit starts a batch and holds it inside the delivery it claimed.
+    dependencies.queueEngine.start();
     expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'running-blocker' }), PENDING_SOURCE)).right)
         .toEqual({ kind: 'admitted' });
     await expect.poll(() => dispatchStarted).toBe(true);
@@ -271,7 +276,12 @@ async function readRetainedAdmissionStatus(stores: ALInboundRuntimeStores): Prom
     return undefined;
 }
 
-async function retainConflictedAdmission(stores: ALInboundRuntimeStores) {
+interface RetainedConflictedAdmission {
+    readonly message: ALMessage;
+    readonly work: ALPersistedInboundEffect;
+}
+
+async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promise<RetainedConflictedAdmission> {
     const delivered: ALMessage[] = [];
     const controls: ALMessage[] = [];
     const dependencies = runtimeDependencies(stores, delivered, controls);
@@ -308,8 +318,9 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores) {
     expect(result.right).toEqual({ kind: 'pending-admission' });
     expect(delivered).toEqual([]);
     expect(controls).toEqual([]);
-    expect(conflict).toHaveBeenCalledTimes(1);
-    const entry = await stores.workQueue.getItem(retained.mock.calls[0][0].key);
+    const keys = await stores.workQueue.getAllKeys();
+    expect(keys).toHaveLength(1);
+    const entry = await stores.workQueue.getItem(keys[0]);
     expect(entry).toBeDefined();
     conflict.mockRestore();
     retained.mockRestore();

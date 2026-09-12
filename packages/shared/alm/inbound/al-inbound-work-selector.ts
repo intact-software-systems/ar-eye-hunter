@@ -56,13 +56,6 @@ interface ALInboundWorkSelection {
     readonly nextReadyAtMs: number | undefined;
 }
 
-interface ReadALInboundClaimedSelectionInput {
-    readonly page: ALInboundRotationPage;
-    readonly port: ALWorkQueuePort;
-    readonly pageSize: number;
-    readonly nowMs: () => number;
-}
-
 /** What one round claimed, with the eligibility surfaces of exactly the rows the port reserved. */
 interface ALInboundClaimedSelection {
     readonly selection: ALWorkReadySelection;
@@ -82,36 +75,91 @@ interface ALInboundPageEligibility
     readonly readyAtMs: number | undefined;
 }
 
-/** The held page and the scan position it advanced: what the probe reads and the batch then claims from. */
-interface ALInboundRotationPage {
-    readSelection(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection>;
-    /** Drops the held page, so the round that follows reads a fresh one. */
-    forgetSelection(pending: Promise<ALInboundWorkSelection>): void;
-    restartScan(): void;
-}
-
-interface ALInboundWorkSelectorDependencies {
-    readonly delivery: ALInboundAdmittedDelivery;
-    readonly namespace: string;
+interface ReadALInboundClaimedSelectionInput {
+    readonly selection: ALInboundWorkSelection;
+    readonly port: ALWorkQueuePort;
+    readonly pageSize: number;
     readonly nowMs: () => number;
+    readonly selectionStartedAtMs: number;
 }
 
-export interface ALInboundWorkSelector {
-    /**
-     * The readiness probe the handler asks for. The port reports every retained row as due; inbound
-     * eligibility defers rows whose predecessor or consumer is missing, so the rotation answers instead.
-     */
-    readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined>;
-    selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection>;
-    /**
-     * What this batch's own eligibility read observed for the row it claimed, so the delivery that
-     * follows re-reads none of it. Absent for a row the batch claimed without reading a surface for
-     * it, for a row the read cleared that the port did not reserve, and for every row once the next
-     * page or a restarted scan replaces this one.
-     */
-    getDeliveryObservation(effectId: string): ALInboundDeliveryObservation | undefined;
-    /** A commit writes new work behind the rotation; the next page read starts over. */
-    restartScan(): void;
+export namespace ALInboundWorkSelector {
+    export interface Dependencies {
+        readonly delivery: ALInboundAdmittedDelivery;
+        readonly namespace: string;
+        readonly nowMs: () => number;
+    }
+}
+
+/** Owns the natural status rotation and the page shared by readiness and reservation. */
+export class ALInboundWorkSelector {
+    private readonly dependencies: ALInboundWorkSelector.Dependencies;
+    private scan: ALInboundWorkScan = SCAN_START;
+    private observed: Promise<ALInboundWorkSelection> | undefined;
+    private claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
+
+    constructor(dependencies: ALInboundWorkSelector.Dependencies) {
+        this.dependencies = dependencies;
+    }
+
+    /** An unfinished rotation is due to the probe; an exhausted one advertises actual readiness. */
+    async readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined> {
+        const pending = this.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
+        let selection: ALInboundWorkSelection;
+        try {
+            selection = await pending;
+        }
+        catch (error) {
+            this.forgetSelection(pending);
+            throw error;
+        }
+        if (selection.readyNow) {
+            return this.dependencies.nowMs();
+        }
+        this.forgetSelection(pending);
+        return selection.nextReadyAtMs;
+    }
+
+    async selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection> {
+        const selectionStartedAtMs = this.dependencies.nowMs();
+        const pending = this.readSelection(port, pageSize);
+        this.forgetSelection(pending);
+        const selection = await pending;
+        const claimed = await readALInboundClaimedSelection({
+            selection,
+            port,
+            pageSize,
+            nowMs: this.dependencies.nowMs,
+            selectionStartedAtMs
+        });
+        this.claimedObservations = claimed.observations;
+        return claimed.selection;
+    }
+
+    /** Only surfaces matched to a successful reservation survive until the next selection. */
+    getDeliveryObservation(effectId: string): ALInboundDeliveryObservation | undefined {
+        return this.claimedObservations.get(effectId);
+    }
+
+    private readSelection(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection> {
+        this.observed ??= readALInboundWorkSelection({
+            port,
+            scan: this.scan,
+            namespace: this.dependencies.namespace,
+            pageSize,
+            nowMs: this.dependencies.nowMs()
+        }, this.dependencies.delivery).then((selection) => {
+            this.scan = selection.scan;
+            return selection;
+        });
+        return this.observed;
+    }
+
+    private forgetSelection(pending: Promise<ALInboundWorkSelection>): void {
+        if (this.observed === pending) {
+            this.observed = undefined;
+        }
+    }
 }
 
 /** Reads message eligibility before reservation so waiting work does not spend processing attempts. */
@@ -213,58 +261,6 @@ function resolveALInboundScannedReadyAtMs(
 }
 
 /**
- * Rotates one bounded page across NEW, RETRY and RESERVED. The readiness probe and the batch that
- * follows it share one page read, so advertised work is the work the batch claims. An unfinished
- * rotation is due to the probe alone: the batch that reads a page with nothing claimable advertises
- * the next real ready time, so the engine's own pass rate carries the scan to the next status.
- */
-export function createALInboundWorkSelector(
-    dependencies: ALInboundWorkSelectorDependencies
-): ALInboundWorkSelector {
-    const page = createALInboundRotationPage(dependencies);
-    let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
-    return {
-        readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
-        selectReady: async (port, pageSize) => {
-            const claimed = await readALInboundClaimedSelection({ page, port, pageSize, nowMs: dependencies.nowMs });
-            claimedObservations = claimed.observations;
-            return claimed.selection;
-        },
-        getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
-        restartScan: () => {
-            page.restartScan();
-            claimedObservations = new Map();
-        }
-    };
-}
-
-/**
- * The probe's own answer. A rotation that still owes a page is due to the probe, never to the batch
- * that follows, so only an exhausted one reports a real time -- and that one must observe a fresh
- * page next.
- */
-async function readALInboundNextReadyAtMs(
-    page: ALInboundRotationPage,
-    port: ALWorkQueuePort,
-    nowMs: () => number
-): Promise<number | undefined> {
-    const pending = page.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
-    let selection: ALInboundWorkSelection;
-    try {
-        selection = await pending;
-    }
-    catch (error) {
-        page.forgetSelection(pending);
-        throw error;
-    }
-    if (selection.readyNow) {
-        return nowMs();
-    }
-    page.forgetSelection(pending);
-    return selection.nextReadyAtMs;
-}
-
-/**
  * One rotation round's claim, timed in the two halves a slow drain has to be split into: the page
  * read with its eligibility reads, and the port's reservation of what that read cleared. The wait it
  * reports is read from the observed page, because the reservation that follows replaces a row's own
@@ -274,11 +270,7 @@ async function readALInboundNextReadyAtMs(
 async function readALInboundClaimedSelection(
     input: ReadALInboundClaimedSelectionInput
 ): Promise<ALInboundClaimedSelection> {
-    const { page, port, pageSize, nowMs } = input;
-    const selectionStartedAtMs = nowMs();
-    const pending = page.readSelection(port, pageSize);
-    page.forgetSelection(pending);
-    const selection = await pending;
+    const { selection, port, pageSize, nowMs, selectionStartedAtMs } = input;
     const claimStartedAtMs = nowMs();
     const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
     const claimedAtMs = nowMs();
@@ -334,42 +326,6 @@ function toClaimedALInboundObservations(
         }
     }
     return claimed;
-}
-
-/** The one page a rotation round holds between its readiness probe and the batch that follows it. */
-function createALInboundRotationPage(
-    dependencies: ALInboundWorkSelectorDependencies
-): ALInboundRotationPage {
-    let scan: ALInboundWorkScan = SCAN_START;
-    let observed: Promise<ALInboundWorkSelection> | undefined;
-    return {
-        readSelection: (port, pageSize) => {
-            const scanned = scan;
-            const pending = observed ?? readALInboundWorkSelection({
-                port,
-                scan: scanned,
-                namespace: dependencies.namespace,
-                pageSize,
-                nowMs: dependencies.nowMs()
-            }, dependencies.delivery).then((selection) => {
-                if (scan === scanned) {
-                    scan = selection.scan;
-                }
-                return selection;
-            });
-            observed = pending;
-            return pending;
-        },
-        forgetSelection: (pending) => {
-            if (observed === pending) {
-                observed = undefined;
-            }
-        },
-        restartScan: () => {
-            scan = SCAN_START;
-            observed = undefined;
-        }
-    };
 }
 
 function toUnleasedALWorkClaim(entry: ResourceEntry, nowMs: number): ALWorkClaim {

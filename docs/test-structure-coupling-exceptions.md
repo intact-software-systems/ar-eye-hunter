@@ -80,6 +80,21 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "inbound-retained-control-commit-notification",
+      "domain": "Inbound retained control work scheduling",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Retaining a conflicted control admission requests the existing worker before returning pending-admission.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#announces retained control work after a conflicting admission",
+      "coverageRelation": "The test retains a control row through the runtime, observes its scheduling request before starting the engine, then verifies the real worker sends the committed control.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine.wake",
+        "observableEffect": "The runtime requests scheduling for the durable retained control row before admission returns.",
+        "requiredConstraint": "At least one scheduling request follows successful pending-control retention; no exact batch or page sequence is prescribed.",
+        "failureRationale": "Eventual delivery alone also passes when engine polling discovers the row, concealing a missing committed-work notification."
+      }
+    },
+    {
       "id": "api-v1-medium-scale-routing",
       "domain": "API-v1 medium-scale recipe routing",
       "owner": "Rallar server maintainers",
@@ -2119,6 +2134,17 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-2bebd29c36f6d739",
+      "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "inbound-retained-control-commit-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "A scheduling request at the existing engine port is independently required after retention; polling-driven delivery cannot prove that notification happened before the pending result returned.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#announces retained control work after a conflicting admission"
+    },
     {
       "id": "test-structure-coupling-8476c70422e7a937",
       "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
