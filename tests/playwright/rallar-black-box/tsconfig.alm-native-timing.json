@@ -1,0 +1,10 @@
+{
+  "extends": "../../../apps/rallar-black-box/tsconfig.json",
+  "files": [
+    "browser-alm-committed-work-observer.ts",
+    "browser-alm-committed-work-timing-fixture.ts",
+    "browser-alm-committed-work-timing.spec.ts",
+    "browser-native-indexeddb-timing-recorder.ts"
+  ],
+  "include": []
+}

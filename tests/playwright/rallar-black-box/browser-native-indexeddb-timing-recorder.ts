@@ -55,6 +55,8 @@ export interface NativeIndexedDbTimingSnapshot {
     readonly sampleCapacity: number;
     readonly samples: readonly NativeIndexedDbTimingSample[];
     readonly droppedSampleCount: number;
+    readonly uncapturedInFlightObservationCount: number;
+    readonly uncapturedPreCaptureRequestCount: number;
     readonly transactionOutcomes: readonly NativeIndexedDbTransactionOutcome[];
     readonly successfulPutInAbortedTransaction: boolean;
     readonly cursorRequestCount: number;
@@ -64,7 +66,31 @@ export interface NativeIndexedDbTimingSnapshot {
     readonly transactionSummaries: readonly NativeIndexedDbTransactionTimingSummary[];
 }
 
+export interface NativeIndexedDbTimingSemanticsProbe extends NativeIndexedDbTimingSnapshot {
+    readonly durableCommittedValue: string | undefined;
+    readonly durableAbortedValue: string | undefined;
+    readonly methodsRestored: boolean;
+}
+
+export interface NativeIndexedDbTimingDisposalProbe {
+    readonly samplesAtStop: number;
+    readonly samplesAfterCompletion: number;
+    readonly uncapturedInFlightObservationCount: number;
+    readonly durableValue: string | undefined;
+    readonly methodsRestored: boolean;
+}
+
+export interface NativeIndexedDbTimingPreCaptureTransactionProbe {
+    readonly operationResult: 'returned' | 'threw';
+    readonly operationError: string | null;
+    readonly transactionOutcome: 'complete' | 'abort';
+    readonly durableValue: string | undefined;
+    readonly uncapturedPreCaptureRequestCount: number;
+    readonly methodsRestored: boolean;
+}
+
 interface NativeIndexedDbTransactionState {
+    readonly captureGeneration: number;
     readonly transactionId: number;
     readonly storeNames: readonly string[];
     readonly mode: IDBTransactionMode;
@@ -74,6 +100,7 @@ interface NativeIndexedDbTransactionState {
     successfulPutCount: number;
     cursorRequestCount: number;
     cursorIterationCount: number;
+    readonly cursorObservationCancellations: Set<() => void>;
 }
 
 export class NativeIndexedDbTimingRecorder {
@@ -81,6 +108,7 @@ export class NativeIndexedDbTimingRecorder {
     readonly #samples: NativeIndexedDbTimingSample[] = [];
     readonly #transactions = new WeakMap<IDBTransaction, NativeIndexedDbTransactionState>();
     readonly #transactionOutcomes = new Set<NativeIndexedDbTransactionOutcome>();
+    readonly #activeObservationCancellations = new Set<() => void>();
     readonly #originalTransaction = IDBDatabase.prototype.transaction;
     readonly #originalGet = IDBObjectStore.prototype.get;
     readonly #originalPut = IDBObjectStore.prototype.put;
@@ -89,7 +117,10 @@ export class NativeIndexedDbTimingRecorder {
     readonly #originalGetAll = IDBObjectStore.prototype.getAll;
     readonly #originalIndexOpenCursor = IDBIndex.prototype.openCursor;
     #droppedSampleCount = 0;
+    #uncapturedInFlightObservationCount = 0;
+    #uncapturedPreCaptureRequestCount = 0;
     #nextTransactionId = 1;
+    #captureGeneration = 0;
     #successfulPutInAbortedTransaction = false;
     #cursorRequestCount = 0;
     #cursorIterationCount = 0;
@@ -107,6 +138,7 @@ export class NativeIndexedDbTimingRecorder {
         if (this.#recording) {
             return;
         }
+        this.#captureGeneration += 1;
         this.#recording = true;
         this.installTransactionObservation();
         this.installRequestObservation();
@@ -123,6 +155,11 @@ export class NativeIndexedDbTimingRecorder {
         IDBObjectStore.prototype.delete = this.#originalDelete;
         IDBObjectStore.prototype.getAll = this.#originalGetAll;
         IDBIndex.prototype.openCursor = this.#originalIndexOpenCursor;
+        const inFlight = [...this.#activeObservationCancellations];
+        this.#uncapturedInFlightObservationCount += inFlight.length;
+        for (const cancel of inFlight) {
+            cancel();
+        }
         this.#recording = false;
     }
 
@@ -141,6 +178,8 @@ export class NativeIndexedDbTimingRecorder {
             sampleCapacity: this.#sampleCapacity,
             samples: [...this.#samples],
             droppedSampleCount: this.#droppedSampleCount,
+            uncapturedInFlightObservationCount: this.#uncapturedInFlightObservationCount,
+            uncapturedPreCaptureRequestCount: this.#uncapturedPreCaptureRequestCount,
             transactionOutcomes: [...this.#transactionOutcomes],
             successfulPutInAbortedTransaction: this.#successfulPutInAbortedTransaction,
             cursorRequestCount: this.#cursorRequestCount,
@@ -174,7 +213,7 @@ export class NativeIndexedDbTimingRecorder {
         IDBObjectStore.prototype.get = function (this: IDBObjectStore, query: IDBValidKey | IDBKeyRange) {
             const startedAtMs = performance.now();
             const request = originalGet.call(this, query);
-            recorder.observeRequest(this, request, 'get', startedAtMs);
+            recorder.observeRequest({ store: this, request, operation: 'get', startedAtMs });
             return request;
         } as typeof IDBObjectStore.prototype.get;
 
@@ -182,7 +221,7 @@ export class NativeIndexedDbTimingRecorder {
         IDBObjectStore.prototype.put = function (this: IDBObjectStore, value: unknown, key?: IDBValidKey) {
             const startedAtMs = performance.now();
             const request = key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
-            recorder.observeRequest(this, request, 'put', startedAtMs);
+            recorder.observeRequest({ store: this, request, operation: 'put', startedAtMs });
             return request;
         } as typeof IDBObjectStore.prototype.put;
 
@@ -231,6 +270,7 @@ export class NativeIndexedDbTimingRecorder {
 
     private observeTransaction(transaction: IDBTransaction): void {
         const state: NativeIndexedDbTransactionState = {
+            captureGeneration: this.#captureGeneration,
             transactionId: this.#nextTransactionId,
             storeNames: [...transaction.objectStoreNames],
             mode: transaction.mode,
@@ -239,24 +279,48 @@ export class NativeIndexedDbTimingRecorder {
             successfulRequestCount: 0,
             successfulPutCount: 0,
             cursorRequestCount: 0,
-            cursorIterationCount: 0
+            cursorIterationCount: 0,
+            cursorObservationCancellations: new Set()
         };
         this.#nextTransactionId += 1;
         this.#transactions.set(transaction, state);
-        transaction.addEventListener('complete', () => this.recordTransaction(state, 'complete'), { once: true });
-        transaction.addEventListener('abort', () => this.recordTransaction(state, 'abort'), { once: true });
+        let cancel = () => {};
+        const complete = () => {
+            cancel();
+            this.finishCursorObservations(state);
+            this.recordTransaction(state, 'complete');
+        };
+        const abort = () => {
+            cancel();
+            this.finishCursorObservations(state);
+            this.recordTransaction(state, 'abort');
+        };
+        transaction.addEventListener('complete', complete, { once: true });
+        transaction.addEventListener('abort', abort, { once: true });
+        cancel = this.trackObservation(() => {
+            transaction.removeEventListener('complete', complete);
+            transaction.removeEventListener('abort', abort);
+        });
     }
 
     private observeRequest(
-        store: IDBObjectStore,
-        request: IDBRequest,
-        operation: NativeIndexedDbRequestOperation,
-        startedAtMs: number
+        input: Readonly<{
+            store: IDBObjectStore;
+            request: IDBRequest;
+            operation: NativeIndexedDbRequestOperation;
+            startedAtMs: number;
+        }>
     ): void {
-        const state = this.requireTransactionState(store.transaction);
-        state.requestCount += 1;
+        const { store, request, operation, startedAtMs } = input;
         this.#totalIssuedRequestCount += 1;
-        request.addEventListener('success', () => {
+        const state = this.findCapturedTransaction(store.transaction);
+        if (state === undefined) {
+            return;
+        }
+        state.requestCount += 1;
+        let cancel = () => {};
+        const success = () => {
+            cancel();
             state.successfulRequestCount += 1;
             if (operation === 'put') {
                 state.successfulPutCount += 1;
@@ -270,8 +334,9 @@ export class NativeIndexedDbTimingRecorder {
                 startedAtMs,
                 durationMs: performance.now() - startedAtMs
             });
-        }, { once: true });
-        request.addEventListener('error', () => {
+        };
+        const failure = () => {
+            cancel();
             this.recordSample({
                 kind: 'request',
                 transactionId: state.transactionId,
@@ -281,17 +346,27 @@ export class NativeIndexedDbTimingRecorder {
                 startedAtMs,
                 durationMs: performance.now() - startedAtMs
             });
-        }, { once: true });
+        };
+        request.addEventListener('success', success, { once: true });
+        request.addEventListener('error', failure, { once: true });
+        cancel = this.trackObservation(() => {
+            request.removeEventListener('success', success);
+            request.removeEventListener('error', failure);
+        });
     }
 
     private observeCursor(store: IDBObjectStore, request: IDBRequest<IDBCursorWithValue | null>): void {
-        const state = this.requireTransactionState(store.transaction);
-        state.requestCount += 1;
-        state.cursorRequestCount += 1;
         this.#totalIssuedRequestCount += 1;
         this.#cursorRequestCount += 1;
+        const state = this.findCapturedTransaction(store.transaction);
+        if (state === undefined) {
+            return;
+        }
+        state.requestCount += 1;
+        state.cursorRequestCount += 1;
         let requestSucceeded = false;
-        request.addEventListener('success', () => {
+        let cancel = () => {};
+        const success = () => {
             if (!requestSucceeded) {
                 state.successfulRequestCount += 1;
                 requestSucceeded = true;
@@ -300,24 +375,69 @@ export class NativeIndexedDbTimingRecorder {
                 state.cursorIterationCount += 1;
                 this.#cursorIterationCount += 1;
             }
+        };
+        const failure = () => cancel();
+        request.addEventListener('success', success);
+        request.addEventListener('error', failure, { once: true });
+        const trackedCancel = this.trackObservation(() => {
+            request.removeEventListener('success', success);
+            request.removeEventListener('error', failure);
         });
+        cancel = () => {
+            trackedCancel();
+            state.cursorObservationCancellations.delete(cancel);
+        };
+        state.cursorObservationCancellations.add(cancel);
     }
 
     private observeUntimedRequest(transaction: IDBTransaction, request: IDBRequest): void {
-        const state = this.requireTransactionState(transaction);
-        state.requestCount += 1;
         this.#totalIssuedRequestCount += 1;
-        request.addEventListener('success', () => {
+        const state = this.findCapturedTransaction(transaction);
+        if (state === undefined) {
+            return;
+        }
+        state.requestCount += 1;
+        let cancel = () => {};
+        const success = () => {
+            cancel();
             state.successfulRequestCount += 1;
-        }, { once: true });
+        };
+        const failure = () => cancel();
+        request.addEventListener('success', success, { once: true });
+        request.addEventListener('error', failure, { once: true });
+        cancel = this.trackObservation(() => {
+            request.removeEventListener('success', success);
+            request.removeEventListener('error', failure);
+        });
     }
 
-    private requireTransactionState(transaction: IDBTransaction): NativeIndexedDbTransactionState {
+    private findCapturedTransaction(transaction: IDBTransaction): NativeIndexedDbTransactionState | undefined {
         const state = this.#transactions.get(transaction);
-        if (state === undefined) {
-            throw new Error('IndexedDB request was issued from an unobserved transaction');
+        if (state === undefined || state.captureGeneration !== this.#captureGeneration) {
+            this.#uncapturedPreCaptureRequestCount += 1;
+            return undefined;
         }
         return state;
+    }
+
+    private finishCursorObservations(state: NativeIndexedDbTransactionState): void {
+        for (const cancel of [...state.cursorObservationCancellations]) {
+            cancel();
+        }
+    }
+
+    private trackObservation(removeListeners: () => void): () => void {
+        let active = true;
+        const cancel = () => {
+            if (!active) {
+                return;
+            }
+            active = false;
+            removeListeners();
+            this.#activeObservationCancellations.delete(cancel);
+        };
+        this.#activeObservationCancellations.add(cancel);
+        return cancel;
     }
 
     private recordTransaction(
@@ -420,4 +540,188 @@ function toNativeDurationSummary(durations: readonly number[]) {
 
 function percentile(sortedValues: readonly number[], fraction: number): number {
     return sortedValues[Math.max(0, Math.ceil(sortedValues.length * fraction) - 1)];
+}
+
+export async function runNativeIndexedDbTimingSemanticsProbe(
+    databaseId: string
+): Promise<NativeIndexedDbTimingSemanticsProbe> {
+    const database = await openProbeDatabase(`playwright-indexeddb-timing-${databaseId}`);
+    const recorder = new NativeIndexedDbTimingRecorder(3);
+    recorder.start();
+    try {
+        await writeProbeValue(database, 'committed', 'committed');
+        await writeThenAbortProbeValue(database, 'aborted', 'aborted');
+        await readFirstProbeCursor(database);
+        await exerciseProbeRequestInventory(database);
+    }
+    finally {
+        recorder.stop();
+    }
+    try {
+        return {
+            ...recorder.snapshot(),
+            durableCommittedValue: await readProbeValue(database, 'committed'),
+            durableAbortedValue: await readProbeValue(database, 'aborted'),
+            methodsRestored: recorder.methodsRestored
+        };
+    }
+    finally {
+        database.close();
+    }
+}
+
+export async function runNativeIndexedDbTimingDisposalProbe(
+    databaseId: string
+): Promise<NativeIndexedDbTimingDisposalProbe> {
+    const database = await openProbeDatabase(`playwright-indexeddb-disposal-${databaseId}`);
+    const recorder = new NativeIndexedDbTimingRecorder(20);
+    recorder.start();
+    const transaction = database.transaction('entries', 'readwrite');
+    transaction.objectStore('entries').put({ value: 'completed-after-stop' }, 'pending');
+    const completion = readTransaction(transaction);
+    recorder.stop();
+    const samplesAtStop = recorder.snapshot().samples.length;
+    await completion;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stopped = recorder.snapshot();
+    try {
+        return {
+            samplesAtStop,
+            samplesAfterCompletion: stopped.samples.length,
+            uncapturedInFlightObservationCount: stopped.uncapturedInFlightObservationCount,
+            durableValue: await readProbeValue(database, 'pending'),
+            methodsRestored: recorder.methodsRestored
+        };
+    }
+    finally {
+        database.close();
+    }
+}
+
+export async function runNativeIndexedDbTimingPreCaptureTransactionProbe(
+    databaseId: string
+): Promise<NativeIndexedDbTimingPreCaptureTransactionProbe> {
+    const database = await openProbeDatabase(`playwright-indexeddb-pre-capture-${databaseId}`);
+    const transaction = database.transaction('entries', 'readwrite');
+    const completion = readTransaction(transaction);
+    const recorder = new NativeIndexedDbTimingRecorder(20);
+    recorder.start();
+    let operationResult: 'returned' | 'threw' = 'returned';
+    let operationError: string | null = null;
+    try {
+        transaction.objectStore('entries').put({ value: 'persisted' }, 'pre-capture');
+    }
+    catch (error) {
+        operationResult = 'threw';
+        operationError = error instanceof Error ? error.message : String(error);
+    }
+    const transactionOutcome = await completion.then(() => 'complete' as const, () => 'abort' as const);
+    recorder.stop();
+    try {
+        return {
+            operationResult,
+            operationError,
+            transactionOutcome,
+            durableValue: await readProbeValue(database, 'pre-capture'),
+            uncapturedPreCaptureRequestCount: recorder.snapshot().uncapturedPreCaptureRequestCount,
+            methodsRestored: recorder.methodsRestored
+        };
+    }
+    finally {
+        database.close();
+    }
+}
+
+async function openProbeDatabase(dbName: string): Promise<IDBDatabase> {
+    const request = indexedDB.open(dbName, 1);
+    request.addEventListener('upgradeneeded', () => {
+        const store = request.result.createObjectStore('entries');
+        store.createIndex('by-value', 'value');
+    });
+    return await readRequest(request);
+}
+
+async function writeProbeValue(database: IDBDatabase, key: string, value: string): Promise<void> {
+    const transaction = database.transaction('entries', 'readwrite');
+    await readRequest(transaction.objectStore('entries').put({ value }, key));
+    await readTransaction(transaction);
+}
+
+async function writeThenAbortProbeValue(database: IDBDatabase, key: string, value: string): Promise<void> {
+    const transaction = database.transaction('entries', 'readwrite');
+    await readRequest(transaction.objectStore('entries').put({ value }, key));
+    const aborted = readTransactionAbort(transaction);
+    transaction.abort();
+    await aborted;
+}
+
+async function readFirstProbeCursor(database: IDBDatabase): Promise<void> {
+    const transaction = database.transaction('entries', 'readonly');
+    const request = transaction.objectStore('entries').openCursor();
+    await readFirstCursorResult(request);
+    await readTransaction(transaction);
+}
+
+async function exerciseProbeRequestInventory(database: IDBDatabase): Promise<void> {
+    const transaction = database.transaction('entries', 'readwrite');
+    const store = transaction.objectStore('entries');
+    await Promise.all([
+        readRequest(store.get('committed')),
+        readRequest(store.getAll()),
+        readRequest(store.delete('absent')),
+        readFirstCursorResult(store.index('by-value').openCursor())
+    ]);
+    await readTransaction(transaction);
+}
+
+async function readFirstCursorResult(request: IDBRequest<IDBCursorWithValue | null>): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        request.addEventListener('success', () => resolve(), { once: true });
+        request.addEventListener('error', () => reject(request.error ?? new Error('IndexedDB cursor failed')), {
+            once: true
+        });
+    });
+}
+
+async function readProbeValue(database: IDBDatabase, key: string): Promise<string | undefined> {
+    const transaction = database.transaction('entries', 'readonly');
+    const row = await readRequest<{ readonly value: string; } | undefined>(transaction.objectStore('entries').get(key));
+    await readTransaction(transaction);
+    return row?.value;
+}
+
+async function readRequest<T>(request: IDBRequest<T>): Promise<T> {
+    return await new Promise<T>((resolve, reject) => {
+        request.addEventListener('success', () => resolve(request.result), { once: true });
+        request.addEventListener('error', () => reject(request.error ?? new Error('IndexedDB request failed')), {
+            once: true
+        });
+    });
+}
+
+async function readTransaction(transaction: IDBTransaction): Promise<void> {
+    return await new Promise<void>((resolve, reject) => {
+        transaction.addEventListener('complete', () => resolve(), { once: true });
+        transaction.addEventListener(
+            'abort',
+            () => reject(transaction.error ?? new Error('IndexedDB transaction aborted')),
+            { once: true }
+        );
+        transaction.addEventListener(
+            'error',
+            () => reject(transaction.error ?? new Error('IndexedDB transaction failed')),
+            { once: true }
+        );
+    });
+}
+
+async function readTransactionAbort(transaction: IDBTransaction): Promise<void> {
+    return await new Promise<void>((resolve, reject) => {
+        transaction.addEventListener('abort', () => resolve(), { once: true });
+        transaction.addEventListener(
+            'complete',
+            () => reject(new Error('IndexedDB transaction unexpectedly committed')),
+            { once: true }
+        );
+    });
 }

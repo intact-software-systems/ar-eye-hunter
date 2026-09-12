@@ -4,22 +4,29 @@ import path from 'node:path';
 
 import type {
     NativeAlmTimingProbe,
-    NativeAlmTimingWorkload,
-    NativeIndexedDbTimingSemanticsProbe
+    NativeAlmTimingWorkload
 } from './browser-alm-committed-work-timing-fixture.ts';
+import type {
+    NativeIndexedDbTimingDisposalProbe,
+    NativeIndexedDbTimingPreCaptureTransactionProbe,
+    NativeIndexedDbTimingSemanticsProbe
+} from './browser-native-indexeddb-timing-recorder.ts';
 
 const FIXTURE_PATH = path.resolve(
     'tests/playwright/rallar-black-box/browser-alm-committed-work-timing-fixture.ts'
+);
+const NATIVE_INDEXED_DB_FIXTURE_PATH = path.resolve(
+    'tests/playwright/rallar-black-box/browser-native-indexeddb-timing-recorder.ts'
 );
 
 test('keeps native request outcomes distinct from terminal transaction outcomes', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate<NativeIndexedDbTimingSemanticsProbe, string>(
         async (moduleUrl) => {
-            const fixture: typeof import('./browser-alm-committed-work-timing-fixture.ts') = await import(moduleUrl);
+            const fixture: typeof import('./browser-native-indexeddb-timing-recorder.ts') = await import(moduleUrl);
             return await fixture.runNativeIndexedDbTimingSemanticsProbe(crypto.randomUUID());
         },
-        `/@fs${FIXTURE_PATH}`
+        `/@fs${NATIVE_INDEXED_DB_FIXTURE_PATH}`
     );
 
     expect(result.durableCommittedValue).toBe('committed');
@@ -32,6 +39,40 @@ test('keeps native request outcomes distinct from terminal transaction outcomes'
     expect(result.methodsRestored).toBe(true);
     expect(result.sampleCapacity).toBe(3);
     expect(result.droppedSampleCount).toBeGreaterThan(0);
+});
+
+test('stops pending native observations without recording after disposal', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate<NativeIndexedDbTimingDisposalProbe, string>(
+        async (moduleUrl) => {
+            const fixture: typeof import('./browser-native-indexeddb-timing-recorder.ts') = await import(moduleUrl);
+            return await fixture.runNativeIndexedDbTimingDisposalProbe(crypto.randomUUID());
+        },
+        `/@fs${NATIVE_INDEXED_DB_FIXTURE_PATH}`
+    );
+
+    expect(result.samplesAtStop).toBe(result.samplesAfterCompletion);
+    expect(result.uncapturedInFlightObservationCount).toBeGreaterThan(0);
+    expect(result.durableValue).toBe('completed-after-stop');
+    expect(result.methodsRestored).toBe(true);
+});
+
+test('preserves requests issued on transactions opened before capture', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate<NativeIndexedDbTimingPreCaptureTransactionProbe, string>(
+        async (moduleUrl) => {
+            const fixture: typeof import('./browser-native-indexeddb-timing-recorder.ts') = await import(moduleUrl);
+            return await fixture.runNativeIndexedDbTimingPreCaptureTransactionProbe(crypto.randomUUID());
+        },
+        `/@fs${NATIVE_INDEXED_DB_FIXTURE_PATH}`
+    );
+
+    expect(result.operationResult).toBe('returned');
+    expect(result.operationError).toBeNull();
+    expect(result.transactionOutcome).toBe('complete');
+    expect(result.durableValue).toBe('persisted');
+    expect(result.uncapturedPreCaptureRequestCount).toBe(1);
+    expect(result.methodsRestored).toBe(true);
 });
 
 test(
@@ -68,19 +109,43 @@ test(
             ]));
             expect(result.throughputPerSecond).toBeGreaterThan(0);
             expect(result.methodsRestored).toBe(true);
+            expect(result.durationMs).toBe(result.measurementEndedAtMs - result.measurementStartedAtMs);
+            expect(result.nativeTiming.samples.every((sample) =>
+                sample.startedAtMs >= result.measurementStartedAtMs &&
+                sample.startedAtMs + sample.durationMs <= result.measurementEndedAtMs
+            )).toBe(true);
+            expect(result.terminalVerification.startedAtMs).toBeGreaterThanOrEqual(result.measurementEndedAtMs);
+            expect(result.terminalVerification.logicalOperationCounts.byKind['work-read']).toBeGreaterThan(0);
         }
 
         expect(results.find((result) => result.workload === 'sparse')?.deliveredCount).toBe(1);
         const fullPage = results.find((result) => result.workload === 'full-page');
         expect(fullPage?.deliveredCount).toBe(16);
-        expect(fullPage?.completeCausalIdentityCount).toBeGreaterThan(0);
-        expect(fullPage?.causalCoverage.some((coverage) => coverage.uncapturedPhases.length === 0)).toBe(true);
+        expect(fullPage?.completeCausalIdentityCount).toBe(16);
+        expect(
+            fullPage?.causalSamples.filter((sample) =>
+                ['effects-committed', 'parent-released', 'callback-start', 'callback-end', 'effect-released'].includes(
+                    sample.phase
+                ) && sample.leaseMarginMs === null
+            )
+        ).toEqual([]);
         const fanout = results.find((result) => result.workload === 'excess-fanout');
         expect(fanout?.deliveredCount).toBe(13);
         expect(fanout?.completeCausalIdentityCount).toBe(13);
         expect(fanout?.maximumSuccessorsBeyondRemainingPageCapacity).toBeGreaterThan(0);
         const backlog = results.find((result) => result.workload === 'finite-backlog');
         expect(backlog?.recoveredKinds).toEqual(expect.arrayContaining(['new', 'retry', 'expired-reserved']));
+        expect(backlog?.oldestEligibleAgeMs).toBeGreaterThanOrEqual(900);
+        expect(
+            backlog?.causalSamples.find((sample) =>
+                sample.identity === 'eligible-retry' && sample.phase === 'successor-reserved'
+            )?.queueAgeMs
+        ).toBeGreaterThanOrEqual(900);
+        expect(
+            backlog?.causalSamples.find((sample) =>
+                sample.identity === 'eligible-expired-reserved' && sample.phase === 'successor-reserved'
+            )?.queueAgeMs
+        ).toBeGreaterThanOrEqual(900);
         expect(backlog?.boundedCommitCount).toBeGreaterThan(0);
         expect(backlog?.waitingEntryCount).toBeGreaterThan(0);
 
@@ -158,10 +223,18 @@ async function writeArtifactIfRequested(
     );
 }
 
+interface RetainedNativeAlmTimingArtifact {
+    readonly schema?: string;
+    readonly results?: readonly NativeAlmTimingProbe[];
+}
+
 async function readRetainedResults(outputPath: string): Promise<readonly NativeAlmTimingProbe[]> {
     try {
-        const artifact = JSON.parse(await readFile(outputPath, 'utf8')) as { readonly results?: unknown; };
-        return Array.isArray(artifact.results) ? artifact.results as NativeAlmTimingProbe[] : [];
+        const artifact: RetainedNativeAlmTimingArtifact = JSON.parse(await readFile(outputPath, 'utf8'));
+        if (artifact.schema !== 'rallar.native-alm-committed-work-timing.v1') {
+            return [];
+        }
+        return Array.isArray(artifact.results) ? artifact.results : [];
     }
     catch (error) {
         if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
