@@ -67,7 +67,10 @@ The remaining server WS router/admission failures were fixture lifecycle and
 completion assumptions, not production regressions. The corrected two suites
 pass **39/39 tests**, including deadline and malformed-ingress mutation evidence;
 independent specification and quality review is clean. Production scheduling is
-unchanged.
+unchanged. The subsequent hosted root suite also passes both corrected suites:
+**11,001 tests pass, one fails, and 12 are skipped**. Its only failing test is
+the separate headless bundle ceiling below; this does not make the full Release
+Gate or browser observation green.
 
 The headless bundle still measures **260.556640625 KiB against strict `<260 KiB`**.
 A same-settings source comparison measures **260.5009765625 KiB** before the
@@ -76,19 +79,60 @@ change adds 57 compressed bytes while reducing uncompressed output. No justified
 removal was identified in that changed surface. The facade approval does not
 authorize a headless budget change; resolve that separate decision before
 readiness, without holding up native measurement. Hosted ALM conformance still
-fails all three carriers despite the local pass.
+fails RTC and fallback despite the local pass; its latest WebSocket cell passes.
+Earlier hosted observations failed all three carriers. This variation is not
+evidence of a runtime fix between those runs.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
 not native IndexedDB request timings. The connection commands still time out at
 30,000 ms. A later failed observation includes a seven-claim batch lasting
-24,023 ms, with 12,161 ms running and 6,658 ms releasing. This evidence makes
-phase attribution necessary: successor discovery cannot remove time spent
-executing and releasing original claims. The unchanged real-Chromium transaction
-fixture passes its correctness preflight, but does not yet collect these native
-request timings. The next two concrete pieces of work remain integration closure
-and native measurement below; no deadline relaxation or unconditional
-continuation follows.
+24,023 ms, with 12,161 ms running and 6,658 ms releasing. The latest failed RTC
+observation includes a 12-claim batch lasting 16,515 ms, with 7,407 ms running and
+6,143 ms releasing; control queue waits reach 58,853 ms. Its environment proxy
+says `normal`, which does not establish native request latency or satisfy the
+connection deadline. This evidence makes phase attribution necessary: successor
+discovery cannot remove time spent executing and releasing original claims.
+
+The corrected fixture-local timing slice passes independent specification and
+quality review, strict fixture compilation, and six Chromium checks. Review
+repairs separate terminal verification from timing, clean up recorder listeners,
+preserve native requests on pre-capture transactions, and require actual
+`COMPLETED` effect releases rather than accepting `RETRY` as completion. The
+initial artifact remains diagnostic only; all comparison runs use the corrected
+instrumentation on both archived source trees.
+
+The balanced baseline/candidate/candidate/baseline comparison passes **24/24
+browser checks**. Both implementations complete the expected 1/16/13/11 durable
+identities and preserve the backlog's 32 waiting entries. The native results
+show a trade-off, not an across-the-board latency improvement:
+
+| Workload and measured interval                                | Baseline, two runs | Candidate, two runs |
+| ------------------------------------------------------------- | ------------------ | ------------------- |
+| Sparse: committed effect to successor reservation             | 4.7–4.8 ms         | 91.3–116.1 ms       |
+| Full page: median parent release to successor reservation     | 24.4–26.5 ms       | 25.7–26.3 ms        |
+| Excess fanout: median parent release to successor reservation | 19.1–19.6 ms       | 351.7–363.7 ms      |
+| Finite backlog: whole measured drain window                   | 239.9–258.0 ms     | 41.1–46.1 ms        |
+
+Backlog logical operations fall from 277 to 169 in both repeats, while native
+`get` requests fall from 349 to 253 and `put` requests remain 62. Full-page native
+`get` and `put` medians are approximately 0.1 ms on both sides. These are local
+Chromium request intervals on a Darwin/ARM64 Node 24 host, not disk latency or
+hosted-environment estimates. Parent-release-to-reservation includes remaining
+original claims, scheduling, and selection/CAS; it is not isolated rediscovery.
+Pending-parent ages also include fixture preparation and ordinary retry/readiness
+scheduling. Small samples and two repeats do not establish stable tails.
+
+Capture-end censoring is explicit: one sparse baseline, one fanout candidate,
+and one semantic-contention actor each have one unfinished observation. No sample
+capacity drops or pre-capture requests occurred. Full-page and backlog captures
+are uncensored on both sides. Contention timings are excluded from performance
+comparison, and raw observations remain under `tmp/perf/`.
+
+The next two concrete pieces of work are attribution of the sparse/fanout
+regression and the live RTC/durable-backlog proof. Retain the observed trade-off
+while checking whether normal scan rotation explains it; no deadline relaxation
+or unconditional continuation follows from the local correctness passes.
 
 | Owner                                                                                                                                           | Planned responsibility                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -98,7 +142,11 @@ continuation follows.
 | `packages/shared/alm/inbound/al-inbound-work-selector.ts`                                                                                       | Own the natural scan, shared cached page, and claimed readiness observations; no restart API.                         |
 | `packages/shared/alm/inbound/al-inbound-admission-store.ts`, `al-inbound-durable-effect-store.ts`                                               | Only if continuation is selected: return actual committed effect observations.                                        |
 | `packages/shared/alm/work/al-work-handler.ts`                                                                                                   | Only if continuation is selected: original-first bounded execution using existing claim/release.                      |
-| `tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts` and adjacent `browser-indexeddb-transaction-writes-fixture.ts` | Native IndexedDB correctness and storage measurement fixture.                                                         |
+| `tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts` and adjacent `browser-indexeddb-transaction-writes-fixture.ts` | Native IndexedDB atomicity, readback, and concurrency correctness.                                                    |
+| `tests/playwright/rallar-black-box/browser-native-indexeddb-timing-recorder.ts`                                                                 | Fixture-local bounded request/transaction timing and observation cleanup.                                             |
+| `tests/playwright/rallar-black-box/browser-alm-committed-work-observer.ts`                                                                      | Concrete fixture-owner interception, pre-reservation eligibility, causal phases, and actual-release completion.       |
+| `tests/playwright/rallar-black-box/tsconfig.alm-native-timing.json`                                                                             | Focused strict compilation of the timing files; the maintained package-test project excludes Playwright files.        |
+| `tests/playwright/rallar-black-box/browser-alm-committed-work-timing-fixture.ts` and adjacent `browser-alm-committed-work-timing.spec.ts`       | Production-owner workloads, causal timing, measurement semantics, and raw artifact retention.                         |
 | `packages/shared-test/rallar-bb-test/conformance/alm/**`                                                                                        | Reusable ALM observation contracts/analysis if existing bounded diagnostics cannot express the required measurements. |
 
 This is a navigation map, not a mandate to edit every file. Avoid new production
@@ -244,7 +292,34 @@ port returns independent CAS claims. The handler owns capacity and release.
 - `packages/tests/shared/alm/work/al-work-queue-port.test.ts`
 - Native transaction-write fixture/spec in the ownership map.
 
-- [ ] Read `scripts/perf/README.md` and the applicable existing harness. Add only
+The existing live matrix's `default`, `all-scenarios`, and `retention-100`
+selections do not prove sustained live traffic during a durable backlog and
+reconnect. The next live measurement is a separate local exploratory case, not
+a fourth governed RTC-B06 case. Reuse the full-stack configuration and existing
+direct-facade example, owning one active public Rallar facade per browser page.
+Use its public room realtime and typed-message channels simultaneously on one
+trio, and its existing diagnostics ports. This avoids command-relay indirection
+and preserves the public receive timestamp and callback boundary without a
+production API change. C must refresh/rejoin its room after reconnect.
+
+Add fixture-scoped native database timing and only the exported runtime/QueueBox
+observation needed beyond those public diagnostics. Verify module identity and
+cleanup; retain database identity and project only payload-free metadata. Label
+inbound control timing as the outer call, not an isolated commit. The existing
+`full-stack-browser-rallar-resilience.spec.ts` direct-facade RTC case is the
+construction/readiness reference; do not widen that large suite merely to add
+the focused mixed-workload case.
+
+Exact admission-store commit and internal callback-only phases remain
+`uncaptured` in that live attachment. Do not infer them from neighboring events
+or intercept generic dependency registration unless the missing attribution
+actually prevents a decision. Keep sender/receiver clock provenance and the
+measured send-origin boundary explicit. Require observed concurrent eligible
+durable work and a live receive while that work remains outstanding; a positive
+queue wait alone does not establish mixed-backlog coverage. This partial
+attachment is an investigation step, not completion of the full proof below.
+
+- [x] Read `scripts/perf/README.md` and the applicable existing harness. Add only
       missing bounded timing at the spec's request, transaction, operation, and
       queue-phase boundaries. Measure with `performance.now()`; request success is
       not transaction completion. Validate counts/outcomes against fixture results
@@ -300,6 +375,8 @@ port returns independent CAS claims. The handler owns capacity and release.
 Focused native check (not a substitute for the mixed workload comparison):
 
 ```sh
+npx tsc -p tests/playwright/rallar-black-box/tsconfig.alm-native-timing.json
+npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-alm-committed-work-timing.spec.ts --workers=1
 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts --workers=1
 ```
 

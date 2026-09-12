@@ -9,6 +9,20 @@ correction passes 39 tests and independent specification/quality review. The sep
 bundle budget, hosted ALM conformance, native performance proof, and complete
 RTC lifecycle proof remain unresolved.
 
+The subsequent hosted root suite confirms both server suites pass and leaves
+only the headless bundle test failing (11,001 passed, one failed, 12 skipped).
+The latest hosted ALM observation passes WebSocket but still fails RTC and
+fallback readiness. An environment classified `normal` is not a substitute for
+the required connection or native timing evidence.
+
+The corrected native timing harness now passes independent review, strict
+fixture compilation, and a balanced baseline/candidate/candidate/baseline series
+with 24/24 browser checks. Terminal durable readback is outside the timing window;
+`RETRY` release cannot satisfy completed-effect acceptance. The initial invalid
+harness artifact remains excluded. The matched results show faster finite-backlog
+progress but longer sparse/fanout successor waits. Attribution and live mixed
+traffic proof are the next bounded work; continuation remains conditional.
+
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
 
@@ -60,7 +74,7 @@ keep payload-free traces available on failure. The projected +33,009 ms for a
 PR #567-style restart was an unexecuted inference, not evidence that its actual
 implementation is insufficient. Withdraw the earlier stronger claim.
 
-The corrected branch's hosted ALM observation still fails: WS misses delivery,
+An earlier corrected-branch hosted ALM observation fails: WS misses delivery,
 while RTC and fallback connect commands time out at 30,000 ms. A recorded
 12-claim batch lasts 32,120 ms, including 18,795 ms running claims and 11,558 ms
 releasing them. Its selection is carried into the batch; zero selection time
@@ -68,6 +82,12 @@ inside that event does not prove prior readiness/probe work was free. These
 intervals do not identify individual request latency or establish IndexedDB as
 the cause. Measure the original claim/run/release path as well as rediscovery;
 the continuation candidate cannot eliminate the former.
+
+The latest failed RTC observation has a 12-claim batch lasting 16,515 ms,
+including 7,407 ms running claims and 6,143 ms releasing them, while control
+queue waits reach 58,853 ms. WebSocket now passes without a corresponding
+runtime change. Preserve this variation and compare matched workloads; do not
+attribute the differing run outcomes to the fixture-only correction.
 
 Relevant owners, relative to the repository root:
 
