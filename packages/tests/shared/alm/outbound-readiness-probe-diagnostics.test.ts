@@ -101,6 +101,9 @@ it.each(['memory', 'indexeddb'] as const)(
         // Each of those is one storage read the page charges to `work-page`, and the drained owner's
         // answer is the same every time: the reads are the invalidations, not the work.
         expect(probes.map((probe) => probe.readyAtMs)).toEqual(['none', 'none', 'none', 'none']);
+        // The clock this owner runs on never moves inside a probe, so every relayed read cost is
+        // exactly zero -- a field the relay dropped would read as `undefined` here instead.
+        expect(probes.map((probe) => probe.durationMs)).toEqual([0, 0, 0, 0]);
         expect(new Set(probes.map((probe) => probe.workerId)).size).toBe(1);
         expect(probes[0]?.workerId).toMatch(/^al-outbound:/);
         runtime.dispose();

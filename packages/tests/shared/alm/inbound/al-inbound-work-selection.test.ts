@@ -1,11 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
+import type { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -14,11 +13,34 @@ import {
     type ALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { describe, expect, it } from 'vitest';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
+import { createInboundTestMessage, createInboundTestStores } from '../inbound-runtime-test-fixture.ts';
 
 const NOW_MS = 1_800_000_000_000;
+/** A full page of rows, so a batch that reads its own page size reads every one of them. */
+const DISPATCH_PAGE_ROWS = AL_INBOUND_WORK_PAGE_SIZE;
+// One distinct step per half the selection times, so a field reporting the other is visible on sight.
+const PAGE_READ_MS = 9;
+const RESERVATION_MS = 4;
+/** How long the row had already been due when the page holding it was read. */
+const DUE_SINCE_MS = 250;
+/** The rotation walks NEW and RETRY before it scans RESERVED, so a row there is three rounds away. */
+const SCAN_STATUS_COUNT = 3;
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 describe('ALInboundWorkSelector readiness', () => {
     it('advertises no readiness from a batch that claimed nothing', async () => {
@@ -58,6 +80,56 @@ describe('ALInboundWorkSelector readiness', () => {
     });
 });
 
+describe('ALInboundWorkSelector phase measurement', () => {
+    it('times its page read apart from its reservation, and reports the wait of the row it claimed', async () => {
+        const fixture = createTimedSelectorFixture();
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS - DUE_SINCE_MS));
+
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+
+        expect(selection.claims).toHaveLength(1);
+        expect(selection.selectionDurationMs).toBe(PAGE_READ_MS);
+        expect(selection.claimDurationMs).toBe(RESERVATION_MS);
+        expect(selection.earliestDueAtMs).toBe(NOW_MS - DUE_SINCE_MS);
+    });
+
+    it('reports the wait of an unleased reservation the page recovered without the port', async () => {
+        const fixture = createTimedSelectorFixture();
+        await fixture.port.retainIfAbsent(
+            createUnleasedReservationEntry(fixture.namespace, NOW_MS - DUE_SINCE_MS)
+        );
+
+        const selection = await readFirstClaimingSelection(fixture);
+
+        // The port reserved nothing here: the claim is the page's own. A batch holding only these is
+        // the expired-lease backlog, and reading the wait from the port's reservations alone would
+        // report it as no wait at all. Strictly before the batch start is a positive `queueWaitMs`;
+        // the arithmetic itself is pinned in `work/al-work-handler.test.ts`.
+        expect(selection.claims).toHaveLength(1);
+        expect(selection.earliestDueAtMs).toBe(NOW_MS - DUE_SINCE_MS);
+        expect(selection.earliestDueAtMs).toBeLessThan(NOW_MS);
+    });
+});
+
+describe('ALInboundWorkSelector eligibility reads', () => {
+    it.each([AL_INBOUND_WORK_PAGE_SIZE, 4])(
+        'reads eligibility once for each of the %i rows a batch claims, and for no row beyond them',
+        async (pageSize) => {
+            const fixture = await createDispatchPageFixture();
+            const readReadiness = vi.spyOn(fixture.delivery, 'readReadiness');
+
+            const selection = await fixture.selector.selectReady(fixture.port, pageSize);
+
+            // No probe ran before this call, so `selectReady` reads the page itself, at the size it
+            // was given: every row that page holds is a row this batch claims, and each costs one
+            // eligibility read. In production the probe reads the page at `AL_INBOUND_WORK_PAGE_SIZE`
+            // and the batch behind it reuses that page rather than reading one of its own.
+            expect(selection.claims).toHaveLength(pageSize);
+            expect(readReadiness).toHaveBeenCalledTimes(pageSize);
+        }
+    );
+});
+
 interface SelectorFixture {
     readonly namespace: string;
     readonly port: ALWorkQueuePort;
@@ -77,35 +149,69 @@ function createSelectorFixture(): SelectorFixture {
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    const delivery = new ALInboundAdmittedDelivery({
-        admissionStore,
-        planIncomingMessage: (msg, source, observations) =>
-            planALMessageHandling(msg, {
-                selfPeerId: 'self',
-                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
-                ...observations
-            }),
-        dispatchInboxEntry: async () => {},
-        sendControlMessage: async () => {},
-        clock: { nowMs: () => NOW_MS },
-        effectPreparation: {
-            newControlId: () => 'selector-control',
-            selfPeerId: 'self',
-            createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
-        }
-    });
+    const stores = { admissionStore, workQueue: state.workQueue };
+    const delivery = createInboundTestDispatch(stores, () => NOW_MS).delivery;
     return {
         namespace,
-        port: createTestALInboundWorkPort({
-            admissionStore,
-            workQueue: state.workQueue,
-            nowMs: () => NOW_MS
-        }),
+        port: createTestALInboundWorkPort({ ...stores, nowMs: () => NOW_MS }),
         selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS })
     };
 }
 
-function createPendingAdmissionEntry(namespace: string) {
+/** The selector under a clock only its own two measured calls move, so each phase has one source. */
+function createTimedSelectorFixture(): SelectorFixture {
+    const namespace = 'inbound-selection-phases';
+    let nowMs = NOW_MS;
+    const state = createInMemoryALAdmissionState(
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs))
+    );
+    const admissionStore = createALInboundAdmissionStore({
+        nowMs: () => nowMs,
+        namespace,
+        backend: new InMemoryAdmissionBackend(state, () => nowMs),
+        orderingTrackTtlMs: 60_000,
+        supersedenceTrackTtlMs: 60_000,
+        retention: normalizeALRuntimeStoreRetention()
+    });
+    const stores = { admissionStore, workQueue: state.workQueue };
+    const delivery = createInboundTestDispatch(stores, () => nowMs).delivery;
+    const port = createTestALInboundWorkPort({ ...stores, nowMs: () => nowMs });
+    return {
+        namespace,
+        port: {
+            ...port,
+            readPage: async (input) => {
+                const page = await port.readPage(input);
+                nowMs += PAGE_READ_MS;
+                return page;
+            },
+            claim: async (input) => {
+                const claims = await port.claim(input);
+                nowMs += RESERVATION_MS;
+                return claims;
+            }
+        },
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => nowMs })
+    };
+}
+
+/** The rotation's next few rounds, stopped at the one that took work. */
+async function readFirstClaimingSelection(fixture: SelectorFixture) {
+    for (let round = 0; round < SCAN_STATUS_COUNT; round += 1) {
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        if (selection.claims.length > 0) {
+            return selection;
+        }
+    }
+    throw new Error('The rotation scanned every status without claiming the seeded row');
+}
+
+/** A reservation with no lease start: timeout reservation can never reach it, so the page recovers it. */
+function createUnleasedReservationEntry(namespace: string, observedAtMs: number): ResourceEntry {
+    return { ...createPendingAdmissionEntry(namespace, observedAtMs), status: EntityStatus.RESERVED };
+}
+
+function createPendingAdmissionEntry(namespace: string, observedAtMs: number = NOW_MS) {
     const original = newALUnicastMessage(
         'peer-1',
         { topicId: 'chat', resourceId: 'selection', contextId: 'chat-1' },
@@ -119,7 +225,35 @@ function createPendingAdmissionEntry(namespace: string) {
         namespace,
         effectId: toALInboundPendingAdmissionId(msg),
         payload: { kind: 'admit-message', msg, source: { kind: 'ws-client', peerId: 'peer-1' } },
-        observedAtMs: NOW_MS,
+        observedAtMs,
         expireAtTimestamp: NOW_MS + 60_000
     }).entry;
+}
+
+interface DispatchPageFixture {
+    readonly delivery: ALInboundAdmittedDelivery;
+    readonly port: ALWorkQueuePort;
+    readonly selector: ALInboundWorkSelector;
+}
+
+/** A full page of committed `dispatch-local` rows: every one of them claimable by the next batch. */
+async function createDispatchPageFixture(): Promise<DispatchPageFixture> {
+    const namespace = 'inbound-dispatch-page';
+    const stores = createInboundTestStores({
+        namespace,
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    for (let row = 0; row < DISPATCH_PAGE_ROWS; row += 1) {
+        await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: `dispatch-${row}` }));
+    }
+    expect(await stores.workQueue.getAllKeys(), 'one dispatch-local row per admission').toHaveLength(
+        DISPATCH_PAGE_ROWS
+    );
+    const delivery = createInboundTestDispatch(stores, Date.now).delivery;
+    return {
+        delivery,
+        port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now })
+    };
 }

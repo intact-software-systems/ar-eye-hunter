@@ -14,11 +14,13 @@ import type {
     ALInboundAdmissionStore
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundWorkKey
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -30,6 +32,14 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import {
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    createInboundTestStores,
+    INBOUND_TEST_SOURCE,
+    setNextInboundCommitConflicted
+} from './inbound-runtime-test-fixture.ts';
 
 describe('inbound durable effect worker lifecycle', () => {
     afterEach(() => {
@@ -512,6 +522,199 @@ describe('inbound durable effect worker lifecycle', () => {
         releaseSend.resolve();
     });
 
+    it('leaves retained control work unclaimed when the acknowledgement it admitted wrote no row', async () => {
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: new InboxOutboxEngine(),
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (message) => {
+                controls.push(message);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        await runtime.ready();
+
+        // The same retained row the committing admission above claims, behind the page the bootstrap
+        // batch already read. No engine round is ever driven here, so only a commit's own
+        // announcement can bring the batch that would claim it.
+        const forwarded = computeALInboundWorkEntry({
+            namespace: resources.admissionStore.namespace,
+            effectId: 'unannounced-control',
+            observedAtMs: Date.now(),
+            expireAtTimestamp: Date.now() + 60_000,
+            payload: {
+                kind: 'send-control',
+                msg: newALAckControlMessage({ v: 2, msgId: 'unannounced-ack', ts: 1, senderId: 'receiver' }, {
+                    ackedMsgId: 'tracked-message',
+                    fromPeerId: 'receiver',
+                    toPeerId: 'sender',
+                    status: 'accepted',
+                    observedAtEpochMs: 1
+                })
+            }
+        });
+        await resources.workQueue.enqueueIfAbsent(forwarded.entry);
+        const tracked = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'partially-acknowledged', contextId: 'room' },
+            'receiver',
+            'chat',
+            {}
+        );
+        // Two peers owe this obligation, so one peer's acknowledgement completes none of it and the
+        // commit that admits it moves the acknowledgement history and writes no work row.
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
+        const ack = newALAckControlMessage({ v: 2, msgId: 'partial-ack', ts: 1, senderId: 'sender' }, {
+            ackedMsgId: tracked.id.msgId,
+            fromPeerId: 'sender',
+            toPeerId: 'receiver',
+            status: 'accepted',
+            observedAtEpochMs: 1
+        });
+
+        const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(acceptance.right).toEqual({ kind: 'control', handled: true });
+        expect(controls).toEqual([]);
+        expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
+    });
+
+    it('leaves retained work unclaimed when the conflicted admission it retained had already expired', async () => {
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: new InboxOutboxEngine(),
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (message) => {
+                controls.push(message);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        await runtime.ready();
+
+        // The retained row of the pin above, behind the page the bootstrap batch already read. No
+        // engine round is ever driven here, so only an announcement can bring the batch that claims it.
+        const forwarded = computeALInboundWorkEntry({
+            namespace: resources.admissionStore.namespace,
+            effectId: 'expired-retention-control',
+            observedAtMs: nowMs,
+            expireAtTimestamp: nowMs + 600_000,
+            payload: {
+                kind: 'send-control',
+                msg: newALAckControlMessage({ v: 2, msgId: 'expired-retention-ack', ts: 1, senderId: 'receiver' }, {
+                    ackedMsgId: 'tracked-message',
+                    fromPeerId: 'receiver',
+                    toPeerId: 'sender',
+                    status: 'accepted',
+                    observedAtEpochMs: 1
+                })
+            }
+        });
+        await resources.workQueue.enqueueIfAbsent(forwarded.entry);
+        const message = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'expired-retention', contextId: 'room' },
+            'receiver',
+            'chat',
+            {},
+            { ttlMs: 1_000 }
+        );
+        // The losing attempt writes nothing, and the message outlives its own deadline before the
+        // retention that would have kept it: `retainPending` rejects it and retains no row at all.
+        vi.spyOn(resources.admissionStore, 'commitBundle').mockImplementationOnce(async () => {
+            nowMs += 2_000;
+            return 'conflict';
+        });
+
+        const acceptance = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'expired' });
+        expect(controls).toEqual([]);
+        expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
+    });
+
+    it('dispatches a replayed admission in the batch its own commit schedules', async () => {
+        const fixture = createInboundTestRuntime({
+            stores: createInboundTestStores({
+                namespace: 'replayed-dispatch',
+                storage: 'memory',
+                observer: createPassThroughIndexedDbOperationObserver()
+            }),
+            effectWorkerId: 'al-inbound:replayed-dispatch'
+        });
+        await fixture.runtime.ready();
+        setNextInboundCommitConflicted(fixture.stores.admissionStore);
+
+        const acceptance = await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'replayed-dispatch' }),
+            INBOUND_TEST_SOURCE
+        );
+
+        expect(acceptance.right).toEqual({ kind: 'pending-admission' });
+        // The replay runs inside a claim of the page that batch already read, so the dispatch it
+        // commits is behind that page. The engine is never started and no round is ever executed
+        // here: the batch this commit schedules for the end of the replaying one is the only thing
+        // that can have claimed the dispatch.
+        await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
+    });
+
+    it('sends the control a replayed admission commits in the batch its own commit schedules', async () => {
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            queueEngine: new InboxOutboxEngine(),
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const controls: ALMessage[] = [];
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            planIncomingMessage,
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async (msg) => {
+                controls.push(msg);
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        const tracked = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'retained-control', contextId: 'room' },
+            'receiver',
+            'chat',
+            {}
+        );
+        await seedTrackedAcknowledgement(resources.admissionStore, tracked);
+        await resources.workQueue.enqueueIfAbsent(
+            toRetainedControlAdmission(resources.admissionStore.namespace, tracked)
+        );
+
+        await runtime.ready();
+
+        // The replay runs inside a claim of the page that batch already read, so the acknowledgement
+        // it commits is behind that page. The engine is never started and no round is ever executed
+        // here: the batch this commit schedules for the end of the replaying one is the only thing
+        // that can have claimed the send.
+        await expect.poll(() => controls.map((control) => control.payload.typeId)).toHaveLength(1);
+    });
+
     it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
@@ -870,8 +1073,31 @@ function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: numbe
     };
 }
 
+/** A retained `admit-control` row for the acknowledgement that completes a tracked message's pending ack. */
+function toRetainedControlAdmission(namespace: string, tracked: ALMessage): ResourceEntry {
+    const expiresAtMs = Date.now() + 60_000;
+    const ack = newALAckControlMessage({ v: 2, msgId: 'retained-control-ack', ts: 1, senderId: 'sender' }, {
+        ackedMsgId: tracked.id.msgId,
+        fromPeerId: 'sender',
+        toPeerId: 'receiver',
+        status: 'accepted',
+        observedAtEpochMs: 1
+    });
+    return computeALInboundWorkEntry({
+        namespace,
+        effectId: toALInboundPendingControlId(ack),
+        observedAtMs: Date.now(),
+        expireAtTimestamp: expiresAtMs,
+        payload: { kind: 'admit-control', msg: ack, expiresAtMs }
+    }).entry;
+}
+
 /** The provenance an inbound acknowledgement needs: this peer forwarded the message and owes an ack. */
-async function seedTrackedAcknowledgement(store: ALInboundAdmissionStore, message: ALMessage): Promise<void> {
+async function seedTrackedAcknowledgement(
+    store: ALInboundAdmissionStore,
+    message: ALMessage,
+    expectedFromPeerIds: readonly string[] = ['sender']
+): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
     const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
     const read = await readAdmission(store, message);
@@ -893,7 +1119,7 @@ async function seedTrackedAcknowledgement(store: ALInboundAdmissionStore, messag
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
-                    expectedFromPeerIds: ['sender'],
+                    expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
                     expireAtTimestamp
                 }

@@ -1,8 +1,13 @@
 import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { toError } from '../../resilience/to-error.ts';
+import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
+} from '../al-admission-work-backend.ts';
 import type {
     ALInboundDeliveryPredecessor,
     ALInboundDurableEffectWrite,
@@ -38,39 +43,43 @@ export class ALInboundDurableEffectStore {
     }
 
     async readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead> {
-        const progress = await this.backend.read(
-            `${this.namespace}:delivered:${trackKey}`,
-            decodeALInboundDeliveryProgress
-        );
-        if (progress === undefined) {
-            return { completedThrough: 0, predecessor: { kind: 'resync-required' } };
-        }
-        const completedThrough = progress.completedThrough;
-        if (beforeSeq <= completedThrough + 1) {
-            return { completedThrough, predecessor: undefined };
-        }
-        const expectedSeq = completedThrough + 1;
-        const prefix = `${this.namespace}:buffered:${trackKey}:`;
-        const stored = await this.backend.read(
-            `${prefix}${expectedSeq}`,
-            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
-        );
-        if (stored === undefined) {
-            return { completedThrough, predecessor: await this.readOrderingPredecessor(trackKey, expectedSeq) };
-        }
-        const snapshot = await readALInboundBufferedMessage({
-            database: this.backend,
-            namespace: this.namespace,
-            stored
+        return await this.backend.readWithin(async (session): Promise<ALInboundOrderedDeliveryRead> => {
+            const progress = await session.read(
+                `${this.namespace}:delivered:${trackKey}`,
+                decodeALInboundDeliveryProgress
+            );
+            if (progress === undefined) {
+                return { completedThrough: 0, predecessor: { kind: 'resync-required' } };
+            }
+            const completedThrough = progress.completedThrough;
+            if (beforeSeq <= completedThrough + 1) {
+                return { completedThrough, predecessor: undefined };
+            }
+            const expectedSeq = completedThrough + 1;
+            const prefix = `${this.namespace}:buffered:${trackKey}:`;
+            const stored = await session.read(
+                `${prefix}${expectedSeq}`,
+                (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
+            );
+            if (stored === undefined) {
+                const predecessor = await this.readOrderingPredecessor(session, trackKey, expectedSeq);
+                return { completedThrough, predecessor };
+            }
+            const snapshot = await readALInboundBufferedMessage({
+                database: session,
+                namespace: this.namespace,
+                stored
+            });
+            return { completedThrough, predecessor: await this.readDeliveryPredecessor(session, snapshot) };
         });
-        return { completedThrough, predecessor: await this.readDeliveryPredecessor(snapshot) };
     }
 
     private async readOrderingPredecessor(
+        database: Pick<ALAdmissionBackend, 'read'>,
         trackKey: string,
         expectedSeq: number
     ): Promise<ALInboundDeliveryPredecessor> {
-        const ordering = await this.backend.read(
+        const ordering = await database.read(
             `${this.namespace}:ordering:${trackKey}`,
             decodeALInboundOrderingSnapshot
         );
@@ -80,14 +89,13 @@ export class ALInboundDurableEffectStore {
     }
 
     private async readDeliveryPredecessor(
+        session: ALAdmissionReadSession,
         snapshot: ALInboundOrderedDeliverySnapshot
     ): Promise<ALInboundDeliveryPredecessor> {
         if (snapshot.delivery === undefined) {
             return { kind: 'effect' };
         }
-        const entry = await this.backend.workQueue.getItem(
-            toALInboundWorkKey(this.namespace, snapshot.delivery.effectId)
-        );
+        const entry = await session.readWork(toALInboundWorkKey(this.namespace, snapshot.delivery.effectId));
         if (entry === undefined) {
             return { kind: 'resync-required' };
         }

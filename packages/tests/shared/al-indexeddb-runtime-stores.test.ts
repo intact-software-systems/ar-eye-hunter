@@ -284,7 +284,9 @@ describe('IndexedDB AL runtime stores', () => {
         }
 
         expect(delivery.payload.message).toEqual({ senderId: msg.id.senderId, msgId: msg.id.msgId });
-        expect(await stores.admissionStore.readInboundMessage(delivery.payload.message)).toMatchObject({
+        expect(
+            (await stores.admissionStore.readDeliverySurface(delivery.payload.message, Date.now()))?.msg
+        ).toMatchObject({
             id: {
                 msgId: msg.id.msgId
             }

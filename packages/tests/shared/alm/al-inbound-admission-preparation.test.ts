@@ -16,6 +16,7 @@ import type {
     ALInboundAdmissionStore,
     ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import {
@@ -352,12 +353,11 @@ describe('inbound admission preparation boundary', () => {
         expect(ownerMutation?.expireAtTimestamp).toBeGreaterThanOrEqual(ownedWorkExpiry);
 
         vi.setSystemTime(admittedAtMs + 1_000);
-        const replay = await stores.admissionStore.readStoredPlanningState({
-            msg: message,
-            nowMs: admittedAtMs + 1_000
-        });
-        expect(replay.source).toEqual(source);
-        expect(replay.supersedenceKey).toBeNull();
+        const retained = await stores.admissionStore.readDeliverySurface(
+            toALInboundMessageReference(message),
+            admittedAtMs + 1_000
+        );
+        expect(retained).toMatchObject({ source, supersedenceKey: null });
     });
 
     it('retains a conflicted candidate and admits it through one fresh QueueBox attempt', async () => {

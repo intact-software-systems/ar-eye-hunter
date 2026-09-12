@@ -14,9 +14,17 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { newWorkEntry, readTestALWorkReadyAtMs } from './al-work-test-entries.ts';
+import { newWorkEntry, readTestALWorkReadyAtMs, toTestALWorkReadySelection } from './al-work-test-entries.ts';
 
 const AL_TEST_TYPES: ReadonlySet<string> = new Set(['AL_TEST']);
+
+// One distinct step per phase, so a field reporting another phase's time is visible on sight.
+const PHASE_BATCH_START_MS = 1_000;
+const PHASE_SELECTION_MS = 7;
+const PHASE_CLAIM_MS = 3;
+const PHASE_RUN_MS = 11;
+const PHASE_RELEASE_MS = 5;
+const PHASE_QUEUE_WAIT_MS = 40;
 
 describe('ALWorkHandler', () => {
     it('runs one batch per wake, releases each claim once, and never awaits delivery on committed()', async () => {
@@ -35,10 +43,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async (claim) => claim.entry.key.contextId === 'w-2' ? { status: 'retry' } : { status: 'completed' },
             diagnostics: undefined
         });
@@ -67,10 +72,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async (claim) => {
                 switch (claim.entry.key.contextId) {
                     case 'c-1':
@@ -111,10 +113,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => {
                 await claimGate;
                 return { status: 'completed' };
@@ -149,10 +148,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => diagnosticsEvents.push(event)
         });
@@ -168,6 +164,107 @@ describe('ALWorkHandler', () => {
             rescheduledCount: 0,
             rejectedCount: 1
         });
+
+        handler.dispose();
+    });
+
+    it('splits one batch into its selection, its reservation, its claims and their releases', async () => {
+        const diagnosticsEvents: ALWorkDiagnostics[] = [];
+        const claims = [toFakeALWorkClaim('phase-1'), toFakeALWorkClaim('phase-2')];
+        let nowMs = PHASE_BATCH_START_MS;
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], onRelease: () => {} }),
+            release: async () => {
+                nowMs += PHASE_RELEASE_MS;
+            }
+        };
+        const handler = new ALWorkHandler({
+            workerId: 'phase-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async () => {
+                nowMs += PHASE_SELECTION_MS + PHASE_CLAIM_MS;
+                return {
+                    claims,
+                    nextReadyAtMs: undefined,
+                    selectionDurationMs: PHASE_SELECTION_MS,
+                    claimDurationMs: PHASE_CLAIM_MS,
+                    earliestDueAtMs: PHASE_BATCH_START_MS - PHASE_QUEUE_WAIT_MS
+                };
+            },
+            runClaim: async () => {
+                nowMs += PHASE_RUN_MS;
+                return { status: 'completed' };
+            },
+            diagnostics: (event) => diagnosticsEvents.push(event)
+        });
+
+        await handler.ready();
+
+        // Two claims, so a per-claim phase cannot be mistaken for a per-batch one.
+        expect(diagnosticsEvents.filter((event) => event.kind === 'work-batch')).toEqual([{
+            kind: 'work-batch',
+            workerId: 'phase-worker',
+            durationMs: PHASE_SELECTION_MS + PHASE_CLAIM_MS + 2 * (PHASE_RUN_MS + PHASE_RELEASE_MS),
+            claimedCount: 2,
+            completedCount: 2,
+            rescheduledCount: 0,
+            rejectedCount: 0,
+            selectionDurationMs: PHASE_SELECTION_MS,
+            claimDurationMs: PHASE_CLAIM_MS,
+            runDurationMs: 2 * PHASE_RUN_MS,
+            releaseDurationMs: 2 * PHASE_RELEASE_MS,
+            queueWaitMs: PHASE_QUEUE_WAIT_MS
+        }]);
+
+        handler.dispose();
+    });
+
+    it('counts the exhaustion sweep\'s own release in the batch it ran in', async () => {
+        const diagnosticsEvents: ALWorkDiagnostics[] = [];
+        let nowMs = PHASE_BATCH_START_MS;
+        const port: ALWorkQueuePort = {
+            ...fakePort({ claims: [], finalizeExhausted: ['exhausted-phase'], onRelease: () => {} }),
+            release: async () => {
+                nowMs += PHASE_RELEASE_MS;
+            }
+        };
+        const handler = new ALWorkHandler({
+            workerId: 'sweep-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => nowMs },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async () => toTestALWorkReadySelection([]),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: (event) => diagnosticsEvents.push(event)
+        });
+
+        await handler.ready();
+
+        // The sweep runs no claim, so its time is a release and nothing else.
+        expect(diagnosticsEvents.filter((event) => event.kind === 'work-batch')).toEqual([{
+            kind: 'work-batch',
+            workerId: 'sweep-worker',
+            durationMs: PHASE_RELEASE_MS,
+            claimedCount: 0,
+            completedCount: 0,
+            rescheduledCount: 0,
+            rejectedCount: 1,
+            selectionDurationMs: 0,
+            claimDurationMs: 0,
+            runDurationMs: 0,
+            releaseDurationMs: PHASE_RELEASE_MS,
+            queueWaitMs: 0
+        }]);
 
         handler.dispose();
     });
@@ -201,10 +298,7 @@ describe('ALWorkHandler', () => {
                 dueAtMs = undefined;
                 return next;
             },
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -258,10 +352,7 @@ describe('ALWorkHandler', () => {
                 probedReadyAtMs = undefined;
                 return next;
             },
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -324,10 +415,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async (claim) => {
                 if (claim.entry.key.contextId === 'first') {
                     signalFirstClaimEntered?.();
@@ -384,7 +472,7 @@ describe('ALWorkHandler', () => {
             readNextReadyAtMs: async () => undefined,
             selectReady: async () => {
                 selectCallCount += 1;
-                return { claims: [], nextReadyAtMs: undefined };
+                return toTestALWorkReadySelection([]);
             },
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
@@ -421,10 +509,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
-            selectReady: async (claimed, size) => ({
-                claims: await claimed.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (claimed, size) => toTestALWorkReadySelection(await claimed.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => {
                 attemptCount += 1;
                 return { status: 'retry' };
@@ -487,7 +572,7 @@ describe('ALWorkHandler', () => {
             readNextReadyAtMs: async () => readyAtMs,
             selectReady: async () => {
                 selectCallCount += 1;
-                return { claims: [], nextReadyAtMs: readyAtMs };
+                return toTestALWorkReadySelection([], readyAtMs);
             },
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
@@ -525,7 +610,7 @@ describe('ALWorkHandler', () => {
                 probeCount += 1;
                 return undefined;
             },
-            selectReady: async () => ({ claims: [], nextReadyAtMs: undefined }),
+            selectReady: async () => toTestALWorkReadySelection([]),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -562,10 +647,7 @@ describe('ALWorkHandler', () => {
                 probeCount += 1;
                 return pending.length > 0 ? 10_000 : undefined;
             },
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -622,10 +704,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => nextReadyAtMs,
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => collectProbe(probes, event)
         });
@@ -648,11 +727,12 @@ describe('ALWorkHandler', () => {
         nowMs += AL_WORK_READINESS_MEMORY_MS;
         await engine.executeOnce();
 
+        // The clock never moves here, so every probe reports the read it made as free.
         expect(probes).toEqual([
-            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'no-memory', readyAtMs: 'none' },
-            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'own-commit', readyAtMs: 'none' },
-            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'external-wake', readyAtMs: 15_000 },
-            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'age-bound', readyAtMs: 15_000 }
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'no-memory', readyAtMs: 'none', durationMs: 0 },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'own-commit', readyAtMs: 'none', durationMs: 0 },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'external-wake', readyAtMs: 15_000, durationMs: 0 },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'age-bound', readyAtMs: 15_000, durationMs: 0 }
         ]);
 
         handler.dispose();
@@ -684,10 +764,7 @@ describe('ALWorkHandler', () => {
                 probeCount += 1;
                 return undefined;
             },
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'retained', settled }),
             diagnostics: (event) => collectProbe(probes, event)
         });
@@ -734,10 +811,7 @@ describe('ALWorkHandler', () => {
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
-            selectReady: async (claimable, size) => ({
-                claims: await claimable.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -776,7 +850,7 @@ describe('ALWorkHandler', () => {
                     probeCounts[role] += 1;
                     return undefined;
                 },
-                selectReady: async () => ({ claims: [], nextReadyAtMs: undefined }),
+                selectReady: async () => toTestALWorkReadySelection([]),
                 runClaim: async () => ({ status: 'completed' }),
                 diagnostics: undefined
             })
@@ -825,10 +899,7 @@ describe('ALWorkHandler', () => {
                 probeCount += 1;
                 return pending.length > 0 ? 10_500 : undefined;
             },
-            selectReady: async (p, size) => ({
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -867,7 +938,7 @@ describe('ALWorkHandler', () => {
                 probeCount += 1;
                 return undefined;
             },
-            selectReady: async () => ({ claims: [], nextReadyAtMs: undefined }),
+            selectReady: async () => toTestALWorkReadySelection([]),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -916,10 +987,7 @@ describe('ALWorkHandler', () => {
             if (shouldCorrupt) {
                 throw new ALAdmissionCorruptionError('committed-path', new TypeError('bad admission state'));
             }
-            return {
-                claims: await p.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            };
+            return toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined }));
         };
         const handler = new ALWorkHandler({
             workerId: 'committed-worker',

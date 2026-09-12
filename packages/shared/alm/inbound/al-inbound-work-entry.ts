@@ -121,10 +121,7 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
             payload,
             entry,
             attempts: entry.dequeueAudit.attempts,
-            retryAtMs: Number(
-                entry.dequeueAudit.nextTs?.epochMilliseconds ??
-                    entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
-            ),
+            retryAtMs: resolveALInboundWorkDueAtMs(entry),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
             leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined
         };
@@ -134,6 +131,7 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
     }
 }
 
+/** When the row is next claimable: the lease end while it is reserved, and its own due time otherwise. */
 export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
     if (entry.status === EntityStatus.RESERVED) {
         if (entry.dequeueAudit.startTs === undefined) {
@@ -143,6 +141,15 @@ export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
             entry.dequeueAudit.startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds
         ) + AL_INBOUND_WORK_LEASE_MS;
     }
+    return resolveALInboundWorkDueAtMs(entry);
+}
+
+/**
+ * When the row became due, whatever status it now carries -- the wait half of the pair above, never
+ * a lease. A reservation clears the retry stamp, so a claimed row that had been retried answers from
+ * when it was written; the wait a batch reports precisely is the one read before the reservation.
+ */
+export function resolveALInboundWorkDueAtMs(entry: ResourceEntry): number {
     return Number(
         entry.dequeueAudit.nextTs?.epochMilliseconds ?? entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
     );

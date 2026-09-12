@@ -49,10 +49,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         // merging it with the ALM runtime measures 204.873046875 KiB, so the 205 ceiling holds.
         // Subscribing the RTC lifecycle runtime to the typed signaling failure measures
         // 205.185546875 KiB, so the ceiling moves to 206.
+        // F2b Task 3 (the carried eligibility read and the replay announcement) measured
+        // 206.198 KiB on the Branch Release Gate, so the ceiling moves to 207.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 206
+        brotliBudgetKiB: 207
     },
     {
         label: 'browser/rallar-core.ts',

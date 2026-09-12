@@ -1,6 +1,8 @@
 import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
+import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
@@ -15,11 +17,33 @@ import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
-import { toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
+
+import {
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    createInboundTestStores,
+    INBOUND_TEST_SOURCE,
+    readInboundTestAdmission,
+    type InboundTestRuntime
+} from './inbound-runtime-test-fixture.ts';
 
 const NOW_MS = 1_700_000_000_000;
+const INBOUND_NAMESPACE = 'al-inbound-counts';
+const INBOUND_WORKER_ID = 'al-inbound:counts';
+/** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
+const INBOUND_ROTATION_ROUND_LIMIT = 16;
+/**
+ * A hundred engine passes at the engine's fixed 100 ms delay: ten idle seconds of a rotation with
+ * nothing to claim, so a bound per round is also the bound per second the relay has to hold.
+ */
+const INBOUND_IDLE_ROUNDS = 100;
+/** Far above the 4 per hundred rounds the outbound owner spends, whose probe answer stands for the idle ceiling. */
+const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
 const NO_DEFERRAL: ALOutboundDequeueDeferral = { types: new Set<string>(), readyAtMs: undefined };
 
@@ -107,10 +131,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, nowMs, NO_DEFERRAL),
-            selectReady: async (claimed, size) => ({
-                claims: await claimed.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (claimed, size) => toTestALWorkReadySelection(await claimed.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -142,10 +163,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, NOW_MS, NO_DEFERRAL),
-            selectReady: async (claimable, size) => ({
-                claims: await claimable.claim({ maxCount: size, observedEntries: undefined }),
-                nextReadyAtMs: undefined
-            }),
+            selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -166,6 +184,173 @@ describe('outbound work owner IndexedDB scan volume', () => {
         handler.dispose();
     });
 });
+
+describe('inbound work owner IndexedDB scan volume', () => {
+    it('drains the dispatch-local row its rotation finds', async () => {
+        const drained = await readDrainedInboundRotation();
+
+        expect(drained.committed).toBe('committed');
+        expect(drained.delivered).toEqual(['dispatched']);
+    });
+
+    it('drains one dispatch-local row in 2 admission operations', async () => {
+        expect(
+            (await readDrainedInboundRotation()).admissionOperations,
+            'inbound rotation over one dispatch-local row: the readiness read takes the message and its ' +
+                'planning state, and the dispatch that read cleared reads neither of them again'
+        ).toBe(2);
+    });
+
+    it('admits one unordered message through the real ingress and dispatches it', async () => {
+        const admitted = await readAdmittedInboundDelivery();
+
+        expect(admitted.acceptance).toEqual({ kind: 'admitted' });
+        expect(admitted.delivered).toEqual(['dispatched']);
+    });
+
+    it('admits and delivers one unordered message in 8 admission operations', async () => {
+        expect(
+            (await readAdmittedInboundDelivery()).admissionOperations,
+            'inbound admit to deliver: 6 operations for the admission, and 2 for the drain that dispatches it'
+        ).toBe(8);
+    });
+
+    it.each(['empty-queue', 'deferred-row'] as const)(
+        'probes storage on every idle rotation round and relays nothing for it, scanning an %s',
+        async (scanned) => {
+            const idle = await readIdleInboundRotation(scanned);
+
+            // The rotation carries its scan position inside the read, so no answer of its own can
+            // stand and every round reaches storage. That is also why the runtime relays no
+            // `readiness-probe`: one event per engine round is a round trip out of the page in the
+            // conformance lane, which doubled its per-operation cost and failed the RTC cell.
+            expect(idle.workPages).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
+            expect(idle.workPages).toBeLessThanOrEqual(INBOUND_IDLE_ROUNDS);
+            // `rotation-alive` is the one thing an idle rotation may say, and it says it once per
+            // `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds rather than once per round.
+            expect(idle.relayedKinds.filter((kind) => kind !== 'rotation-alive')).toEqual([]);
+        }
+    );
+});
+
+interface IdleInboundRotation {
+    readonly workPages: number;
+    readonly relayedKinds: readonly ALInboundRuntimeDiagnosticsEvent['kind'][];
+}
+
+/** An owner with an empty queue, driven for ten idle seconds of engine passes and nothing else. */
+async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'): Promise<IdleInboundRotation> {
+    const observer = createCountingIndexedDbOperationObserver();
+    const fixture = createInboundTestRuntime({
+        stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
+        effectWorkerId: INBOUND_WORKER_ID,
+        canDispatchMessage: () => false
+    });
+    await fixture.runtime.ready();
+    if (scanned === 'deferred-row') {
+        await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'idle-rotation' }),
+            INBOUND_TEST_SOURCE
+        );
+    }
+    // The batch a commit schedules for itself is not awaited by its caller: let it leave the window.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    observer.reset();
+    const eventsBefore = fixture.diagnostics.length;
+
+    for (let round = 0; round < INBOUND_IDLE_ROUNDS; round += 1) {
+        await fixture.queueEngine.executeOnce();
+        // A round whose task is still in flight asks the owner nothing: let the pass before it end.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    return {
+        workPages: observer.getCounts().byKind['work-page'] ?? 0,
+        relayedKinds: fixture.diagnostics.slice(eventsBefore).map((event) => event.kind)
+    };
+}
+
+interface DrainedInboundRotation {
+    readonly committed: 'committed' | 'conflict' | 'expired';
+    readonly delivered: readonly string[];
+    readonly admissionOperations: number;
+}
+
+/**
+ * A row committed outside the owner's own drain, so the rotation that finds it is the only thing
+ * inside the measured window. Rounds that scan an empty status cost no admission operation at all,
+ * which is what makes this count one rotation's and not the whole walk's.
+ */
+async function readDrainedInboundRotation(): Promise<DrainedInboundRotation> {
+    const observer = createCountingIndexedDbOperationObserver();
+    const fixture = createInboundTestRuntime({
+        stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
+        effectWorkerId: INBOUND_WORKER_ID
+    });
+    await fixture.runtime.ready();
+    const admissionStore = fixture.stores.admissionStore;
+    const message = createInboundTestMessage({ msgId: 'rotation-drain' });
+    const committed = await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, message));
+    observer.reset();
+
+    await runInboundRotationUntilSettled(fixture);
+
+    return {
+        committed,
+        delivered: fixture.delivered,
+        admissionOperations: observer.getCounts().byOwner['al-admission']
+    };
+}
+
+interface AdmittedInboundDelivery {
+    readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
+    readonly delivered: readonly string[];
+    readonly admissionOperations: number;
+}
+
+/** The whole path one unordered message walks: its ingress admission, then the drain that dispatches it. */
+async function readAdmittedInboundDelivery(): Promise<AdmittedInboundDelivery> {
+    const observer = createCountingIndexedDbOperationObserver();
+    const fixture = createInboundTestRuntime({
+        stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
+        effectWorkerId: INBOUND_WORKER_ID
+    });
+    await fixture.runtime.ready();
+    observer.reset();
+
+    const admitted = await fixture.runtime.admitIncomingMessage(
+        createInboundTestMessage({ msgId: 'admit-to-deliver' }),
+        INBOUND_TEST_SOURCE
+    );
+    await runInboundRotationUntilSettled(fixture);
+
+    return {
+        acceptance: admitted.right,
+        delivered: fixture.delivered,
+        admissionOperations: observer.getCounts().byOwner['al-admission']
+    };
+}
+
+/**
+ * Stops on the settled work row rather than on the dispatch: a claimed row is RESERVED, and a
+ * rotation that scanned it there would read its readiness a second time inside the measured window.
+ */
+async function runInboundRotationUntilSettled(fixture: InboundTestRuntime): Promise<void> {
+    for (let round = 0; round < INBOUND_ROTATION_ROUND_LIMIT; round += 1) {
+        if (await readSettledInboundWork(fixture.stores.workQueue)) {
+            return;
+        }
+        await fixture.queueEngine.executeOnce();
+        // A batch a commit scheduled for itself is not awaited by its caller: let it reach storage.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+}
+
+async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository): Promise<boolean> {
+    const keys = await workQueue.getAllKeys();
+    const rows = await Promise.all(keys.map(async (key) => await workQueue.getItem(key)));
+    return rows.length > 0 && rows.every((row) => row?.status === EntityStatus.COMPLETED);
+}
 
 function createOutboundWorkPort(observer: IndexedDbOperationObserver): ALWorkQueuePort {
     return createALWorkQueuePort({
