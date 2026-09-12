@@ -70,10 +70,10 @@ before its checkpoint; that separate trio does not describe the later messages
 trio. A and C each establish with B but not each other, despite the accepted
 three-member layout and two ordinary connection attempts. Every retained A-C
 signaling commit has remote inbound admission evidence, but admission is not
-local dispatch or WebRTC consumption. The failure projection drops existing
-claim-settled/batch and per-peer RTC health evidence. Correct that projection
-before choosing a runtime fix. The sidecars also select retired realtime agents
-alongside the failing messages agent, because discovery takes the first run
+local dispatch or WebRTC consumption. At that capture, the failure projection
+drops existing claim-settled/batch and per-peer RTC health evidence. The sidecars
+also select retired realtime agents alongside the failing messages agent,
+because discovery takes the first run
 registrations rather than the current formation's participants. Pass the actual
 formation participants from their existing owner; do not guess them from names.
 Its upstream 2,000-event tail and own 200-event
@@ -81,6 +81,16 @@ tail can hide events; current peer counters can belong to a replacement after
 timeout. Missing claims and zero counters therefore cannot establish a lost
 handoff. No native IDB intervals or storage cause are established, and this first
 failure is not replaced by a rerun.
+
+The readiness projection correction is now independently reviewed, including its
+scoped repair. It captures the caller-owned participants and their current
+session identities, including reverse-side peer evidence; validates actual
+claim payload/type relationships; and retains explicit bounded-tail, health-time,
+and peer-lifetime uncertainty. All 48 focused semantic cases, maintained test
+typing, strict readiness-fixture compilation, and affected static checks pass.
+This establishes diagnostic behavior, not a runtime repair or a passing
+all-scenarios observation. Use the faster authority-cache discriminator below
+before spending another browser run on the current hypothesis.
 
 The maintainer explicitly approved raising only the browser facade ceiling to
 **strict `<208 KiB`**. The measured payload remains **207.16796875 KiB**;
@@ -112,10 +122,9 @@ separate headless ceiling and the native fixture tsconfig's missing explicit
 ambient-type declaration. Both that configuration and the new readiness fixture
 configuration now explicitly declare their inherited ambient types: all four
 TypeScript 7 boundary tests and both strict fixture compilers pass. The evidence
-slice's independent review remains pending; no inherited compiler semantics or
-boundary test was weakened. The topology replay step is
-skipped after the root failure; its missing upload directory is not a topology
-test result.
+slice's independent review and scoped repair are complete; no inherited compiler
+semantics or boundary test was weakened. The topology replay step is skipped
+after the root failure; its missing upload directory is not a topology test result.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
@@ -200,6 +209,51 @@ delivery nor permanent loss is established. Keep acceptance deadlines unchanged
 and distinguish admission disposition/actual successor kinds before choosing a
 runtime correction. Substantial original run/release cost still prevents
 selecting successor continuation as the presumed solution.
+
+The next bounded discriminator concerns authority freshness, not successor
+discovery. Browser group snapshots expire after 60,000 ms, while accepted RTC
+overlays do not expire on that cache timer. The group adoption owner classifies
+equal causal snapshots, lease-only changes, and tuple-preserving liveness
+reductions as duplicate; it neither renews the cache lifetime nor adopts renewed
+session leases. Ordinary join and 20-second heartbeat responses use that owner.
+Once the cache expires, the heartbeat's readable group selection also omits it.
+These source facts identify a normal quiet-room risk. The hosted timeline is
+consistent with it but lacks the actual cache-write time and returned lease
+observations, so it does not establish this run's cause.
+
+The fake-clock diagnostic now reproduces both boundaries independently under
+Node 24.13.0. An exact observation at 50,000 ms is lost by 70,001 ms despite
+unexpired group/session/message authority: the overlay remains but admission is
+pending. Separately, renewal from session expiry 40,000 to 120,000 ms is not
+adopted; at 50,000 ms, before cache expiry, admission rejects the old expired
+leases. The focused result is two intentional semantic failures and two passing
+controls: unchanged no-observation expiry and no extra duplicate notification.
+Maintained test typing covers 1,198 files with no new errors; focused formatting,
+coupling, and whitespace checks pass. This is local behavior proof, not native
+timing or exact hosted attribution.
+
+The selected bounded correction belongs to the browser heartbeat's validated
+HTTP response, paired with the group observations captured before the request.
+Keep generic shared observation, WS replay, server loan/canonical caches, and
+other HTTP ingress unchanged. A current response may renew an equal-causal
+snapshot only when its complete non-lease authority and ordered session
+inventory are identical and every session's whole heartbeat/expiry pair is
+equal or componentwise newer. Reject older or crossed pairs; do not merge fields,
+union sessions, or interpret omissions as membership changes.
+
+Install one new observation identity through the existing conditional replacement
+against the captured predecessor. If another observation or absence cleanup wins,
+the renewal loses without retry or recreation. Normal causally advanced adoption
+keeps its existing behavior; conditional absence is not a causal tombstone.
+Respect the existing heartbeat stop/lifetime boundary after the HTTP await.
+Use the existing repository write/event/index handling, but suppress lease-only
+RTC/topology and UI work at the browser observer. This retains one bounded raw
+write event and existing index maintenance; it does not claim a silent cache
+operation or measured zero overhead. No new generic cache primitive or fence is
+needed. Test the actual heartbeat HTTP path and preserve the original generic
+duplicate/no-extra-notification and no-renewal expiry controls. Do not change
+TTL, reliability, or acceptance deadlines. The diagnostic becomes shipping
+coverage only with the correction and its safety tests in the same PR slice.
 
 The corrected fixture-local timing slice passes independent specification and
 quality review, strict fixture compilation, and six Chromium checks. Review
@@ -327,10 +381,11 @@ restored. Censoring prevents absence-based native bottleneck claims.
 The comparison is collected, but it is not four passing native captures or a
 proven speedup. Raw evidence and the corrected projection remain under
 `tmp/perf/alm-mixed-comparison-9545d41e0.qraxQy/`. Measured latency ranges overlap; keep
-continuation conditional. The next two concrete outcomes are attribution of the
-hosted claim/run/release delay and an evidence-led correction or retain/omit
-decision followed by the existing RTC proof. No deadline relaxation,
-unconditional continuation, or gameplay-latency promise follows from these
+continuation conditional. The next two concrete outcomes are a safe
+authority-freshness correction and an evidence-led continuation retain/omit
+decision followed by the existing RTC proof. Hosted claim/run/release attribution
+remains incomplete; the cache hypothesis does not replace it. No deadline
+relaxation, unconditional continuation, or gameplay-latency promise follows from these
 local correctness results.
 
 | Owner                                                                                                                                           | Planned responsibility                                                                                                       |
@@ -565,7 +620,7 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       rediscovery, callback, or release. Compare related read-session work from
       PR #567 before duplicating it. If the simpler implementation meets unchanged
       acceptance, stop here: omit continuation and proceed to final proof.
-- [ ] Close the observed all-scenarios readiness evidence gap inside the existing
+- [x] Close the observed all-scenarios readiness evidence gap inside the existing
       safe sidecar projection. Supply the current formation's participant IDs from
       its existing caller instead of sampling old run registrations. Retain
       bounded RTC-signaling claims joined by
@@ -574,10 +629,37 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       counters. Expose event-retention limits and snapshot/lifetime uncertainty;
       do not infer non-execution from missing events or a replacement's zeros.
       Prove redaction, bounds, identity joining, and uncertainty through semantic
-      tests before the next unchanged all-scenarios observation. Preserve its
-      first outcome under a new isolated output directory. This changes private
-      diagnostic output only, not product persisted/protocol contracts or runtime
-      scheduling, and does not authorize reruns until green.
+      tests before the next unchanged all-scenarios observation. Independent
+      review and scoped repair pass, including reverse-side participant identity,
+      contradictory claim types, individual malformed fields, and all reconnect
+      recipients. This changes private diagnostic output only, not product
+      persisted/protocol contracts or runtime
+      scheduling. The next observation still requires a distinct bounded question
+      and a new isolated output directory; do not rerun merely to obtain green.
+- [x] Reproduce the quiet-room authority gap in
+      `packages/tests/shared-web/state-cache/browser-group-authority-retention.test.ts`
+      using the real browser cache configuration, group adoption, and RTC admission.
+      Distinguish duplicate-observation TTL renewal from renewed session-lease
+      adoption, with no-renewal expiry and no-extra-notification controls. Use fake
+      time and the maintained test typecheck; no services or browser are required.
+      Classify actual semantic failures before selecting a correction. Account for
+      the shared server consumer and liveness/causal-order rules; do not substitute
+      a longer TTL, new retry, reliability change, or unconditional snapshot write.
+      Keep this diagnostic uncommitted until corrected behavior and safety coverage
+      are ready together. Exact attribution to the retained hosted failure remains
+      unknown without its missing cache/adoption observations.
+- [ ] Implement the selected heartbeat-only authority renewal. Its owner is the
+      validated response in `browser-session-heartbeat.ts`, the captured group
+      observations before that request, and one focused browser state-cache
+      adoption owner. Reuse the existing identity CAS, whole-pair monotonicity,
+      and ordinary changed-causal adoption; no partial merge or fallback write
+      follows a lost renewal CAS. Keep other provenance paths unchanged.
+      In `browser-state-cache-lifecycle.ts`, suppress RTC/topology and UI work
+      for a lease-only refresh while preserving real authority updates/removal.
+      Prove HTTP-to-admission renewal, stale/crossed pairs, changed inventory,
+      both absence-cleanup race orders, stopped in-flight heartbeat, no replay
+      renewal, and unchanged observer/index semantics. Use maintained test typing
+      and the shared-web typecheck, then independent review before browser proof.
 - [ ] Select continuation only when measured successor rediscovery remains a
       material contributor to an unmet acceptance condition and spare-capacity
       opportunities exist. If full batches/storage/callbacks dominate, document that

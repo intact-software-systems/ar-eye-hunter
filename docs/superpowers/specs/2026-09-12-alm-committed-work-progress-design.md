@@ -16,7 +16,7 @@ workload/deadlines, and one worker were used; no retry/rerun occurred. Its A/C
 readiness diagnostics, earlier all-realtime checkpoint, and run summary are
 preserved in isolated output. A and C each connect to B but not each other under
 the accepted layout; every retained A-C signaling commit has remote admission
-evidence. The existing failure projection omits claim execution and per-peer
+evidence. At that capture, the failure projection omits claim execution and per-peer
 RTC state, so local dispatch/negotiation remains unobserved. It also selects
 retired realtime agents rather than the current messages trio. Supply the actual
 participants from the formation owner, without name-based discovery. Extend that
@@ -25,10 +25,15 @@ peer state/counters, and explicit tail/snapshot/lifetime uncertainty. Null-type
 `dispatch-local` claims require a signaling-message identity join; missing events
 or a replacement peer's zero counters are not proof of a lost handoff. This is
 private diagnostic output, not a new runtime hook, persisted/protocol contract,
-or retry mechanism. Retain the first failure and use the next unchanged
-observation to discriminate this boundary, not infer native storage cost from
-outer readiness time. The 100-cycle retention proof remains unrun on this
-correction.
+or retry mechanism. The correction now passes independent review and scoped
+repair, 48 semantic cases, maintained test typing, and strict readiness-fixture
+compilation. It includes current health-session identities and reverse-side
+evidence, actual claim type relationships, and independent malformed-field and
+reconnect-recipient coverage. This is diagnostic correctness, not a runtime fix.
+Retain the first failure and use the next observation for a distinct bounded
+question; do not infer native storage cost from outer readiness time. The faster
+authority-cache discriminator below precedes another browser run. The 100-cycle
+retention proof remains unrun on this correction.
 
 An earlier hosted root suite confirms both server suites pass and leaves
 only the headless bundle test failing (11,001 passed, one failed, 12 skipped).
@@ -39,9 +44,9 @@ headless ceiling, the native fixture tsconfig lacks the ambient-type declaration
 required explicitly by the repository's TypeScript 7 configuration contract.
 The native and new readiness fixture configs now explicitly declare their
 inherited ambient types; four boundary tests and both strict fixture compilers
-pass, with independent review pending. No compiler semantics or contract was
-weakened. The skipped topology step and its
-missing upload directory do not establish a topology failure.
+pass, with independent review and scoped repair complete. No compiler semantics
+or contract was weakened. The skipped topology step and its missing upload
+directory do not establish a topology failure.
 
 The corrected native timing harness now passes independent review, strict
 fixture compilation, and a balanced baseline/candidate/candidate/baseline series
@@ -132,6 +137,47 @@ capture stop before product expiry on the recorded clocks, so permanent loss
 and eventual delivery remain unknown. Keep acceptance unchanged and distinguish
 the actual admission disposition/successor before choosing a runtime correction.
 Successor continuation remains unselected.
+
+Source investigation identifies a separate authority-freshness risk: the browser
+group cache expires after 60,000 ms while the accepted RTC overlay remains.
+Equal-causal observations, including lease-only heartbeat responses, are treated
+as duplicates without renewing that cache clock or adopting renewed leases.
+The normal heartbeat eventually omits the expired group from its own selection.
+The retained hosted timing is consistent with this path, but cache-write times
+and returned lease observations were not captured; exact run attribution remains
+unknown. Best-effort retry policy does not by itself make the controlled positive
+baseline invalid or justify weakening its delivery assertion.
+
+The fake-clock reproduction now independently confirms both failures at the real
+browser cache/adoption/RTC-admission boundaries: a recent exact observation does
+not preserve cache freshness, and returned renewed leases do not replace expired
+ones. No-observation TTL expiry and causal duplicate/no-extra-notification
+controls pass. Its two intentional failures and two passes under Node 24.13.0
+are diagnostic evidence; maintained test typing and focused static checks pass.
+The test remains uncommitted until a coherent correction includes its safety
+coverage in this same PR.
+
+The selected correction is limited to validated browser heartbeat HTTP responses
+and their pre-request group observations. Generic shared observation, WS replay,
+server loan/canonical caches, and other HTTP ingress retain current behavior.
+Same-tuple renewal requires identical non-lease authority, ordered session
+inventory/counts, and equal or componentwise newer whole lease pairs for every
+session. No older/crossed pair, partial merge, inventory union, or omission-based
+membership interpretation is accepted.
+
+Reuse object-identity conditional replacement against the captured predecessor,
+installing a new observation identity. Lost CAS does not retry or recreate a
+removed entry; ordinary causally advanced adoption remains unchanged. Reuse the
+existing heartbeat stop state after the await to prevent late stopped work from
+renewing state.
+Lease-only updates use the existing repository event/index lifecycle while the
+browser observer skips RTC/topology and UI work. One raw write event and existing
+index maintenance remain; this is not a silent primitive or a zero-cost claim.
+No new fence, generic cache API, longer TTL, reliability change, or deadline
+relaxation is needed. The original generic duplicate control remains valid;
+the renewal regression must exercise its actual qualifying heartbeat ingress.
+Local reproduction does not fill the hosted capture's missing cache/adoption
+history, and other fresh-response sources are not silently opted in.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
