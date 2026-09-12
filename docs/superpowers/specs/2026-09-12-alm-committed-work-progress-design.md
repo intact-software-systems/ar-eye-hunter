@@ -9,19 +9,95 @@ correction passes 39 tests and independent specification/quality review. The sep
 bundle budget, hosted ALM conformance, native performance proof, and complete
 RTC lifecycle proof remain unresolved.
 
-The subsequent hosted root suite confirms both server suites pass and leaves
+The first all-scenarios local RTC command on the current correction exits after
+211 seconds: C's `messages.rtc` formation-readiness command exhausts its remaining
+56,230.635167 ms while the room stays `connecting`. Fresh services, the original
+workload/deadlines, and one worker were used; no retry/rerun occurred. Its A/C
+readiness diagnostics, earlier all-realtime checkpoint, and run summary are
+preserved in isolated output. A and C each connect to B but not each other under
+the accepted layout; every retained A-C signaling commit has remote admission
+evidence. The existing failure projection omits claim execution and per-peer
+RTC state, so local dispatch/negotiation remains unobserved. It also selects
+retired realtime agents rather than the current messages trio. Supply the actual
+participants from the formation owner, without name-based discovery. Extend that
+safe projection with identity-joined claims, aggregate-only batch timings, bounded
+peer state/counters, and explicit tail/snapshot/lifetime uncertainty. Null-type
+`dispatch-local` claims require a signaling-message identity join; missing events
+or a replacement peer's zero counters are not proof of a lost handoff. This is
+private diagnostic output, not a new runtime hook, persisted/protocol contract,
+or retry mechanism. Retain the first failure and use the next unchanged
+observation to discriminate this boundary, not infer native storage cost from
+outer readiness time. The 100-cycle retention proof remains unrun on this
+correction.
+
+An earlier hosted root suite confirms both server suites pass and leaves
 only the headless bundle test failing (11,001 passed, one failed, 12 skipped).
-The latest hosted ALM observation passes WebSocket but still fails RTC and
-fallback readiness. An environment classified `normal` is not a substitute for
-the required connection or native timing evidence.
+A subsequent ALM observation passed WebSocket but failed RTC and fallback;
+the newest observation fails all three carriers. Its existing per-operation
+proxy has too few samples to classify. The newest Release Gate stops before
+the root suite at the native timing wrapper's unknown-boundary finding. A local
+correction preserves the exact DOM passthrough type and passes changed-style;
+its review is complete, but it is not yet a repaired hosted gate.
 
 The corrected native timing harness now passes independent review, strict
 fixture compilation, and a balanced baseline/candidate/candidate/baseline series
 with 24/24 browser checks. Terminal durable readback is outside the timing window;
 `RETRY` release cannot satisfy completed-effect acceptance. The initial invalid
 harness artifact remains excluded. The matched results show faster finite-backlog
-progress but longer sparse/fanout successor waits. Attribution and live mixed
-traffic proof are the next bounded work; continuation remains conditional.
+progress but longer sparse/fanout successor waits. Source analysis establishes
+natural scan rotation and empty-batch scheduling as relevant owners; exact
+wake/timer attribution remains uncaptured. A concurrent public-facade mixed
+fixture has a positive local sample, and its cleanup/coverage review is complete. That sample
+accounts for 64 offered durable sends: 20 admitted effects complete at B, 44
+rate-limited requests produce no observed B effect, a live callback overlaps
+seven admitted returned claims, and C reconnects and sends to B. C is not a durable
+proof receiver. Three Node 24 captures, including the latest cleanup correction,
+lack a direct admitted-overlap witness and remain failed alongside earlier
+invalid/censored captures. The corrected fixture retains
+explicit coverage verdicts, distinguishes source labels from source verification,
+and its cleanup correction passes strict compilation and eight focused
+client/observer/coverage tests.
+A retrospective timestamp audit found valid returned claims spanning unprobed
+live callbacks in all three failed captures. The four selected probes miss those
+windows. The reviewed all-callback correction removes that obsolete selection
+plumbing without changing traffic or deadlines. Nine focused browser cases and
+strict fixture compilation pass. The old failures remain unchanged: temporal
+reconstruction is not a captured direct witness.
+
+The fixed mixed A-B-B-A now uses identical corrected instrumentation at
+`9545d41e046373a61eb4f943e8c2ef074184abe6` with baseline shared runtime
+`e499d87276403c6a0a9d5b1b9a21612fa967526d` and candidate
+`73c10e7c9a3cb3bcaa6a772a6de2a5f709d4d72d`. The archived source trees are
+verified, not a complete independently captured served-module graph. Each
+position uses fresh local services and browser contexts on the same Node 24,
+Chromium 149, Darwin/ARM64 environment. All four deliver 20 admitted durable
+effects, refuse 44 sends, deliver all 24 primary live messages plus the
+post-reconnect message, and witness admitted overlap. Three pass coverage; the
+last baseline fails only because B has two unfinished native observations at
+capture end. No position is rerun to replace that result.
+
+Durable callback-age medians are 237/185/232/217 ms, with live medians of 1 ms;
+each run has only 20 durable and 24 primary live samples. Native successful
+`get` medians are about 0.2 ms and `put` medians about 0.1 ms across whole
+lifecycle captures, not disk or isolated steady-state latency. All pages also
+have pre-capture native requests. The overlapping ranges establish neither a
+reliable speedup nor a stable gameplay tail, and censoring prevents absence-based
+native bottleneck claims. Collection is complete, not full native coverage or
+RTC-B06 proof. Hosted claim/run/release attribution remains next; continuation
+stays conditional.
+
+The existing ALM lane's native-capture extension is implemented and independently
+reviewed, including both scoped fix rounds. Source/worker labels are explicit;
+bounded error reporting cannot replace recipe outcomes or skip remaining cleanup,
+even when the reporter throws. Four focused real-browser lifecycle cases and
+strict Node 24 compilation pass; one unchanged local ALM run passes all three
+carriers. Its six participant captures were inspected with restored methods,
+zero drops/failures, pre-capture requests, and right-censored receiver tails.
+A subsequent focused Playwright command cleared the shared results directory
+and lost the raw native/control files. Recorded counts are not a substitute for
+those intervals: no local phase attribution is claimed or replacement ALM run
+selected. Keep future focused output separate and obtain fresh hosted evidence
+through the existing PR workflow. The archived mixed comparison remains intact.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
@@ -83,11 +159,34 @@ intervals do not identify individual request latency or establish IndexedDB as
 the cause. Measure the original claim/run/release path as well as rediscovery;
 the continuation candidate cannot eliminate the former.
 
-The latest failed RTC observation has a 12-claim batch lasting 16,515 ms,
+Another failed RTC observation has a 12-claim batch lasting 16,515 ms,
 including 7,407 ms running claims and 6,143 ms releasing them, while control
-queue waits reach 58,853 ms. WebSocket now passes without a corresponding
+queue waits reach 58,853 ms. WebSocket passed in that run without a corresponding
 runtime change. Preserve this variation and compare matched workloads; do not
 attribute the differing run outcomes to the fixture-only correction.
+
+The newest failed WebSocket observation records a 48,527 ms batch of 13 claims,
+including 22,979 ms running and 25,249 ms releasing; the longest RTC batch records
+19,609 ms for four claims, including 5,403 ms claiming, 8,660 ms running, and
+4,638 ms releasing. These outer phases do not isolate native request cost or
+its cause. They do establish costs that successor discovery cannot remove.
+Attribute that path before choosing a correction for the hosted failure.
+
+Use the existing hosted ALM participants and recipe for that attribution. Attach
+only the fixture-local native recorder after participant setup; retain each
+page's clock origin, bounded request/transaction intervals, censoring, and
+cleanup outcome beside the existing control snapshot. Keep existing backend
+support and all workloads/deadlines unchanged. Stop and dispose observations
+independently even when a recipe or the other page fails. No new production
+instrumentation or mixed-workload hooks are needed for this experiment.
+
+Align native intervals to the same page's emitted diagnostic timestamp, not the
+controller's receipt time. A short maximum rules out one long native completion,
+not many serial short waits. Merge overlapping intervals before calculating
+their coverage of an outer window. Only small, uncensored coverage can exclude
+observed native completion waits as dominant wall-time coverage; large coverage
+does not prove the batch awaited those operations. Native event completion also
+includes browser scheduling and is not an isolated disk measurement.
 
 Relevant owners, relative to the repository root:
 

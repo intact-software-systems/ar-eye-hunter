@@ -54,8 +54,33 @@ settlement, preserves expiry boundaries, and mutation-checks forbidden control
 delivery, readiness bypass, and post-disposal delivery. Independent review and
 the scoped re-review are complete. Local native ALM conformance now
 passes all three carriers, and the ordinary three-browser RTC matrix passes;
-all-scenarios and 100-cycle retention still need to run. These are correctness
-results, not native storage timing or B06 observation evidence.
+the first all-scenarios run now fails formation readiness, and 100-cycle retention
+remains unrun on this correction. These are correctness results, not native
+storage timing or B06 observation evidence.
+
+The all-scenarios test at `c35aa9879120336904690b9b2e27b71dee609c4d` runs once
+with actual Node 24, fresh local memory services, one worker, zero retries, and
+its original workloads/deadlines. The command exits after 211 seconds; it fails C's
+`messages.rtc` formation-readiness command: the room remains `connecting` after
+the remaining 56,230.635167 ms budget. A and C readiness diagnostics, the earlier
+all-realtime checkpoint, run summary, and failure screenshots are retained in
+`tmp/perf/rtc-all-scenarios-c35aa9879.D1Bjih/`, using isolated output directories.
+Source sequencing confirms that the earlier realtime permutation call returned
+before its checkpoint; that separate trio does not describe the later messages
+trio. A and C each establish with B but not each other, despite the accepted
+three-member layout and two ordinary connection attempts. Every retained A-C
+signaling commit has remote inbound admission evidence, but admission is not
+local dispatch or WebRTC consumption. The failure projection drops existing
+claim-settled/batch and per-peer RTC health evidence. Correct that projection
+before choosing a runtime fix. The sidecars also select retired realtime agents
+alongside the failing messages agent, because discovery takes the first run
+registrations rather than the current formation's participants. Pass the actual
+formation participants from their existing owner; do not guess them from names.
+Its upstream 2,000-event tail and own 200-event
+tail can hide events; current peer counters can belong to a replacement after
+timeout. Missing claims and zero counters therefore cannot establish a lost
+handoff. No native IDB intervals or storage cause are established, and this first
+failure is not replaced by a rerun.
 
 The maintainer explicitly approved raising only the browser facade ceiling to
 **strict `<208 KiB`**. The measured payload remains **207.16796875 KiB**;
@@ -63,7 +88,7 @@ the five bundle tests and measurement command pass under Node 24. This changes
 the approved budget, not runtime performance. Other entry budgets and bundle
 settings remain unchanged.
 
-The remaining server WS router/admission failures were fixture lifecycle and
+The earlier server WS router/admission failures were fixture lifecycle and
 completion assumptions, not production regressions. The corrected two suites
 pass **39/39 tests**, including deadline and malformed-ingress mutation evidence;
 independent specification and quality review is clean. Production scheduling is
@@ -79,20 +104,56 @@ change adds 57 compressed bytes while reducing uncompressed output. No justified
 removal was identified in that changed surface. The facade approval does not
 authorize a headless budget change; resolve that separate decision before
 readiness, without holding up native measurement. Hosted ALM conformance still
-fails RTC and fallback despite the local pass; its latest WebSocket cell passes.
-Earlier hosted observations failed all three carriers. This variation is not
-evidence of a runtime fix between those runs.
+fails despite the local pass. One observation passed WebSocket while failing
+RTC and fallback; the newest observation fails all three carriers again. This
+variation is not evidence of a runtime fix between those runs. The newest
+Release Gate stops before typechecking or the root suite at the native timing
+wrapper's `boundary.unknown` finding. The local fixture correction preserves the
+native DOM `put` parameter contract and passes the changed-style check; independent
+review is complete; fresh hosted CI must still establish gate repair.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
 not native IndexedDB request timings. The connection commands still time out at
 30,000 ms. A later failed observation includes a seven-claim batch lasting
-24,023 ms, with 12,161 ms running and 6,658 ms releasing. The latest failed RTC
+24,023 ms, with 12,161 ms running and 6,658 ms releasing. Another failed RTC
 observation includes a 12-claim batch lasting 16,515 ms, with 7,407 ms running and
 6,143 ms releasing; control queue waits reach 58,853 ms. Its environment proxy
 says `normal`, which does not establish native request latency or satisfy the
 connection deadline. This evidence makes phase attribution necessary: successor
 discovery cannot remove time spent executing and releasing original claims.
+
+The newest failed observation reinforces that distinction. Its longest WebSocket
+batch takes 48,527 ms for 13 claims: 19 ms claiming, 22,979 ms running, and
+25,249 ms releasing. The longest RTC batch takes 19,609 ms for four claims,
+including 5,403 ms claiming, 8,660 ms running, and 4,638 ms releasing. These
+outer intervals do not establish individual native request costs or their cause.
+The existing per-operation proxy is unclassified with too few samples. Do not
+present successor continuation as a correction for measured run/release cost.
+
+The test-only hosted-capture extension is implemented at
+`c35aa9879120336904690b9b2e27b71dee609c4d` and review-hardened through
+`797a813b1dc37183968a115f8298eeedc368ebed`. Independent review and both scoped
+fix reviews are complete. Worker/source labels are explicit, control failures
+are bounded, and even a throwing failure reporter cannot skip cleanup or replace
+the recipe outcome. The teardown meets current function standards.
+The extension attaches the existing native recorder to the existing ALM sender and
+receiver pages, preserves primary recipe errors, and independently attempts
+observation cleanup and artifact writing. Four real-browser lifecycle cases,
+strict Node 24 fixture compilation, and scoped standards checks pass. One
+unchanged `npm run test:rallar:full-stack:memory:alm` passes all three carriers
+in 3.8 minutes. The inspected six participant captures restore native methods,
+have no capacity drops or lifecycle failures, and retain two pre-capture requests
+per page and three unfinished observations per receiver.
+
+A later focused Playwright invocation accidentally clears that local run's raw
+native/control files from the shared default results directory. The recorded
+test result and inspected counts survive, but cannot support same-page interval
+analysis. No recoverable worktree copy was found and no ALM rerun replaces the
+lost evidence. This is a material local evidence gap, not a native timing result
+or a reason to change runtime behavior. Subsequent focused runs must use distinct
+output directories. Obtain fresh hosted artifacts through the existing PR lane;
+the separate archived mixed A-B-B-A raw captures remain intact.
 
 The corrected fixture-local timing slice passes independent specification and
 quality review, strict fixture compilation, and six Chromium checks. Review
@@ -129,25 +190,123 @@ capacity drops or pre-capture requests occurred. Full-page and backlog captures
 are uncensored on both sides. Contention timings are excluded from performance
 comparison, and raw observations remain under `tmp/perf/`.
 
-The next two concrete pieces of work are attribution of the sparse/fanout
-regression and the live RTC/durable-backlog proof. Retain the observed trade-off
-while checking whether normal scan rotation explains it; no deadline relaxation
-or unconditional continuation follows from the local correctness passes.
+Source analysis explains the sparse/fanout trade-off's scheduling opportunity:
+removing scan rewind preserves natural status/cursor rotation. A short NEW page
+advances the scan, whereas a full 16-entry page keeps its NEW cursor. Empty
+follow-up batches do not themselves request another immediate batch. Observed
+short-page gaps match the existing idle/backoff cadence, but exact wake/timer
+causality was not captured. The source path is established; the matching timing
+is an inference, not direct scheduler telemetry.
 
-| Owner                                                                                                                                           | Planned responsibility                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `packages/shared/alm/inbound/al-inbound-message-admission.ts`                                                                                   | Preserve successful data-replay committed-work information; no new retry owner.                                       |
-| `packages/shared/alm/inbound/control/al-inbound-control-admission.ts`                                                                           | Symmetric control-replay committed-work information.                                                                  |
-| `packages/shared/alm/inbound/al-inbound-message-runtime.ts`                                                                                     | Notify before callbacks; remove per-commit scan rewind.                                                               |
-| `packages/shared/alm/inbound/al-inbound-work-selector.ts`                                                                                       | Own the natural scan, shared cached page, and claimed readiness observations; no restart API.                         |
-| `packages/shared/alm/inbound/al-inbound-admission-store.ts`, `al-inbound-durable-effect-store.ts`                                               | Only if continuation is selected: return actual committed effect observations.                                        |
-| `packages/shared/alm/work/al-work-handler.ts`                                                                                                   | Only if continuation is selected: original-first bounded execution using existing claim/release.                      |
-| `tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts` and adjacent `browser-indexeddb-transaction-writes-fixture.ts` | Native IndexedDB atomicity, readback, and concurrency correctness.                                                    |
-| `tests/playwright/rallar-black-box/browser-native-indexeddb-timing-recorder.ts`                                                                 | Fixture-local bounded request/transaction timing and observation cleanup.                                             |
-| `tests/playwright/rallar-black-box/browser-alm-committed-work-observer.ts`                                                                      | Concrete fixture-owner interception, pre-reservation eligibility, causal phases, and actual-release completion.       |
-| `tests/playwright/rallar-black-box/tsconfig.alm-native-timing.json`                                                                             | Focused strict compilation of the timing files; the maintained package-test project excludes Playwright files.        |
-| `tests/playwright/rallar-black-box/browser-alm-committed-work-timing-fixture.ts` and adjacent `browser-alm-committed-work-timing.spec.ts`       | Production-owner workloads, causal timing, measurement semantics, and raw artifact retention.                         |
-| `packages/shared-test/rallar-bb-test/conformance/alm/**`                                                                                        | Reusable ALM observation contracts/analysis if existing bounded diagnostics cannot express the required measurements. |
+The direct-facade mixed fixture's cleanup/coverage review is complete. Its
+positive local candidate sample offers 64 concurrent durable sends while 24
+frame-paced live sends and C reconnect run together. The existing limiter admits
+20 and refuses 44: every admitted identity has B's public callback, actual
+COMPLETED release, and postcapture COMPLETED dispatch readback; every refused
+identity has no observed entry or delivery at B. A live callback overlaps seven
+admitted returned dispatch claims. C regains its room lane and its post-reconnect
+message reaches B; C is not a durable proof receiver.
+
+The corrected fixture records an explicit coverage verdict and bounded reasons,
+checks local memory/Node 24 execution before mutation, and tests failure cleanup,
+refusal effects, and delayed-RETRY overlap removal. The cleanup correction passes
+strict compilation and eight focused client/observer/coverage tests. A retained
+`pending-admission` entry is work awaiting ordinary
+progress, not a refusal; it still owes actual callback and COMPLETED effect proof.
+
+Three Node 24 runs, including the latest cleanup correction, complete traffic
+but capture no direct admitted-overlap witness;
+their verdict remains failed even though the capture itself has no exception.
+An earlier censored repeat, a wrong-Node run, and a classifier failure also remain
+excluded. The later positive overlap reflects scheduling variation, not permission
+to pace the durable burst or bypass its limiter. Runtime and instrumentation
+labels are explicitly operator-supplied and unverified. Native capture includes
+lifecycle setup/reconnect, has pre-capture requests, and is not an isolated
+steady-state profile. This is not an RTC-B06 case or an optimization result.
+
+A read-only audit of those three failed captures exposes a sampling blind spot.
+All live callbacks retain timestamps, but only sequences 0, 7, 15, and 23 inspect
+the passive returned-claim map. Strict same-page ordering shows unprobed live
+callbacks between valid returned claims and public durable callbacks in every
+failed capture. In the latest, sequence 9 arrives 12 ms after eight admitted
+claims return and 28–44 ms before their durable callbacks start. No intervening
+release or dropped queue/live/durable callback observation confounds that join.
+This is retrospective temporal support, not a replacement for the missing direct
+witness; retain each failed verdict unchanged.
+
+The reviewed correction at `9545d41e046373a61eb4f943e8c2ef074184abe6` now inspects
+the existing bounded map on every live callback, including the post-reconnect
+message. The four-sequence selector and obsolete payload flags are deleted.
+The 64/24 workload, limiter, deadlines, valid-claim eligibility, and postcapture
+completion checks are unchanged; no callback-time database reads or synthetic
+delays were added. Nine focused browser cases and strict fixture compilation
+pass. Independent review also verified the conservative millisecond projection
+of returned-claim lease timestamps. These fixture-only changes are local and
+reviewed, not yet a repaired hosted gate.
+
+A fixed A-B-B-A mixed comparison uses that identical instrumentation with
+baseline `packages/shared` at `e499d87276403c6a0a9d5b1b9a21612fa967526d` and
+candidate at `73c10e7c9a3cb3bcaa6a772a6de2a5f709d4d72d`. Both archived source
+trees were Git-blob verified; this does not independently verify every served
+browser module. All other source, existing dependencies, Node 24.19.0,
+Chromium 149, Darwin/ARM64 host, local memory API, and workload are matched.
+Each position starts fresh services and three independent browser contexts;
+no other task-owned browser/build workload runs concurrently. No measurement
+position is rerun or replaced.
+
+Every position admits 20 of 64 durable sends and refuses 44, with no unexpected
+dispositions. All admitted identities reach B's public callback and COMPLETED
+effect; all 24 primary live messages and the post-reconnect message arrive.
+Direct overlap appears on 9/7/5/6 live callbacks respectively. Positions 1–3
+pass coverage. Position 4 completes traffic but fails
+`native-observation-in-flight`: B has two unfinished native observations when
+capture stops. Those observations are retained, not awaited away.
+
+| Position | Source    | Coverage                         | Durable callback age p50 / p95 / max (ms; n=20) | Primary live age p50 / p95 / max (ms; n=24) |
+| -------- | --------- | -------------------------------- | ----------------------------------------------- | ------------------------------------------- |
+| 1        | Baseline  | Passed                           | 237 / 322 / 344                                 | 1 / 1 / 2                                   |
+| 2        | Candidate | Passed                           | 185 / 315 / 353                                 | 1 / 2 / 2                                   |
+| 3        | Candidate | Passed                           | 232 / 321 / 321                                 | 1 / 1 / 2                                   |
+| 4        | Baseline  | Failed: native capture in flight | 217 / 323 / 324                                 | 1 / 2 / 3                                   |
+
+These are per-run finite nearest-rank statistics, not stable tails. The first
+baseline's admitted population includes one `pending-admission` send which later
+completes. Correcting an initial derived projection to include that identity
+does not alter any raw observation. Native successful `get` medians are about
+0.2 ms and `put` medians about 0.1 ms in all four whole-lifecycle captures, not
+disk or isolated steady-state latency. Every role has two pre-capture native
+requests. There are no capacity drops or client-cleanup failures; methods are
+restored. Censoring prevents absence-based native bottleneck claims.
+
+The comparison is collected, but it is not four passing native captures or a
+proven speedup. Raw evidence and the corrected projection remain under
+`tmp/perf/alm-mixed-comparison-9545d41e0.qraxQy/`. Measured latency ranges overlap; keep
+continuation conditional. The next two concrete outcomes are attribution of the
+hosted claim/run/release delay and an evidence-led correction or retain/omit
+decision followed by the existing RTC proof. No deadline relaxation,
+unconditional continuation, or gameplay-latency promise follows from these
+local correctness results.
+
+| Owner                                                                                                                                           | Planned responsibility                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/alm/inbound/al-inbound-message-admission.ts`                                                                                   | Preserve successful data-replay committed-work information; no new retry owner.                                              |
+| `packages/shared/alm/inbound/control/al-inbound-control-admission.ts`                                                                           | Symmetric control-replay committed-work information.                                                                         |
+| `packages/shared/alm/inbound/al-inbound-message-runtime.ts`                                                                                     | Notify before callbacks; remove per-commit scan rewind.                                                                      |
+| `packages/shared/alm/inbound/al-inbound-work-selector.ts`                                                                                       | Own the natural scan, shared cached page, and claimed readiness observations; no restart API.                                |
+| `packages/shared/alm/inbound/al-inbound-admission-store.ts`, `al-inbound-durable-effect-store.ts`                                               | Only if continuation is selected: return actual committed effect observations.                                               |
+| `packages/shared/alm/work/al-work-handler.ts`                                                                                                   | Only if continuation is selected: original-first bounded execution using existing claim/release.                             |
+| `tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts` and adjacent `browser-indexeddb-transaction-writes-fixture.ts` | Native IndexedDB atomicity, readback, and concurrency correctness.                                                           |
+| `tests/playwright/rallar-black-box/browser-native-indexeddb-timing-recorder.ts`                                                                 | Fixture-local bounded request/transaction timing and observation cleanup.                                                    |
+| `tests/playwright/rallar-black-box/browser-alm-committed-work-observer.ts`                                                                      | Concrete fixture-owner interception, pre-reservation eligibility, causal phases, and actual-release completion.              |
+| `tests/playwright/rallar-black-box/tsconfig.alm-native-timing.json`                                                                             | Focused strict compilation of the timing files; the maintained package-test project excludes Playwright files.               |
+| `tests/playwright/rallar-black-box/browser-alm-committed-work-timing-fixture.ts` and adjacent `browser-alm-committed-work-timing.spec.ts`       | Production-owner workloads, causal timing, measurement semantics, and raw artifact retention.                                |
+| `tests/playwright/rallar-black-box/browser-alm-mixed-live-durable-observer.ts` and adjacent observer spec                                       | Passive returned-claim overlap, public callback clocks, bounded native/queue observation, and postcapture dispatch readback. |
+| `tests/playwright/rallar-black-box/browser-alm-mixed-live-durable-client.ts`                                                                    | Browser-local receiver subscriptions and independently attempted client/observer cleanup.                                    |
+| `tests/playwright/rallar-black-box/browser-alm-mixed-live-durable-coverage.ts` and adjacent coverage spec                                       | Pure local-execution and disposition-aware coverage decisions, including negative evidence and immutable verdicts.           |
+| `tests/playwright/rallar-black-box/full-stack-browser-alm-mixed-live-durable.spec.ts`                                                           | Concurrent public realtime/durable/reconnect workload, all offered-send dispositions, and honest coverage acceptance.        |
+| `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`                                                                          | Existing hosted ALM workload and per-page native observation lifecycle alongside its control snapshot.                       |
+| `tests/playwright/rallar-black-box/browser-alm-native-observation.ts` and adjacent lifecycle spec                                               | Native page-handle lifecycle, independent cleanup/artifact outcomes, and primary recipe-error preservation.                  |
+| `packages/shared-test/rallar-bb-test/conformance/alm/**`                                                                                        | Reusable ALM observation contracts/analysis if existing bounded diagnostics cannot express the required measurements.        |
 
 This is a navigation map, not a mandate to edit every file. Avoid new production
 files unless a real ownership boundary requires one. Read nearby tests/examples
@@ -294,7 +453,7 @@ port returns independent CAS claims. The handler owns capacity and release.
 
 The existing live matrix's `default`, `all-scenarios`, and `retention-100`
 selections do not prove sustained live traffic during a durable backlog and
-reconnect. The next live measurement is a separate local exploratory case, not
+reconnect. The mixed live measurement is a separate local exploratory case, not
 a fourth governed RTC-B06 case. Reuse the full-stack configuration and existing
 direct-facade example, owning one active public Rallar facade per browser page.
 Use its public room realtime and typed-message channels simultaneously on one
@@ -319,21 +478,60 @@ durable work and a live receive while that work remains outstanding; a positive
 queue wait alone does not establish mixed-backlog coverage. This partial
 attachment is an investigation step, not completion of the full proof below.
 
+For hosted phase attribution, extend the observation path in the existing
+`full-stack-alm-conformance.spec.ts`, not the mixed-workload fixture. Start only
+the generic native recorder on both existing participant pages after their
+authentication/control setup and before the unchanged recipes. Keep the same
+carriers, backend support, scenario inventory, volume, 18-second conformance
+deadline, receiver barrier, and cell timeout. Retain each recorder through a
+page-owned handle; stop, snapshot, and dispose both independently before control
+snapshot collection and page cleanup, including partial setup and recipe failure.
+Write payload-free native samples, page clock/source/environment metadata,
+censor counts, restoration results, and capture failures beside the existing
+observation artifacts. A capture failure must not replace the recipe outcome.
+
+Compare native intervals only with the same page's existing outer diagnostics,
+using their page-generated timestamps. Report the longest completed span and
+overlap-merged interval-union coverage clipped to each outer window. A short
+maximum only excludes one long wait; many serial short waits may still dominate.
+A small uncensored union can exclude observed native waits as dominant wall-time
+coverage, but a large union is not a causal join. Preserve censoring and event
+delivery uncertainty. This single attribution extension reuses the existing
+ALM job; it adds no fixture, production hook, timing gate, or workload.
+
 - [x] Read `scripts/perf/README.md` and the applicable existing harness. Add only
       missing bounded timing at the spec's request, transaction, operation, and
       queue-phase boundaries. Measure with `performance.now()`; request success is
       not transaction completion. Validate counts/outcomes against fixture results
       and redact payloads; instrumentation is the same on both comparison sides.
-- [ ] Capture baseline and Slice 1 candidate locally before another broad hosted
+- [x] Collect the fixed baseline and Slice 1 candidate comparison locally before another broad hosted
       run. Cover sparse traffic, 16 claimable admissions each producing work, fanout
       exceeding remaining capacity, finite multi-page backlog/recovery, and live
       game traffic with durable backlog/reconnect. Use same-context tabs for shared
       IndexedDB contention. Preserve sample distributions and environment/source
       identity under `tmp/perf/`; repeat A/B in balanced order if variance dominates.
+      The isolated sparse/full-page/fanout/backlog/contention A-B-B-A passes 24/24
+      checks. The all-callback mixed fixture is independently reviewed and its fixed
+      A-B-B-A is collected: three coverage passes and one native-censored failure,
+      with all traffic complete. Keep that failure; collection is complete, not
+      native causal attribution, a four-pass proof, or justification for continuation.
 - [ ] Attribute late delivery to pre-admission wait, admission/storage, successor
       rediscovery, callback, or release. Compare related read-session work from
       PR #567 before duplicating it. If the simpler implementation meets unchanged
       acceptance, stop here: omit continuation and proceed to final proof.
+- [ ] Close the observed all-scenarios readiness evidence gap inside the existing
+      safe sidecar projection. Supply the current formation's participant IDs from
+      its existing caller instead of sampling old run registrations. Retain
+      bounded RTC-signaling claims joined by
+      observed message identity (including `dispatch-local` with null `typeId`),
+      aggregate-only batch timings, and allowlisted expected-peer RTC state and
+      counters. Expose event-retention limits and snapshot/lifetime uncertainty;
+      do not infer non-execution from missing events or a replacement's zeros.
+      Prove redaction, bounds, identity joining, and uncertainty through semantic
+      tests before the next unchanged all-scenarios observation. Preserve its
+      first outcome under a new isolated output directory. This changes private
+      diagnostic output only, not product persisted/protocol contracts or runtime
+      scheduling, and does not authorize reruns until green.
 - [ ] Select continuation only when measured successor rediscovery remains a
       material contributor to an unmet acceptance condition and spare-capacity
       opportunities exist. If full batches/storage/callbacks dominate, document that
@@ -376,9 +574,16 @@ Focused native check (not a substitute for the mixed workload comparison):
 
 ```sh
 npx tsc -p tests/playwright/rallar-black-box/tsconfig.alm-native-timing.json
-npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-alm-committed-work-timing.spec.ts --workers=1
-npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts --workers=1
+mkdir -p tmp/perf
+almTimingOutput=$(mktemp -d tmp/perf/alm-timing-check.XXXXXX)
+npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-alm-committed-work-timing.spec.ts --workers=1 --output "$almTimingOutput"
+indexedDbWriteOutput=$(mktemp -d tmp/perf/indexeddb-write-check.XXXXXX)
+npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts --workers=1 --output "$indexedDbWriteOutput"
 ```
+
+Each browser invocation owns a newly created output directory. Playwright clears
+its selected project output at startup; do not reuse a previous run's directory
+or the shared default while it contains evidence that must be retained.
 
 **Exit:** Reproducible native timing/causal evidence with a justified retained or
 omitted continuation. No invented per-operation latency and no performance
@@ -389,7 +594,8 @@ claim based only on the synthetic diagnostic.
 - Prove actual data-channel readiness, existing ALM conformance, ordinary RTC
   matrix, reconnect/100-cycle retention, and all required lifecycle scenarios
   under unchanged acceptance. Use the isolated local runners already in PR #566
-  for rapid iteration, retain first failures, and avoid repeated broad builds of
+  with a unique per-invocation `--output` and diagnostics directory for rapid
+  iteration, retain first failures, and avoid repeated broad builds of
   an unchanged candidate. `npm run test:rallar:full-stack:memory:alm` is the
   existing memory conformance entry point; select the existing live-RTC matrix/
   lifecycle scripts for the retained browser proof. Do not reduce workload or
