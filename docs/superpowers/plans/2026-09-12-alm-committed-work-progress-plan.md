@@ -36,19 +36,40 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
 
 ## Current state and ownership map
 
-This is a planning/publication change, not a claim that runtime behavior is fixed.
-The local synthetic latency diagnostic remains uncommitted and intentionally RED;
-preserve it while extracting semantic tests. Production inspection is based on
-PR #566 head `b8447b09867ca4aa9e220f7823484da17f5925a8`. PR #567 was inspected
-at `88e211877781aa6f91b04342f62526a1dbfdc85e`; these identify evidence, not a
-requirement to freeze main or rewrite a mergeable branch.
+PR #567 has merged, and its replay notifications, grouped read sessions, and
+diagnostics are incorporated in this branch. Notification without scan rewind
+is implemented; its focused tests and independent review are green. The selector
+has one explicit state owner, `ALInboundWorkSelector`, rather than two stateful
+factories. Native timing and the complete RTC proof remain required; a green
+lifecycle test group is not an RTC-B06 observation.
+
+The local synthetic latency diagnostic remains uncommitted and intentionally RED.
+Keep it as diagnostic evidence, not a shipping regression with private batch
+expectations. Behavior-named tests own the scan-progress and notification
+contracts independently of its imposed costs.
+
+Wider integration validation exposed RTC/WS fixture-completion and caller-owned
+engine-startup defects. The correction waits for actual delivery or durable
+settlement, preserves expiry boundaries, and mutation-checks forbidden control
+delivery, readiness bypass, and post-disposal delivery. Independent review and
+the scoped re-review are complete. Local native ALM conformance now
+passes all three carriers, and the ordinary three-browser RTC matrix passes;
+all-scenarios and 100-cycle retention still need to run. These are correctness
+results, not native storage timing or B06 observation evidence.
+
+The browser facade remains **207.16796875 KiB against a strict 207 KiB ceiling**
+after a legitimate selector ownership consolidation. The remaining 172-byte
+overage needs an explicit maintainer budget decision or a separately justified
+optimization; the ceiling is unchanged. Do not restore scan rewinds or weaken
+tests to fit it. The next two concrete pieces of work are finishing this reviewed
+integration/budget closure and the native measurement slice below.
 
 | Owner                                                                                                                                           | Planned responsibility                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `packages/shared/alm/inbound/al-inbound-message-admission.ts`                                                                                   | Preserve successful data-replay committed-work information; no new retry owner.                                       |
 | `packages/shared/alm/inbound/control/al-inbound-control-admission.ts`                                                                           | Symmetric control-replay committed-work information.                                                                  |
 | `packages/shared/alm/inbound/al-inbound-message-runtime.ts`                                                                                     | Notify before callbacks; remove per-commit scan rewind.                                                               |
-| `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`                                                                                 | Preserve natural scan progress; remove unused restart API/test contract.                                              |
+| `packages/shared/alm/inbound/al-inbound-work-selector.ts`                                                                                       | Own the natural scan, shared cached page, and claimed readiness observations; no restart API.                         |
 | `packages/shared/alm/inbound/al-inbound-admission-store.ts`, `al-inbound-durable-effect-store.ts`                                               | Only if continuation is selected: return actual committed effect observations.                                        |
 | `packages/shared/alm/work/al-work-handler.ts`                                                                                                   | Only if continuation is selected: original-first bounded execution using existing claim/release.                      |
 | `tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes.spec.ts` and adjacent `browser-indexeddb-transaction-writes-fixture.ts` | Native IndexedDB correctness and storage measurement fixture.                                                         |
@@ -57,17 +78,17 @@ requirement to freeze main or rewrite a mergeable branch.
 This is a navigation map, not a mandate to edit every file. Avoid new production
 files unless a real ownership boundary requires one. Read nearby tests/examples
 before selecting shapes. No outbound adapter is planned solely for continuation.
-Reconcile PR #567's actual read-session and diagnostic changes before adding
-similar code; preserve fresh authority checks, not stale observations across
-awaits. Publication and merge/disposition of that other PR remain separate.
+PR #567's read-session and diagnostic changes are already present. Preserve
+fresh authority checks, not stale observations across awaits, and add only
+measurement boundaries that the existing diagnostics cannot express.
 
 ## Slice 1: Restore committed-work progress and prove the smaller lifecycle
 
 **Interfaces:** Consume `ALWorkHandler.committed(): void` and the current
 selector/port. Carry mandatory `wroteWork: boolean` with replay outcome/acceptance
 for both admission owners; use one canonical result per owner rather than
-retaining old union forms through adapters. If current PR #567 already supplies
-the result shape, use it after review. Successful control commit notification
+retaining old union forms through adapters. PR #567 supplies the result shape;
+reuse it. Successful control commit notification
 must precede `onControlMessage`. Remove `restartScan()` if the verified runtime
 and test usages remain its only consumers.
 
@@ -75,21 +96,23 @@ and test usages remain its only consumers.
 
 - `packages/tests/shared/alm/al-inbound-pending-admission.test.ts`
 - `packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`
-- `packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts`
+- `packages/tests/shared/alm/inbound/al-inbound-work-selector.test.ts`
+- `packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts`
+- `packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
 - `packages/tests/shared/alm/work/al-work-handler.test.ts`
 - `packages/tests/shared/webrtc/ws-rtc-control-handoff-latency.test.ts`
 
-- [ ] Inspect PR delivery status and the relevant PR #567/main diff; preserve the
+- [x] Inspect PR delivery status and the relevant PR #567/main diff; preserve the
       local RED and unrelated files. Assign one implementation agent this ownership
       slice; independent reviewers do not edit the same files concurrently.
-- [ ] Write semantic RED cases using existing fixtures: deferred data/control
+- [x] Write semantic RED cases using existing fixtures: deferred data/control
       commits wake ordinary progress without a test-authored wake; a throwing control
       callback cannot hide already-committed work; a failed admission transaction
       publishes no successful admission notice. Separately, a successful
       `retainPending`/control-pending write must still wake its durable retry row
       after an admission conflict. Verify each RED fails for its intended missing
       lifecycle behavior before implementation.
-- [ ] Add a finite-backlog progress RED: waiting rows on the first NEW page,
+- [x] Add a finite-backlog progress RED: waiting rows on the first NEW page,
       ready admission work that generates successors, an eligible later NEW row,
       ready RETRY, and expired RESERVED work. Require those eligible identities to
       progress **while a bounded producer is still committing**, within a fixture
@@ -97,10 +120,10 @@ and test usages remain its only consumers.
       Then stop/drain for recovery coverage. Waiting rows consume no premature retry
       attempts. Verify the old implementation fails; progress only after stopping
       arrivals would not distinguish it. Do not assert exact page/status call sequences.
-- [ ] Add the stale-probe case: let an empty/cached page finish, commit new work,
+- [x] Add the stale-probe case: let an empty/cached page finish, commit new work,
       and prove natural worker progress reaches it without an external wake. Cover
       a commit during an in-flight selection so scan advancement is not discarded.
-- [ ] Implement the owner correction. The intended runtime control flow is:
+- [x] Implement the owner correction. The intended runtime control flow is:
 
   ```text
   replay through existing admission owner
@@ -123,23 +146,38 @@ and test usages remain its only consumers.
   current cached-page consumption and natural rotation; do not introduce a
   reset flag, successor queue, alternate retry, or local timer.
 
-- [ ] Replace the diagnostic's hard-coded old batch/status assertions with
-      delivery identity, per-stream order, expiry, retry ownership, recovery, and
-      unchanged deadline assertions. Keep the synthetic cost model explicitly
-      labeled; if its deadline remains RED, retain that result as a diagnostic and
-      do not commit a failing regression or relax its deadline to claim success.
-- [ ] Run focused checks, review every touched file in full, remove affected
+- [x] Extract delivery, retry ownership, recovery, and notification contracts
+      into behavior-named regression tests. Keep the synthetic cost model
+      explicitly labeled and uncommitted while its deadline remains RED. If it
+      becomes useful shipping coverage, first replace its private batch/status
+      expectations with independent identity/order/expiry/deadline assertions.
+      Do not relax its deadline to claim success.
+- [x] Run focused checks, review every touched file in full, remove affected
       unused contracts/helpers/tests, and obtain fresh specification and quality
       reviews. Commit only coherent green lifecycle coverage, not the pending
       synthetic experiment or generated artifacts.
+- [x] Close the wider RTC/WS integration failures. Check the owned completion
+      boundary in `rtc-endpoint-fixture.ts` and the WS socket fixture before
+      changing assertions. Prove snapshot-floor rejection, negative-control
+      identity, actual delivery, ordering, and latest-value suppression through
+      the existing worker. Remove obsolete completion helpers rather than keep
+      two test paths. Investigate the browser-facade overage within the affected
+      production surface; report any genuinely necessary budget decision instead
+      of weakening the gate. Review this coherent follow-on fix independently.
+- [ ] Resolve the remaining facade-budget decision before accepting Slice 1.
+      The measured required payload is 207.16796875 KiB; the unchanged gate is
+      strict `<207 KiB`. Obtain explicit approval for a new ceiling, or select
+      a separately justified reduction within the affected production surface.
+      Do not treat approval of the lifecycle design as budget approval.
 
 Run the focused tests above together with:
 
 ```sh
-npx vitest run packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts packages/tests/shared/alm/work/al-work-handler.test.ts
+npx vitest run packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-work-selector.test.ts packages/tests/shared/alm/work/al-work-handler.test.ts packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts
 npx vitest run packages/tests/shared/webrtc/ws-rtc-control-handoff-latency.test.ts -t 'hands RTC admission past a full control page'
 npx tsc -p packages/shared/tsconfig.json --noEmit
 node scripts/check-tests-typecheck.mjs
+npx vitest run packages/tests/shared/rtc-snapshot-floor-admission.test.ts packages/tests/shared/ws-qos-policy.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts
 ```
 
 Run the new case separately as a diagnostic and retain its actual outcome;
@@ -150,7 +188,8 @@ npx vitest run packages/tests/shared/webrtc/ws-rtc-control-handoff-latency.test.
 ```
 
 **Exit:** Green lifecycle/finite-backlog recovery tests, original handoff behavior
-green, no per-commit rewind, and reviewed committed-work ownership. The synthetic
+green, affected RTC/WS integration and bundle checks green, no per-commit rewind,
+and reviewed committed-work ownership. The synthetic
 deadline result is explicitly reported, not used alone to select continuation.
 
 ## Slice 2: Measure residual delay and evaluate bounded continuation

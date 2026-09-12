@@ -1,7 +1,11 @@
 # ALM committed-work progress design
 
-**Status:** Design selected by critical review for PR #566; not implemented by
-this document. The user requested analysis, a written plan, and publication.
+**Status:** Selected design under implementation in PR #566. The landed PR #567
+supplies replay notifications and grouped reads. The branch's scan-progress
+correction, RTC/WS integration fixes, and semantic negative tests are reviewed.
+Local semantic and ordinary native-browser checks pass. An explicit facade-budget
+decision, native performance proof, and the complete RTC lifecycle proof remain
+outstanding.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
@@ -9,7 +13,7 @@ delivery, starving ordinary recovery, or introducing a second scheduler.
 **Plan:** [Implementation plan](../plans/2026-09-12-alm-committed-work-progress-plan.md).
 This design supersedes the earlier mandatory exact-successor recommendation in
 the [RTC baseline plan](../plans/2026-08-06-rallar-rtc-performance-baseline-plan.md).
-It does not claim a valid RTC-B06 observation or approval to merge either PR.
+It does not claim a valid RTC-B06 observation or approval to merge PR #566.
 
 ## Decision
 
@@ -28,8 +32,8 @@ it. The selected lifecycle is:
    delay, evaluate the bounded, original-claims-first continuation below. If the
    simpler lifecycle meets acceptance, omit continuation and its extra API.
 
-The crucial revision is not merely propagating `wroteWork` into today's
-`commitWork()`: that method calls `restartScan()`. Repeated commits can keep
+The crucial revision is not merely propagating `wroteWork` into the previous
+`commitWork()`: that method called `restartScan()`. Repeated commits could keep
 resetting `NEW` to its first page, delaying later pages, `RETRY`, and expired
 `RESERVED` work. Preserve the existing cursor and cached page/CAS lifecycle;
 new rows behind the cursor become visible on the next natural rotation. Delete
@@ -56,11 +60,12 @@ implementation is insufficient. Withdraw the earlier stronger claim.
 
 Relevant owners, relative to the repository root:
 
-- `packages/shared/alm/inbound/al-inbound-message-runtime.ts`: `commitWork()`
-  rewinds the scan; `runInboundClaim()` loses the data replay's committed-work
-  information and runs control callbacks before any such notification.
-- `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`: one bounded
-  page plus serial eligibility checks; shares a probe observation with selection.
+- `packages/shared/alm/inbound/al-inbound-message-runtime.ts`: announces fresh,
+  retained, and replayed committed work before fallible control callbacks;
+  `commitWork()` no longer rewinds the scan.
+- `packages/shared/alm/inbound/al-inbound-work-selector.ts`: one state owner for
+  the bounded page, natural cursor rotation, and claimed readiness observations;
+  shares a probe observation with selection and preserves ordinary CAS authority.
 - `packages/shared/alm/work/al-work-handler.ts`: reserves the selected inventory
   before serial execution; owns batch bounds, wake, retry, and release lifecycle.
 - `packages/shared/alm/inbound/al-inbound-admission-store.ts` and
@@ -189,10 +194,9 @@ independent read/write number, gameplay SLO, or unlimited-load guarantee.
   affected support files under current repo guidance, not historical line caps.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
 - Keep implementation and proof in PR #566. Do not merge test-only experiments.
-- PR #567 owns related read-session/observation work. Reconcile its actual diff
-  and tests before reuse; do not cherry-pick its entire branch, silently close it,
-  or create a competing copy. Its scan-restart behavior needs the same fairness
-  correction. If relevant work lands on main, consume it and remove overlap.
+- PR #567's related read-session/observation work has landed and is incorporated
+  in this branch. Reuse it, retain fresh authority checks, and do not create a
+  competing copy. The scan-progress correction applies on top of that work.
 - Main may move. Record each measurement's source and environment; repair actual
   conflicts, but do not rebase a mergeable branch for `BEHIND` alone.
 - Keep generated profiles under `tmp/perf/`; do not commit them. Continue the
