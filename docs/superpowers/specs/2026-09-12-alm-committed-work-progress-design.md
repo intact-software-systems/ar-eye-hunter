@@ -196,6 +196,31 @@ evidence is bounded by a full upstream event tail. Classify that handoff before
 selecting another correction. Earlier delivery blocks returning is not full
 reconnect acceptance or evidence for successor continuation.
 
+An isolated native Chromium discriminator, separate from the application run,
+shows that a replacement can accept an old closed peer pair's answer and enter
+stable signaling, after which the existing `have-local-offer` condition would
+ignore its current answer. The normal control channel opens; the delayed-answer
+case remains connecting through a five-second observation despite one side's
+ICE reporting connected. Both cases use fully gathered ICE. This demonstrates a
+possible failure mechanism, not permanent failure or attribution to the retained
+all-scenarios capture. The complementary QueueBox/RTC diagnostic passes 2/2:
+a real conditional-write conflict retains the old answer until replacement,
+existing replay routes it to the current native, and the subsequent current
+answer completes dispatch but is ignored by QRtc. Its no-replacement control
+applies a second answer after starting a new local offer. Simulated native APIs
+prove routing and callback disposition, not convergence; an already-entered old
+callback remains outside that diagnostic. The throwaway characterization is
+archived outside the maintained suite, not shipped as a regression expectation.
+
+The AL envelope has existing reply-correlation fields, but RTC does not currently
+use them. The demonstrated cross-negotiation mechanism requires an explicit
+design decision before a correction: negotiate a narrow identity/correlation
+contract or choose a different peer-lifetime model. Introducing mandatory RTC
+correlation or changing peer lifetime is a separate protocol/compatibility
+decision, not an incidental measurement fix or authorization for additional
+fencing. The current no-additional-fencing constraint remains in force; no such
+correction has been selected or implemented.
+
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
 

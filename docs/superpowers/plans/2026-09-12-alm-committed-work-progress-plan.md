@@ -111,6 +111,38 @@ completeness remains unknown. Analyze the retained A-C signaling/claim/peer
 handoff before selecting a correction; do not rerun unchanged, widen deadlines,
 infer a storage cause, or treat this later failure as a B06 observation.
 
+The fixture's same-session close/restore/readiness sequence is consistent with
+the current contract. Exact signaling events cross native-peer replacement, but
+their subtype, native instance, and callback result are not joined in the
+retained capture. A separate isolated HeadlessChrome 153 probe confirms a possible
+mechanism: with fully gathered ICE, an old closed pair's answer is accepted by a
+replacement offerer. Its signaling state becomes stable, making the current
+answer ineligible under the existing state guard. The control channel opens;
+the delayed-answer channel remains connecting after a five-second observation,
+with offerer ICE checking and answerer ICE connected. This reproduces the state
+pattern, not the recorded failure's cause: the probe does not execute Rallar or
+QueueBox, and five seconds does not prove permanent failure.
+
+The separate QueueBox/service diagnostic now passes both controlled cases. A
+real competing admission-store commit forces pending admission; after peer
+replacement, existing replay dispatches the delayed answer to the current native
+instance. Both old and current answer claims complete, but QRtc ignores the
+current answer after the delayed answer has consumed its local-offer state. The
+no-replacement control applies both answers when its next offer starts after the
+first answer. This is actual service routing with simulated native APIs, not
+browser convergence or attribution to the retained run. Its focused tests,
+maintained test typecheck, and scoped static checks pass. The throwaway
+characterization is archived outside the maintained test suite, not committed
+as a test that would preserve this faulty behavior.
+
+There is now a demonstrated cross-negotiation failure mechanism. The next
+decision is whether to authorize explicit RTC negotiation correlation, possibly
+using existing AL reply-correlation fields, or choose a different peer-lifetime
+design. Neither is an incidental performance correction. No new correlation
+requirement, peer generation, fence, or protocol change is authorized by this
+evidence alone; preserve the maintainer's no-additional-fencing constraint until
+that design/compatibility decision is explicit.
+
 The maintainer explicitly approved raising only the browser facade ceiling to
 **strict `<208 KiB`**. The approval-time measurement was **207.16796875 KiB**;
 after the heartbeat correction at `1598ece11fd9955024b587b3c72c61aa688634de`,
@@ -704,13 +736,21 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       in-flight observations for WS/RTC/fallback respectively. This is a retained
       local correctness pass with censored native evidence, not a complete causal
       measurement, an isolated effect estimate, hosted repair, or RTC-B06 proof.
-- [ ] Classify the post-correction all-scenarios reconnect failure from its
-      retained current-participant signaling, claim, and peer diagnostics. Verify
-      the fixture's close/restore/readiness sequence against the current same-session
-      reconnect contract. Keep confirmed handoffs separate from missing censored
-      evidence; select one semantic reproduction or existing observation only
-      after identifying the remaining discriminator. No new runtime correction
-      or instrumentation is selected yet.
+- [x] Discriminate the post-correction reconnect failure's remaining handoff
+      question without rerunning the full matrix. Source verifies the same-session
+      fixture sequence. Existing QueueBox pending-admission/replacement tests pass
+      2/2 and prove current-native routing followed by stale-ignore of the current
+      answer; maintained typing covers 1,199 files with zero errors. The separate
+      native probe reproduces the channel/ICE state pattern. The original capture
+      remains causally unjoined, and a callback already entered on a retired peer
+      is outside this diagnostic. Archive the throwaway characterization; do not
+      retain a shipping test whose expectation protects the faulty behavior.
+- [ ] Obtain the explicit RTC protocol/peer-lifetime design decision before
+      implementing a cross-negotiation identity guard. Existing AL reply-correlation
+      fields are a possible reuse boundary, not an already active RTC contract.
+      Keep QueueBox/retry/lease ownership, no legacy, and no additional fencing
+      unchanged until a narrow revised design is approved. Do not represent the
+      mechanism as proven attribution of the retained browser failure.
 - [ ] Select continuation only when measured successor rediscovery remains a
       material contributor to an unmet acceptance condition and spare-capacity
       opportunities exist. If full batches/storage/callbacks dominate, document that
