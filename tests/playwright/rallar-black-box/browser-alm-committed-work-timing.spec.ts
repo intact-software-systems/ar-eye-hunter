@@ -8,6 +8,7 @@ import type {
     NativeAlmTimingWorkload
 } from './browser-alm-committed-work-timing-fixture.ts';
 import type {
+    NativeIndexedDbTimingDatabaseFilterProbe,
     NativeIndexedDbTimingDisposalProbe,
     NativeIndexedDbTimingPreCaptureTransactionProbe,
     NativeIndexedDbTimingSemanticsProbe
@@ -32,11 +33,14 @@ test('keeps native request outcomes distinct from terminal transaction outcomes'
 
     expect(result.durableCommittedValue).toBe('committed');
     expect(result.durableAbortedValue).toBeUndefined();
+    expect(result.structuredCloneLabel).toBe('opaque');
+    expect(result.structuredCloneValues).toEqual([3, 5, 8]);
+    expect(result.synchronousPutErrorName).toBe('DataCloneError');
     expect(result.successfulPutInAbortedTransaction).toBe(true);
     expect(result.transactionOutcomes).toEqual(expect.arrayContaining(['complete', 'abort']));
     expect(result.cursorRequestCount).toBe(2);
     expect(result.cursorIterationCount).toBe(2);
-    expect(result.totalIssuedRequestCount).toBe(7);
+    expect(result.totalIssuedRequestCount).toBe(8);
     expect(result.methodsRestored).toBe(true);
     expect(result.sampleCapacity).toBe(3);
     expect(result.droppedSampleCount).toBeGreaterThan(0);
@@ -73,6 +77,23 @@ test('preserves requests issued on transactions opened before capture', async ({
     expect(result.transactionOutcome).toBe('complete');
     expect(result.durableValue).toBe('persisted');
     expect(result.uncapturedPreCaptureRequestCount).toBe(1);
+    expect(result.methodsRestored).toBe(true);
+});
+
+test('retains database identity and excludes native timing from other databases', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate<NativeIndexedDbTimingDatabaseFilterProbe, string>(
+        async (moduleUrl) => {
+            const fixture: typeof import('./browser-native-indexeddb-timing-recorder.ts') = await import(moduleUrl);
+            return await fixture.runNativeIndexedDbTimingDatabaseFilterProbe(crypto.randomUUID());
+        },
+        `/@fs${NATIVE_INDEXED_DB_FIXTURE_PATH}`
+    );
+
+    expect(result.capturedDatabaseNames).toEqual([result.includedDatabaseName]);
+    expect(result.samples.length).toBeGreaterThan(0);
+    expect(result.samples.every((sample) => sample.databaseName === result.includedDatabaseName)).toBe(true);
+    expect(result.totalIssuedRequestCount).toBe(1);
     expect(result.methodsRestored).toBe(true);
 });
 
@@ -262,6 +283,19 @@ interface RetainedNativeAlmTimingArtifact {
     readonly results?: readonly NativeAlmTimingProbe[];
 }
 
+interface NativeAlmTimingArtifact {
+    readonly schema: 'rallar.native-alm-committed-work-timing.v1';
+    readonly runtimeBaseCommit: string;
+    readonly measurementCodeRevision: string;
+    readonly measuredTree: 'runtime-base-plus-measurement-instrumentation';
+    readonly hostEnvironment: {
+        readonly nodeVersion: string;
+        readonly platform: NodeJS.Platform;
+        readonly architecture: string;
+    };
+    readonly results: readonly NativeAlmTimingProbe[];
+}
+
 async function readRetainedResults(outputPath: string): Promise<readonly NativeAlmTimingProbe[]> {
     try {
         const artifact: RetainedNativeAlmTimingArtifact = JSON.parse(await readFile(outputPath, 'utf8'));
@@ -278,7 +312,7 @@ async function readRetainedResults(outputPath: string): Promise<readonly NativeA
     }
 }
 
-function toNativeAlmTimingArtifact(results: readonly NativeAlmTimingProbe[]) {
+function toNativeAlmTimingArtifact(results: readonly NativeAlmTimingProbe[]): NativeAlmTimingArtifact {
     return {
         schema: 'rallar.native-alm-committed-work-timing.v1',
         runtimeBaseCommit: process.env.RALLAR_ALM_NATIVE_TIMING_SOURCE ?? 'working-tree',

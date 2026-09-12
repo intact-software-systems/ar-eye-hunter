@@ -4,7 +4,10 @@
     "browser-alm-committed-work-observer.ts",
     "browser-alm-committed-work-timing-fixture.ts",
     "browser-alm-committed-work-timing.spec.ts",
-    "browser-native-indexeddb-timing-recorder.ts"
+    "browser-alm-mixed-live-durable-observer.spec.ts",
+    "browser-alm-mixed-live-durable-observer.ts",
+    "browser-native-indexeddb-timing-recorder.ts",
+    "full-stack-browser-alm-mixed-live-durable.spec.ts"
   ],
   "include": []
 }

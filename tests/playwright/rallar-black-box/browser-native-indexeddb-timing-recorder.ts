@@ -4,6 +4,7 @@ export type NativeIndexedDbTransactionOutcome = 'complete' | 'abort';
 
 export interface NativeIndexedDbRequestTimingSample {
     readonly kind: 'request';
+    readonly databaseName: string;
     readonly transactionId: number;
     readonly storeName: string;
     readonly operation: NativeIndexedDbRequestOperation;
@@ -14,6 +15,7 @@ export interface NativeIndexedDbRequestTimingSample {
 
 export interface NativeIndexedDbTransactionTimingSample {
     readonly kind: 'transaction';
+    readonly databaseName: string;
     readonly transactionId: number;
     readonly storeNames: readonly string[];
     readonly mode: IDBTransactionMode;
@@ -31,6 +33,7 @@ export type NativeIndexedDbTimingSample =
     | NativeIndexedDbTransactionTimingSample;
 
 export interface NativeIndexedDbRequestTimingSummary {
+    readonly databaseName: string;
     readonly operation: NativeIndexedDbRequestOperation;
     readonly outcome: NativeIndexedDbRequestOutcome;
     readonly sampleCount: number;
@@ -41,6 +44,7 @@ export interface NativeIndexedDbRequestTimingSummary {
 }
 
 export interface NativeIndexedDbTransactionTimingSummary {
+    readonly databaseName: string;
     readonly storeNames: readonly string[];
     readonly mode: IDBTransactionMode;
     readonly outcome: NativeIndexedDbTransactionOutcome;
@@ -51,9 +55,18 @@ export interface NativeIndexedDbTransactionTimingSummary {
     readonly maxMs: number;
 }
 
+interface NativeIndexedDbDurationSummary {
+    readonly sampleCount: number;
+    readonly p50Ms: number;
+    readonly p95Ms: number;
+    readonly p99Ms: number;
+    readonly maxMs: number;
+}
+
 export interface NativeIndexedDbTimingSnapshot {
     readonly sampleCapacity: number;
     readonly samples: readonly NativeIndexedDbTimingSample[];
+    readonly capturedDatabaseNames: readonly string[];
     readonly droppedSampleCount: number;
     readonly uncapturedInFlightObservationCount: number;
     readonly uncapturedPreCaptureRequestCount: number;
@@ -69,6 +82,9 @@ export interface NativeIndexedDbTimingSnapshot {
 export interface NativeIndexedDbTimingSemanticsProbe extends NativeIndexedDbTimingSnapshot {
     readonly durableCommittedValue: string | undefined;
     readonly durableAbortedValue: string | undefined;
+    readonly structuredCloneLabel: string | undefined;
+    readonly structuredCloneValues: readonly number[];
+    readonly synchronousPutErrorName: string | null;
     readonly methodsRestored: boolean;
 }
 
@@ -89,8 +105,15 @@ export interface NativeIndexedDbTimingPreCaptureTransactionProbe {
     readonly methodsRestored: boolean;
 }
 
+export interface NativeIndexedDbTimingDatabaseFilterProbe extends NativeIndexedDbTimingSnapshot {
+    readonly includedDatabaseName: string;
+    readonly excludedDatabaseName: string;
+    readonly methodsRestored: boolean;
+}
+
 interface NativeIndexedDbTransactionState {
     readonly captureGeneration: number;
+    readonly databaseName: string;
     readonly transactionId: number;
     readonly storeNames: readonly string[];
     readonly mode: IDBTransactionMode;
@@ -105,8 +128,10 @@ interface NativeIndexedDbTransactionState {
 
 export class NativeIndexedDbTimingRecorder {
     readonly #sampleCapacity: number;
+    readonly #databaseName: string | undefined;
     readonly #samples: NativeIndexedDbTimingSample[] = [];
     readonly #transactions = new WeakMap<IDBTransaction, NativeIndexedDbTransactionState>();
+    readonly #excludedTransactions = new WeakSet<IDBTransaction>();
     readonly #transactionOutcomes = new Set<NativeIndexedDbTransactionOutcome>();
     readonly #activeObservationCancellations = new Set<() => void>();
     readonly #originalTransaction = IDBDatabase.prototype.transaction;
@@ -127,11 +152,15 @@ export class NativeIndexedDbTimingRecorder {
     #totalIssuedRequestCount = 0;
     #recording = false;
 
-    constructor(sampleCapacity: number) {
+    constructor(sampleCapacity: number, databaseName?: string) {
         if (!Number.isSafeInteger(sampleCapacity) || sampleCapacity < 1) {
             throw new RangeError('Native IndexedDB timing sample capacity must be a positive safe integer');
         }
+        if (databaseName !== undefined && databaseName.length === 0) {
+            throw new RangeError('Native IndexedDB timing database name must not be empty');
+        }
         this.#sampleCapacity = sampleCapacity;
+        this.#databaseName = databaseName;
     }
 
     start(): void {
@@ -177,6 +206,7 @@ export class NativeIndexedDbTimingRecorder {
         return {
             sampleCapacity: this.#sampleCapacity,
             samples: [...this.#samples],
+            capturedDatabaseNames: [...new Set(this.#samples.map((sample) => sample.databaseName))].sort(),
             droppedSampleCount: this.#droppedSampleCount,
             uncapturedInFlightObservationCount: this.#uncapturedInFlightObservationCount,
             uncapturedPreCaptureRequestCount: this.#uncapturedPreCaptureRequestCount,
@@ -218,7 +248,11 @@ export class NativeIndexedDbTimingRecorder {
         } as typeof IDBObjectStore.prototype.get;
 
         const originalPut = this.#originalPut;
-        IDBObjectStore.prototype.put = function (this: IDBObjectStore, value: unknown, key?: IDBValidKey) {
+        IDBObjectStore.prototype.put = function (
+            this: IDBObjectStore,
+            value: Parameters<IDBObjectStore['put']>[0],
+            key?: IDBValidKey
+        ) {
             const startedAtMs = performance.now();
             const request = key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
             recorder.observeRequest({ store: this, request, operation: 'put', startedAtMs });
@@ -269,8 +303,13 @@ export class NativeIndexedDbTimingRecorder {
     }
 
     private observeTransaction(transaction: IDBTransaction): void {
+        if (this.#databaseName !== undefined && transaction.db.name !== this.#databaseName) {
+            this.#excludedTransactions.add(transaction);
+            return;
+        }
         const state: NativeIndexedDbTransactionState = {
             captureGeneration: this.#captureGeneration,
+            databaseName: transaction.db.name,
             transactionId: this.#nextTransactionId,
             storeNames: [...transaction.objectStoreNames],
             mode: transaction.mode,
@@ -312,11 +351,11 @@ export class NativeIndexedDbTimingRecorder {
         }>
     ): void {
         const { store, request, operation, startedAtMs } = input;
-        this.#totalIssuedRequestCount += 1;
         const state = this.findCapturedTransaction(store.transaction);
         if (state === undefined) {
             return;
         }
+        this.#totalIssuedRequestCount += 1;
         state.requestCount += 1;
         let cancel = () => {};
         const success = () => {
@@ -327,6 +366,7 @@ export class NativeIndexedDbTimingRecorder {
             }
             this.recordSample({
                 kind: 'request',
+                databaseName: state.databaseName,
                 transactionId: state.transactionId,
                 storeName: store.name,
                 operation,
@@ -339,6 +379,7 @@ export class NativeIndexedDbTimingRecorder {
             cancel();
             this.recordSample({
                 kind: 'request',
+                databaseName: state.databaseName,
                 transactionId: state.transactionId,
                 storeName: store.name,
                 operation,
@@ -356,12 +397,12 @@ export class NativeIndexedDbTimingRecorder {
     }
 
     private observeCursor(store: IDBObjectStore, request: IDBRequest<IDBCursorWithValue | null>): void {
-        this.#totalIssuedRequestCount += 1;
-        this.#cursorRequestCount += 1;
         const state = this.findCapturedTransaction(store.transaction);
         if (state === undefined) {
             return;
         }
+        this.#totalIssuedRequestCount += 1;
+        this.#cursorRequestCount += 1;
         state.requestCount += 1;
         state.cursorRequestCount += 1;
         let requestSucceeded = false;
@@ -376,12 +417,12 @@ export class NativeIndexedDbTimingRecorder {
                 this.#cursorIterationCount += 1;
             }
         };
-        const failure = () => cancel();
+        const cancelOnError = () => cancel();
         request.addEventListener('success', success);
-        request.addEventListener('error', failure, { once: true });
+        request.addEventListener('error', cancelOnError, { once: true });
         const trackedCancel = this.trackObservation(() => {
             request.removeEventListener('success', success);
-            request.removeEventListener('error', failure);
+            request.removeEventListener('error', cancelOnError);
         });
         cancel = () => {
             trackedCancel();
@@ -391,27 +432,30 @@ export class NativeIndexedDbTimingRecorder {
     }
 
     private observeUntimedRequest(transaction: IDBTransaction, request: IDBRequest): void {
-        this.#totalIssuedRequestCount += 1;
         const state = this.findCapturedTransaction(transaction);
         if (state === undefined) {
             return;
         }
+        this.#totalIssuedRequestCount += 1;
         state.requestCount += 1;
         let cancel = () => {};
         const success = () => {
             cancel();
             state.successfulRequestCount += 1;
         };
-        const failure = () => cancel();
+        const cancelOnError = () => cancel();
         request.addEventListener('success', success, { once: true });
-        request.addEventListener('error', failure, { once: true });
+        request.addEventListener('error', cancelOnError, { once: true });
         cancel = this.trackObservation(() => {
             request.removeEventListener('success', success);
-            request.removeEventListener('error', failure);
+            request.removeEventListener('error', cancelOnError);
         });
     }
 
     private findCapturedTransaction(transaction: IDBTransaction): NativeIndexedDbTransactionState | undefined {
+        if (this.#excludedTransactions.has(transaction)) {
+            return undefined;
+        }
         const state = this.#transactions.get(transaction);
         if (state === undefined || state.captureGeneration !== this.#captureGeneration) {
             this.#uncapturedPreCaptureRequestCount += 1;
@@ -450,6 +494,7 @@ export class NativeIndexedDbTimingRecorder {
         }
         this.recordSample({
             kind: 'transaction',
+            databaseName: state.databaseName,
             transactionId: state.transactionId,
             storeNames: state.storeNames,
             mode: state.mode,
@@ -476,6 +521,7 @@ function computeNativeIndexedDbRequestSummaries(
     samples: readonly NativeIndexedDbTimingSample[]
 ): readonly NativeIndexedDbRequestTimingSummary[] {
     const groups = new Map<string, {
+        databaseName: string;
         operation: NativeIndexedDbRequestOperation;
         outcome: NativeIndexedDbRequestOutcome;
         durations: number[];
@@ -484,14 +530,20 @@ function computeNativeIndexedDbRequestSummaries(
         if (sample.kind !== 'request') {
             continue;
         }
-        const key = `${sample.operation}:${sample.outcome}`;
-        const group = groups.get(key) ?? { operation: sample.operation, outcome: sample.outcome, durations: [] };
+        const key = `${sample.databaseName}:${sample.operation}:${sample.outcome}`;
+        const group = groups.get(key) ?? {
+            databaseName: sample.databaseName,
+            operation: sample.operation,
+            outcome: sample.outcome,
+            durations: []
+        };
         group.durations.push(sample.durationMs);
         groups.set(key, group);
     }
     return [...groups.values()].map((group) => ({
         operation: group.operation,
         outcome: group.outcome,
+        databaseName: group.databaseName,
         ...toNativeDurationSummary(group.durations)
     }));
 }
@@ -500,6 +552,7 @@ function computeNativeIndexedDbTransactionSummaries(
     samples: readonly NativeIndexedDbTimingSample[]
 ): readonly NativeIndexedDbTransactionTimingSummary[] {
     const groups = new Map<string, {
+        databaseName: string;
         storeNames: readonly string[];
         mode: IDBTransactionMode;
         outcome: NativeIndexedDbTransactionOutcome;
@@ -509,8 +562,9 @@ function computeNativeIndexedDbTransactionSummaries(
         if (sample.kind !== 'transaction') {
             continue;
         }
-        const key = JSON.stringify([sample.storeNames, sample.mode, sample.outcome]);
+        const key = JSON.stringify([sample.databaseName, sample.storeNames, sample.mode, sample.outcome]);
         const group = groups.get(key) ?? {
+            databaseName: sample.databaseName,
             storeNames: sample.storeNames,
             mode: sample.mode,
             outcome: sample.outcome,
@@ -521,13 +575,14 @@ function computeNativeIndexedDbTransactionSummaries(
     }
     return [...groups.values()].map((group) => ({
         storeNames: group.storeNames,
+        databaseName: group.databaseName,
         mode: group.mode,
         outcome: group.outcome,
         ...toNativeDurationSummary(group.durations)
     }));
 }
 
-function toNativeDurationSummary(durations: readonly number[]) {
+function toNativeDurationSummary(durations: readonly number[]): NativeIndexedDbDurationSummary {
     const sorted = [...durations].sort((left, right) => left - right);
     return {
         sampleCount: sorted.length,
@@ -548,8 +603,11 @@ export async function runNativeIndexedDbTimingSemanticsProbe(
     const database = await openProbeDatabase(`playwright-indexeddb-timing-${databaseId}`);
     const recorder = new NativeIndexedDbTimingRecorder(3);
     recorder.start();
+    let synchronousPutErrorName: string | null = null;
     try {
         await writeProbeValue(database, 'committed', 'committed');
+        await writeStructuredCloneProbeValue(database);
+        synchronousPutErrorName = await observeInvalidPutError(database);
         await writeThenAbortProbeValue(database, 'aborted', 'aborted');
         await readFirstProbeCursor(database);
         await exerciseProbeRequestInventory(database);
@@ -562,6 +620,8 @@ export async function runNativeIndexedDbTimingSemanticsProbe(
             ...recorder.snapshot(),
             durableCommittedValue: await readProbeValue(database, 'committed'),
             durableAbortedValue: await readProbeValue(database, 'aborted'),
+            ...await readStructuredCloneProbeValue(database),
+            synchronousPutErrorName,
             methodsRestored: recorder.methodsRestored
         };
     }
@@ -632,6 +692,36 @@ export async function runNativeIndexedDbTimingPreCaptureTransactionProbe(
     }
 }
 
+export async function runNativeIndexedDbTimingDatabaseFilterProbe(
+    databaseId: string
+): Promise<NativeIndexedDbTimingDatabaseFilterProbe> {
+    const includedDatabaseName = `playwright-indexeddb-filter-included-${databaseId}`;
+    const excludedDatabaseName = `playwright-indexeddb-filter-excluded-${databaseId}`;
+    const includedDatabase = await openProbeDatabase(includedDatabaseName);
+    const excludedDatabase = await openProbeDatabase(excludedDatabaseName);
+    const recorder = new NativeIndexedDbTimingRecorder(20, includedDatabaseName);
+    recorder.start();
+    try {
+        await writeProbeValue(includedDatabase, 'included', 'included');
+        await writeProbeValue(excludedDatabase, 'excluded', 'excluded');
+    }
+    finally {
+        recorder.stop();
+    }
+    try {
+        return {
+            ...recorder.snapshot(),
+            includedDatabaseName,
+            excludedDatabaseName,
+            methodsRestored: recorder.methodsRestored
+        };
+    }
+    finally {
+        includedDatabase.close();
+        excludedDatabase.close();
+    }
+}
+
 async function openProbeDatabase(dbName: string): Promise<IDBDatabase> {
     const request = indexedDB.open(dbName, 1);
     request.addEventListener('upgradeneeded', () => {
@@ -645,6 +735,28 @@ async function writeProbeValue(database: IDBDatabase, key: string, value: string
     const transaction = database.transaction('entries', 'readwrite');
     await readRequest(transaction.objectStore('entries').put({ value }, key));
     await readTransaction(transaction);
+}
+
+async function writeStructuredCloneProbeValue(database: IDBDatabase): Promise<void> {
+    const transaction = database.transaction('entries', 'readwrite');
+    const values = new Uint8Array([3, 5, 8]);
+    await readRequest(transaction.objectStore('entries').put({ label: 'opaque', values }, 'structured-clone'));
+    values[0] = 99;
+    await readTransaction(transaction);
+}
+
+async function observeInvalidPutError(database: IDBDatabase): Promise<string | null> {
+    const transaction = database.transaction('entries', 'readwrite');
+    const completion = readTransaction(transaction);
+    let errorName: string | null = null;
+    try {
+        transaction.objectStore('entries').put({ value: () => 'not cloneable' }, 'invalid');
+    }
+    catch (error) {
+        errorName = error instanceof DOMException ? error.name : error instanceof Error ? error.name : String(error);
+    }
+    await completion;
+    return errorName;
 }
 
 async function writeThenAbortProbeValue(database: IDBDatabase, key: string, value: string): Promise<void> {
@@ -688,6 +800,23 @@ async function readProbeValue(database: IDBDatabase, key: string): Promise<strin
     const row = await readRequest<{ readonly value: string; } | undefined>(transaction.objectStore('entries').get(key));
     await readTransaction(transaction);
     return row?.value;
+}
+
+async function readStructuredCloneProbeValue(
+    database: IDBDatabase
+): Promise<Pick<NativeIndexedDbTimingSemanticsProbe, 'structuredCloneLabel' | 'structuredCloneValues'>> {
+    const transaction = database.transaction('entries', 'readonly');
+    const row = await readRequest<
+        {
+            readonly label: string;
+            readonly values: Uint8Array;
+        } | undefined
+    >(transaction.objectStore('entries').get('structured-clone'));
+    await readTransaction(transaction);
+    return {
+        structuredCloneLabel: row?.label,
+        structuredCloneValues: [...(row?.values ?? [])]
+    };
 }
 
 async function readRequest<T>(request: IDBRequest<T>): Promise<T> {
