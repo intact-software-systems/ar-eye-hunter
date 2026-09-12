@@ -47,7 +47,6 @@ const clientModuleUrl = `/@fs${
 const CORRECTNESS_DEADLINE_MS = 30_000;
 const DURABLE_BURST_COUNT = 64;
 const LIVE_SEQUENCE_COUNT = 24;
-const OVERLAP_PROBE_SEQUENCES = new Set([0, 7, 15, 23]);
 const DURABLE_TOPIC_ID = 'room.mixed-durable';
 const DURABLE_TYPE_ID = 'room.mixed-durable.v1';
 const LIVE_LANE_ID = 'realtime';
@@ -119,7 +118,7 @@ interface MixedScenarioCleanupFailure {
 }
 
 interface MixedScenarioArtifact {
-    readonly schema: 'rallar.browser-alm-mixed-live-durable-proof.v2';
+    readonly schema: 'rallar.browser-alm-mixed-live-durable-proof.v3';
     readonly executionBoundary: MixedLiveDurableExecutionBoundary;
     readonly sources: {
         readonly runtime: { readonly identity: string; readonly verification: 'operator-supplied-unverified'; };
@@ -136,7 +135,7 @@ interface MixedScenarioArtifact {
     readonly workload: {
         readonly durableBurstCount: number;
         readonly liveSequenceCount: number;
-        readonly overlapProbeSequences: readonly number[];
+        readonly liveCallbackObservation: 'every received room-scoped public live callback';
         readonly correctnessDeadlineMs: number;
         readonly durableTypeId: string;
         readonly liveLaneId: string;
@@ -272,7 +271,7 @@ test.describe('browser ALM mixed live and durable progress', () => {
             observations
         });
         const artifact: MixedScenarioArtifact = {
-            schema: 'rallar.browser-alm-mixed-live-durable-proof.v2',
+            schema: 'rallar.browser-alm-mixed-live-durable-proof.v3',
             executionBoundary,
             sources: {
                 runtime: {
@@ -295,7 +294,7 @@ test.describe('browser ALM mixed live and durable progress', () => {
             workload: {
                 durableBurstCount: DURABLE_BURST_COUNT,
                 liveSequenceCount: LIVE_SEQUENCE_COUNT,
-                overlapProbeSequences: [...OVERLAP_PROBE_SEQUENCES],
+                liveCallbackObservation: 'every received room-scoped public live callback',
                 correctnessDeadlineMs: CORRECTNESS_DEADLINE_MS,
                 durableTypeId: DURABLE_TYPE_ID,
                 liveLaneId: LIVE_LANE_ID,
@@ -516,7 +515,6 @@ async function sendLiveSequence(page: Page, roomId: string): Promise<MixedLiveSe
                 identity: `live-${sequence}`,
                 sequence,
                 sentAtEpochMs: Date.now(),
-                probeOverlap: input.overlapSequences.includes(sequence),
                 roomRef: room.roomRef
             }, { openTimeoutMs: input.timeoutMs });
             if (sent.status === 'sent' || sent.status === 'partial') {
@@ -529,7 +527,6 @@ async function sendLiveSequence(page: Page, roomId: string): Promise<MixedLiveSe
         roomId,
         laneId: LIVE_LANE_ID,
         sequenceCount: LIVE_SEQUENCE_COUNT,
-        overlapSequences: [...OVERLAP_PROBE_SEQUENCES],
         timeoutMs: CORRECTNESS_DEADLINE_MS
     });
 }
@@ -554,7 +551,6 @@ async function reconnectAndSend(page: Page, roomId: string): Promise<MixedReconn
             identity: 'post-reconnect',
             sequence: input.postReconnectSequence,
             sentAtEpochMs: Date.now(),
-            probeOverlap: false,
             roomRef: room.roomRef
         }, { openTimeoutMs: input.timeoutMs });
         return {

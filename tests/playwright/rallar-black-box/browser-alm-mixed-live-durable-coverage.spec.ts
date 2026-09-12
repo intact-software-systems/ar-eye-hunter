@@ -121,6 +121,26 @@ test('rejects an all-refused capture with no returned-claim overlap and censored
     ]));
 });
 
+test('does not accept a returned-claim witness for a non-admitted identity', () => {
+    const input = validCoverageInput();
+    input.receiverObservation = observation({
+        durableCallbacks: [{ identity: 'admitted' }],
+        completedDurableIdentities: ['admitted'],
+        queuePhases: [
+            { identity: 'admitted', phase: 'queue-read' },
+            { identity: 'admitted', phase: 'claim-reserved' },
+            { identity: 'admitted', phase: 'release-completed' }
+        ],
+        liveObservations: [{ overlappingReturnedClaimIdentities: ['refused'] }]
+    });
+    input.observations = { a: observation(), b: input.receiverObservation, c: observation() };
+
+    const coverage = evaluateMixedLiveDurableCoverage(input);
+
+    expect(coverage.verdict).toBe('failed');
+    expect(coverage.reasons).toContain('no-admitted-overlap');
+});
+
 test('accepts retained pending admission completion beside a clean refused identity', () => {
     const input = validCoverageInput();
     const coverage = evaluateMixedLiveDurableCoverage(input);

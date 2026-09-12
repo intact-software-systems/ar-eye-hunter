@@ -13,7 +13,6 @@ export interface MixedLivePayload {
     readonly identity: string;
     readonly sequence: number;
     readonly sentAtEpochMs: number;
-    readonly probeOverlap: boolean;
     readonly roomRef: GroupRef;
 }
 
@@ -183,8 +182,7 @@ function observeLiveMessage(input: ObserveLiveMessageInput): void {
         identity: message.data.identity,
         sequence: message.data.sequence,
         sentAtEpochMs: message.data.sentAtEpochMs,
-        receivedAtEpochMs: message.receivedAtEpochMs,
-        markedForOverlap: message.data.probeOverlap
+        receivedAtEpochMs: message.receivedAtEpochMs
     });
 }
 

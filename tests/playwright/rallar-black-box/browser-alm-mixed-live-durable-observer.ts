@@ -70,7 +70,6 @@ export interface MixedLiveDurableLiveObservation {
     readonly callbackEndedAtEpochMs: number;
     readonly publicReceiveAgeMs: number;
     readonly callbackAgeMs: number;
-    readonly markedForOverlap: boolean;
     readonly overlappingReturnedClaimIdentities: readonly string[];
     readonly overlappingReturnedClaimCount: number;
     readonly overlapBoundary: 'returned valid dispatch claim before live callback; durable callback not started';
@@ -93,7 +92,7 @@ export interface MixedLiveDurableTerminalIdentity {
 }
 
 export interface MixedLiveDurableObservationSnapshot {
-    readonly schema: 'rallar.browser-alm-mixed-live-durable-observation.v1';
+    readonly schema: 'rallar.browser-alm-mixed-live-durable-observation.v2';
     readonly environment: {
         readonly userAgent: string;
         readonly hardwareConcurrency: number;
@@ -127,7 +126,6 @@ export interface MixedLiveDurableObservationSnapshot {
     readonly droppedReturnedClaimCount: number;
     readonly droppedCompletedIdentityCount: number;
     readonly queueHookModuleIdentityObserved: boolean;
-    readonly callbackOverlapProbeCount: number;
     readonly observationSampleCapacity: number;
     readonly returnedClaimCapacity: number;
     readonly terminalReadbackRowCapacity: number;
@@ -141,7 +139,9 @@ export interface MixedLiveDurableObservationSnapshot {
 
 export interface MixedLiveDurableObservationSemanticsProbe {
     readonly noClaimObservation: MixedLiveDurableLiveObservation;
+    readonly expiredClaimObservation: MixedLiveDurableLiveObservation;
     readonly overlapObservation: MixedLiveDurableLiveObservation;
+    readonly afterCallbackStartedObservation: MixedLiveDurableLiveObservation;
     readonly queuePhases: readonly MixedLiveDurableQueuePhase[];
     readonly completedAfterParent: readonly string[];
     readonly completedAfterRetry: readonly string[];
@@ -166,7 +166,6 @@ export interface ObserveMixedLiveMessageInput {
     readonly sequence: number;
     readonly sentAtEpochMs: number;
     readonly receivedAtEpochMs: number;
-    readonly markedForOverlap: boolean;
 }
 
 export interface ObserveMixedDurableCallbackInput {
@@ -231,7 +230,6 @@ export class MixedLiveDurableObservation {
     #droppedMarkedIdentityCount = 0;
     #droppedReturnedClaimCount = 0;
     #droppedCompletedIdentityCount = 0;
-    #callbackOverlapProbeCount = 0;
     #terminalReadbackObservationCount = 0;
     #terminalReadbackScannedRowCount = 0;
     #terminalReadbackCensoredByRowCapacity = false;
@@ -290,12 +288,7 @@ export class MixedLiveDurableObservation {
 
     observeLiveMessage(input: ObserveMixedLiveMessageInput): MixedLiveDurableLiveObservation {
         const callbackStartedAtEpochMs = Date.now();
-        const overlappingReturnedClaimIdentities = input.markedForOverlap
-            ? this.readOverlappingReturnedClaims(callbackStartedAtEpochMs)
-            : [];
-        if (input.markedForOverlap) {
-            this.#callbackOverlapProbeCount += 1;
-        }
+        const overlappingReturnedClaimIdentities = this.readOverlappingReturnedClaims(callbackStartedAtEpochMs);
         const observation: MixedLiveDurableLiveObservation = {
             ...input,
             callbackStartedAtEpochMs,
@@ -360,7 +353,7 @@ export class MixedLiveDurableObservation {
 
     snapshot(): MixedLiveDurableObservationSnapshot {
         return {
-            schema: 'rallar.browser-alm-mixed-live-durable-observation.v1',
+            schema: 'rallar.browser-alm-mixed-live-durable-observation.v2',
             ...this.readEnvironmentSnapshot(),
             inboundNamespace: this.#inboundNamespace ?? null,
             databaseName: this.#databaseName,
@@ -423,7 +416,6 @@ export class MixedLiveDurableObservation {
         | 'droppedReturnedClaimCount'
         | 'droppedCompletedIdentityCount'
         | 'queueHookModuleIdentityObserved'
-        | 'callbackOverlapProbeCount'
         | 'observationSampleCapacity'
         | 'returnedClaimCapacity'
     > {
@@ -437,7 +429,6 @@ export class MixedLiveDurableObservation {
             droppedReturnedClaimCount: this.#droppedReturnedClaimCount,
             droppedCompletedIdentityCount: this.#droppedCompletedIdentityCount,
             queueHookModuleIdentityObserved: this.#queueHookModuleIdentityObserved,
-            callbackOverlapProbeCount: this.#callbackOverlapProbeCount,
             observationSampleCapacity: OBSERVATION_SAMPLE_CAPACITY,
             returnedClaimCapacity: OBSERVATION_SAMPLE_CAPACITY
         };
@@ -797,6 +788,7 @@ interface MixedLiveDurableInitialDispatch {
 
 interface MixedLiveDurableClaimProbe {
     readonly overlapObservation: MixedLiveDurableLiveObservation;
+    readonly afterCallbackStartedObservation: MixedLiveDurableLiveObservation;
     readonly completedAfterRetry: readonly string[];
     readonly afterRetryObservation: MixedLiveDurableLiveObservation;
 }
@@ -809,6 +801,7 @@ export async function runMixedLiveDurableObservationSemanticsProbe(
     let snapshot: MixedLiveDurableObservationSnapshot | undefined;
     try {
         const initial = await observeInitialDispatch(context);
+        const expiredClaimObservation = await observeExpiredDispatchClaim(context);
         const completedAfterParent = await observeCompletedAdmissionParent(context);
         const claim = await observeDispatchClaimAndRetry(context, initial);
         await observeCompletedDispatchEffect(context);
@@ -816,6 +809,7 @@ export async function runMixedLiveDurableObservationSemanticsProbe(
         input = {
             initial,
             claim,
+            expiredClaimObservation,
             completedAfterParent,
             doubleInstallationRejected,
             snapshot: context.observation.snapshot()
@@ -840,7 +834,7 @@ function createMixedLiveDurableSemanticsContext(databaseId: string): MixedLiveDu
         databaseName,
         storeName,
         durableTypeId: 'room.mixed-durable.v1',
-        markedDurableIdentities: [identity, 'refused-probe'],
+        markedDurableIdentities: [identity, 'expired-probe', 'refused-probe'],
         inboundNamespace
     });
     const queue = new IndexedDbQueueBox({ dbName: databaseName, storeName, observer });
@@ -856,8 +850,7 @@ async function observeInitialDispatch(
         identity: 'live-probe',
         sequence: 1,
         sentAtEpochMs: context.nowMs,
-        receivedAtEpochMs: Date.now(),
-        markedForOverlap: true
+        receivedAtEpochMs: Date.now()
     });
     const page = await context.queue.readWorkPage({
         typeId: write.entry.typeId,
@@ -901,6 +894,42 @@ async function observeCompletedAdmissionParent(
     return context.observation.snapshot().completedDurableIdentities;
 }
 
+async function observeExpiredDispatchClaim(
+    context: MixedLiveDurableSemanticsContext
+): Promise<MixedLiveDurableLiveObservation> {
+    const identity = 'expired-probe';
+    const write = computeDispatchEntry(context, `effect-${identity}`, identity);
+    await context.queue.enqueueIfAbsent(write.entry);
+    const page = await context.queue.readWorkPage({
+        typeId: write.entry.typeId,
+        status: EntityStatus.NEW,
+        maxToRead: 8,
+        cursor: null
+    });
+    const reserved = await context.queue.reserveEntries({
+        typeIds: new Set([write.entry.typeId]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: page.entries.filter((entry) => entry.key.contextId === write.entry.key.contextId)
+    });
+    const dateNow = Date.now;
+    let observation: MixedLiveDurableLiveObservation;
+    try {
+        Reflect.set(Date, 'now', () => dateNow() + AL_INBOUND_WORK_LEASE_MS + 1);
+        observation = context.observation.observeLiveMessage({
+            identity: 'live-probe-after-expiry',
+            sequence: 2,
+            sentAtEpochMs: context.nowMs,
+            receivedAtEpochMs: dateNow()
+        });
+    }
+    finally {
+        Reflect.set(Date, 'now', dateNow);
+        await context.queue.releaseEntries([...reserved.values()], { status: EntityStatus.RETRY, delayMs: 30_000 });
+    }
+    return observation;
+}
+
 async function observeDispatchClaimAndRetry(
     context: MixedLiveDurableSemanticsContext,
     initial: MixedLiveDurableInitialDispatch
@@ -913,21 +942,30 @@ async function observeDispatchClaimAndRetry(
     });
     const overlapObservation = context.observation.observeLiveMessage({
         identity: 'live-probe-after-claim',
-        sequence: 2,
+        sequence: 3,
         sentAtEpochMs: context.nowMs,
-        receivedAtEpochMs: Date.now(),
-        markedForOverlap: true
+        receivedAtEpochMs: Date.now()
+    });
+    context.observation.observeDurableCallback({
+        identity: context.identity,
+        sentAtEpochMs: context.nowMs,
+        receivedAtEpochMs: Date.now()
+    });
+    const afterCallbackStartedObservation = context.observation.observeLiveMessage({
+        identity: 'live-probe-after-durable-callback',
+        sequence: 4,
+        sentAtEpochMs: context.nowMs,
+        receivedAtEpochMs: Date.now()
     });
     await context.queue.releaseEntries([...reserved.values()], { status: EntityStatus.RETRY, delayMs: 30_000 });
     const completedAfterRetry = context.observation.snapshot().completedDurableIdentities;
     const afterRetryObservation = context.observation.observeLiveMessage({
         identity: 'live-probe-after-retry',
-        sequence: 3,
+        sequence: 5,
         sentAtEpochMs: context.nowMs,
-        receivedAtEpochMs: Date.now(),
-        markedForOverlap: true
+        receivedAtEpochMs: Date.now()
     });
-    return { overlapObservation, completedAfterRetry, afterRetryObservation };
+    return { overlapObservation, afterCallbackStartedObservation, completedAfterRetry, afterRetryObservation };
 }
 
 async function observeCompletedDispatchEffect(context: MixedLiveDurableSemanticsContext): Promise<void> {
@@ -950,13 +988,17 @@ async function observeCompletedDispatchEffect(context: MixedLiveDurableSemantics
     await context.queue.releaseEntries([...reserved.values()], { status: EntityStatus.COMPLETED, delayMs: null });
 }
 
-function computeDispatchEntry(context: MixedLiveDurableSemanticsContext, effectId: string) {
+function computeDispatchEntry(
+    context: MixedLiveDurableSemanticsContext,
+    effectId: string,
+    identity: string = context.identity
+) {
     return computeALInboundWorkEntry({
         namespace: context.inboundNamespace,
         effectId,
         payload: {
             kind: 'dispatch-local',
-            message: { senderId: 'sender', msgId: context.identity }
+            message: { senderId: 'sender', msgId: identity }
         },
         observedAtMs: context.nowMs,
         expireAtTimestamp: context.nowMs + 30_000
@@ -983,15 +1025,19 @@ function toMixedLiveDurableSemanticsProbe(
     input: Readonly<{
         initial: MixedLiveDurableInitialDispatch;
         claim: MixedLiveDurableClaimProbe;
+        expiredClaimObservation: MixedLiveDurableLiveObservation;
         completedAfterParent: readonly string[];
         doubleInstallationRejected: boolean;
         snapshot: MixedLiveDurableObservationSnapshot;
     }>
 ): MixedLiveDurableObservationSemanticsProbe {
-    const { initial, claim, completedAfterParent, doubleInstallationRejected, snapshot } = input;
+    const { initial, claim, expiredClaimObservation, completedAfterParent, doubleInstallationRejected, snapshot } =
+        input;
     return {
         noClaimObservation: initial.noClaimObservation,
+        expiredClaimObservation,
         overlapObservation: claim.overlapObservation,
+        afterCallbackStartedObservation: claim.afterCallbackStartedObservation,
         queuePhases: snapshot.queuePhases,
         completedAfterParent,
         completedAfterRetry: claim.completedAfterRetry,
@@ -1028,9 +1074,7 @@ function readObservedLease(
     if (entry.status !== EntityStatus.RESERVED || startTs === undefined) {
         return undefined;
     }
-    const startedAtEpochMs = Number(
-        startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds
-    );
+    const startedAtEpochMs = Number(startTs.epochMilliseconds);
     const untilEpochMs = startedAtEpochMs + AL_INBOUND_WORK_LEASE_MS;
     return {
         startedAtEpochMs,

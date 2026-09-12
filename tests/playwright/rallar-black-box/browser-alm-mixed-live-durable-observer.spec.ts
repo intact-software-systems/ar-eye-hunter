@@ -19,7 +19,10 @@ test('uses returned dispatch claims for overlap and effect completion', async ({
     );
 
     expect(result.noClaimObservation.overlappingReturnedClaimIdentities).toEqual([]);
+    expect(result.expiredClaimObservation.overlappingReturnedClaimIdentities).toEqual([]);
+    expect(result.overlapObservation.sequence).toBe(3);
     expect(result.overlapObservation.overlappingReturnedClaimIdentities).toEqual(['durable-probe']);
+    expect(result.afterCallbackStartedObservation.overlappingReturnedClaimIdentities).toEqual([]);
     expect(result.completedAfterParent).toEqual([]);
     expect(result.completedAfterRetry).toEqual([]);
     expect(result.afterRetryObservation.overlappingReturnedClaimIdentities).toEqual([]);
