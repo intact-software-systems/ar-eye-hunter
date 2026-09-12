@@ -378,7 +378,7 @@ Terminal states: `rejected`, `acknowledged`, `expired`, `superseded`, `failed`, 
   `packages/shared/alm/outbound/al-outbound-dispatch-admission.ts` (`:116-124`, `:149-159`,
   `:240-248`, `:255-282`, `:299-305`), `packages/shared/multicast/web-rtc-overlay-multicast-manager.ts`
   (`:191-199`, `:222-252`, `:865-872`), `packages/shared/multicast/rtc-room-snapshot-admission.ts` (`:113-114`)
-- Create: `packages/shared/alm/outbound/to-al-outbound-enqueue-status.ts` (temporary until Task 11)
+- Create: `packages/shared/alm/delivery/to-al-outbound-enqueue-status.ts` (temporary until Task 11; ruling R7 moved it out of the outbound directory, whose density finding it worsened)
 - Test: `packages/tests/shared/alm/outbound-dispatch-values.test.ts`,
   `packages/tests/shared/al-outbound-message-runtime.test.ts` (`:121`, `:166`, `:557`, `:581`),
   `packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts`, a new
@@ -924,7 +924,7 @@ recorded in Task 12.
 
 **Files:**
 
-- Delete: `packages/shared/alm/outbound/to-al-outbound-enqueue-status.ts`
+- Delete: `packages/shared/alm/delivery/to-al-outbound-enqueue-status.ts` (moved there from the outbound directory in Task 3's fix round, ruling R7)
 - Modify: `packages/shared/alm/outbound/al-outbound-message-runtime.ts` (`:186-205`: delete the union
   and `ALOutboundEnqueueResult.status`), `packages/shared/alm/outbound/compute-al-outbound-dispatch.ts`,
   `packages/shared/alm/outbound/al-outbound-dispatch-admission.ts`,
