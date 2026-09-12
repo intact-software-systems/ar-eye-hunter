@@ -104,13 +104,18 @@ change adds 57 compressed bytes while reducing uncompressed output. No justified
 removal was identified in that changed surface. The facade approval does not
 authorize a headless budget change; resolve that separate decision before
 readiness, without holding up native measurement. Hosted ALM conformance still
-fails despite the local pass. One observation passed WebSocket while failing
-RTC and fallback; the newest observation fails all three carriers again. This
-variation is not evidence of a runtime fix between those runs. The newest
-Release Gate stops before typechecking or the root suite at the native timing
-wrapper's `boundary.unknown` finding. The local fixture correction preserves the
-native DOM `put` parameter contract and passes the changed-style check; independent
-review is complete; fresh hosted CI must still establish gate repair.
+fails despite the local pass. Outcomes vary across observations without a
+corresponding runtime correction. The latest hosted Release Gate passes the
+previous native timing wrapper's `boundary.unknown` check and reaches the root
+suite: **11,000 tests pass, two fail, and 12 are skipped**. The failures are the
+separate headless ceiling and the native fixture tsconfig's missing explicit
+ambient-type declaration. Both that configuration and the new readiness fixture
+configuration now explicitly declare their inherited ambient types: all four
+TypeScript 7 boundary tests and both strict fixture compilers pass. The evidence
+slice's independent review remains pending; no inherited compiler semantics or
+boundary test was weakened. The topology replay step is
+skipped after the root failure; its missing upload directory is not a topology
+test result.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
@@ -123,7 +128,7 @@ says `normal`, which does not establish native request latency or satisfy the
 connection deadline. This evidence makes phase attribution necessary: successor
 discovery cannot remove time spent executing and releasing original claims.
 
-The newest failed observation reinforces that distinction. Its longest WebSocket
+An earlier failed observation reinforces that distinction. Its longest WebSocket
 batch takes 48,527 ms for 13 claims: 19 ms claiming, 22,979 ms running, and
 25,249 ms releasing. The longest RTC batch takes 19,609 ms for four claims,
 including 5,403 ms claiming, 8,660 ms running, and 4,638 ms releasing. These
@@ -152,8 +157,49 @@ test result and inspected counts survive, but cannot support same-page interval
 analysis. No recoverable worktree copy was found and no ALM rerun replaces the
 lost evidence. This is a material local evidence gap, not a native timing result
 or a reason to change runtime behavior. Subsequent focused runs must use distinct
-output directories. Obtain fresh hosted artifacts through the existing PR lane;
-the separate archived mixed A-B-B-A raw captures remain intact.
+output directories. The separate archived mixed A-B-B-A raw captures remain
+intact; the fresh hosted capture below is a distinct observation, not a
+replacement labelled as the lost local run.
+
+The hosted ALM lane on `eb5c1f4e0654e0278250a9a9cb333ccae46f6bc4` retains all
+six participant-native captures and all three control snapshots under
+`tmp/perf/ci-34706387935-alm.wyca8r/`. All three cells fail their positive
+delivery-baseline receiver check. RTC and fallback establish peers in this run;
+that variation does not demonstrate a runtime fix. Every native recorder restores
+its methods with zero drops or lifecycle failures. All pages retain two
+pre-capture requests; sender in-flight counts are 12/14/13, receiver counts zero.
+Raw request/transaction counts and all summary percentiles validate exactly.
+
+On this Node 24 Linux/x64 hosted memory workload, successful `get` medians range
+from 1.0 to 2.3 ms and maxima from 1,384.9 to 4,635.7 ms across the six pages;
+successful `put` medians range from 0.4 to 0.6 ms and maxima from 246.9 to
+1,173.4 ms. These are request issue-to-completion intervals, not disk latency.
+The longest receiver batches last 10,733/8,626/9,732 ms for WS/RTC/fallback.
+Same-page clipped, overlap-merged request intervals cover 82.8/80.8/86.3% of
+those reconstructed batch windows; transaction intervals cover 98.9/96.9/100%.
+Use the page-generated diagnostic clock, not controller receipt time. Batch
+run/release totals interleave; they do not define contiguous phase windows.
+
+These are positive co-temporal observations, not request-to-claim causal joins.
+Capture censoring, browser scheduling, clock alignment, and unverified served
+module identity remain explicit limits. Deliberate readonly-session aborts are
+not automatically storage errors. The existing grouped-read proxy calls these
+cells `normal`, which neither describes native tails nor proves delivery.
+
+The same-run delivery diagnosis distinguishes three stopping points. RTC's
+original ingress is refused for missing room authority, with separate NACK work;
+fallback's dropping admission plan conflicts without retaining an admission
+retry; WS retains admission and its `admit-message` claim completes. That last
+outcome does not prove a local-delivery successor was committed: replay discards
+admission acceptance before the claim diagnostic, and its `wroteWork` flag can
+also describe ancillary control effects. No matching application callback is
+retained. Earlier completed conformance cases assert absence, so they do not
+provide positive delivery evidence. The fixture's positive wait and capture end
+before the carried product expiry on the recorded clocks; neither eventual
+delivery nor permanent loss is established. Keep acceptance deadlines unchanged
+and distinguish admission disposition/actual successor kinds before choosing a
+runtime correction. Substantial original run/release cost still prevents
+selecting successor continuation as the presumed solution.
 
 The corrected fixture-local timing slice passes independent specification and
 quality review, strict fixture compilation, and six Chromium checks. Review
@@ -241,8 +287,8 @@ The 64/24 workload, limiter, deadlines, valid-claim eligibility, and postcapture
 completion checks are unchanged; no callback-time database reads or synthetic
 delays were added. Nine focused browser cases and strict fixture compilation
 pass. Independent review also verified the conservative millisecond projection
-of returned-claim lease timestamps. These fixture-only changes are local and
-reviewed, not yet a repaired hosted gate.
+of returned-claim lease timestamps. These are focused correctness results, not
+proof that the overall hosted gate or RTC-B06 acceptance passes.
 
 A fixed A-B-B-A mixed comparison uses that identical instrumentation with
 baseline `packages/shared` at `e499d87276403c6a0a9d5b1b9a21612fa967526d` and

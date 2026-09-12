@@ -32,12 +32,16 @@ correction.
 
 An earlier hosted root suite confirms both server suites pass and leaves
 only the headless bundle test failing (11,001 passed, one failed, 12 skipped).
-A subsequent ALM observation passed WebSocket but failed RTC and fallback;
-the newest observation fails all three carriers. Its existing per-operation
-proxy has too few samples to classify. The newest Release Gate stops before
-the root suite at the native timing wrapper's unknown-boundary finding. A local
-correction preserves the exact DOM passthrough type and passes changed-style;
-its review is complete, but it is not yet a repaired hosted gate.
+Later ALM outcomes vary without a corresponding runtime correction. The latest
+Release Gate passes the corrected native wrapper's style boundary and reaches
+the root suite: 11,000 passed, two failed, 12 skipped. Besides the unchanged
+headless ceiling, the native fixture tsconfig lacks the ambient-type declaration
+required explicitly by the repository's TypeScript 7 configuration contract.
+The native and new readiness fixture configs now explicitly declare their
+inherited ambient types; four boundary tests and both strict fixture compilers
+pass, with independent review pending. No compiler semantics or contract was
+weakened. The skipped topology step and its
+missing upload directory do not establish a topology failure.
 
 The corrected native timing harness now passes independent review, strict
 fixture compilation, and a balanced baseline/candidate/candidate/baseline series
@@ -96,8 +100,38 @@ zero drops/failures, pre-capture requests, and right-censored receiver tails.
 A subsequent focused Playwright command cleared the shared results directory
 and lost the raw native/control files. Recorded counts are not a substitute for
 those intervals: no local phase attribution is claimed or replacement ALM run
-selected. Keep future focused output separate and obtain fresh hosted evidence
-through the existing PR workflow. The archived mixed comparison remains intact.
+selected. Keep future focused output separate. The archived mixed comparison
+remains intact, and a distinct hosted capture now retains all six native
+participant observations and all three control snapshots.
+
+That hosted Node 24 Linux/x64 memory observation still fails all three positive
+delivery-baseline receiver checks, although RTC and fallback establish peers.
+Native methods restore with zero drops/lifecycle failures; all pages have two
+pre-capture requests, and only sender tails remain in flight. Raw counts and
+percentiles validate exactly. Successful native `get` medians are 1.0–2.3 ms,
+with maxima of 1,384.9–4,635.7 ms across the six pages; `put` medians are
+0.4–0.6 ms, with maxima of 246.9–1,173.4 ms. These are completion waits, not
+physical storage latency or stable tail estimates.
+
+The longest WS/RTC/fallback receiver batches last 10,733/8,626/9,732 ms.
+Same-page overlap-merged native request intervals cover 82.8/80.8/86.3% of
+their reconstructed wall windows; transaction intervals cover 98.9/96.9/100%.
+This establishes co-temporal native waits during substantial original batches,
+not that each claim awaited every overlapping request. Aggregate run/release
+totals cannot be split into invented contiguous phases. Censoring, clock
+alignment, scheduling, and unverified served-module identity remain limits;
+deliberate readonly-session aborts are not automatically storage errors.
+
+The receiver failures stop at different boundaries: RTC refuses the original
+ingress for missing room authority, fallback's dropping plan conflicts without
+retaining admission work, and WS completes a retained admission claim without
+proving local-delivery successor creation. Replay's `wroteWork` flag alone cannot
+prove that successor either: ancillary NACK/control effects also count as work.
+Earlier completed cases verify absence, not delivery. The positive wait and
+capture stop before product expiry on the recorded clocks, so permanent loss
+and eventual delivery remain unknown. Keep acceptance unchanged and distinguish
+the actual admission disposition/successor before choosing a runtime correction.
+Successor continuation remains unselected.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
@@ -165,7 +199,7 @@ queue waits reach 58,853 ms. WebSocket passed in that run without a correspondin
 runtime change. Preserve this variation and compare matched workloads; do not
 attribute the differing run outcomes to the fixture-only correction.
 
-The newest failed WebSocket observation records a 48,527 ms batch of 13 claims,
+An earlier failed WebSocket observation records a 48,527 ms batch of 13 claims,
 including 22,979 ms running and 25,249 ms releasing; the longest RTC batch records
 19,609 ms for four claims, including 5,403 ms claiming, 8,660 ms running, and
 4,638 ms releasing. These outer phases do not isolate native request cost or
