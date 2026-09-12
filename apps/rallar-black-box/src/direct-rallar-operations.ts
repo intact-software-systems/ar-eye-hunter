@@ -3,9 +3,9 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import type {
     RallarFacade,
     RallarMessage,
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageSelectorInput,
-    RallarMessageSendResult,
     RallarStartResult,
     RallarUnsubscribe,
     RallarWsSendInput
@@ -40,12 +40,12 @@ export interface DirectRallarWsSendInput {
 
 export interface DirectRallarMessageHandler {
     (
-        message: RallarMessage<RallarMessagePayload> & Record<string, unknown>
+        message: RallarMessage<RallarMessagePayload>
     ): void | Promise<void>;
 }
 
 export interface DirectRallarWsMessagesFacade {
-    send<T extends RallarMessagePayload>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult>;
+    send<T extends RallarMessagePayload>(input: RallarWsSendInput<T>): Promise<RallarMessageHandle>;
     onMessage(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<RallarMessagePayload>
@@ -113,7 +113,9 @@ export type DirectRallarOperationStatus = 'completed' | 'failed';
 export interface DirectRallarOperationError {
     readonly code: string;
     readonly message: string;
-    readonly details?: unknown;
+    readonly details?: { readonly name: string; readonly stack?: string; } | {
+        readonly providerMode: RallarBlackBoxProviderMode;
+    };
 }
 
 export interface DirectRallarOperationResult {
@@ -133,7 +135,7 @@ export interface DirectRallarWsSubscribeResult extends DirectRallarOperationResu
 
 const DIRECT_BACKEND_REQUIRED_ERROR_CODE = 'RALLAR_DIRECT_BACKEND_REQUIRED';
 
-function sessionDiagnostic(session: AuthSession | undefined): Record<string, unknown> | undefined {
+function toSessionDiagnostic(session: AuthSession | undefined): Omit<AuthSession, 'accessToken'> | undefined {
     if (!session) {
         return undefined;
     }
@@ -171,22 +173,10 @@ export function createDirectRallarRuntimeEvent(
     };
 }
 
-function directError(error: unknown, code = 'RALLAR_DIRECT_OPERATION_FAILED'): DirectRallarOperationResult['error'] {
-    if (error instanceof Error) {
-        return {
-            code,
-            message: error.message,
-            details: {
-                name: error.name,
-                stack: error.stack
-            }
-        };
-    }
-
-    return {
-        code,
-        message: String(error)
-    };
+function toDirectError(error: unknown, code = 'RALLAR_DIRECT_OPERATION_FAILED'): DirectRallarOperationError {
+    return error instanceof Error
+        ? { code, message: error.message, details: { name: error.name, stack: error.stack } }
+        : { code, message: String(error) };
 }
 
 export async function loadDirectRallarFacade(): Promise<DirectRallarFacade> {
@@ -274,37 +264,7 @@ async function startDirectRallarFacade(
     };
 }
 
-function groupIdFromSnapshot(snapshot: unknown): string | undefined {
-    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-        return undefined;
-    }
-
-    const record = snapshot as Record<string, unknown>;
-    const group = record.group && typeof record.group === 'object' && !Array.isArray(record.group)
-        ? record.group as Record<string, unknown>
-        : {};
-    const value = record.groupId ?? record.id ?? group.groupId ?? group.id;
-    return typeof value === 'string' && value.trim().length > 0
-        ? value
-        : undefined;
-}
-
-function groupDisplayNameFromSnapshot(snapshot: unknown): string | undefined {
-    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-        return undefined;
-    }
-
-    const record = snapshot as Record<string, unknown>;
-    const group = record.group && typeof record.group === 'object' && !Array.isArray(record.group)
-        ? record.group as Record<string, unknown>
-        : {};
-    const value = record.displayName ?? record.name ?? group.displayName ?? group.name;
-    return typeof value === 'string' && value.trim().length > 0
-        ? value
-        : undefined;
-}
-
-function backendRequiredError(context: DirectRallarOperationContext): DirectRallarOperationResult['error'] {
+function backendRequiredError(context: DirectRallarOperationContext): DirectRallarOperationError {
     return {
         code: DIRECT_BACKEND_REQUIRED_ERROR_CODE,
         message: 'Direct Rallar operations require provider=browser-rallar and a real backend.',
@@ -314,15 +274,14 @@ function backendRequiredError(context: DirectRallarOperationContext): DirectRall
     };
 }
 
-interface DirectRallarOperationExecutionInput {
+interface DirectRallarOperationRunInput {
     readonly kind: DirectRallarOperationKind;
     readonly topicBase: string;
     readonly context: DirectRallarOperationContext;
     readonly transport?: RallarBlackBoxTestRuntimeEventInput['transport'];
-    readonly startedPayload: unknown;
+    readonly startedPayload: RallarBlackBoxTestRuntimeEventInput['payload'];
     readonly failurePayload?: Record<string, unknown>;
     readonly run: () => Promise<DirectRallarOperationSuccess>;
-    readonly onFailure?: () => void;
 }
 
 interface DirectRallarOperationSuccess {
@@ -332,7 +291,7 @@ interface DirectRallarOperationSuccess {
 }
 
 interface DirectRallarOperationResultInput {
-    readonly execution: DirectRallarOperationExecutionInput;
+    readonly execution: DirectRallarOperationRunInput;
     readonly startedAtEpochMs: number;
     readonly started: RallarBlackBoxTestRuntimeEventInput;
 }
@@ -342,11 +301,11 @@ interface DirectRallarCompletedOperationResultInput extends DirectRallarOperatio
 }
 
 interface DirectRallarFailedOperationResultInput extends DirectRallarOperationResultInput {
-    readonly error: unknown;
+    readonly error: DirectRallarOperationError;
 }
 
-async function executeDirectRallarOperation(
-    input: DirectRallarOperationExecutionInput
+async function runDirectRallarOperation(
+    input: DirectRallarOperationRunInput
 ): Promise<DirectRallarWsSubscribeResult> {
     const startedAtEpochMs = Date.now();
     const started = createDirectRallarRuntimeEvent({
@@ -363,8 +322,10 @@ async function executeDirectRallarOperation(
         return completedOperationResult({ ...resultInput, success: await input.run() });
     }
     catch (error) {
-        input.onFailure?.();
-        return failedOperationResult({ ...resultInput, error });
+        return failedOperationResult({
+            ...resultInput,
+            error: toDirectError(error)
+        });
     }
 }
 
@@ -421,7 +382,7 @@ function failedOperationResult(
     input: DirectRallarFailedOperationResultInput
 ): DirectRallarOperationResult {
     const endedAtEpochMs = Date.now();
-    const error = directError(input.error);
+    const error = input.error;
     const failed = createDirectRallarRuntimeEvent({
         topic: `${input.execution.topicBase}.failed`,
         context: input.execution.context,
@@ -516,7 +477,7 @@ export async function runDirectRallarStatusCheck(
     context: DirectRallarOperationContext,
     loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
 ): Promise<DirectRallarOperationResult> {
-    return await executeDirectRallarOperation({
+    return await runDirectRallarOperation({
         kind: 'status.check',
         topicBase: 'rallar.direct.status',
         context,
@@ -530,7 +491,7 @@ export async function runDirectRallarStatusCheck(
                     action: 'status.check',
                     connected: startResult.connected,
                     connectStatus: facade.status(),
-                    session: sessionDiagnostic(startResult.session),
+                    session: toSessionDiagnostic(startResult.session),
                     defaults: facade.defaults?.(),
                     wsStatus: facade.ws.status(),
                     rtcStatus: facade.rtc.status(),
@@ -547,7 +508,7 @@ export async function runDirectRallarGroupCreate(
     context: DirectRallarOperationContext,
     loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
 ): Promise<DirectRallarOperationResult> {
-    return await executeDirectRallarOperation({
+    return await runDirectRallarOperation({
         kind: 'group.create',
         topicBase: 'rallar.direct.group.create',
         context,
@@ -570,15 +531,15 @@ async function createDirectRallarGroup(
         scope: directScope(context),
         timeoutMs: context.timeoutMs
     });
-    const groupId = groupIdFromSnapshot(snapshot);
+    const groupId = snapshot.group.groupId;
     return {
         value: {
             action: 'group.create',
             requestedGroup: groupName,
             groupId,
-            displayName: groupDisplayNameFromSnapshot(snapshot) ?? groupName,
+            displayName: snapshot.group.displayName ?? groupName,
             connected: startResult.connected,
-            session: sessionDiagnostic(startResult.session),
+            session: toSessionDiagnostic(startResult.session),
             snapshot
         },
         eventContext: { ...context, roomId: groupId ?? context.roomId }
@@ -589,7 +550,7 @@ export async function runDirectRallarGroupJoin(
     context: DirectRallarOperationContext,
     loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
 ): Promise<DirectRallarOperationResult> {
-    return await executeDirectRallarOperation({
+    return await runDirectRallarOperation({
         kind: 'group.join',
         topicBase: 'rallar.direct.group.join',
         context,
@@ -613,47 +574,41 @@ async function joinDirectRallarGroup(
     return {
         value: {
             action: 'group.join',
-            groupId: groupIdFromSnapshot(snapshot) ?? roomId,
-            displayName: groupDisplayNameFromSnapshot(snapshot),
+            groupId: snapshot.group.groupId ?? roomId,
+            displayName: snapshot.group.displayName,
             connected: startResult.connected,
-            session: sessionDiagnostic(startResult.session),
+            session: toSessionDiagnostic(startResult.session),
             snapshot
         }
     };
 }
 
+export interface DirectRallarWsSubscribeInput {
+    readonly context: DirectRallarOperationContext;
+    readonly selector: RallarMessageSelectorInput;
+    readonly handler: DirectRallarMessageHandler;
+    readonly loadFacade?: DirectRallarFacadeLoader;
+}
+
 export async function runDirectRallarWsSubscribe(
-    context: DirectRallarOperationContext,
-    selector: RallarMessageSelectorInput,
-    handler: DirectRallarMessageHandler,
-    loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
+    input: DirectRallarWsSubscribeInput
 ): Promise<DirectRallarWsSubscribeResult> {
-    let unsubscribe: RallarUnsubscribe | undefined;
-    return await executeDirectRallarOperation({
+    return await runDirectRallarOperation({
         kind: 'ws.subscribe',
         topicBase: 'rallar.direct.ws.subscribe',
-        context,
+        context: input.context,
         transport: 'ws',
-        startedPayload: {
-            action: 'ws.subscribe',
-            selector
-        },
-        failurePayload: { selector },
-        run: async () => {
-            const success = await subscribeDirectRallarWs(context, selector, handler, loadFacade);
-            unsubscribe = success.unsubscribe;
-            return success;
-        },
-        onFailure: () => unsubscribe?.()
+        startedPayload: { action: 'ws.subscribe', selector: input.selector },
+        failurePayload: { selector: input.selector },
+        run: async () => subscribeDirectRallarWs(input, input.loadFacade ?? loadDirectRallarFacade)
     });
 }
 
 async function subscribeDirectRallarWs(
-    context: DirectRallarOperationContext,
-    selector: RallarMessageSelectorInput,
-    handler: DirectRallarMessageHandler,
+    input: DirectRallarWsSubscribeInput,
     loadFacade: DirectRallarFacadeLoader
 ): Promise<DirectRallarOperationSuccess> {
+    const { context, selector, handler } = input;
     const roomId = validateRoomId(context, 'WS subscribe');
     if (typeof selector !== 'string' && typeof selector.topicId === 'string' && selector.topicId.trim()) {
         validateRallarServerUserTopic(selector.topicId, 'WS subscribe');
@@ -661,23 +616,29 @@ async function subscribeDirectRallarWs(
     const facade = await loadFacade();
     configureDirectRallarFacade(facade, context);
     const unsubscribe = facade.messages.ws.onMessage(selector, (message) => handler({ ...message }));
-    const startResult = await startDirectRallarFacade(facade, context);
-    const snapshot = await facade.rooms.join(roomId, {
-        timeoutMs: context.timeoutMs,
-        scope: directScope(context)
-    });
-    return {
-        value: {
-            action: 'ws.subscribe',
-            selector,
-            groupId: groupIdFromSnapshot(snapshot) ?? roomId,
-            displayName: groupDisplayNameFromSnapshot(snapshot),
-            connected: startResult.connected,
-            session: sessionDiagnostic(startResult.session),
-            wsStatus: facade.ws.status()
-        },
-        unsubscribe
-    };
+    try {
+        const startResult = await startDirectRallarFacade(facade, context);
+        const snapshot = await facade.rooms.join(roomId, {
+            timeoutMs: context.timeoutMs,
+            scope: directScope(context)
+        });
+        return {
+            value: {
+                action: 'ws.subscribe',
+                selector,
+                groupId: snapshot.group.groupId ?? roomId,
+                displayName: snapshot.group.displayName,
+                connected: startResult.connected,
+                session: toSessionDiagnostic(startResult.session),
+                wsStatus: facade.ws.status()
+            },
+            unsubscribe
+        };
+    }
+    catch (error) {
+        unsubscribe();
+        throw error;
+    }
 }
 
 export async function runDirectRallarWsSend(
@@ -685,7 +646,7 @@ export async function runDirectRallarWsSend(
     input: DirectRallarWsSendInput,
     loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
 ): Promise<DirectRallarOperationResult> {
-    return await executeDirectRallarOperation({
+    return await runDirectRallarOperation({
         kind: 'ws.send',
         topicBase: 'rallar.direct.ws.send',
         context,
@@ -729,10 +690,10 @@ async function sendDirectRallarWs(
                 contextId: input.contextId
             },
             connected: startResult.connected,
-            session: sessionDiagnostic(startResult.session),
+            session: toSessionDiagnostic(startResult.session),
             wsStatus: facade.ws.status(),
             sendInput,
-            sendResult
+            sendResult: { msgId: sendResult.msgId, typeId: sendResult.typeId, lifecycle: sendResult.lifecycle() }
         }
     };
 }

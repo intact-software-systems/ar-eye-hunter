@@ -12,7 +12,6 @@ import {
     type BlackBoxBrowserWsDependency,
     type BlackBoxDiagnosticsRelay
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
     RallarMessageHandle,
     RallarMessageHandler,
@@ -30,7 +29,6 @@ import type {
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -46,6 +44,7 @@ import {
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { vi } from 'vitest';
+import { createMessageDelivery } from '../../shared-web/messages/test-message-delivery.ts';
 
 export interface BrowserRuntimeFacadeRecords {
     readonly configurationWrites: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['configure']>[0]>;
@@ -439,11 +438,11 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     });
     facadeBehavior.realtimeSend.mockResolvedValue([]);
     facadeBehavior.realtimeOnJson.mockReturnValue(() => undefined);
-    facadeBehavior.rtcMessageSend.mockImplementation(async () => createMessageHandle('rtc'));
+    facadeBehavior.rtcMessageSend.mockImplementation(async () => createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
     facadeBehavior.rtcMessageOnMessage.mockReturnValue(() => undefined);
-    facadeBehavior.wsMessageSend.mockImplementation(async () => createMessageHandle('ws'));
+    facadeBehavior.wsMessageSend.mockImplementation(async () => createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
     facadeBehavior.wsMessageOnMessage.mockReturnValue(() => undefined);
-    facadeBehavior.typedSend.mockImplementation(async () => createMessageHandle('ws'));
+    facadeBehavior.typedSend.mockImplementation(async () => createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
 }
 
 function clearRecords(): void {
@@ -588,26 +587,4 @@ function createIdleRoomTransportStatus(): RallarRoomTransportStatus {
             laneId: 'lane'
         }
     };
-}
-
-function createMessageHandle(carrier: ALDeliveryCarrier): RallarMessageHandle {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: () => 0, retainTerminalMs: 60_000, maxEntries: 1, cancel: () => {} });
-    const handle = registry.open({
-        id: { v: 2, msgId: 'test-message', ts: 0, senderId: 'client-1' },
-        route: { topicId: 'test', contextId: 'test', resourceId: 'test' },
-        payload: { typeId: 'test', contentType: 'application/json', resource: '{}' }
-    }, carrier);
-    registry.record({ kind: 'attempt-started', msgId: handle.msgId, carrier, atMs: 0, attemptId: 'test-attempt' });
-    registry.record({
-        kind: 'attempt-settled',
-        msgId: handle.msgId,
-        carrier,
-        atMs: 0,
-        attemptId: 'test-attempt',
-        outcome: 'sent',
-        submissionAttempted: true,
-        detail: undefined,
-        willRetry: false
-    });
-    return handle;
 }

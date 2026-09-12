@@ -210,3 +210,8 @@ export function isALDeliveryTerminalState(state: ALDeliveryState, ackMode: ALAck
 export function isALDeliveryTerminal(lifecycle: ALDeliveryLifecycle): boolean {
     return isALDeliveryTerminalState(lifecycle.state, lifecycle.ackMode);
 }
+
+export function isALDeliveryAdmitted(lifecycle: ALDeliveryLifecycle): boolean {
+    return lifecycle.state === 'accepted' || lifecycle.state === 'queued' ||
+        lifecycle.state === 'transport-accepted' || lifecycle.state === 'acknowledged';
+}

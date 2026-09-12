@@ -1,9 +1,12 @@
+import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarMessage,
     RallarRtcStatus,
     RallarSubscriptionScope,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
+import { AL_DELIVERY_ADMITTED_STATES, isALDeliveryAdmitted } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -27,36 +30,33 @@ import type {
 } from './rallar-game-authority-client-contracts.ts';
 import {
     decodeAuthorityCommandResult,
-    isSuccessfulAuthorityMessageStatus,
     notReadyAuthoritySendResult
 } from './rallar-game-authority-message-results.ts';
 
-interface RallarGameAuthorityRoomTarget {
-    readonly roomId?: string;
-    readonly roomRef?: GroupRef;
-}
-
-interface SendAuthorityWsEnvelopeOptions {
-    readonly reliability: 'best-effort' | 'at-least-once';
-    readonly ack: 'none' | 'receiver';
-    readonly key?: string;
-    readonly trackPending?: boolean;
-}
-
-interface SendAuthorityWsEnvelopeInput<T> {
-    readonly kind: RallarGameAuthorityEnvelope<T>['kind'];
-    readonly payload: T;
-    readonly typeId: string;
-    readonly options: SendAuthorityWsEnvelopeOptions;
-}
-
-interface AuthorityEnvelopeSender {
-    readonly roomId: string;
-    readonly senderId: string;
-}
-
-interface AuthorityEnvelopeAcceptanceOptions {
-    readonly senderId?: string;
+export namespace RallarGameAuthorityClient {
+    export interface RoomTarget {
+        readonly roomId?: string;
+        readonly roomRef?: GroupRef;
+    }
+    export interface WsEnvelopeOptions {
+        readonly reliability: 'best-effort' | 'at-least-once';
+        readonly ack: 'none' | 'receiver';
+        readonly key?: string;
+        readonly trackPending?: boolean;
+    }
+    export interface WsEnvelopeInput<T> {
+        readonly kind: RallarGameAuthorityEnvelope<T>['kind'];
+        readonly payload: T;
+        readonly typeId: string;
+        readonly options: RallarGameAuthorityClient.WsEnvelopeOptions;
+    }
+    export interface EnvelopeSender {
+        readonly roomId: string;
+        readonly senderId: string;
+    }
+    export interface EnvelopeAcceptanceOptions {
+        readonly senderId?: string;
+    }
 }
 
 export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = never>
@@ -179,7 +179,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
 
     public onStatus(handler: RallarGameAuthorityStatusHandler): RallarUnsubscribe {
         this.statusHandlers.add(handler);
-        void notifyStatusHandler(handler, this.currentStatus);
+        notifyListener(handler, this.currentStatus);
         return () => {
             this.statusHandlers.delete(handler);
         };
@@ -199,16 +199,16 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
             ?.add(
                 this.config.rallar.messages.ws.onMessage<RallarGameAuthorityEnvelope<RallarGameAuthorityCommandResult>>(
                     { topicId: this.config.topicId, typeId: this.typeIds.commandResult },
-                    async (message) => await this.handleCommandResultMessage(message)
+                    async (message) => await this.acceptCommandResultMessage(message)
                 )
             )
             .add(this.config.rallar.messages.ws.onMessage<RallarGameAuthorityEnvelope<TSnapshot>>(
                 { topicId: this.config.topicId, typeId: this.typeIds.snapshot },
-                async (message) => await this.handleWsSnapshotMessage(message)
+                async (message) => await this.acceptWsSnapshotMessage(message)
             ))
             .add(this.config.rallar.messages.ws.onMessage<RallarGameAuthorityEnvelope<TEvent>>(
                 { topicId: this.config.topicId, typeId: this.typeIds.event },
-                async (message) => await this.handleEventMessage(message)
+                async (message) => await this.acceptEventMessage(message)
             ));
     }
 
@@ -216,16 +216,16 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         this.subscriptions
             ?.add(this.config.rallar.messages.rtc.onMessage<RallarGameAuthorityEnvelope<TSnapshot>>(
                 { topicId: this.config.topicId, typeId: this.typeIds.snapshot },
-                async (message) => await this.handleRtcSnapshotMessage(message)
+                async (message) => await this.acceptRtcSnapshotMessage(message)
             ))
             .add(this.config.rallar.messages.rtc.onMessage<RallarGameAuthorityEnvelope<TPresence>>(
                 { topicId: this.config.topicId, typeId: this.typeIds.presence },
-                async (message) => await this.handlePresenceMessage(message)
+                async (message) => await this.acceptPresenceMessage(message)
             ));
     }
 
     private async sendWsEnvelope<T>(
-        input: SendAuthorityWsEnvelopeInput<T>
+        input: RallarGameAuthorityClient.WsEnvelopeInput<T>
     ): Promise<RallarGameAuthoritySendResult> {
         if (this.stopped) {
             return { status: 'stopped', transport: 'ws' };
@@ -255,7 +255,11 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 reliability: input.options.reliability,
                 ack: input.options.ack
             });
-        const sent = isSuccessfulAuthorityMessageStatus(result.status);
+        const outcome = await result.wait({
+            until: AL_DELIVERY_ADMITTED_STATES,
+            timeoutMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+        });
+        const sent = isALDeliveryAdmitted(outcome.lifecycle);
         if (!sent && input.options.trackPending) {
             this.pendingCommands.delete(envelope.seq);
         }
@@ -267,7 +271,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 transport: 'ws',
                 seq: envelope.seq,
                 raw: result,
-                reason: result.reason
+                reason: outcome.lifecycle.evidence.reason
             };
     }
 
@@ -301,7 +305,8 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 ack: 'none',
                 ttlMs: 5_000
             });
-        const sent = isSuccessfulAuthorityMessageStatus(result.status);
+        const outcome = await result.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 5_000 });
+        const sent = isALDeliveryAdmitted(outcome.lifecycle);
         this.recordPeerAssistSend(kind, sent, envelope.sentAtEpochMs);
         this.refreshStatus();
         return sent
@@ -311,7 +316,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 transport: 'rtc',
                 seq: envelope.seq,
                 raw: result,
-                reason: result.reason
+                reason: outcome.lifecycle.evidence.reason
             };
     }
 
@@ -328,7 +333,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         }
     }
 
-    private async handleCommandResultMessage(
+    private async acceptCommandResultMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<RallarGameAuthorityCommandResult>>
     ): Promise<void> {
         if (
@@ -348,7 +353,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         await this.config.onCommandResult?.(message.payload);
     }
 
-    private async handleWsSnapshotMessage(
+    private async acceptWsSnapshotMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TSnapshot>>
     ): Promise<void> {
         if (
@@ -364,7 +369,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         await this.config.onSnapshot?.(message.payload);
     }
 
-    private async handleEventMessage(
+    private async acceptEventMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TEvent>>
     ): Promise<void> {
         if (
@@ -380,7 +385,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         await this.config.onEvent?.(message.payload);
     }
 
-    private async handleRtcSnapshotMessage(
+    private async acceptRtcSnapshotMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TSnapshot>>
     ): Promise<void> {
         const acceptRepair = this.config.peerAssist?.acceptSnapshotRepair;
@@ -399,7 +404,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         await this.config.onSnapshot?.(message.payload);
     }
 
-    private async handlePresenceMessage(
+    private async acceptPresenceMessage(
         message: RallarMessage<RallarGameAuthorityEnvelope<TPresence>>
     ): Promise<void> {
         if (!this.config.peerAssist?.enabled) {
@@ -420,7 +425,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private acceptEnvelope<T>(
         envelope: RallarGameAuthorityEnvelope<T>,
         kind: RallarGameAuthorityEnvelopeKind,
-        options: AuthorityEnvelopeAcceptanceOptions = {}
+        options: RallarGameAuthorityClient.EnvelopeAcceptanceOptions = {}
     ): boolean {
         if (
             this.stopped || !isRallarGameAuthorityEnvelope(
@@ -445,7 +450,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     private createEnvelope<T>(
         kind: RallarGameAuthorityEnvelope<T>['kind'],
         payload: T,
-        options: AuthorityEnvelopeSender
+        options: RallarGameAuthorityClient.EnvelopeSender
     ): RallarGameAuthorityEnvelope<T> {
         return createRallarGameAuthorityEnvelope({
             protocol: this.config.protocol,
@@ -518,7 +523,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         };
     }
 
-    private readRoomTarget(): RallarGameAuthorityRoomTarget {
+    private readRoomTarget(): RallarGameAuthorityClient.RoomTarget {
         const roomState = this.config.rallar.rooms.state();
         const roomRef = this.config.roomRef ?? roomState.currentRoomRef;
         const roomId = this.config.roomId ?? roomRef?.groupId ??
@@ -532,23 +537,11 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
 
     private emitStatus(status: RallarGameAuthorityClientStatus): void {
         for (const handler of this.statusHandlers) {
-            void notifyStatusHandler(handler, status);
+            notifyListener(handler, status);
         }
     }
 }
 
 function uniqueSorted(values: readonly string[]): readonly string[] {
     return [...new Set(values)].sort((left, right) => left.localeCompare(right));
-}
-
-async function notifyStatusHandler(
-    handler: RallarGameAuthorityStatusHandler,
-    status: RallarGameAuthorityClientStatus
-): Promise<void> {
-    try {
-        await handler(status);
-    }
-    catch (error) {
-        console.error('Error notifying Rallar Game Authority status handler', error);
-    }
 }

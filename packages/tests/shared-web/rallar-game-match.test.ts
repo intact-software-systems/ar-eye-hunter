@@ -1,15 +1,15 @@
 import { describe, expect, it, vi, type Mock } from 'vitest';
+import { createMessageDelivery } from './messages/test-message-delivery.ts';
 
-import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessage,
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageSelectorInput,
-    RallarMessageSendResult,
     RallarPeopleState,
     RallarRealtimeHandler,
     RallarRealtimeJsonSendInput,
@@ -30,8 +30,9 @@ import type {
     RallarWsSendInput,
     RallarWsStatus
 } from '@shared-web/browser/rallar.ts';
-import { createRallarGameEnvelope, createRallarGameMatch } from '@shared-web/game/mod.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarGameEnvelope, RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/mod.ts';
+import { createRallarGameEnvelope, createRallarGameMatch } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -71,6 +72,39 @@ describe('Rallar Game match', () => {
             syncRequestTypeId: 'game.topic.sync-request.v1',
             heartbeatTypeId: 'game.topic.heartbeat.v1'
         });
+    });
+
+    it.each(['queued', 'rejected', 'superseded'] as const)('waits for capability admission before reporting %s', async (state) => {
+        const fake = createFakeRallar();
+        const match = createMatch(fake);
+        await match.start();
+        const delivery = createMessageDelivery('ws', undefined);
+        fake.wsSend.mockResolvedValueOnce(delivery.handle);
+        let completed = false;
+        const sending = match.reportCapability({ scoreBias: 5 }).then((result) => {
+            completed = true;
+            return result;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(completed).toBe(false);
+        delivery.registry.record({
+            kind: 'admission',
+            carrier: 'ws',
+            msgId: delivery.handle.msgId,
+            atMs: Date.now(),
+            verdict: state === 'queued'
+                ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
+                : state === 'rejected'
+                ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
+                : { kind: 'superseded', detail: 'Replaced' }
+        });
+        expect(await sending).toEqual(
+            state === 'queued'
+                ? { status: 'sent', transport: 'ws', ws: delivery.handle }
+                : { status: 'failed', transport: 'ws', ws: delivery.handle, reason: state === 'rejected' ? 'Denied' : 'Replaced' }
+        );
+        match.stop();
     });
 
     it('sends capability reports as room-scoped WS messages', async () => {
@@ -1074,29 +1108,9 @@ function createFakeRelayPorts(state: FakeRallarState): FakeRelayPorts {
 }
 
 function createFakeWsSend() {
-    return vi.fn(async <T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult> => ({
-        transport: 'ws',
-        status: 'enqueued',
-        message: {
-            id: {
-                v: 2,
-                msgId: 'fake-ws-message',
-                ts: 1_000,
-                senderId: 'peer-a'
-            },
-            route: {
-                topicId: input.topicId ?? 'game.topic',
-                resourceId: input.resourceId ?? 'game-resource',
-                contextId: input.contextId ?? 'room-1'
-            },
-            payload: {
-                typeId: input.typeId,
-                contentType: 'application/json',
-                resource: JSON.stringify(input.payload) ?? 'null'
-            }
-        },
-        entries: []
-    }));
+    return vi.fn(async <T>(_input: RallarWsSendInput<T>): Promise<RallarMessageHandle> =>
+        createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle
+    );
 }
 
 function createFakeRealtimePorts(state: FakeRallarState): FakeRealtimePorts {

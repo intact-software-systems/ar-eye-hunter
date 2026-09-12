@@ -7,7 +7,7 @@ import type {
     RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
 import type { RallarDataDurability, RallarDataScope } from './rallar-data.ts';
-import type { RallarFacade, RallarMessageSendResult, RallarRealtimeSendResult } from './rallar.ts';
+import type { RallarFacade, RallarMessageHandle, RallarRealtimeSendResult } from './rallar.ts';
 
 export { createRallarBrowserAi } from './ai/create-rallar-browser-ai.ts';
 
@@ -18,7 +18,7 @@ export type RallarBrowserAiTransport =
 
 export type RallarBrowserAiRallar = Pick<RallarFacade, 'data' | 'messages' | 'realtime'>;
 
-export type CreateRallarBrowserAiOptions = Readonly<{
+export interface CreateRallarBrowserAiOptions {
     rallar: RallarBrowserAiRallar;
     provider: RallarAiJsonProvider;
     policy?: RallarAiGenerationPolicy;
@@ -26,9 +26,9 @@ export type CreateRallarBrowserAiOptions = Readonly<{
     readCurrentStateRevision?: (
         request: RallarAiJsonRequest
     ) => string | undefined;
-}>;
+}
 
-export type RallarBrowserAiBroadcastInput<TValue = unknown> = Readonly<{
+export interface RallarBrowserAiBroadcastInput<TValue = unknown> {
     result: RallarAiJsonResult<TValue>;
     transport?: RallarBrowserAiTransport;
     laneId?: string;
@@ -36,23 +36,23 @@ export type RallarBrowserAiBroadcastInput<TValue = unknown> = Readonly<{
     roomRef?: GroupRef;
     topicId?: string;
     typeId?: string;
-}>;
+}
 
-export type RallarBrowserAiBroadcastResult = Readonly<{
+export interface RallarBrowserAiBroadcastResult {
     transport: RallarBrowserAiTransport;
     realtime?: readonly RallarRealtimeSendResult[];
-    message?: RallarMessageSendResult;
-}>;
+    message?: RallarMessageHandle;
+}
 
-export type RallarBrowserAiPersistInput<TValue = unknown> = Readonly<{
+export interface RallarBrowserAiPersistInput<TValue = unknown> {
     result: RallarAiJsonResult<TValue>;
     storeName?: string;
     key?: string;
     scope?: RallarDataScope;
     durability?: RallarDataDurability;
-}>;
+}
 
-export type RallarBrowserAiFacade = Readonly<{
+export interface RallarBrowserAiFacade {
     generateJson<TValue = unknown, TContext = unknown>(
         request: RallarAiJsonRequest<TContext>
     ): Promise<RallarAiJsonResult<TValue>>;
@@ -62,4 +62,4 @@ export type RallarBrowserAiFacade = Readonly<{
     persistJson<TValue = unknown>(
         input: RallarBrowserAiPersistInput<TValue>
     ): Promise<void>;
-}>;
+}

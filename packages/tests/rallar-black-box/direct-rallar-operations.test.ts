@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     runDirectRallarGroupCreate,
     runDirectRallarGroupJoin,
@@ -8,8 +8,9 @@ import {
     type DirectRallarFacade
 } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
 import type { RallarMessagePayload } from '../../../packages/shared-web/browser/messages/rallar-message-contracts.ts';
-import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '../../../packages/shared-web/browser/rallar.ts';
+import type { RallarMessage, RallarMessageHandler } from '../../../packages/shared-web/browser/rallar.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
+import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';
 
 const session: AuthSession = {
     clientId: 'alice-client',
@@ -20,6 +21,55 @@ const session: AuthSession = {
 };
 
 describe('direct Rallar operations', () => {
+    it.each(['start', 'join'] as const)('releases the listener when %s rejects', async (failure) => {
+        const unsubscribe = vi.fn();
+        const facade = toTestDouble<DirectRallarFacade>({
+            configure: () => {},
+            setDefaults: () => {},
+            session: () => session,
+            start: async () => {
+                if (failure === 'start') {
+                    throw new Error('start failed');
+                }
+                return { session, connected: true };
+            },
+            rooms: toTestDouble<DirectRallarFacade['rooms']>({
+                join: async () => {
+                    throw new Error('join failed');
+                }
+            }),
+            messages: { ws: { send: async () => createMessageDelivery('ws', undefined).handle, onMessage: () => unsubscribe } }
+        });
+        const result = await runDirectRallarWsSubscribe(
+            {
+                context: {
+                    providerMode: 'browser-rallar',
+                    apiBaseUrl: 'http://localhost',
+                    applicationId: 'app',
+                    workspaceId: 'workspace',
+                    roomId: 'room',
+                    authSession: session
+                },
+                selector: { topicId: 'room.test', typeId: 'test' },
+                handler: () => {},
+                loadFacade: async () => facade
+            }
+        );
+        expect(result.status).toBe('failed');
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+        expect(result.unsubscribe).toBeUndefined();
+    });
+
+    it('preserves a non-Error rejection as the existing error projection', async () => {
+        const result = await runDirectRallarStatusCheck({
+            providerMode: 'browser-rallar',
+            apiBaseUrl: 'http://localhost',
+            applicationId: 'app',
+            workspaceId: 'workspace'
+        }, async () => Promise.reject('facade unavailable'));
+        expect(result.error).toEqual({ code: 'RALLAR_DIRECT_OPERATION_FAILED', message: 'facade unavailable' });
+    });
+
     it('refuses direct operations when the provider is simulated', async () => {
         let loadCalled = false;
 
@@ -466,12 +516,7 @@ describe('direct Rallar operations', () => {
                 ws: {
                     async send(input) {
                         calls.push(`send:${String(input.roomId)}:${String(input.typeId)}`);
-                        return toTestDouble<RallarMessageSendResult>({
-                            transport: 'ws',
-                            status: 'enqueued',
-                            message: toTestDouble<RallarMessageSendResult['message']>({}),
-                            entries: []
-                        });
+                        return createMessageDelivery('ws', undefined).handle;
                     },
                     onMessage(selector, handler) {
                         const selectorLabel = typeof selector === 'string'
@@ -507,14 +552,16 @@ describe('direct Rallar operations', () => {
             timeoutMs: 5000
         };
 
-        const received: Record<string, unknown>[] = [];
+        const received: RallarMessage<RallarMessagePayload>[] = [];
         const subscribeResult = await runDirectRallarWsSubscribe(
-            context,
-            { typeId: 'room.manual.message', topicId: 'room.manual.message' },
-            (message) => {
-                received.push(message);
-            },
-            async () => facade
+            {
+                context: context,
+                selector: { typeId: 'room.manual.message', topicId: 'room.manual.message' },
+                handler: (message) => {
+                    received.push(message);
+                },
+                loadFacade: async () => facade
+            }
         );
         await subscribedHandler?.(toTestDouble<RallarMessage<RallarMessagePayload>>({
             typeId: 'room.manual.message',
@@ -552,6 +599,9 @@ describe('direct Rallar operations', () => {
         ]);
         expect(subscribeResult.status).toBe('completed');
         expect(sendResult.status).toBe('completed');
+        expect(sendResult.value?.sendResult).toMatchObject({ msgId: expect.any(String), typeId: 'test', lifecycle: { state: 'submitted' } });
+        expect(JSON.parse(JSON.stringify(sendResult)).value.sendResult.lifecycle.state).toBe('submitted');
+        expect(sendResult.value?.sendResult).not.toHaveProperty('wait');
         expect(received).toHaveLength(1);
         expect(sendResult.events.map((event) => event.topic)).toEqual([
             'rallar.direct.ws.send.started',

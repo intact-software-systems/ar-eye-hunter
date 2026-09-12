@@ -84,7 +84,7 @@ export namespace BrowserRallarMessageSender {
 }
 
 export class BrowserRallarMessageSender {
-    private static readonly DEFAULT_MESSAGE_TTL_MS = 30_000;
+    public static readonly DEFAULT_MESSAGE_TTL_MS = 30_000;
     private readonly input: BrowserRallarMessageSender.Input;
 
     public constructor(input: BrowserRallarMessageSender.Input) {

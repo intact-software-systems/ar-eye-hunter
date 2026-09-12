@@ -803,7 +803,11 @@ remain failure values.
   `packages/shared-web/browser/rallar-calls-facade.ts` (`:114`), `packages/shared-web/browser/rallar-ai.ts` (`:44`),
   `packages/shared-web/game/transport/rallar-game-send-result.ts` (`:19`),
   `packages/shared-web/game/match/match-capability.ts` (`:57-81`),
-  `packages/shared-web/game/authority/rallar-game-authority-message-results.ts` (`:14-19`),
+  `packages/shared-web/game/authority/rallar-game-authority-message-results.ts`,
+  `packages/shared-web/game/authority/rallar-game-authority-client.ts` (WS and RTC assist branches),
+  `packages/shared-web/browser/crdt/create-rallar-crdt-message-transport.ts`,
+  `packages/shared-web/browser/messages/browser-rallar-message-sender.ts` (reuse the existing TTL),
+  `packages/shared/alm/delivery/al-delivery-lifecycle.ts` (canonical admission predicate),
   `apps/rallar-black-box/src/direct-rallar-operations.ts` (`:8`, `:48`, `:721-735`),
   `packages/shared-web/browser/README.md` (`:198-213`), `packages/shared-web/game/README.md` (`:42`)
 - Test: `packages/tests/shared-web/director/browser-director-relay-runtime.test.ts`,
@@ -812,6 +816,14 @@ remain failure values.
   `packages/tests/shared-web/ai/browser-rallar-ai-test-runtime.ts:92-95`,
   `packages/tests/shared-web/rallar-game-authority-client.test.ts`,
   `packages/tests/rallar-black-box/direct-rallar-operations.test.ts:469-472`
+
+The named-input subscription cutover also owns the two live diagnostic controllers under
+`apps/rallar-black-box/src/legacy/diagnostics/{quick-test,websocket}`, their action owners, and
+`observe-raw-web-socket.ts`. These are active consumers; their directory name does not make their
+verified behavior disposable. Tests also cover the built-in CRDT adapter, delayed director/authority
+admission, and diagnostic lifecycle preservation. The canonical real-registry fixture is
+`packages/tests/shared-web/messages/test-message-delivery.ts`; the existing
+`packages/tests/shared-test/rallar-browser-runtime/browser-runtime-facade-test-double.ts` consumes it.
 
 **Interfaces:**
 
@@ -831,19 +843,27 @@ sent (a newer intent replaced it; falling back over WS would resend stale state)
 the comment; the match capability and the authority results do not — the three predicates collapse to
 the shared one plus that single documented exception.
 
-- [ ] **Step 1: Failing tests.** Rewrite each listed suite's send double to resolve a handle (a
-      `createTestMessageHandle(lifecycle)` in `packages/tests/shared-web/messages/test-message-handle.ts`,
-      one owner for every suite) and assert the consumer outcomes: relay `sent` on `queued`, WS fallback
+- [x] **Step 1: Failing tests.** Rewrite each listed suite's send double to resolve a handle (a
+      real-registry `createMessageDelivery(carrier, verdict)` in
+      `packages/tests/shared-web/messages/test-message-delivery.ts`, one owner for every suite) and assert the consumer outcomes: relay `sent` on `queued`, WS fallback
       on `failed`, `sent` on `superseded`; match capability `{ status: 'sent', transport: 'ws', ws: handle }`
       on `queued` and `failed` with the reason on `rejected`; authority results the same two branches.
       Command: `npx vitest run packages/tests/shared-web/director packages/tests/shared-web/rallar-game-match.test.ts packages/tests/shared-web/rallar-game-authority-client.test.ts packages/tests/shared-web/calls packages/tests/shared-web/ai packages/tests/rallar-black-box/direct-rallar-operations.test.ts`
       Expected: FAIL.
-- [ ] **Step 2: Cut over** every listed file; delete the three private predicates; update the two
+- [x] **Step 2: Cut over** every listed file; delete the three private predicates; update the two
       READMEs' sentences about "QueueBox enqueue results" and the canonical game result.
       Command: the Step 1 command; `npx tsc -p packages/shared-web/tsconfig.json --noEmit`;
       `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`
       Expected: green (the `game/mod.ts` snapshot is name-level and unchanged).
-- [ ] **Step 3: Commit.**
+      Include `packages/tests/shared-web/crdt`, `packages/tests/shared-web/rallar-crdt.test.ts`,
+      `packages/tests/rallar-black-box/diagnostic-controller-lifecycle.test.ts`, and
+      `packages/tests/rallar-black-box/websocket-command-center.test.ts` in focused validation.
+      Keep the independent custom-provider result policy in `browser-crdt-transport.ts` unchanged.
+      Direct operation events contain handle identity and a lifecycle snapshot, while operation
+      completion keeps its existing meaning. Subscription start/join failures release the registered
+      listener once. Hook extraction tests prove preserved behavior against the base through module
+      replacement; they are distinct from the consumer RED/GREEN tests.
+- [x] **Step 3: Commit.**
 
 ### Task 8: The AR Eye Hunter consumer proof
 

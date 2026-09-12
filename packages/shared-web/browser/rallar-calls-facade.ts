@@ -1,4 +1,4 @@
-import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMediaSourcesFacade, RallarMediaSourceStatus } from '@shared-web/browser/rallar-media-facade.ts';
 import type {
     RallarTargetedChannel,
@@ -111,7 +111,7 @@ export interface RallarCallInviteInput extends RallarCallStartInput {
 
 export interface RallarCallSignalSend {
     readonly peerId: string;
-    readonly result: RallarMessageSendResult;
+    readonly result: RallarMessageHandle;
 }
 
 export interface RallarCallInviteResult {

@@ -1,4 +1,4 @@
-import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarCallHandle,
@@ -47,7 +47,7 @@ export namespace BrowserCallSignalRuntime {
         resolveTargetPeerIds(input?: RallarCallInviteInput): readonly string[];
         readonly messages: RallarMessagesOperations;
         readSourceStatus(kind: RallarMediaSourceKind): RallarMediaSourceStatus | undefined;
-        sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageSendResult>;
+        sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageHandle>;
         startCall(input: RallarCallStartInput): Promise<RallarCallHandle>;
     }
 

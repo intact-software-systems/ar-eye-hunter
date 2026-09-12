@@ -1,5 +1,3 @@
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -362,7 +360,7 @@ describe('Rallar director relay', () => {
 
     it('can disable periodic director snapshots while keeping explicit sync snapshots', async () => {
         vi.useFakeTimers();
-        vi.setSystemTime(1_000);
+        vi.setSystemTime(Date.now());
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
@@ -370,7 +368,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         mockRtcNoRoute();
@@ -410,7 +408,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         mockRtcNoRoute();
@@ -425,22 +423,14 @@ describe('Rallar director relay', () => {
         const result = await relay.sendOutput({ ok: true });
         relay.stop();
 
-        expect(result).toMatchObject({
-            status: 'sent',
-            rtc: {
-                transport: 'rtc',
-                status: 'no-route'
-            },
-            ws: {
-                transport: 'ws',
-                status: 'enqueued'
-            }
-        });
+        expect(result.status).toBe('sent');
+        expect(result.rtc && 'lifecycle' in result.rtc ? result.rtc.lifecycle().state : undefined).toBe('failed');
+        expect(result.ws?.lifecycle().state).toBe('queued');
     });
 
     it('stops director relay heartbeats when auth logs out', async () => {
         vi.useFakeTimers();
-        vi.setSystemTime(1_000);
+        vi.setSystemTime(Date.now());
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
@@ -448,7 +438,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
@@ -492,7 +482,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
