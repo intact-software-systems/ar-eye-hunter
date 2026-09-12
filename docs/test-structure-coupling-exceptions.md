@@ -467,21 +467,6 @@ moved or changed test.
       }
     },
     {
-      "id": "ar-arena-stale-director-attempt-fence",
-      "domain": "AR Eye Hunter director appointment lifecycle",
-      "owner": "AR Eye Hunter maintainers",
-      "summary": "A director appointment resolving after room clear cannot refresh diagnostics. Executable assertion: “ignores a pending director appointment after the current room clears”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#ignores a pending director appointment after the current room clears",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "Rallar Game diagnostics port",
-        "observableEffect": "Diagnostics calls and exposed diagnostics stay unchanged after stale resolution.",
-        "requiredConstraint": "Resolving a stale appointment performs no additional diagnostics read.",
-        "failureRationale": "A late read would reintroduce state owned by a room that is no longer current."
-      }
-    },
-    {
       "id": "ar-arena-signed-out-snapshot-fence",
       "domain": "AR Eye Hunter signed-out snapshot fencing",
       "owner": "AR Eye Hunter maintainers",
@@ -3168,17 +3153,6 @@ moved or changed test.
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The room-lane wait absence assertion directly proves that all diagnostics transport ports remain unused after logout.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout"
-    },
-    {
-      "id": "test-structure-coupling-6c3ccce322d89ce4",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ar-arena-stale-director-attempt-fence",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "AR Eye Hunter maintainers",
-      "rationale": "The unchanged diagnostics count directly proves that stale appointment resolution performs no additional diagnostics read.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#ignores a pending director appointment after the current room clears"
     },
     {
       "id": "test-structure-coupling-d1dd13ef89b32432",

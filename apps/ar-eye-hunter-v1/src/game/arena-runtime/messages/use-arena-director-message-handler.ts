@@ -15,19 +15,24 @@ interface ArenaDirectorMessageHandlerInput
 
 export function useArenaDirectorMessageHandler(
     input: ArenaDirectorMessageHandlerInput
-): (message: GameRealtimeMessage) => void {
+): (message: GameRealtimeMessage, isCurrent: () => boolean) => void {
     return useCallback(
-        (message: GameRealtimeMessage) => acceptArenaDirectorOutput(input, message),
+        (message: GameRealtimeMessage, isCurrent: () => boolean) =>
+            acceptArenaDirectorOutput(input, message, isCurrent),
         [input.acceptEyeAttack, input.acceptPickup, input.acceptPlayerHit, input.nowMs]
     );
 }
 
-function acceptArenaDirectorOutput(input: ArenaDirectorMessageHandlerInput, message: GameRealtimeMessage): void {
-    if (message.protocol !== GAME_PROTOCOL) {
+function acceptArenaDirectorOutput(
+    input: ArenaDirectorMessageHandlerInput,
+    message: GameRealtimeMessage,
+    isCurrent: () => boolean
+): void {
+    if (!isCurrent() || message.protocol !== GAME_PROTOCOL) {
         return;
     }
 
-    if (acceptArenaDirectorPeerMessage(input, message) || acceptArenaDirectorMatchUpdate(input, message)) {
+    if (acceptArenaDirectorPeerMessage(input, message, isCurrent) || acceptArenaDirectorMatchUpdate(input, message)) {
         return;
     }
 
@@ -52,13 +57,6 @@ function acceptArenaDirectorOutput(input: ArenaDirectorMessageHandlerInput, mess
             message.event
         ]);
         input.setActiveEvent(message.event);
-        return;
-    }
-
-    if (message.kind === 'director-arena-snapshot') {
-        input.setArenaSnapshot(message.snapshot);
-        input.setActiveEvent(message.snapshot.activeEvent);
-        input.setRemoteEvents(message.snapshot.events);
         return;
     }
 }

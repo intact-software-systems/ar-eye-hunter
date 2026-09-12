@@ -6,20 +6,27 @@ import { hydrateArenaSnapshot, toArenaSnapshot, upsertPlayerPose } from '../../s
 import type { ArenaSnapshot, GameRealtimeMessage, RemotePlayer, RemoteShot } from '../../types.ts';
 import { toValidatedPlayerPose } from '../state/to-validated-player-pose.ts';
 
-export interface ArenaDirectorPeerMessageInput {
+interface ArenaShotProjectionInput {
     readonly nowMs: () => number;
+    readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly setRemoteShots: Dispatch<SetStateAction<readonly RemoteShot[]>>;
+}
+
+export interface ArenaDirectorPeerMessageInput extends ArenaShotProjectionInput {
     readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
     readonly roomIdRef: RefObject<string | undefined>;
-    readonly sessionRef: RefObject<AuthSession | undefined>;
     readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
     readonly setRemotePlayers: Dispatch<SetStateAction<ReadonlyMap<string, RemotePlayer>>>;
-    readonly setRemoteShots: Dispatch<SetStateAction<readonly RemoteShot[]>>;
 }
 
 export function acceptArenaDirectorPeerMessage(
     input: ArenaDirectorPeerMessageInput,
-    message: GameRealtimeMessage
+    message: GameRealtimeMessage,
+    isCurrent: () => boolean
 ): boolean {
+    if (!isCurrent()) {
+        return false;
+    }
     const nowEpochMs = input.nowMs();
     const currentSessionId = input.sessionRef.current?.sessionId;
     if (message.kind === 'director-player-state') {
@@ -28,6 +35,9 @@ export function acceptArenaDirectorPeerMessage(
             return true;
         }
         input.setRemotePlayers((previous) => {
+            if (!isCurrent()) {
+                return previous;
+            }
             const next = new Map(previous);
             const existing = next.get(pose.sessionId);
             if (existing && existing.pose.seq > pose.seq) {
@@ -37,7 +47,7 @@ export function acceptArenaDirectorPeerMessage(
             return next;
         });
         input.setArenaSnapshot((previous) => {
-            if (!previous) {
+            if (!isCurrent() || !previous) {
                 return previous;
             }
             const next = toArenaSnapshot(
@@ -50,57 +60,49 @@ export function acceptArenaDirectorPeerMessage(
         });
         return true;
     }
-    if (acceptArenaDirectorShot(input, message)) {
-        return true;
-    }
-    if (message.kind === 'director-state-snapshot') {
-        input.setRemotePlayers(
-            new Map(
-                message.players
-                    .filter((pose) => pose.sessionId !== currentSessionId)
-                    .map((pose) => [
-                        pose.sessionId,
-                        {
-                            pose: toValidatedPlayerPose(pose),
-                            lastSeenEpochMs: nowEpochMs
-                        }
-                    ])
-            )
-        );
+    if (acceptArenaDirectorShot(input, message, isCurrent)) {
         return true;
     }
     return false;
 }
 
-function acceptArenaDirectorShot(input: ArenaDirectorPeerMessageInput, message: GameRealtimeMessage): boolean {
+export function acceptArenaDirectorShot(
+    input: ArenaShotProjectionInput,
+    message: GameRealtimeMessage,
+    isCurrent: () => boolean
+): boolean {
     const nowEpochMs = input.nowMs();
     const currentSessionId = input.sessionRef.current?.sessionId;
     if (message.kind === 'director-shot-event') {
         const shot = message.shot;
         if (shot.sessionId !== currentSessionId) {
-            input.setRemoteShots((previous) => [
-                ...previous.slice(-24),
-                {
-                    id: `${shot.sessionId}:${shot.seq}`,
-                    shot,
-                    receivedAtEpochMs: nowEpochMs
-                }
-            ]);
+            input.setRemoteShots((previous) =>
+                !isCurrent() ? previous : [
+                    ...previous.slice(-24),
+                    {
+                        id: `${shot.sessionId}:${shot.seq}`,
+                        shot,
+                        receivedAtEpochMs: nowEpochMs
+                    }
+                ]
+            );
         }
         return true;
     }
     if (message.kind === 'director-shot-accepted') {
         const accepted = message.accepted;
         if (accepted.shot.sessionId !== currentSessionId) {
-            input.setRemoteShots((previous) => [
-                ...previous.slice(-32),
-                {
-                    id: `${accepted.shot.sessionId}:${accepted.shot.seq}:${accepted.revision}`,
-                    shot: accepted.shot,
-                    accepted,
-                    receivedAtEpochMs: nowEpochMs
-                }
-            ]);
+            input.setRemoteShots((previous) =>
+                !isCurrent() ? previous : [
+                    ...previous.slice(-32),
+                    {
+                        id: `${accepted.shot.sessionId}:${accepted.shot.seq}:${accepted.revision}`,
+                        shot: accepted.shot,
+                        accepted,
+                        receivedAtEpochMs: nowEpochMs
+                    }
+                ]
+            );
         }
         return true;
     }

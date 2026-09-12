@@ -4,10 +4,12 @@ import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
 import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_FX_LANE_ID, GAME_MOTION_LANE_ID } from '../../types.ts';
 import type { ArenaConnectionState, DirectorAttemptSource } from '../arena-connection-contracts.ts';
+import type { ArenaPeerShotMessage } from '../messages/use-arena-peer-message-handlers.ts';
 import { createArenaMatchRuntime, type ArenaMatchRuntimeInput } from './create-arena-match-runtime.ts';
 
 interface ArenaMatchLifecycleInput extends ArenaMatchRuntimeInput {
@@ -39,6 +41,7 @@ export function useArenaMatchRuntime(
 ): void {
     useEffect(() => startArenaMatchSession(input, attemptDirectorAppointment), [
         input.acceptDirectorOutput,
+        input.acceptPeerShot,
         input.acceptMatchStartIntent,
         input.acceptMotionMessage,
         input.acceptPickup,
@@ -76,6 +79,7 @@ function startArenaMatchSession(
     };
     input.arenaMatchRef.current = session.match;
     input.activeMatchRoomIdRef.current = session.roomId;
+    const unsubscribePeerShots = subscribeArenaPeerShots(session);
     const unsubscribe = session.match.onStatus(() => {
         input.setDirectorStatus(rallar.director.status(session.roomId));
         input.setGameDiagnostics(session.match.diagnostics());
@@ -88,6 +92,7 @@ function startArenaMatchSession(
     return () => {
         controller.abort();
         unsubscribe();
+        unsubscribePeerShots();
         session.match.stop();
         if (input.arenaMatchRef.current === session.match) {
             input.arenaMatchRef.current = undefined;
@@ -131,4 +136,24 @@ async function syncReadyArenaPeers(session: ArenaMatchSession): Promise<void> {
 function isCurrentArenaMatchSession(session: ArenaMatchSession): boolean {
     return !session.signal.aborted && session.input.arenaMatchRef.current === session.match &&
         session.input.isCurrentNetworkGeneration(session.generation);
+}
+
+function subscribeArenaPeerShots(session: ArenaMatchSession): () => void {
+    return rallar.realtime.onJson<ArenaPeerShotMessage>(GAME_COMBAT_LANE_ID, (message) => {
+        if (!isCurrentArenaMatchSession(session)) {
+            return;
+        }
+        const roomRef = rallar.rooms.state().currentRoomRef;
+        if (!roomRef || roomRef.groupId !== session.roomId) {
+            return;
+        }
+        const isCurrent = () => {
+            if (!isCurrentArenaMatchSession(session) || session.input.roomIdRef.current !== session.roomId) {
+                return false;
+            }
+            const currentRoomRef = rallar.rooms.state().currentRoomRef;
+            return Boolean(currentRoomRef && isSameGroupRef(currentRoomRef, roomRef));
+        };
+        session.input.acceptPeerShot({ peerId: message.peerId, message: message.data, roomRef, isCurrent });
+    });
 }

@@ -6,14 +6,11 @@ import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browse
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
-import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_MOTION_LANE_ID, type GameRealtimeMessage } from '../../types.ts';
 import type { RemotePlayer } from '../../types.ts';
 import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
 
 interface ArenaConnectionSessionLifecycleInput {
     readonly nowMs: () => number;
-    readonly acceptMotionMessage: (senderId: string, message: GameRealtimeMessage) => void;
-    readonly acceptRealtimeMessage: (senderId: string, message: GameRealtimeMessage) => void;
     readonly bumpNetworkGeneration: () => number;
     readonly connectionState: ArenaConnectionState;
     readonly currentNetworkSignal: () => AbortSignal;
@@ -48,7 +45,7 @@ export function useArenaConnectionSessionLifecycle(
             return;
         }
         return startArenaSessionSubscriptions(input);
-    }, [input.acceptMotionMessage, input.acceptRealtimeMessage, input.connectionState]);
+    }, [input.connectionState]);
     return { connect };
 }
 
@@ -90,30 +87,6 @@ async function connectArenaSession(input: ArenaConnectionSessionLifecycleInput):
 
 function startArenaSessionSubscriptions(input: ArenaConnectionSessionLifecycleInput): () => void {
     const subscriptions = rallar.subscriptions()
-        .add(
-            rallar.realtime.onJson<GameRealtimeMessage>(
-                GAME_MOTION_LANE_ID,
-                (message) => {
-                    input.acceptMotionMessage(message.peerId, message.data);
-                }
-            )
-        )
-        .add(
-            rallar.realtime.onJson<GameRealtimeMessage>(
-                GAME_COMBAT_LANE_ID,
-                (message) => {
-                    input.acceptRealtimeMessage(message.peerId, message.data);
-                }
-            )
-        )
-        .add(
-            rallar.realtime.onJson<GameRealtimeMessage>(
-                GAME_AI_LANE_ID,
-                (message) => {
-                    input.acceptRealtimeMessage(message.peerId, message.data);
-                }
-            )
-        )
         .add(
             rallar.rooms.onChange((state) => {
                 input.setRooms(state.rooms);

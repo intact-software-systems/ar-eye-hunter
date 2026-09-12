@@ -946,6 +946,23 @@ The existing test-boundary registry removes two obsolete auto-election call-coun
 classifies the narrow diagnostics polling, clipboard payload and stale-report appointment fences.
 No unrelated registry contract or production legacy approval was changed.
 
+**Task 8 review correction:** Accepted hit/pickup event-to-snapshot continuations
+retain and revalidate the owning match, room and network generation. The only
+verified raw fallback, accepted shots without a fresh director, carries mandatory
+full `roomRef` directly on its app payload and uses scoped room realtime sends.
+Its receive subscription belongs to the existing match lifetime, validates the
+current full scope, and guards deferred shot projection. Raw and canonical
+accepted shots share one projection owner. Unused raw listeners/output branches
+and ineffective raw hit/pickup/match-start sends are removed; working local and
+remote intent acceptance converges on the canonical match receiver. The stale
+diagnostic-read count and its unsupported registry classification are removed,
+while observable stale-state assertions remain.
+
+This is the authorized bounded app repair. The independent, untouched generic
+game envelope still uses bare `roomId`; this correction neither changes its public
+wire contract nor claims general canonical scope isolation. Existing desktop
+browser acceptance and mobile timing limitations remain unchanged.
+
 ### Task 9: The black-box ledger becomes a projection
 
 **Files:**

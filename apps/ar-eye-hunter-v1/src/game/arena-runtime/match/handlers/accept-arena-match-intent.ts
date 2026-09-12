@@ -5,7 +5,8 @@ import {
     isArenaMatchStartIntentFromSender,
     isArenaPickupIntentFromSender,
     isArenaPlayerHitIntentFromSender,
-    isArenaShotIntentFromSender
+    isArenaShotIntentFromSender,
+    type ArenaRallarGameMatchHandle
 } from '../../../rallar-game-match-adapter.ts';
 import {
     hydrateArenaSnapshot,
@@ -16,6 +17,13 @@ import {
 import { GAME_PROTOCOL, type GameRealtimeMessage, type PickupIntent, type PlayerHitIntent } from '../../../types.ts';
 import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 
+interface ArenaIntentOwner {
+    readonly input: ArenaMatchRuntimeInput;
+    readonly generation: number;
+    readonly roomId: string;
+    readonly match: ArenaRallarGameMatchHandle;
+}
+
 export async function acceptArenaMatchIntent(
     input: ArenaMatchRuntimeInput,
     generation: number,
@@ -24,9 +32,15 @@ export async function acceptArenaMatchIntent(
     if (!input.isCurrentNetworkGeneration(generation)) {
         return;
     }
+    const match = input.arenaMatchRef.current;
+    const roomId = input.roomIdRef.current;
+    if (!match || !roomId || envelope.roomId !== roomId) {
+        return;
+    }
+    const owner: ArenaIntentOwner = { input, generation, roomId, match };
     const message = envelope.payload;
     if (isArenaShotIntentFromSender(message, envelope.senderId)) {
-        await input.arenaMatchRef.current?.publishEvent({
+        await match.publishEvent({
             protocol: GAME_PROTOCOL,
             kind: 'director-shot-event',
             shot: message.shot
@@ -34,29 +48,30 @@ export async function acceptArenaMatchIntent(
         return;
     }
     if (isArenaPlayerHitIntentFromSender(message, envelope.senderId)) {
-        await acceptArenaPlayerHitIntent(input, message.intent);
+        await acceptArenaPlayerHitIntent(owner, message.intent);
         return;
     }
     if (isArenaPickupIntentFromSender(message, envelope.senderId)) {
-        await acceptArenaPickupIntent(input, message.intent);
+        await acceptArenaPickupIntent(owner, message.intent);
         return;
     }
     if (isArenaMatchStartIntentFromSender(message, envelope.senderId)) {
-        const status = input.arenaMatchRef.current?.status();
+        const status = match.status();
         if (status?.directorPeerId === envelope.senderId) {
             await input.acceptMatchStartIntent(message.intent);
         }
         return;
     }
     if (isArenaAcceptedShotFromSender(message, envelope.senderId)) {
-        await input.arenaMatchRef.current?.publishEvent(message);
+        await match.publishEvent(message);
     }
 }
 
-async function acceptArenaPlayerHitIntent(input: ArenaMatchRuntimeInput, intent: PlayerHitIntent): Promise<void> {
+async function acceptArenaPlayerHitIntent(owner: ArenaIntentOwner, intent: PlayerHitIntent): Promise<void> {
+    const { input, match, roomId } = owner;
     const nowEpochMs = input.nowMs();
     const previous = input.arenaSnapshotRef.current;
-    if (!previous) {
+    if (!previous || (previous.roomId !== undefined && previous.roomId !== roomId)) {
         return;
     }
     const result = resolvePlayerHitIntent(
@@ -69,24 +84,27 @@ async function acceptArenaPlayerHitIntent(input: ArenaMatchRuntimeInput, intent:
     }
     const snapshot = toArenaSnapshot(
         result.state,
-        previous.roomId ?? input.roomIdRef.current,
+        previous.roomId ?? roomId,
         nowEpochMs
     );
     input.arenaSnapshotRef.current = snapshot;
     input.setArenaSnapshot(snapshot);
     input.acceptPlayerHit(result.acceptedHit);
-    await input.arenaMatchRef.current?.publishEvent({
+    await match.publishEvent({
         protocol: GAME_PROTOCOL,
         kind: 'director-player-hit-accepted',
         accepted: result.acceptedHit
     });
-    await input.arenaMatchRef.current?.publishSnapshot(snapshot, { reliable: false });
+    if (isCurrentArenaIntentOwner(owner)) {
+        await match.publishSnapshot(snapshot, { reliable: false });
+    }
 }
 
-async function acceptArenaPickupIntent(input: ArenaMatchRuntimeInput, intent: PickupIntent): Promise<void> {
+async function acceptArenaPickupIntent(owner: ArenaIntentOwner, intent: PickupIntent): Promise<void> {
+    const { input, match, roomId } = owner;
     const nowEpochMs = input.nowMs();
     const previous = input.arenaSnapshotRef.current;
-    if (!previous) {
+    if (!previous || (previous.roomId !== undefined && previous.roomId !== roomId)) {
         return;
     }
     const result = resolvePickupIntent(
@@ -99,16 +117,23 @@ async function acceptArenaPickupIntent(input: ArenaMatchRuntimeInput, intent: Pi
     }
     const snapshot = toArenaSnapshot(
         result.state,
-        previous.roomId ?? input.roomIdRef.current,
+        previous.roomId ?? roomId,
         nowEpochMs
     );
     input.arenaSnapshotRef.current = snapshot;
     input.setArenaSnapshot(snapshot);
     input.acceptPickup(result.acceptedPickup);
-    await input.arenaMatchRef.current?.publishEvent({
+    await match.publishEvent({
         protocol: GAME_PROTOCOL,
         kind: 'director-pickup-accepted',
         accepted: result.acceptedPickup
     });
-    await input.arenaMatchRef.current?.publishSnapshot(snapshot, { reliable: false });
+    if (isCurrentArenaIntentOwner(owner)) {
+        await match.publishSnapshot(snapshot, { reliable: false });
+    }
+}
+
+function isCurrentArenaIntentOwner(owner: ArenaIntentOwner): boolean {
+    return owner.input.isCurrentNetworkGeneration(owner.generation) &&
+        owner.input.arenaMatchRef.current === owner.match && owner.input.roomIdRef.current === owner.roomId;
 }

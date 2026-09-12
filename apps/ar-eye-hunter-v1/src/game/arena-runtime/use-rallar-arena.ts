@@ -50,7 +50,7 @@ export function useRallarArena(): ArenaConnection {
     });
     const transport = useArenaSnapshotTransport(state);
     const messages = useArenaMessageHandlers(state);
-    const connect = useArenaConnectionLifecycle(state, messages);
+    const connect = useArenaConnectionLifecycle(state);
     const attemptDirectorAppointment = useArenaMatchLifecycles(
         state,
         messages,
@@ -76,7 +76,7 @@ export function useRallarArena(): ArenaConnection {
         connect,
         attemptDirectorAppointment
     );
-    const gameActions = useArenaGameActions(state, messages, transport);
+    const gameActions = useArenaGameActions(state, transport);
 
     return useArenaConnectionView({ state, presence, connectionActions, gameActions });
 }
@@ -144,13 +144,7 @@ function useArenaMessageHandlers(state: ReturnType<typeof useArenaRuntimeState>)
     });
     const peerMessages = useArenaPeerMessageHandlers({
         nowMs: Date.now,
-        acceptEyeAttack: stateAcceptance.acceptEyeAttack,
-        acceptPickup: stateAcceptance.acceptPickup,
-        acceptPlayerHit: stateAcceptance.acceptPlayerHit,
         sessionRef: state.sessionRef,
-        setActiveEvent: state.setActiveEvent,
-        setArenaSnapshot: state.setArenaSnapshot,
-        setRemoteEvents: state.setRemoteEvents,
         setRemotePlayers: state.setRemotePlayers,
         setRemoteShots: state.setRemoteShots
     });
@@ -159,13 +153,10 @@ function useArenaMessageHandlers(state: ReturnType<typeof useArenaRuntimeState>)
 }
 
 function useArenaConnectionLifecycle(
-    state: ReturnType<typeof useArenaRuntimeState>,
-    messages: ReturnType<typeof useArenaMessageHandlers>
+    state: ReturnType<typeof useArenaRuntimeState>
 ) {
     const { connect } = useArenaConnectionSessionLifecycle({
         nowMs: Date.now,
-        acceptMotionMessage: messages.acceptMotionMessage,
-        acceptRealtimeMessage: messages.acceptRealtimeMessage,
         bumpNetworkGeneration: state.bumpNetworkGeneration,
         connectionState: state.connectionState,
         currentNetworkSignal: state.currentNetworkSignal,
@@ -215,6 +206,7 @@ function useArenaMatchLifecycles(
         {
             nowMs: Date.now,
             acceptDirectorOutput: messages.acceptDirectorOutput,
+            acceptPeerShot: messages.acceptPeerShot,
             acceptMatchStartIntent: messages.acceptMatchStartIntent,
             acceptMotionMessage: messages.acceptMotionMessage,
             acceptPickup: messages.acceptPickup,
@@ -286,7 +278,6 @@ function useArenaConnectionActions(
 
 function useArenaGameActions(
     state: ReturnType<typeof useArenaRuntimeState>,
-    messages: ReturnType<typeof useArenaMessageHandlers>,
     transport: ReturnType<typeof useArenaSnapshotTransport>
 ) {
     const presenceActions = useArenaPresenceActions({
@@ -300,20 +291,18 @@ function useArenaGameActions(
         sessionRef: state.sessionRef
     });
     const combatActions = useArenaCombatActions({
-        acceptPlayerHit: messages.acceptPlayerHit,
+        nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
-        arenaSnapshotRef: state.arenaSnapshotRef,
         directorStatusRef: state.directorStatusRef,
         isNetworkEnabled: state.isNetworkEnabled,
         networkGenerationRef: state.networkGenerationRef,
         roomIdRef: state.roomIdRef,
         runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
-        sessionRef: state.sessionRef,
-        setArenaSnapshot: state.setArenaSnapshot
+        sessionRef: state.sessionRef
     });
     const worldActions = useArenaWorldActions({
-        acceptMatchStartIntent: messages.acceptMatchStartIntent,
-        acceptPickup: messages.acceptPickup,
+        nowMs: Date.now,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
         arenaMatchRef: state.arenaMatchRef,
         arenaSnapshotRef: state.arenaSnapshotRef,
         directorStatusRef: state.directorStatusRef,

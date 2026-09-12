@@ -6,16 +6,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarRoomRealtimeJsonDefaults } from '@shared-web/browser/rallar-realtime.ts';
 import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
-import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
+import { createRallarGameEnvelope, type RallarGameMatchStatus, type RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
 
+import {
+    createArenaMatchRuntime,
+    type ArenaMatchRuntimeInput
+} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/match/create-arena-match-runtime.ts';
+import { acceptArenaMatchIntent } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/match/handlers/accept-arena-match-intent.ts';
+import type { ArenaPeerShotMessage } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/messages/use-arena-peer-message-handlers.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
-import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import { createInitialArenaState, createInitialVitalsState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { GameRealtimeMessage } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+import {
+    createInitialArenaState,
+    createInitialVitalsState,
+    spawnWeaponPickup,
+    toArenaSnapshot,
+    upsertPlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+import type { ArenaSnapshot, GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -28,23 +42,13 @@ const session: AuthSession = {
     expiresAtEpochMs: Date.now() + 60_000
 };
 
+const arenaRoomRef: GroupRef = { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' };
+
 const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>();
 const unsubscribe = vi.fn();
 const mockMatch = vi.hoisted(() => ({
     stop: vi.fn(),
-    status: vi.fn<ArenaRallarGameMatchHandle['status']>(() => ({
-        phase: 'connecting',
-        protocol: 'ar-eye-hunter.v1',
-        topicId: 'room.ar-eye-hunter.director',
-        directorPeerId: undefined,
-        directorIsFresh: false,
-        directorAuthority: 'none',
-        egress: { reliable: 'empty', realtime: 'empty' },
-        recovery: { status: 'idle' },
-        started: true,
-        stopped: false,
-        updatedAtEpochMs: 1
-    })),
+    status: vi.fn<ArenaRallarGameMatchHandle['status']>(emptyArenaMatchStatus),
     diagnostics: vi.fn(() => ({
         generatedAtEpochMs: 1,
         phase: 'starting',
@@ -199,7 +203,8 @@ describe('useRallarArena auth lifecycle', () => {
         });
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
-            currentRoomId: undefined
+            currentRoomId: 'arena-1',
+            currentRoomRef: arenaRoomRef
         });
         mockRallar.director.status.mockReturnValue({
             role: 'none',
@@ -264,7 +269,7 @@ describe('useRallarArena auth lifecycle', () => {
             notReady: []
         });
         mockMatch.stop.mockClear();
-        mockMatch.status.mockClear();
+        mockMatch.status.mockReset().mockImplementation(emptyArenaMatchStatus);
         mockMatch.diagnostics.mockClear();
         mockMatch.canAppointDirector.mockClear();
         mockMatch.start.mockClear();
@@ -539,7 +544,6 @@ describe('useRallarArena auth lifecycle', () => {
         });
         await waitForState(() => current?.directorAttempt.status === 'pending');
         const diagnosticsBeforeResolve = current?.gameDiagnostics;
-        const diagnosticsCallsBeforeResolve = mockMatch.diagnostics.mock.calls.length;
 
         await act(async () => {
             for (const listener of roomChangeListeners) {
@@ -568,7 +572,6 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.roomId).toBeUndefined();
         expect(current?.directorStatus.isDirector).toBe(false);
         expect(current?.directorAttempt.status).toBe('pending');
-        expect(mockMatch.diagnostics).toHaveBeenCalledTimes(diagnosticsCallsBeforeResolve);
         expect(current?.gameDiagnostics).toBe(diagnosticsBeforeResolve);
     });
 
@@ -939,17 +942,6 @@ describe('useRallarArena auth lifecycle', () => {
     });
 
     it('creates a new arena by switching rooms and clearing stale remote players', async () => {
-        const realtimeHandlers = new Map<
-            string,
-            (message: {
-                peerId: string;
-                data: GameRealtimeMessage;
-            }) => void | Promise<void>
-        >();
-        mockRallar.realtime.onJson.mockImplementation((laneId, handler) => {
-            realtimeHandlers.set(laneId, handler);
-            return vi.fn();
-        });
         mockRallar.rooms.createAndSwitch.mockResolvedValue({
             group: {
                 groupId: 'arena-2'
@@ -969,9 +961,15 @@ describe('useRallarArena auth lifecycle', () => {
         await waitForState(() => current?.connectionState === 'connected');
 
         await act(async () => {
-            await realtimeHandlers.get('motion')?.({
-                peerId: 'peer-1',
-                data: {
+            await vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0].onPresence?.(createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'presence',
+                roomId: 'arena-1',
+                senderId: 'peer-1',
+                seq: 1,
+                directorEpoch: 0,
+                sentAtEpochMs: 123,
+                payload: {
                     protocol: 'ar-eye-hunter.v1',
                     kind: 'player-pose',
                     pose: {
@@ -987,7 +985,7 @@ describe('useRallarArena auth lifecycle', () => {
                         sentAtEpochMs: 123
                     }
                 }
-            });
+            }));
         });
         await waitForState(() => current?.remotePlayers.size === 1);
 
@@ -1256,6 +1254,322 @@ describe('useRallarArena auth lifecycle', () => {
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(1);
     });
 
+    it.each([
+        { name: 'application', roomRef: { ...arenaRoomRef, applicationId: 'another-app' } },
+        { name: 'workspace', roomRef: { ...arenaRoomRef, workspaceId: 'another-workspace' } },
+        { name: 'group', roomRef: { ...arenaRoomRef, groupId: 'another-room' } },
+        { name: 'missing scope', roomRef: undefined }
+    ])('ignores raw accepted shots with wrong $name', async ({ roomRef }) => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const receive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        await act(async () => receive?.({ peerId: 'peer-1', data: peerShotMessage(roomRef) }));
+        expect(current?.remoteShots).toEqual([]);
+    });
+
+    it('keeps same-room accepted shots but rejects an old subscription after replacement and network end', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const oldReceive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        await act(async () => oldReceive?.({ peerId: 'peer-1', data: peerShotMessage(arenaRoomRef) }));
+        expect(current?.remoteShots.map((shot) => shot.id)).toEqual(['peer-1:1:3']);
+        const nextRoomRef = { ...arenaRoomRef, groupId: 'arena-2' };
+        const nextRoom = { rooms: [], currentRoomId: 'arena-2', currentRoomRef: nextRoomRef };
+        mockRallar.rooms.state.mockReturnValue(nextRoom);
+        mockRallar.rooms.createAndSwitch.mockResolvedValue({ group: nextRoomRef });
+        mockRallar.rooms.refresh.mockResolvedValue(nextRoom);
+        await act(async () => current?.createArenaRoom());
+        await act(async () => {
+            oldReceive?.({ peerId: 'peer-1', data: peerShotMessage(arenaRoomRef) });
+            oldReceive?.({ peerId: 'peer-1', data: peerShotMessage(nextRoomRef) });
+        });
+        expect(current?.remoteShots).toEqual([]);
+        const nextReceive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        await act(async () => nextReceive?.({ peerId: 'peer-1', data: peerShotMessage(nextRoomRef) }));
+        expect(current?.remoteShots.map((shot) => shot.id)).toEqual(['peer-1:1:3']);
+        await emitAuthState({ authenticated: false, reason: 'expired' });
+        await act(async () => nextReceive?.({ peerId: 'peer-1', data: peerShotMessage(nextRoomRef) }));
+        expect(current?.remoteShots).toEqual([]);
+    });
+
+    it('ignores raw accepted shots after the network ends even if a listener fires late', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const receive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        await emitAuthState({ authenticated: false, reason: 'expired' });
+        await act(async () => receive?.({ peerId: 'peer-1', data: peerShotMessage(arenaRoomRef) }));
+        expect(current?.remoteShots).toEqual([]);
+    });
+
+    it('accepts the current full scope when room IDs match after scope replacement', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const receive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        const nextRoomRef = { ...arenaRoomRef, workspaceId: 'next-workspace' };
+        mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoomId: 'arena-1', currentRoomRef: nextRoomRef });
+        await act(async () => {
+            receive?.({ peerId: 'peer-1', data: peerShotMessage(arenaRoomRef) });
+            receive?.({ peerId: 'peer-1', data: peerShotMessage(nextRoomRef) });
+        });
+        expect(current?.remoteShots.map((shot) => shot.id)).toEqual(['peer-1:1:3']);
+    });
+
+    it('requires every room identity field even in an empty workspace scope', async () => {
+        const emptyWorkspace = { ...arenaRoomRef, workspaceId: '' };
+        mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoomId: 'arena-1', currentRoomRef: emptyWorkspace });
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const receive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        await act(async () =>
+            receive?.({
+                peerId: 'peer-1',
+                data: {
+                    ...peerShotMessage(emptyWorkspace),
+                    roomRef: { applicationId: arenaRoomRef.applicationId, groupId: arenaRoomRef.groupId }
+                }
+            })
+        );
+        expect(current?.remoteShots).toEqual([]);
+    });
+
+    it('rejects a raw accepted shot whose shooter is not its sending peer', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const receive = mockRallar.realtime.onJson.mock.calls.findLast(([lane]) => lane === 'combat')?.[1];
+        await act(async () => receive?.({ peerId: 'another-peer', data: peerShotMessage(arenaRoomRef) }));
+        expect(current?.remoteShots).toEqual([]);
+    });
+
+    it('puts current full room identity on the actual accepted-shot fallback payload', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const outgoing: ArenaPeerShotMessage[] = [];
+        const targets: RallarRoomRealtimeJsonDefaults[] = [];
+        mockRallar.realtime.room.mockImplementation((target: RallarRoomRealtimeJsonDefaults) => {
+            targets.push(target);
+            return {
+                send: async (payload: ArenaPeerShotMessage) => {
+                    outgoing.push(payload);
+                    return { status: 'sent', peerIds: ['peer-1'], desiredPeerIds: ['peer-1'], results: [], transport: 'rtc', laneId: 'combat' };
+                }
+            };
+        });
+        const message = peerShotMessage(arenaRoomRef);
+        await act(async () => current?.sendShot(message.accepted.shot, message.accepted));
+        expect(targets).toEqual([{ roomRef: arenaRoomRef, laneId: 'combat', openTimeoutMs: 1500 }]);
+        expect(outgoing).toEqual([{
+            ...message,
+            accepted: {
+                ...message.accepted,
+                shot: { ...message.accepted.shot, sessionId: session.sessionId, username: session.username, color: expect.any(String) }
+            }
+        }]);
+    });
+
+    it.each(['hit', 'pickup'] as const)('applies the local director %s intent through its owning receiver', async (kind) => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        mockMatch.status.mockReturnValueOnce(localDirectorMatchStatus());
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        const fixture = acceptedIntentFixture(kind, session.sessionId);
+        const published = createDeferred<ArenaSnapshot>();
+        await act(async () => current?.publishArenaSnapshot(fixture.snapshot));
+        mockMatch.sendIntent.mockImplementationOnce(async (message) => {
+            await config?.onIntent?.(createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomId: 'arena-1',
+                senderId: session.sessionId,
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: fixture.nowEpochMs,
+                payload: message
+            }));
+            return { status: 'sent', transport: 'local' };
+        });
+        mockMatch.publishSnapshot.mockImplementationOnce(async (snapshot: ArenaSnapshot) => {
+            published.resolve(snapshot);
+            return { status: 'sent' };
+        });
+        await act(async () => {
+            if (fixture.message.kind === 'player-hit-intent') {
+                current?.sendPlayerHit(fixture.message.intent);
+            }
+            else if (fixture.message.kind === 'pickup-intent') {
+                current?.sendPickupIntent(fixture.message.intent);
+            }
+            await published.promise;
+        });
+        const snapshot = await published.promise;
+        expect(snapshot.roomId).toBe('arena-1');
+        expect(snapshot.revision).toBeGreaterThan(fixture.snapshot.revision);
+        expect(
+            kind === 'hit'
+                ? current?.remotePlayerHits[0]?.intent.shot.sessionId
+                : current?.pickupAcceptances[0]?.player.sessionId
+        ).toBe(session.sessionId);
+    });
+
+    it('awaits local match-start acceptance through the canonical intent receiver', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        mockMatch.status.mockReturnValue(localDirectorMatchStatus());
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        await act(async () => current?.publishArenaSnapshot(arenaSnapshot(1)));
+        const published: ArenaSnapshot[] = [];
+        mockMatch.sendIntent.mockImplementationOnce(async (payload) => {
+            await config?.onIntent?.(createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomId: 'arena-1',
+                senderId: session.sessionId,
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: 1000,
+                payload
+            }));
+            return { status: 'sent', transport: 'local' };
+        });
+        mockMatch.publishSnapshot.mockImplementationOnce(async (snapshot: ArenaSnapshot) => {
+            published.push(snapshot);
+            return { status: 'sent' };
+        });
+        await act(async () => current?.startArenaMatch(60_000));
+        expect(current?.arenaSnapshot?.match).toMatchObject({ durationMs: 60_000, status: 'active' });
+        expect(published.map((snapshot) => snapshot.match)).toEqual([current?.arenaSnapshot?.match]);
+    });
+
+    it.each(['hit', 'pickup'] as const)('rejects a current-room %s intent against a retained prior-room snapshot', async (kind) => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        const fixture = acceptedIntentFixture(kind);
+        const previous = { ...fixture.snapshot, roomId: 'prior-room' };
+        await act(async () => current?.publishArenaSnapshot(previous));
+        await act(async () =>
+            config?.onIntent?.(createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomId: 'arena-1',
+                senderId: 'peer-1',
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: fixture.nowEpochMs,
+                payload: fixture.message
+            }))
+        );
+        expect(current?.arenaSnapshot).toEqual(previous);
+        expect(current?.remotePlayerHits).toEqual([]);
+        expect(current?.pickupAcceptances).toEqual([]);
+    });
+
+    it.each(
+        [
+            { kind: 'hit', end: 'replacement' },
+            { kind: 'pickup', end: 'replacement' },
+            { kind: 'hit', end: 'network-end' },
+            { kind: 'pickup', end: 'network-end' }
+        ] as const
+    )('does not publish an accepted $kind snapshot after $end', async ({ kind, end }) => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        const fixture = acceptedIntentFixture(kind);
+        await act(async () => current?.publishArenaSnapshot(fixture.snapshot));
+        const eventStarted = createDeferred<void>();
+        const eventDone = createDeferred<void>();
+        const publishedSnapshots: ArenaSnapshot[] = [];
+        mockMatch.publishEvent.mockImplementationOnce(() => {
+            eventStarted.resolve();
+            return eventDone.promise;
+        });
+        mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
+            publishedSnapshots.push(snapshot);
+            return { status: 'sent' };
+        });
+        let completion: void | Promise<void>;
+        await act(async () => {
+            completion = config?.onIntent?.(createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomId: 'arena-1',
+                senderId: 'peer-1',
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: fixture.nowEpochMs,
+                payload: fixture.message
+            }));
+            await eventStarted.promise;
+        });
+        if (end === 'replacement') {
+            mockRallar.rooms.createAndSwitch.mockResolvedValue({ group: { groupId: 'arena-2' } });
+            mockRallar.rooms.refresh.mockResolvedValue({ rooms: [], currentRoomId: 'arena-2' });
+            await act(async () => current?.createArenaRoom());
+        }
+        else {
+            await emitAuthState({ authenticated: false, reason: 'expired' });
+        }
+        await act(async () => {
+            eventDone.resolve();
+            await completion;
+        });
+        expect(publishedSnapshots.map((snapshot) => snapshot.roomId)).toEqual([]);
+        mockMatch.publishSnapshot.mockReset();
+    });
+
+    it.each(['hit', 'pickup'] as const)('fences accepted %s continuation when its network ends with its match still installed', async (kind) => {
+        const fixture = acceptedIntentFixture(kind);
+        const eventDone = createDeferred<void>();
+        const eventStarted = createDeferred<void>();
+        const publishedSnapshots: string[] = [];
+        let networkEnabled = true;
+        mockMatch.publishEvent.mockImplementationOnce(() => {
+            eventStarted.resolve();
+            return eventDone.promise;
+        });
+        mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
+            publishedSnapshots.push(snapshot.roomId ?? '');
+            return { status: 'sent' };
+        });
+        const input: ArenaMatchRuntimeInput = {
+            nowMs: () => fixture.nowEpochMs,
+            arenaMatchRef: { current: undefined },
+            arenaSnapshotRef: { current: fixture.snapshot },
+            roomIdRef: { current: 'arena-1' },
+            isCurrentNetworkGeneration: () => networkEnabled,
+            acceptDirectorOutput: () => {},
+            acceptPeerShot: () => {},
+            acceptMatchStartIntent: async () => {},
+            acceptMotionMessage: () => {},
+            acceptPickup: () => {},
+            acceptPlayerHit: () => {},
+            setActiveEvent: () => {},
+            setArenaSnapshot: () => {},
+            setRemoteEvents: () => {}
+        };
+        input.arenaMatchRef.current = createArenaMatchRuntime(input, 1, 'arena-1');
+        const completion = acceptArenaMatchIntent(
+            input,
+            1,
+            createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomId: 'arena-1',
+                senderId: 'peer-1',
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: fixture.nowEpochMs,
+                payload: fixture.message
+            })
+        );
+        await eventStarted.promise;
+        networkEnabled = false;
+        eventDone.resolve();
+        await completion;
+        expect(publishedSnapshots).toEqual([]);
+        mockMatch.publishSnapshot.mockReset();
+    });
+
     async function renderHook(): Promise<void> {
         root = createRoot(container);
         function Harness() {
@@ -1356,4 +1670,101 @@ function emptyPeerReadiness(): RallarGamePeerReadiness {
 
 function createDeferred<T>() {
     return Promise.withResolvers<T>();
+}
+
+interface AcceptedIntentFixture {
+    readonly nowEpochMs: number;
+    readonly snapshot: ArenaSnapshot;
+    readonly message: GameRealtimeMessage;
+}
+
+function acceptedIntentFixture(kind: 'hit' | 'pickup', peerId = 'peer-1'): AcceptedIntentFixture {
+    const nowEpochMs = Date.now();
+    const initial = spawnWeaponPickup(createInitialArenaState(44, nowEpochMs), nowEpochMs, 'audit-pea-shooter');
+    const pickup = initial.pickups[0];
+    const player: PlayerPose = {
+        sessionId: peerId,
+        username: 'peer',
+        color: '#00ffaa',
+        position: kind === 'pickup' ? pickup.position : [0, 1.72, 0],
+        rotation: [0, 0, 0],
+        vitals: createInitialVitalsState(),
+        score: 0,
+        seq: 1,
+        sentAtEpochMs: nowEpochMs
+    };
+    const state = upsertPlayerPose(upsertPlayerPose(initial, player, nowEpochMs), {
+        ...player,
+        sessionId: 'target',
+        position: [0, 1.72, 9]
+    }, nowEpochMs);
+    const message: GameRealtimeMessage = kind === 'pickup'
+        ? {
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'pickup-intent',
+            intent: { pickupId: pickup.id, sessionId: peerId, position: pickup.position, seq: 1, sentAtEpochMs: nowEpochMs }
+        }
+        : {
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'player-hit-intent',
+            intent: {
+                shot: {
+                    sessionId: peerId,
+                    username: 'peer',
+                    color: '#00ffaa',
+                    origin: [0, 1.72, 0],
+                    direction: [0, 0, 1],
+                    seq: 1,
+                    sentAtEpochMs: nowEpochMs
+                },
+                targetSessionId: 'target',
+                predictedImpact: [0, 1.72, 9],
+                sentAtEpochMs: nowEpochMs
+            }
+        };
+    return { nowEpochMs, snapshot: toArenaSnapshot(state, 'arena-1', nowEpochMs), message };
+}
+
+function peerShotMessage(roomRef: GroupRef | undefined) {
+    return {
+        protocol: 'ar-eye-hunter.v1' as const,
+        kind: 'director-shot-accepted' as const,
+        roomRef,
+        accepted: {
+            shot: {
+                sessionId: 'peer-1',
+                username: 'peer',
+                color: '#00ffaa',
+                origin: [0, 2, 0] as const,
+                direction: [0, 0, 1] as const,
+                seq: 1,
+                sentAtEpochMs: 1000
+            },
+            hit: true,
+            targetId: 'eye-1',
+            impact: [0, 2, 4] as const,
+            scoreDelta: 120,
+            combo: 2,
+            multiplier: 1,
+            overdrive: 20,
+            revision: 3,
+            acceptedAtEpochMs: 1000
+        }
+    };
+}
+
+function emptyArenaMatchStatus(): RallarGameMatchStatus {
+    return {
+        phase: 'connecting',
+        protocol: 'ar-eye-hunter.v1',
+        topicId: 'room.ar-eye-hunter.director',
+        directorPeerId: undefined,
+        directorIsFresh: false,
+        directorAuthority: 'none',
+        egress: { reliable: 'empty', realtime: 'empty' },
+        recovery: { status: 'idle' },
+        started: true,
+        stopped: false,
+        updatedAtEpochMs: 1
+    };
 }

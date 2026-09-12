@@ -11,12 +11,14 @@ import type {
     PickupAccepted,
     PlayerHitAccepted
 } from '../../types.ts';
+import type { ArenaPeerShotReception } from '../messages/use-arena-peer-message-handlers.ts';
 import { acceptArenaMatchInput } from './handlers/accept-arena-match-input.ts';
 import { acceptArenaMatchIntent } from './handlers/accept-arena-match-intent.ts';
 
 export interface ArenaMatchRuntimeInput {
     readonly nowMs: () => number;
-    readonly acceptDirectorOutput: (message: GameRealtimeMessage) => void;
+    readonly acceptDirectorOutput: (message: GameRealtimeMessage, isCurrent: () => boolean) => void;
+    readonly acceptPeerShot: (reception: ArenaPeerShotReception) => void;
     readonly acceptMatchStartIntent: (intent: MatchStartIntent) => Promise<void>;
     readonly acceptMotionMessage: (senderId: string, message: GameRealtimeMessage) => void;
     readonly acceptPickup: (accepted: PickupAccepted) => void;
@@ -49,7 +51,7 @@ export function createArenaMatchRuntime(
         onIntent: (envelope) => acceptArenaMatchIntent(input, generation, envelope),
         onEvent: (envelope) => {
             if (isCurrent()) {
-                input.acceptDirectorOutput(envelope.payload);
+                input.acceptDirectorOutput(envelope.payload, isCurrent);
             }
         },
         onSnapshot: (envelope) => {
