@@ -594,7 +594,7 @@ export namespace BrowserRallarDeliveryRegistry {
 export class BrowserRallarDeliveryRegistry {
     constructor(input: BrowserRallarDeliveryRegistry.Input);
     /** Returns the existing handle for the same msgId (fallback re-sends the same envelope). */
-    open(message: ALMessage): RallarMessageHandle;
+    open(message: ALMessage, carrier: ALDeliveryCarrier): RallarMessageHandle;
     /** The sink one carrier owner writes into; a sink is closed by `closeSink` when its owner is detached (a batch that outlives dispose must not reach the registry). */
     createSink(): { readonly sink: ALDeliverySettlementSink; close(): void; };
     record(settlement: ALDeliverySettlement): void;
@@ -603,6 +603,14 @@ export class BrowserRallarDeliveryRegistry {
     size(): number;
 }
 ```
+
+The two transitions no owner emits — the lazy deadline and the lost observation — are pure functions
+beside the reducer, `computeALDeliveryDeadline(lifecycle, nowMs)` and
+`computeALDeliveryUnobservable(lifecycle)` in `compute-al-delivery-lifecycle.ts`, not synthetic
+settlements, because a settlement carries a carrier the registry does not have (ruling R11). `open`
+records the first carrier the sender will try and the entry remembers the last carrier seen; the
+handle's `cancel()` calls the port first and records its own `cancelled` only if the owners' own
+emission has not already terminated the entry (ruling R12).
 
 Retention is applied on `open()`: terminal entries older than `retainTerminalMs` are dropped, then
 the oldest terminal entries until `maxEntries` holds, then the oldest non-terminal entries, each
