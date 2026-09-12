@@ -1,3 +1,5 @@
+import type { ALWorkReadySelection } from '@shared/alm/work/al-work-handler.ts';
+import type { ALWorkClaim } from '@shared/alm/work/al-work-queue-port.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
@@ -44,4 +46,21 @@ export async function readTestALWorkReadyAtMs(
         );
     }
     return due.length === 0 ? undefined : Math.min(...due);
+}
+
+/**
+ * A selection for the tests that drive the bare handler: the port's own claims, with no phase of its
+ * own to report. A test pinning where a batch spent its time builds the phases it means instead.
+ */
+export function toTestALWorkReadySelection(
+    claims: readonly ALWorkClaim[],
+    nextReadyAtMs?: number
+): ALWorkReadySelection {
+    return {
+        claims,
+        nextReadyAtMs,
+        selectionDurationMs: 0,
+        claimDurationMs: 0,
+        earliestDueAtMs: undefined
+    };
 }

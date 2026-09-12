@@ -8,7 +8,11 @@ import {
 } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -30,6 +34,8 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+
+import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -247,7 +253,10 @@ describe('ALInboundMessageRuntime', () => {
 
     it('retains a conflicted control admission as work the inbound worker completes', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const { backend, stores } = createInboundBackedStores(
+            'al-inbound-runtime-test:conflicted-control',
+            createInMemoryALAdmissionState()
+        );
         const expireAtTimestamp = Date.now() + 300000;
         const original = createOrderedMessage(1, 'pending');
         const pendingMessage = { ...original, id: { ...original.id, msgId: 'missing-msg' } };
@@ -315,8 +324,12 @@ describe('ALInboundMessageRuntime', () => {
         expect(pending.right).toEqual({ kind: 'pending-admission' });
         expect(controlAcceptances).toEqual([]);
         await expect.poll(async () =>
-            (await stores.admissionStore.readAcknowledgementState('missing-msg', 'peer-1')).acks
-                .map((ack) => ack.fromPeerId)
+            (await readInboundTestAcknowledgements({
+                backend,
+                namespace: stores.admissionStore.namespace,
+                msgId: 'missing-msg',
+                senderId: 'peer-1'
+            })).acks.map((ack) => ack.fromPeerId)
         ).toEqual(['peer-2']);
 
         // The replayed admission owns the acceptance the conflicted attempt could not report.
@@ -936,22 +949,35 @@ function createSenderScopedDedupMessage(senderId: string, text: string): ALMessa
     );
 }
 
+interface InboundBackedStores {
+    readonly backend: InMemoryAdmissionBackend;
+    readonly stores: ALInboundRuntimeStores;
+}
+
+/** Inbound stores whose backend the caller keeps: to reopen them, or to read a row the store wrote. */
+function createInboundBackedStores(namespace: string, state: ALAdmissionMemoryState): InboundBackedStores {
+    const backend = new InMemoryAdmissionBackend(state, Date.now);
+    return {
+        backend,
+        stores: {
+            admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
+                namespace,
+                backend,
+                orderingTrackTtlMs: 5 * 60_000,
+                supersedenceTrackTtlMs: 5 * 60_000,
+                retention: normalizeALRuntimeStoreRetention()
+            }),
+            workQueue: backend.workQueue
+        }
+    };
+}
+
 function createInboundPersistenceFixture() {
     const state = createInMemoryALAdmissionState();
     return {
         openStores(): ALInboundRuntimeStores {
-            const backend = new InMemoryAdmissionBackend(state, Date.now);
-            return {
-                admissionStore: createALInboundAdmissionStore({
-                    nowMs: Date.now,
-                    namespace: 'al-inbound-runtime-test:retained',
-                    backend,
-                    orderingTrackTtlMs: 5 * 60_000,
-                    supersedenceTrackTtlMs: 5 * 60_000,
-                    retention: normalizeALRuntimeStoreRetention()
-                }),
-                workQueue: backend.workQueue
-            };
+            return createInboundBackedStores('al-inbound-runtime-test:retained', state).stores;
         }
     };
 }

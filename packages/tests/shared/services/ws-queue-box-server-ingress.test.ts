@@ -18,6 +18,7 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -33,6 +34,7 @@ interface ServerIngressFixture {
     readonly server: JsonWebSocketServer;
     readonly socket: SimulatedWebSocket;
     readonly admission: ALAdmissionMemoryState;
+    readonly backend: InMemoryAdmissionBackend;
     readonly admissionStore: ALInboundAdmissionStore;
     readonly engine: InboxOutboxEngine;
     readonly delivered: ALMessage[];
@@ -185,7 +187,11 @@ describe('WS server bounded and authorized admission', () => {
             if (retained.payload.kind !== 'dispatch-local') {
                 throw new Error('Expected pending local delivery');
             }
-            const original = await fixture.admissionStore.readInboundMessage(retained.payload.message);
+            const original = (await readALInboundStoredMessage({
+                database: fixture.backend,
+                namespace: fixture.admissionStore.namespace,
+                reference: retained.payload.message
+            }))?.msg;
             expect(original?.id).toEqual(message.id);
             expect(original?.constraints?.expiresAtMs).toBe(expiresAtMs);
         }
@@ -556,10 +562,11 @@ async function createServerIngressFixture(
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(nowMs()));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs())));
     const engine = new InboxOutboxEngine();
+    const backend = new InMemoryAdmissionBackend(admission, nowMs);
     const admissionStore = createALInboundAdmissionStore({
         namespace: 'ws-server-ingress',
         nowMs,
-        backend: new InMemoryAdmissionBackend(admission, nowMs),
+        backend,
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
         retention: normalizeALRuntimeStoreRetention()
@@ -585,7 +592,7 @@ async function createServerIngressFixture(
         service.dispose();
         vi.restoreAllMocks();
     });
-    return { service, server, socket, admission, admissionStore, engine, delivered };
+    return { service, server, socket, admission, backend, admissionStore, engine, delivered };
 }
 
 function incomingMessage(): ALMessage {

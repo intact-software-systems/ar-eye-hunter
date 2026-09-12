@@ -28,7 +28,12 @@ export interface ALInboundControlAdmissionDependencies {
 
 export type ALInboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
-    | Readonly<{ kind: 'committed'; acceptance: ALControlAcceptance; }>
+    | Readonly<{
+        kind: 'committed';
+        acceptance: ALControlAcceptance;
+        /** The commit persisted work the inbound worker must claim; an idle worker stays idle without it. */
+        wroteWork: boolean;
+    }>
     | Readonly<{ kind: 'pending-control'; }>
     | Readonly<{ kind: 'rejected'; reason: string; }>;
 
@@ -42,6 +47,8 @@ export interface ALInboundPendingControl {
 export interface ALInboundControlReplayResult {
     readonly outcome: ALWorkOutcome;
     readonly acceptance: ALControlAcceptance | undefined;
+    /** The replay's own commit persisted work behind the page its batch read; nothing else announces it. */
+    readonly wroteWork: boolean;
 }
 
 /** One conditional admission per call; a conflict becomes retained work the inbound worker replays. */
@@ -80,12 +87,13 @@ export class ALInboundControlAdmission {
 
     async replay(payload: ALInboundPendingControl): Promise<ALInboundControlReplayResult> {
         if (payload.expiresAtMs <= this.clock.nowMs()) {
-            return { outcome: { status: 'completed' }, acceptance: undefined };
+            return { outcome: { status: 'completed' }, acceptance: undefined, wroteWork: false };
         }
         const result = await this.admit(payload.msg);
         return {
             outcome: { status: result.kind === 'pending-control' ? 'retry' : 'completed' },
-            acceptance: result.kind === 'committed' ? result.acceptance : undefined
+            acceptance: result.kind === 'committed' ? result.acceptance : undefined,
+            wroteWork: result.kind === 'committed' && result.wroteWork
         };
     }
 
@@ -94,9 +102,14 @@ export class ALInboundControlAdmission {
         candidate: ALInboundControlAdmissionCandidate,
         nowMs: number
     ): Promise<ALInboundControlAdmissionResult> {
-        const status = await this.admissionStore.commitBundle(toALInboundControlCommitBundle(candidate));
+        const bundle = toALInboundControlCommitBundle(candidate);
+        const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'committed') {
-            return { kind: 'committed', acceptance: candidate.acceptance };
+            return {
+                kind: 'committed',
+                acceptance: candidate.acceptance,
+                wroteWork: bundle.durableEffects.length > 0
+            };
         }
         await this.retainPendingControl(msg, nowMs);
         return { kind: 'pending-control' };
@@ -119,26 +132,23 @@ export class ALInboundControlAdmission {
         ack: ALAckPayload,
         nowMs: number
     ): Promise<ALInboundControlAdmissionRead | undefined> {
-        const controlOwners = await this.admissionStore.readControlOwnerIndex(ack.ackedMsgId);
-        const senderId = controlOwners?.values.find((value) => value.peerId === ack.fromPeerId)?.senderId;
-        if (controlOwners === undefined || controlOwners.ambiguous || senderId === undefined || senderId === null) {
+        const surface = await this.admissionStore.readControlDecisionSurface(ack);
+        if (surface === undefined) {
             return undefined;
         }
-        const owner = await this.admissionStore.readMessageOwnerRecord(ack.ackedMsgId, senderId);
-        const { pendingAck, acks } = await this.admissionStore.readAcknowledgementState(ack.ackedMsgId, senderId);
-        if (owner === undefined) {
+        if (surface.messageOwner === undefined) {
             throw new ALAdmissionCorruptionError(
-                toALInboundMessageOwnerKey(this.admissionStore.namespace, ack.ackedMsgId, senderId),
+                toALInboundMessageOwnerKey(this.admissionStore.namespace, ack.ackedMsgId, surface.senderId),
                 new TypeError('Retained inbound acknowledgement state has no message provenance')
             );
         }
         return {
             namespace: this.admissionStore.namespace,
             ack,
-            controlOwners,
-            owner,
-            pending: pendingAck,
-            acks,
+            controlOwners: surface.controlOwners,
+            owner: surface.messageOwner,
+            pending: surface.pendingAck,
+            acks: surface.acks,
             nowMs,
             controlMsgId: this.newControlId()
         };

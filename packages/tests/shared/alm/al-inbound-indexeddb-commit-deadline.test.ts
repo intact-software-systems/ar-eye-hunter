@@ -97,7 +97,8 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
             try {
                 const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
                 if (replay) {
-                    expect(await admission.replay({ kind: 'admit-message', msg: decodeALDeadlinedMessage(message), source })).toBe('completed');
+                    expect(await admission.replay({ kind: 'admit-message', msg: decodeALDeadlinedMessage(message), source }))
+                        .toEqual({ outcome: 'completed', wroteWork: offset < 0 });
                 }
                 else {
                     const outcome = await admission.attempt(message, source, planner);
