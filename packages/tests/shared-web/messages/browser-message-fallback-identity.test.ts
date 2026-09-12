@@ -13,7 +13,8 @@ import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundDispatchPlan, ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundEnqueueStatus } from '@shared/alm/outbound/to-al-outbound-enqueue-status.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -28,7 +29,7 @@ describe('typed message fallback identity', () => {
     it.each(['rtc-with-ws-fallback', 'ws-then-rtc'] as const)(
         'preserves the complete envelope across %s after the current room changes',
         async (strategy) => {
-            const fixture = createChannel({ firstStatus: 'no-route', firstDurationMs: 50 });
+            const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT, firstDurationMs: 50 });
             const result = await fixture.channel.send({ action: 'ready' }, {
                 strategy,
                 seq: 7,
@@ -51,19 +52,30 @@ describe('typed message fallback identity', () => {
         }
     );
 
-    it.each(['expired', 'superseded', 'skipped', 'failed', 'rate-limited', 'accepted', 'enqueued', 'duplicate'] as const)(
+    it.each(
+        [
+            ['expired', { kind: 'expired', detail: 'expired' }],
+            ['superseded', { kind: 'superseded', detail: 'superseded' }],
+            ['skipped', { kind: 'skipped', reason: 'planner-drop', detail: 'skipped' }],
+            ['failed', { kind: 'failed', detail: 'failed' }],
+            ['rate-limited', { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' }],
+            ['accepted', { kind: 'admitted', durable: false, queuedAttempts: 1 }],
+            ['enqueued', { kind: 'admitted', durable: true, queuedAttempts: 1 }],
+            ['duplicate', { kind: 'duplicate' }]
+        ] satisfies ReadonlyArray<readonly [string, ALDeliveryAdmissionVerdict]>
+    )(
         'does not try another carrier after %s',
-        async (status) => {
-            const fixture = createChannel({ firstStatus: status });
+        async (label, verdict) => {
+            const fixture = createChannel({ firstVerdict: verdict });
             const result = await fixture.channel.send({ action: 'ready' });
-            expect(result.status).toBe(status);
+            expect(result.status).toBe(toALOutboundEnqueueStatus(verdict));
             expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc']);
         }
     );
 
     it.each(['payload', 'identity', 'authority', 'unchanged'] as const)('keeps %s planner output behind ALM validation before fallback', async (change) => {
         const fixture = createChannel({
-            firstStatus: 'no-route',
+            firstVerdict: NO_ROUTE_VERDICT,
             firstDurationMs: 0,
             selectedLifetimeMs: undefined,
             firstPlanner: (msg) => ({
@@ -87,7 +99,7 @@ describe('typed message fallback identity', () => {
     });
 
     it('stops fallback at the original caller deadline', async () => {
-        const fixture = createChannel({ firstStatus: 'no-route', firstDurationMs: 101 });
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT, firstDurationMs: 101 });
         const result = await fixture.channel.send({ action: 'ready' }, { ttlMs: 100 });
         expect(result.status).toBe('expired');
         expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc']);
@@ -95,7 +107,7 @@ describe('typed message fallback identity', () => {
     });
 
     it.each([50, 100])('preserves a topic-selected 100ms bound when first admission takes %sms', async (duration) => {
-        const fixture = createChannel({ firstStatus: 'no-route', firstDurationMs: duration, selectedLifetimeMs: 100 });
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT, firstDurationMs: duration, selectedLifetimeMs: 100 });
         const result = await fixture.channel.send({ action: 'ready' }, { ttlMs: 60_000 });
         expect(result.message.constraints?.expiresAtMs).toBe(Date.parse('2026-01-01T00:00:00Z') + 100);
         expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(duration === 100 ? ['rtc'] : ['rtc', 'ws']);
@@ -106,14 +118,14 @@ describe('typed message fallback identity', () => {
     });
 
     it('does not submit a message whose explicit deadline has already elapsed', async () => {
-        const fixture = createChannel({ firstStatus: 'enqueued' });
+        const fixture = createChannel({ firstVerdict: ADMITTED_VERDICT });
         const result = await fixture.channel.send({ action: 'ready' }, { ttlMs: 0 });
         expect(result.status).toBe('expired');
         expect(fixture.attempts).toEqual([]);
     });
 
     it('applies canonical envelope collection limits before either carrier owns work', async () => {
-        const fixture = createChannel({ firstStatus: 'no-route' });
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         await expect(fixture.channel.send({ action: 'ready' }, {
             nextHopPeerIds: Array.from({ length: 257 }, (_, index) => `peer-${index}`)
         })).rejects.toThrow('collection');
@@ -121,7 +133,7 @@ describe('typed message fallback identity', () => {
     });
 
     it('preserves excluded recipients on both carriers', async () => {
-        const fixture = createChannel({ firstStatus: 'no-route' });
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         await fixture.channel.send({ action: 'ready' }, { exceptPeerIds: ['excluded-peer'] });
         expect(fixture.attempts.map((attempt) => attempt.message.targets)).toEqual([
             expect.objectContaining({ scope: 'room', exceptPeerIds: ['excluded-peer'] }),
@@ -130,14 +142,14 @@ describe('typed message fallback identity', () => {
     });
 
     it('rejects a fallback strategy that would change a global audience into a room audience', async () => {
-        const fixture = createChannel({ firstStatus: 'no-route' });
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         await expect(fixture.channel.send({ action: 'ready' }, { strategy: 'ws-then-rtc', scope: 'all' }))
             .rejects.toThrow('$.scope');
         expect(fixture.attempts).toEqual([]);
     });
 
     it('rejects unsupported membership fencing before trying either carrier', async () => {
-        const fixture = createChannel({ firstStatus: 'no-route' });
+        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         await expect(fixture.channel.send({ action: 'ready' }, { membershipEpoch: 2 }))
             .rejects.toThrow('$.membershipEpoch');
         expect(fixture.attempts).toEqual([]);
@@ -145,14 +157,18 @@ describe('typed message fallback identity', () => {
 });
 
 interface ChannelInput {
-    readonly firstStatus: ALOutboundEnqueueStatus;
+    readonly firstVerdict: ALDeliveryAdmissionVerdict;
     readonly firstDurationMs?: number;
     readonly selectedLifetimeMs?: number;
     readonly firstPlanner?: (message: ALMessage) => ALOutboundDispatchPlan<never>;
 }
 
+/** A fresh durable admission: the shape both the default first attempt and every later attempt settle as. */
+const ADMITTED_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
+const NO_ROUTE_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'unroutable', reason: 'no-route', detail: 'no route' };
+
 function createChannel(input: ChannelInput) {
-    const { firstStatus, firstDurationMs = 0, selectedLifetimeMs, firstPlanner } = input;
+    const { firstVerdict, firstDurationMs = 0, selectedLifetimeMs, firstPlanner } = input;
     const firstRuntime = firstPlanner
         ? createDefaultOutboundTestRuntime({
             planOutgoingMessage: firstPlanner,
@@ -176,8 +192,8 @@ function createChannel(input: ChannelInput) {
             ...message,
             constraints: { ...message.constraints, expiresAtMs: message.id.ts + selectedLifetimeMs }
         };
-        const status = attempts.length === 1 ? firstStatus : 'enqueued' as const;
-        return { status, verdict: toVerdictForOutboundStatus(status), message: admitted, entries: [] };
+        const verdict = attempts.length === 1 ? firstVerdict : ADMITTED_VERDICT;
+        return { status: toALOutboundEnqueueStatus(verdict), verdict, message: admitted, entries: [] };
     };
     const context = createDefaultApiMiddlewareTestDouble({
         middleware: {
@@ -218,32 +234,4 @@ function freezeMessage(message: ALMessage): void {
     }
     Object.freeze(message.targets);
     Object.freeze(message);
-}
-
-/** One representative verdict per fake status this fixture is parametrized over; only `.status` is asserted. */
-function toVerdictForOutboundStatus(status: ALOutboundEnqueueStatus): ALDeliveryAdmissionVerdict {
-    switch (status) {
-        case 'enqueued':
-            return { kind: 'admitted', durable: true, queuedAttempts: 1 };
-        case 'accepted':
-            return { kind: 'admitted', durable: false, queuedAttempts: 1 };
-        case 'duplicate':
-            return { kind: 'duplicate' };
-        case 'pending-admission':
-            return { kind: 'pending' };
-        case 'superseded':
-            return { kind: 'superseded', detail: 'superseded' };
-        case 'expired':
-            return { kind: 'expired', detail: 'expired' };
-        case 'no-route':
-            return { kind: 'unroutable', reason: 'no-route', detail: 'no-route' };
-        case 'rate-limited':
-            return { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' };
-        case 'circuit-open':
-            return { kind: 'unroutable', reason: 'circuit-open', detail: 'circuit-open' };
-        case 'skipped':
-            return { kind: 'skipped', reason: 'planner-drop', detail: 'skipped' };
-        case 'failed':
-            return { kind: 'failed', detail: 'failed' };
-    }
 }
