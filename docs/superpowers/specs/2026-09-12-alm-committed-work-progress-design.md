@@ -4,9 +4,10 @@
 supplies replay notifications and grouped reads. The branch's scan-progress
 correction, RTC/WS integration fixes, and semantic negative tests are reviewed.
 Local semantic and ordinary native-browser checks pass. The maintainer-approved
-strict 208 KiB facade ceiling passes its focused checks. Hosted server tests,
-the separate headless bundle budget, ALM conformance, native performance proof,
-and the complete RTC lifecycle proof remain unresolved.
+strict 208 KiB facade ceiling passes its focused checks. The server fixture
+correction passes 39 tests and independent specification/quality review. The separate headless
+bundle budget, hosted ALM conformance, native performance proof, and complete
+RTC lifecycle proof remain unresolved.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.

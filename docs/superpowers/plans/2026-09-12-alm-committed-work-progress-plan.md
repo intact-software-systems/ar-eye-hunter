@@ -63,20 +63,32 @@ the five bundle tests and measurement command pass under Node 24. This changes
 the approved budget, not runtime performance. Other entry budgets and bundle
 settings remain unchanged.
 
-Hosted validation still exposes unresolved integration evidence: server WS
-router/admission tests fail, the headless bundle measures **260.556640625 KiB
-against strict `<260 KiB`**, and ALM conformance fails all three carriers despite
-the local pass. The facade approval does not authorize a headless budget change.
-Classify and repair the affected checks before claiming integration closure;
-do not assume they are all storage regressions or all obsolete tests.
+The remaining server WS router/admission failures were fixture lifecycle and
+completion assumptions, not production regressions. The corrected two suites
+pass **39/39 tests**, including deadline and malformed-ingress mutation evidence;
+independent specification and quality review is clean. Production scheduling is
+unchanged.
+
+The headless bundle still measures **260.556640625 KiB against strict `<260 KiB`**.
+A same-settings source comparison measures **260.5009765625 KiB** before the
+selector correction: the baseline already exceeds the limit, and the selector
+change adds 57 compressed bytes while reducing uncompressed output. No justified
+removal was identified in that changed surface. The facade approval does not
+authorize a headless budget change; resolve that separate decision before
+readiness, without holding up native measurement. Hosted ALM conformance still
+fails all three carriers despite the local pass.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
 not native IndexedDB request timings. The connection commands still time out at
-30,000 ms. This evidence makes phase attribution necessary: successor discovery
-cannot remove time spent executing and releasing original claims. The next two
-concrete pieces of work are the remaining integration closure and native
-measurement below; no deadline relaxation or unconditional continuation follows.
+30,000 ms. A later failed observation includes a seven-claim batch lasting
+24,023 ms, with 12,161 ms running and 6,658 ms releasing. This evidence makes
+phase attribution necessary: successor discovery cannot remove time spent
+executing and releasing original claims. The unchanged real-Chromium transaction
+fixture passes its correctness preflight, but does not yet collect these native
+request timings. The next two concrete pieces of work remain integration closure
+and native measurement below; no deadline relaxation or unconditional
+continuation follows.
 
 | Owner                                                                                                                                           | Planned responsibility                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -184,12 +196,16 @@ and test usages remain its only consumers.
       bundle tests, measurement command, and shared-web typecheck pass. Full-file
       review also closes unchecked manifest/metafile JSON boundaries in the test;
       valid/invalid envelope checks and maintained test typechecking pass.
-- [ ] Diagnose the hosted server WS router/admission failures and headless
+- [x] Diagnose the hosted server WS router/admission failures and headless
       bundle overage. Reproduce focused failures and classify production
       regressions versus obsolete test assumptions before changing behavior.
       Keep the headless ceiling unchanged without its own explicit approval;
       investigate justified reductions in the affected surface first. Preserve
       the failed hosted ALM evidence for Slice 2's causal measurement.
+- [ ] Resolve the separate headless bundle ceiling decision before final
+      readiness. Keep its strict `<260 KiB` limit unchanged without explicit
+      approval. Native timing can proceed on the reviewed runtime meanwhile;
+      source-size accounting is not runtime performance evidence.
 
 Run the focused tests above together with:
 
