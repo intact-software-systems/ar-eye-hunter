@@ -15,6 +15,7 @@ import {
     type ALInboundRuntimeStores
 } from '../../../packages/shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
+    computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
     toALInboundWorkType
 } from '../../../packages/shared/alm/inbound/al-inbound-work-entry.ts';
@@ -56,6 +57,12 @@ export type NativeAlmTimingWorkload =
     | 'finite-backlog'
     | 'shared-contention';
 
+export interface NativeAlmRetryReleaseSemanticsProbe {
+    readonly callbackDelivered: boolean;
+    readonly returnedReleasePhaseCaptured: boolean;
+    readonly durableCompletionObserved: boolean;
+}
+
 export interface NativeAlmTimingProbe {
     readonly workload: NativeAlmTimingWorkload;
     readonly actorId: string;
@@ -85,6 +92,7 @@ export interface NativeAlmTimingProbe {
     readonly boundedCommitCount: number;
     readonly waitingEntryCount: number;
     readonly durableCompletedIdentityCount: number;
+    readonly durableCompletedIdentities: readonly string[];
     readonly logicalOperationCounts: IndexedDbOperationCounts;
     readonly terminalVerification: Readonly<{
         startedAtMs: number;
@@ -172,6 +180,34 @@ class NativeAlmMeasurementWindow {
     }
 }
 
+export function runNativeAlmRetryReleaseSemanticsProbe(): NativeAlmRetryReleaseSemanticsProbe {
+    const namespace = 'native-alm-retry-release-semantics';
+    const identity = 'returned-retry';
+    const nowMs = Date.now();
+    const write = computeALInboundWorkEntry({
+        namespace,
+        effectId: 'returned-retry-effect',
+        payload: { kind: 'dispatch-local', message: { senderId: ALM_SENDER_PEER_ID, msgId: identity } },
+        observedAtMs: nowMs,
+        expireAtTimestamp: nowMs + 60_000
+    });
+    const returnedRetry: ResourceEntry = {
+        ...write.entry,
+        status: EntityStatus.RETRY,
+        dequeueAudit: { attempts: 1, nextTs: Temporal.Instant.fromEpochMilliseconds(nowMs + 100) }
+    };
+    const recorder = new NativeAlmTimingRecorder();
+    recorder.observeCallback(identity, 'callback-start');
+    recorder.observeCallback(identity, 'callback-end');
+    recorder.observeReturnedReleaseEntry(returnedRetry, namespace);
+    const phases = recorder.snapshot().causalSamples.map((sample) => sample.phase);
+    return {
+        callbackDelivered: phases.includes('callback-end'),
+        returnedReleasePhaseCaptured: phases.includes('effect-released'),
+        durableCompletionObserved: recorder.hasObservedCompletedEffectRelease(identity)
+    };
+}
+
 export async function runNativeAlmTimingProbe(
     input: Readonly<{
         workload: NativeAlmTimingWorkload;
@@ -216,6 +252,7 @@ async function executeNativeAlmMeasurement(
 }
 
 interface NativeAlmVerificationEvidence {
+    readonly completedIdentities: readonly string[];
     readonly completedIdentityCount: number;
     readonly waitingEntryCount: number;
     readonly startedAtMs: number;
@@ -269,6 +306,7 @@ function toNativeAlmTimingProbe(
         minimumLeaseMarginMs: recorded.minimumLeaseMarginMs,
         minimumDeadlineMarginMs: recorded.minimumDeadlineMarginMs,
         completeCausalIdentityCount: recorded.completeCausalIdentityCount,
+        durableCompletedIdentities: verification.completedIdentities,
         durableCompletedIdentityCount: verification.completedIdentityCount,
         waitingEntryCount: verification.waitingEntryCount,
         logicalOperationCounts: measurement.logicalOperationCounts,
@@ -474,7 +512,7 @@ async function runSparseNativeAlmWorkload(session: NativeAlmSession): Promise<Na
     session.queueEngine.start();
     const message = createNativeAlmMessage('sparse');
     await admitNativeAlmMessage(session, message);
-    await waitForDeliveredAndReleasedIdentities(session, new Set([message.id.msgId]));
+    await waitForDeliveredAndCompletedIdentities(session, new Set([message.id.msgId]));
     return emptyNativeAlmWorkloadEvidence();
 }
 
@@ -498,7 +536,7 @@ async function runPendingParentWorkload(
         }
     }
     session.queueEngine.start();
-    await waitForDeliveredAndReleasedIdentities(session, identities);
+    await waitForDeliveredAndCompletedIdentities(session, identities);
     return {
         ...emptyNativeAlmWorkloadEvidence(),
         maximumSuccessorsBeyondRemainingPageCapacity: Math.max(0, parentCount - (ALM_PAGE_SIZE - parentCount))
@@ -522,7 +560,7 @@ async function runFiniteBacklogWorkload(session: NativeAlmSession): Promise<Nati
         producerIdentities.add(message.id.msgId);
         await admitNativeAlmMessage(session, message);
     }
-    await waitForDeliveredAndReleasedIdentities(
+    await waitForDeliveredAndCompletedIdentities(
         session,
         new Set([...eligibleIdentities, ...producerIdentities])
     );
@@ -552,13 +590,13 @@ async function runSharedContentionWorkload(session: NativeAlmSession): Promise<N
     );
     if (session.actorId === 'first') {
         session.queueEngine.start();
-        await waitForDeliveredAndReleasedIdentities(session, new Set([message.id.msgId]));
-        localStorage.setItem(`${barrierPrefix}completion`, 'released');
+        await waitForDeliveredAndCompletedIdentities(session, new Set([message.id.msgId]));
+        localStorage.setItem(`${barrierPrefix}completion`, 'completed');
     }
     else {
         await waitForNativeAlmCondition(
-            () => localStorage.getItem(`${barrierPrefix}completion`) === 'released',
-            'native ALM contention effect release'
+            () => localStorage.getItem(`${barrierPrefix}completion`) === 'completed',
+            'native ALM contention completed effect release'
         );
     }
     return emptyNativeAlmWorkloadEvidence();
@@ -628,14 +666,14 @@ async function waitForDeliveredIdentities(session: NativeAlmSession, expected: R
     }, `delivered identities ${[...expected].join(', ')}`);
 }
 
-async function waitForDeliveredAndReleasedIdentities(
+async function waitForDeliveredAndCompletedIdentities(
     session: NativeAlmSession,
     expected: ReadonlySet<string>
 ): Promise<void> {
     await waitForDeliveredIdentities(session, expected);
     await waitForNativeAlmCondition(
-        () => [...expected].every((identity) => session.recorder.hasReleasedEffect(identity)),
-        `returned effect releases ${[...expected].join(', ')}`
+        () => [...expected].every((identity) => session.recorder.hasObservedCompletedEffectRelease(identity)),
+        `returned COMPLETED effect releases ${[...expected].join(', ')}`
     );
 }
 
@@ -672,7 +710,13 @@ async function readNativeAlmEntry(session: NativeAlmSession, identity: string): 
 
 async function auditNativeAlmDurableState(
     session: NativeAlmSession
-): Promise<Readonly<{ completedIdentityCount: number; waitingEntryCount: number; }>> {
+): Promise<
+    Readonly<{
+        completedIdentities: readonly string[];
+        completedIdentityCount: number;
+        waitingEntryCount: number;
+    }>
+> {
     const identities = new Set<string>();
     let waitingEntryCount = 0;
     for (const key of await session.queue.getAllKeys()) {
@@ -692,7 +736,11 @@ async function auditNativeAlmDurableState(
             identities.add(identity);
         }
     }
-    return { completedIdentityCount: identities.size, waitingEntryCount };
+    return {
+        completedIdentities: [...identities].sort(),
+        completedIdentityCount: identities.size,
+        waitingEntryCount
+    };
 }
 
 function createNativeAlmMessage(identity: string): ReturnType<typeof toNativeAlmDeadlinedMessage> {

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type {
+    NativeAlmRetryReleaseSemanticsProbe,
     NativeAlmTimingProbe,
     NativeAlmTimingWorkload
 } from './browser-alm-committed-work-timing-fixture.ts';
@@ -75,6 +76,21 @@ test('preserves requests issued on transactions opened before capture', async ({
     expect(result.methodsRestored).toBe(true);
 });
 
+test('does not treat a returned retry release as durable completion', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate<NativeAlmRetryReleaseSemanticsProbe, string>(
+        async (moduleUrl) => {
+            const fixture: typeof import('./browser-alm-committed-work-timing-fixture.ts') = await import(moduleUrl);
+            return fixture.runNativeAlmRetryReleaseSemanticsProbe();
+        },
+        `/@fs${FIXTURE_PATH}`
+    );
+
+    expect(result.callbackDelivered).toBe(true);
+    expect(result.returnedReleasePhaseCaptured).toBe(true);
+    expect(result.durableCompletionObserved).toBe(false);
+});
+
 test(
     'measures committed-work progress through production admission and QueueBox owners',
     async ({ page }, testInfo) => {
@@ -118,10 +134,15 @@ test(
             expect(result.terminalVerification.logicalOperationCounts.byKind['work-read']).toBeGreaterThan(0);
         }
 
-        expect(results.find((result) => result.workload === 'sparse')?.deliveredCount).toBe(1);
+        const sparse = results.find((result) => result.workload === 'sparse');
+        expect(sparse?.deliveredCount).toBe(1);
+        expect(sparse?.durableCompletedIdentityCount).toBe(1);
+        expect(sparse?.durableCompletedIdentities).toEqual(['sparse']);
         const fullPage = results.find((result) => result.workload === 'full-page');
         expect(fullPage?.deliveredCount).toBe(16);
         expect(fullPage?.completeCausalIdentityCount).toBe(16);
+        expect(fullPage?.durableCompletedIdentityCount).toBe(16);
+        expect(fullPage?.durableCompletedIdentities).toEqual(numberedNativeAlmIdentities('parent', 16));
         expect(
             fullPage?.causalSamples.filter((sample) =>
                 ['effects-committed', 'parent-released', 'callback-start', 'callback-end', 'effect-released'].includes(
@@ -132,6 +153,8 @@ test(
         const fanout = results.find((result) => result.workload === 'excess-fanout');
         expect(fanout?.deliveredCount).toBe(13);
         expect(fanout?.completeCausalIdentityCount).toBe(13);
+        expect(fanout?.durableCompletedIdentityCount).toBe(13);
+        expect(fanout?.durableCompletedIdentities).toEqual(numberedNativeAlmIdentities('parent', 13));
         expect(fanout?.maximumSuccessorsBeyondRemainingPageCapacity).toBeGreaterThan(0);
         const backlog = results.find((result) => result.workload === 'finite-backlog');
         expect(backlog?.recoveredKinds).toEqual(expect.arrayContaining(['new', 'retry', 'expired-reserved']));
@@ -147,7 +170,14 @@ test(
             )?.queueAgeMs
         ).toBeGreaterThanOrEqual(900);
         expect(backlog?.boundedCommitCount).toBeGreaterThan(0);
-        expect(backlog?.waitingEntryCount).toBeGreaterThan(0);
+        expect(backlog?.durableCompletedIdentityCount).toBe(11);
+        expect(backlog?.durableCompletedIdentities).toEqual([
+            'eligible-expired-reserved',
+            'eligible-new',
+            'eligible-retry',
+            ...numberedNativeAlmIdentities('producer', 8)
+        ]);
+        expect(backlog?.waitingEntryCount).toBe(32);
 
         await testInfo.attach('native-alm-timing.json', {
             body: JSON.stringify(toNativeAlmTimingArtifact(results), null, 2),
@@ -155,6 +185,10 @@ test(
         });
     }
 );
+
+function numberedNativeAlmIdentities(prefix: 'parent' | 'producer', count: number): readonly string[] {
+    return Array.from({ length: count }, (_, index) => `${prefix}-${String(index).padStart(2, '0')}`);
+}
 
 test('two same-origin tabs share durable contention without inventing effect commits', async ({ context, page }) => {
     test.setTimeout(60_000);

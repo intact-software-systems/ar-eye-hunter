@@ -17,6 +17,7 @@ import type {
     ResourceInboxWorkPage
 } from '../../../packages/shared/queuebox/queue-box-types.ts';
 import {
+    EntityStatus,
     toKeyAsString,
     type Key,
     type ResourceEntry
@@ -85,7 +86,7 @@ export class NativeAlmTimingRecorder {
     readonly #deadlineByIdentity = new Map<string, number>();
     readonly #leaseUntilByIdentity = new Map<string, number>();
     readonly #committedEffectIdentities = new Set<string>();
-    readonly #releasedEffectIdentities = new Set<string>();
+    readonly #completedEffectReleaseIdentities = new Set<string>();
     #droppedOperationSampleCount = 0;
     #droppedCausalSampleCount = 0;
     #commitConflictCount = 0;
@@ -97,7 +98,7 @@ export class NativeAlmTimingRecorder {
         this.#causalSamples.length = 0;
         this.#committedEffectIdentities.clear();
         this.#leaseUntilByIdentity.clear();
-        this.#releasedEffectIdentities.clear();
+        this.#completedEffectReleaseIdentities.clear();
         this.#droppedOperationSampleCount = 0;
         this.#droppedCausalSampleCount = 0;
         this.#commitConflictCount = 0;
@@ -196,14 +197,14 @@ export class NativeAlmTimingRecorder {
         });
     }
 
-    observeReleasedEntry(entry: ResourceEntry, namespace: string): void {
+    observeReturnedReleaseEntry(entry: ResourceEntry, namespace: string): void {
         const effect = decodeALInboundWorkEntry(entry, namespace);
         const identity = toNativeAlmEffectIdentity(effect.payload, effect.effectId);
         const parent = isNativeAlmParent(effect.payload);
         this.recordPhase({ identity, phase: parent ? 'parent-released' : 'effect-released' });
         this.#leaseUntilByIdentity.delete(identity);
-        if (!parent) {
-            this.#releasedEffectIdentities.add(identity);
+        if (!parent && entry.status === EntityStatus.COMPLETED) {
+            this.#completedEffectReleaseIdentities.add(identity);
         }
     }
 
@@ -211,8 +212,8 @@ export class NativeAlmTimingRecorder {
         this.recordPhase({ identity, phase });
     }
 
-    hasReleasedEffect(identity: string): boolean {
-        return this.#releasedEffectIdentities.has(identity);
+    hasObservedCompletedEffectRelease(identity: string): boolean {
+        return this.#completedEffectReleaseIdentities.has(identity);
     }
 
     snapshot(): Readonly<{
@@ -405,7 +406,7 @@ export class NativeAlmOwnerInstrumentation {
                 () => this.#originalReleaseEntries.call(queue, entries, disposition)
             );
             for (const entry of released.values()) {
-                recorder.observeReleasedEntry(entry, namespace);
+                recorder.observeReturnedReleaseEntry(entry, namespace);
             }
             return released;
         };
