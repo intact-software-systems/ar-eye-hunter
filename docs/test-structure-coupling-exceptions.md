@@ -857,6 +857,21 @@ moved or changed test.
       }
     },
     {
+      "id": "shared-web-heartbeat-renewal-downstream-suppression",
+      "domain": "Shared-web heartbeat renewal downstream suppression",
+      "owner": "Shared Web maintainers",
+      "summary": "A lease-only authority renewal retains its raw cache update without invoking RTC group mutation or notifying state-cache UI listeners. Executable assertion: “does not amplify a lease-only group authority renewal to RTC or state-cache listeners”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners",
+      "coverageRelation": "The named assertion installs the renewed snapshot through the real repository CAS, observes its raw updated event, and directly observes the RTC group-mutation and public lifecycle-listener ports.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRTC group-manager active-update/delete ports and BrowserStateCacheLifecycle change-listener port",
+        "observableEffect": "The renewed authority is stored and emits its raw updated event while RTC group mutation and state-cache/UI notification remain untouched.",
+        "requiredConstraint": "Active update, delete, and lifecycle change notification remain unused for a lease-only same-authority renewal.",
+        "failureRationale": "Stored authority and raw event readback cannot reveal unnecessary RTC mutation or public notification that rebuilds, tears down, or redraws unchanged authority."
+      }
+    },
+    {
       "id": "shared-web-hydration-incomparable-recovery",
       "domain": "Shared-web initialized incomparable recovery",
       "owner": "Shared Web maintainers",
@@ -869,6 +884,21 @@ moved or changed test.
         "observableEffect": "Recovered state replaces divergence and drives one recomputation.",
         "requiredConstraint": "Recovery performs one reread and one recomputation while divergent input never reaches active update.",
         "failureRationale": "Missing recovery preserves divergence; duplicates race; active update bypasses the oracle."
+      }
+    },
+    {
+      "id": "shared-web-replaced-heartbeat-auth-invalidation-fence",
+      "domain": "Shared-web replaced heartbeat auth invalidation",
+      "owner": "Shared Web maintainers",
+      "summary": "A delayed 401 from a replaced heartbeat cannot invoke its retired auth-invalid callback. Executable assertion: “does not report auth invalidation from a replaced heartbeat delayed 401”.",
+      "semanticCoverage": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts#does not report auth invalidation from a replaced heartbeat delayed 401",
+      "coverageRelation": "The named assertion starts the replacement before resolving the retired heartbeat's 401 and directly observes the retired runtime's auth-invalid callback.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Retired browser heartbeat auth-invalid callback",
+        "observableEffect": "The retired heartbeat's delayed 401 produces no auth-invalid notification after its replacement starts.",
+        "requiredConstraint": "The stopped or replaced heartbeat's auth-invalid callback remains unused after replacement begins.",
+        "failureRationale": "Invoking the retired callback can tear down the active replacement; replacement cache state cannot prove that obsolete callback absence."
       }
     },
     {
@@ -3518,6 +3548,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/rooms/leave-room.test.ts#returns undefined without a workflow when no room can be resolved"
     },
     {
+      "id": "test-structure-coupling-b03d419644a551dd",
+      "path": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-replaced-heartbeat-auth-invalidation-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The retired callback absence assertion directly proves that a delayed 401 cannot report auth invalidation after a replacement owns the heartbeat lifecycle.",
+      "semanticCoverage": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts#does not report auth invalidation from a replaced heartbeat delayed 401"
+    },
+    {
       "id": "test-structure-coupling-67f803ee1f1dfc75",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -3620,11 +3661,44 @@ moved or changed test.
       "id": "test-structure-coupling-f9d11d5598249f3f",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
       "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-heartbeat-renewal-downstream-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The active-update absence assertion directly proves that lease-only same-authority renewal does not reapply unchanged authority to RTC.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-7b44c7a4d33da48f",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-heartbeat-renewal-downstream-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The delete absence assertion directly proves that lease-only same-authority renewal does not remove unchanged RTC group state.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-5dbeb5981a460f8a",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-heartbeat-renewal-downstream-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The listener absence assertion directly proves that lease-only same-authority renewal does not notify state-cache/UI consumers.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-69e7ce65f836a3fc",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
       "contract": "shared-web-hydration-incomparable-recovery",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The divergent active-update absence assertion directly proves that one reread and recomputation occur while divergent input is not applied.",
+      "rationale": "The divergent active-update absence assertion directly proves that incomparable recovery uses the durable reread and recomputation path without applying divergent input.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
     },
     {
