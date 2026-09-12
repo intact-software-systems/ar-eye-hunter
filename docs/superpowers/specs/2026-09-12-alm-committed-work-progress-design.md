@@ -154,8 +154,9 @@ not preserve cache freshness, and returned renewed leases do not replace expired
 ones. No-observation TTL expiry and causal duplicate/no-extra-notification
 controls pass. Its two intentional failures and two passes under Node 24.13.0
 are diagnostic evidence; maintained test typing and focused static checks pass.
-The test remains uncommitted until a coherent correction includes its safety
-coverage in this same PR.
+That diagnostic is now included with the coherent heartbeat correction and its
+safety coverage in local commit `1598ece11fd9955024b587b3c72c61aa688634de`,
+in this same PR's branch.
 
 The selected correction is limited to validated browser heartbeat HTTP responses
 and their pre-request group observations. Generic shared observation, WS replay,
@@ -178,6 +179,22 @@ relaxation is needed. The original generic duplicate control remains valid;
 the renewal regression must exercise its actual qualifying heartbeat ingress.
 Local reproduction does not fill the hosted capture's missing cache/adoption
 history, and other fresh-response sources are not silently opted in.
+
+The implementation passes 39 changed and 12 adjacent semantic tests, maintained
+test typing, and shared-web compilation under Node 24.19.0. Independent review
+finds the runtime behavior compliant. Registry-only correction `bf64874a4` closes
+four missing coupling classifications and one shifted assertion mapping; the
+exact changed-range gate and fresh scoped re-review pass. The selected absence
+checks remain explicit interaction requirements; neither assertions nor detector
+were weakened. Browser proof remains separate, and passing local suites do not
+establish hosted repair or B06.
+
+The first post-correction local ALM observation passes all three carriers, while
+the unchanged all-scenarios RTC case fails later at C's reconnect readiness.
+Current A/C each connect to B but not one another; the retained signaling/claim
+evidence is bounded by a full upstream event tail. Classify that handoff before
+selecting another correction. Earlier delivery blocks returning is not full
+reconnect acceptance or evidence for successor continuation.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.

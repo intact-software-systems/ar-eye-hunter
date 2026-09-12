@@ -89,14 +89,34 @@ claim payload/type relationships; and retains explicit bounded-tail, health-time
 and peer-lifetime uncertainty. All 48 focused semantic cases, maintained test
 typing, strict readiness-fixture compilation, and affected static checks pass.
 This establishes diagnostic behavior, not a runtime repair or a passing
-all-scenarios observation. Use the faster authority-cache discriminator below
-before spending another browser run on the current hypothesis.
+all-scenarios observation. The faster authority-cache discriminator below and
+its reviewed correction now precede the next source-labeled browser observation.
+
+After the reviewed heartbeat correction, the unchanged all-scenarios case at
+`bf64874a469c3042930d0382722da93ffd6aae6b` runs once with fresh local memory
+services, Node 24.19.0, one worker, and zero retries. It fails after 349 seconds
+at C's reconnect-settled formation readiness, with 55,840.882 ms available to
+open the room. Source sequencing establishes that the earlier realtime, WS, and
+messages delivery blocks, deliberate NACK probe, C close/stale-send rejection,
+and surviving-peer absence waits returned before this failure. This is not a
+complete matrix pass: post-reconnect delivery and final unexpected-delivery and
+artifact-bundle assertions are not reached.
+
+The current artifacts remain under
+`tmp/perf/rtc-all-scenarios-heartbeat-bf64874a4.AsG5B3/`. Both readiness sidecars
+capture current messages A/B/C health successfully: A and C each have B ready,
+but not one another, while B has both ready. The 124 relevant retained events
+are not projection-truncated, but the upstream 2,000-event tail is full and its
+completeness remains unknown. Analyze the retained A-C signaling/claim/peer
+handoff before selecting a correction; do not rerun unchanged, widen deadlines,
+infer a storage cause, or treat this later failure as a B06 observation.
 
 The maintainer explicitly approved raising only the browser facade ceiling to
-**strict `<208 KiB`**. The measured payload remains **207.16796875 KiB**;
-the five bundle tests and measurement command pass under Node 24. This changes
-the approved budget, not runtime performance. Other entry budgets and bundle
-settings remain unchanged.
+**strict `<208 KiB`**. The approval-time measurement was **207.16796875 KiB**;
+after the heartbeat correction at `1598ece11fd9955024b587b3c72c61aa688634de`,
+the same-settings facade measures **207.2099609375 KiB** and all five browser
+bundle tests pass under Node 24.19.0. This is bundle evidence, not runtime
+performance. Other entry budgets and bundle settings remain unchanged.
 
 The earlier server WS router/admission failures were fixture lifecycle and
 completion assumptions, not production regressions. The corrected two suites
@@ -107,11 +127,14 @@ unchanged. The subsequent hosted root suite also passes both corrected suites:
 the separate headless bundle ceiling below; this does not make the full Release
 Gate or browser observation green.
 
-The headless bundle still measures **260.556640625 KiB against strict `<260 KiB`**.
+Before the heartbeat correction, the headless bundle measures
+**260.556640625 KiB against strict `<260 KiB`**.
 A same-settings source comparison measures **260.5009765625 KiB** before the
 selector correction: the baseline already exceeds the limit, and the selector
 change adds 57 compressed bytes while reducing uncompressed output. No justified
-removal was identified in that changed surface. The facade approval does not
+removal was identified in that changed surface. At `1598ece11`, the fresh
+headless boundary test measures **260.7724609375 KiB** and still fails only its
+size assertion; operator dependency exclusions pass. The facade approval does not
 authorize a headless budget change; resolve that separate decision before
 readiness, without holding up native measurement. Hosted ALM conformance still
 fails despite the local pass. Outcomes vary across observations without a
@@ -648,7 +671,7 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       Keep this diagnostic uncommitted until corrected behavior and safety coverage
       are ready together. Exact attribution to the retained hosted failure remains
       unknown without its missing cache/adoption observations.
-- [ ] Implement the selected heartbeat-only authority renewal. Its owner is the
+- [x] Implement the selected heartbeat-only authority renewal. Its owner is the
       validated response in `browser-session-heartbeat.ts`, the captured group
       observations before that request, and one focused browser state-cache
       adoption owner. Reuse the existing identity CAS, whole-pair monotonicity,
@@ -660,6 +683,34 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       both absence-cleanup race orders, stopped in-flight heartbeat, no replay
       renewal, and unchanged observer/index semantics. Use maintained test typing
       and the shared-web typecheck, then independent review before browser proof.
+      Implementation `1598ece11` passes 39 changed and 12 adjacent semantic tests,
+      maintained test typing, and the shared-web compiler under Node 24.19.0.
+      Independent review finds the runtime behavior compliant. Its first
+      changed-range coupling check exposed four missing classifications and one
+      occurrence mapped to the wrong executable test after insertion shifted its
+      ID. Registry-only correction `bf64874a4` passes the exact original-task-base
+      changed-range gate; a fresh scoped re-review verifies all five mappings with
+      no remaining findings. No assertion or detector was weakened. Browser proof
+      remains separate. Both game consumer builds pass with large-chunk
+      warnings; raw build results are retained under
+      `tmp/perf/rtc-heartbeat-consumer-builds-1598ece11.CDfAoW/`.
+      The first unchanged post-correction local ALM run at `bf64874a4` passes all
+      three carriers in 3.8 minutes, with Node 24.19.0 on Darwin/ARM64, fresh memory
+      services, one worker, and zero retries. All nine regime/control/native files
+      remain under `tmp/perf/alm-heartbeat-renewal-bf64874a4.mGXjU6/`; every carrier
+      reports normal, with no snapshot issues or capture lifecycle failures. All
+      six recorders restore their browser methods and drop no samples. Each
+      records two pre-capture requests; receivers retain two/four/four uncaptured
+      in-flight observations for WS/RTC/fallback respectively. This is a retained
+      local correctness pass with censored native evidence, not a complete causal
+      measurement, an isolated effect estimate, hosted repair, or RTC-B06 proof.
+- [ ] Classify the post-correction all-scenarios reconnect failure from its
+      retained current-participant signaling, claim, and peer diagnostics. Verify
+      the fixture's close/restore/readiness sequence against the current same-session
+      reconnect contract. Keep confirmed handoffs separate from missing censored
+      evidence; select one semantic reproduction or existing observation only
+      after identifying the remaining discriminator. No new runtime correction
+      or instrumentation is selected yet.
 - [ ] Select continuation only when measured successor rediscovery remains a
       material contributor to an unmet acceptance condition and spare-capacity
       opportunities exist. If full batches/storage/callbacks dominate, document that
