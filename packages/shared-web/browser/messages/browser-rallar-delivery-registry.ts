@@ -46,6 +46,13 @@ interface DeliveryEntry {
     readonly handle: RallarMessageHandle;
 }
 
+/** What one wait's deadline timer needs to fire, publish, and re-arm itself. */
+interface DeliveryDeadlineTimer {
+    readonly observation: DeliveryObservation;
+    readonly expiresAtMs: number;
+    readonly timerIds: ReturnType<typeof setTimeout>[];
+}
+
 export namespace BrowserRallarDeliveryRegistry {
     export interface Input {
         readonly nowMs: () => number;
@@ -115,7 +122,10 @@ export class BrowserRallarDeliveryRegistry {
         );
     }
 
-    /** Every non-terminal entry resolves `unobservable`; used by logout and facade disposal. */
+    /**
+     * Every non-terminal entry resolves `unobservable`; used by logout and facade disposal. The
+     * entries stay so a late `wait()` still reads its evidence; the next `open()` ages them out.
+     */
     releaseAll(): void {
         for (const entry of [...this.entries.values()]) {
             this.releaseObservation(entry.observation);
@@ -183,7 +193,9 @@ export class BrowserRallarDeliveryRegistry {
     }
 
     private cancel(observation: DeliveryObservation): void {
-        if (isALDeliveryTerminal(observation.lifecycle)) {
+        // The deadline decides terminality here too, so an elapsed message ends `expired` and
+        // reaches no owner, whether or not anything read the handle first.
+        if (isALDeliveryTerminal(this.publishDeadline(observation))) {
             return;
         }
 
@@ -239,23 +251,36 @@ export class BrowserRallarDeliveryRegistry {
         observation.waits.set(waitId, { until: options.until, resolve, release });
         options.signal?.addEventListener('abort', () => {
             release();
-            resolve({ status: 'aborted', lifecycle: observation.lifecycle });
+            resolve({ status: 'aborted', lifecycle: this.publishDeadline(observation) });
         }, { signal: armed.signal });
 
         if (options.timeoutMs !== undefined) {
             timerIds.push(setTimeout(() => {
                 release();
-                resolve({ status: 'timeout', lifecycle: observation.lifecycle });
+                resolve({ status: 'timeout', lifecycle: this.publishDeadline(observation) });
             }, options.timeoutMs));
         }
 
         const expiresAtMs = observation.lifecycle.expiresAtMs;
         if (expiresAtMs !== undefined) {
-            timerIds.push(setTimeout(
-                () => this.publishDeadline(observation),
+            this.armDeadlineTimer(
+                { observation, expiresAtMs, timerIds },
                 Math.max(0, expiresAtMs - this.input.nowMs())
-            ));
+            );
         }
+    }
+
+    /**
+     * A timer can fire before the wall clock reaches the deadline, and nothing else is scheduled
+     * behind it, so a firing that publishes no terminal state re-arms for the remaining distance.
+     */
+    private armDeadlineTimer(deadline: DeliveryDeadlineTimer, delayMs: number): void {
+        deadline.timerIds.push(setTimeout(() => {
+            if (isALDeliveryTerminal(this.publishDeadline(deadline.observation))) {
+                return;
+            }
+            this.armDeadlineTimer(deadline, Math.max(1, deadline.expiresAtMs - this.input.nowMs()));
+        }, delayMs));
     }
 
     /** Retention runs only here: aged terminal entries, then the oldest terminal, then the oldest live ones. */
@@ -287,12 +312,19 @@ export class BrowserRallarDeliveryRegistry {
     }
 
     private releaseOldestEntries(): void {
+        const evicted: DeliveryObservation[] = [];
         for (const [msgId, entry] of this.entries) {
             if (this.entries.size <= this.input.maxEntries) {
-                return;
+                break;
             }
-            this.releaseObservation(entry.observation);
             this.entries.delete(msgId);
+            evicted.push(entry.observation);
+        }
+
+        // Listeners run only once the map has settled: one that re-sends on `unobservable`
+        // re-enters `open()`, and it must not do that inside a live eviction.
+        for (const observation of evicted) {
+            this.releaseObservation(observation);
         }
     }
 }

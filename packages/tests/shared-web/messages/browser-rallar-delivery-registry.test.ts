@@ -1,4 +1,5 @@
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
@@ -276,6 +277,53 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(states).toEqual(['expired']);
         });
 
+        it('re-arms the deadline timer when it fires before the clock reaches the deadline', async () => {
+            const harness = createHarness();
+            const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
+
+            const pending = handle.wait();
+            harness.setNowMs(START_MS + 99);
+            await vi.advanceTimersByTimeAsync(100);
+            expect(handle.lifecycle().state).toBe('submitted');
+
+            harness.setNowMs(START_MS + 100);
+            await vi.advanceTimersByTimeAsync(1);
+
+            const outcome = await pending;
+            expect(outcome.status).toBe('settled');
+            expect(outcome.lifecycle.state).toBe('expired');
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('reports the deadline-applied lifecycle in a timeout outcome', async () => {
+            const harness = createHarness();
+            const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
+
+            const pending = handle.wait({ timeoutMs: 50 });
+            harness.setNowMs(START_MS + 200);
+            await vi.advanceTimersByTimeAsync(50);
+
+            const outcome = await pending;
+            expect(outcome.status).toBe('timeout');
+            expect(outcome.lifecycle.state).toBe('expired');
+            expect(outcome.lifecycle).toEqual(handle.lifecycle());
+        });
+
+        it('reports the deadline-applied lifecycle in an aborted outcome', async () => {
+            const harness = createHarness();
+            const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
+            const controller = new AbortController();
+
+            const pending = handle.wait({ signal: controller.signal });
+            harness.setNowMs(START_MS + 200);
+            controller.abort();
+
+            const outcome = await pending;
+            expect(outcome.status).toBe('aborted');
+            expect(outcome.lifecycle.state).toBe('expired');
+            expect(outcome.lifecycle).toEqual(handle.lifecycle());
+        });
+
         it('expires a pending wait when the deadline timer fires', async () => {
             const harness = createHarness();
             const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
@@ -321,6 +369,22 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(handle.lifecycle().lateSettlementCount).toBe(0);
         });
 
+        it('is a no-op once the deadline has elapsed and does not call the port', () => {
+            const harness = createHarness();
+            const handle = harness.registry.open(toExpiringTestMessage('msg-1', START_MS + 100), 'rtc');
+            const states: string[] = [];
+            handle.onEvent((lifecycle) => {
+                states.push(lifecycle.state);
+            });
+            harness.setNowMs(START_MS + 100);
+
+            handle.cancel();
+
+            expect(harness.cancelledMsgIds).toEqual([]);
+            expect(states).toEqual(['expired']);
+            expect(handle.lifecycle().state).toBe('expired');
+        });
+
         it('is a no-op on a terminal handle and does not call the port', () => {
             const harness = createHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
@@ -348,6 +412,27 @@ describe('BrowserRallarDeliveryRegistry', () => {
             const outcome = await pending;
             expect(outcome.status).toBe('settled');
             expect(outcome.lifecycle.state).toBe('unobservable');
+        });
+
+        it('settles the map before it notifies, so a re-sending listener sees the eviction', () => {
+            const harness = createHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 2 });
+            const oldest = harness.registry.open(toTestMessage('msg-1'), 'rtc');
+            const sizesDuringRelease: number[] = [];
+            let retried: RallarMessageHandle | undefined;
+            oldest.onEvent((lifecycle) => {
+                if (lifecycle.state !== 'unobservable') {
+                    return;
+                }
+                sizesDuringRelease.push(harness.registry.size());
+                retried = harness.registry.open(toTestMessage('msg-retry'), 'ws');
+            });
+            harness.registry.open(toTestMessage('msg-2'), 'rtc');
+
+            harness.registry.open(toTestMessage('msg-3'), 'rtc');
+
+            expect(sizesDuringRelease).toEqual([2]);
+            expect(retried?.lifecycle().state).toBe('submitted');
+            expect(harness.registry.size()).toBe(2);
         });
 
         it('ignores later settlements for a released entry', () => {
