@@ -5,9 +5,13 @@ supplies replay notifications and grouped reads. The branch's scan-progress
 correction, RTC/WS integration fixes, and semantic negative tests are reviewed.
 Local semantic and ordinary native-browser checks pass. The maintainer-approved
 strict 208 KiB facade ceiling passes its focused checks. The server fixture
-correction passes 39 tests and independent specification/quality review. The separate headless
-bundle budget, hosted ALM conformance, native performance proof, and complete
-RTC lifecycle proof remain unresolved.
+correction passes 39 tests and independent specification/quality review. A fresh
+hosted ALM observation now passes all three carriers after heartbeat repair. The
+headless ceiling now has separate maintainer approval for strict `<261 KiB`.
+Native performance proof and complete RTC lifecycle proof remain unresolved.
+The maintainer has also authorized designing the narrow delayed-answer protocol
+correction below; its proposed wire contract still awaits design review before
+implementation.
 
 The first all-scenarios local RTC command on the current correction exits after
 211 seconds: C's `messages.rtc` formation-readiness command exhausts its remaining
@@ -37,7 +41,7 @@ retention proof remains unrun on this correction.
 
 An earlier hosted root suite confirms both server suites pass and leaves
 only the headless bundle test failing (11,001 passed, one failed, 12 skipped).
-Later ALM outcomes vary without a corresponding runtime correction. The latest
+Later pre-heartbeat ALM outcomes vary without a corresponding runtime correction. That
 Release Gate passes the corrected native wrapper's style boundary and reaches
 the root suite: 11,000 passed, two failed, 12 skipped. Besides the unchanged
 headless ceiling, the native fixture tsconfig lacks the ambient-type declaration
@@ -47,6 +51,18 @@ inherited ambient types; four boundary tests and both strict fixture compilers
 pass, with independent review and scoped repair complete. No compiler semantics
 or contract was weakened. The skipped topology step and its missing upload
 directory do not establish a topology failure.
+
+After the heartbeat repair, the hosted root-suite job reports 11,043 passed,
+one failed, and 12 skipped; only headless size still fails at 260.7724609375 KiB
+against strict less than 260. The ambient-type failure is resolved. Its separate
+ALM job passes all three carriers and all 18 matching recipe results, including
+positive delivery, in 4 minutes 38 seconds. Native raw summaries validate and all
+methods restore with zero drops or recorder failures; every page still has
+pre-capture and in-flight censoring. Multi-second native completion outliers and
+6.2–7.6-second original receiver batches remain. This is hosted correctness
+evidence, not an isolated performance effect or RTC lifecycle/B06 acceptance.
+The enclosing workflow later reports cancelled; neither its ALM pass nor its
+root-job result establishes a green full release gate.
 
 The corrected native timing harness now passes independent review, strict
 fixture compilation, and a balanced baseline/candidate/candidate/baseline series
@@ -212,14 +228,11 @@ prove routing and callback disposition, not convergence; an already-entered old
 callback remains outside that diagnostic. The throwaway characterization is
 archived outside the maintained suite, not shipped as a regression expectation.
 
-The AL envelope has existing reply-correlation fields, but RTC does not currently
-use them. The demonstrated cross-negotiation mechanism requires an explicit
-design decision before a correction: negotiate a narrow identity/correlation
-contract or choose a different peer-lifetime model. Introducing mandatory RTC
-correlation or changing peer lifetime is a separate protocol/compatibility
-decision, not an incidental measurement fix or authorization for additional
-fencing. The current no-additional-fencing constraint remains in force; no such
-correction has been selected or implemented.
+The maintainer has explicitly authorized designing a narrow correction for the
+demonstrated cross-negotiation mechanism. That approval removes the investigation
+blocker, not the written-design review gate. The proposed contract below is a
+deliberate RTC protocol change, not an incidental performance correction. No
+correlation implementation or general fencing mechanism has been added.
 
 **Goal:** Remove avoidable admission-to-delivery delay without weakening durable
 delivery, starving ordinary recovery, or introducing a second scheduler.
@@ -255,6 +268,148 @@ the obsolete restart hook after verifying its consumers, rather than retaining
 an unused alternative path. The required tests must prove progress for finite
 backlogs, including while bounded commits continue; they cannot prove fairness
 under unlimited arrivals faster than the worker can drain.
+
+## Proposed RTC answer correlation — awaiting design review
+
+### Problem and ownership
+
+An admitted answer can outlive the local offer it answers. At present,
+`WebRtcConnectionService.receiveSignal` selects a peer using only the sender
+session ID. `QRtcPeerConnection.handleAnswer` accepts a description whenever the
+selected native connection is in `have-local-offer`. Neither condition proves
+that this is the original offer. The retained QueueBox discriminator proves
+this routing gap; the separate native probe proves that native SDP acceptance
+does not necessarily reject it. Neither proves attribution to the older browser
+capture.
+
+The correction belongs in the shared RTC protocol and the peer that owns its
+native negotiation. Room helpers, games, group topology, QueueBox selection,
+and server routing must not decide which local offer an answer completes.
+
+### Alternatives and recommendation
+
+1. **RTC-owned offer identity, echoed in its answer — recommended.** One explicit
+   protocol value follows the offer through any signaling transport; the peer
+   records it before sending. This changes the shared wire decoder and direct
+   RTC consumers.
+2. **Reuse AL `actions.corrId` / `replyToMsgId`.** This reuses envelope vocabulary,
+   but current `send` returns no message identity and allocates its envelope
+   internally. Exact AL-message identity needs a preparation/return contract
+   before admission, or RTC still needs to supply its own correlation value.
+   Do not add transport preparation or duplicate correlation representations
+   solely for this fix.
+3. **Keep a peer alive longer or drain old signaling before replacement.** This
+   does not distinguish answers to successive offers on the same object.
+   Draining or cancelling durable work changes lifecycle/delivery ownership.
+   It is not a sufficient or narrower correction.
+
+Use one required opaque `offerId` on the RTC **Offer and Answer** variants.
+The answer echoes the received offer's exact ID. Do not use an AL message ID,
+session ID, timestamp, SDP string, or remote answer's SDP origin as a substitute.
+Keep the ICE variant unchanged; absence of `offerId` there is a distinct protocol
+variant, not an optional legacy description form. Express the discriminant and
+payload relationship in the canonical shared type rather than passing an
+independent signal type beside an unrelated nullable payload.
+
+### Issuance, matching, and lifetime
+
+The peer owns one outstanding local offer identity for its current native
+connection. Supply an explicit ID-generation dependency from composition;
+production uses the existing platform UUID facility and tests use deterministic
+identities. No library, global registry, stored generation counter, or additional
+database operation is needed. Each genuinely new local offer gets a new ID;
+transport re-admission of that same offer keeps both its offer ID and existing AL
+message identity unchanged.
+
+Use the existing peer signaling chain to serialize local description creation
+and incoming description application. Do not introduce another queue or chain.
+Publish the outstanding identity before the offer can reach transport admission.
+An answer may call `setRemoteDescription` only when its ID matches that
+outstanding offer and the captured native connection is still current and in
+`have-local-offer`. Check at actual execution, not only before deferred work is
+queued. After every native await, use the captured lifecycle owner before
+mutating state or emitting another signal; an operation already started on a
+retired native connection must never update its replacement.
+
+A valid but nonmatching answer is a terminal stale no-op: no native description
+write, no ICE-queue flush, no clearing of the current offer or collision state,
+and no request for QueueBox retry. Missing or malformed IDs on descriptions are
+protocol rejection, not stale success. Preserve existing safe error reporting;
+do not log SDP, ICE credentials, session tokens, or raw envelopes.
+
+Accepting the matching answer consumes the outstanding offer only after native
+application succeeds. Reset, disposal, native replacement, and polite rollback
+invalidate it. An ignored collision on an impolite peer leaves its current local
+offer intact. A later media renegotiation or ICE-restart offer receives a new ID.
+An answer producer echoes the ID of the captured remote offer it actually
+accepted, never a mutable global "latest offer" value. Deferred outbound work
+from a retired lifecycle must not be relabelled as current work.
+
+Keep the current polite/impolite collision policy, connection-attempt budget,
+admission retry, release behavior, and deadlines. The
+[WebRTC perfect-negotiation example](https://www.w3.org/TR/webrtc/#perfect-negotiation-example)
+places collision handling with the peer. This design adds application-owned
+answer correlation to that boundary; it does not replace the native state
+machine or claim that the example solves cross-lifetime delivery.
+
+### Narrow scope and compatibility
+
+Do not tag ICE candidates with the current offer ID. ICE generation is a separate
+identity: a media renegotiation need not restart ICE, and a late candidate can
+still belong to valid transport credentials. The
+[WebRTC candidate-addition contract](https://www.w3.org/TR/webrtc/#dom-peerconnection-addicecandidate)
+uses `usernameFragment` for that purpose. Preserve current native candidate
+fields, queuing, and collision behavior in this slice.
+
+This is specifically an **answer-to-local-offer correctness** guarantee. It is
+not a general ordering protocol for delayed remote offers, a complete ICE
+freshness solution, a new authentication boundary, or proof that all reconnect
+failures are repaired. An authenticated peer can echo an ID; identity matching
+does not replace existing sender/target authorization or native validation.
+
+Both browser and server call the shared signaling decoder. Update that contract
+and all verified direct producers/consumers together, including maintained tests
+and `packages/shared-rtc-bench` workloads. Remove superseded uncorrelated
+description entry shapes and affected unused code. Do not retain overloads,
+optional-ID fallback, dual decoding, migration, or old/new runtime paths.
+Old tabs and retained old description messages therefore are not wire-compatible
+with the corrected decoder. Deployment requires compatible participants to
+reload/reconnect; mixed-version interoperability is not promised. No database
+schema rewrite or bulk queue purge is part of this correction.
+
+The code-derived construction path is browser RTC composition -> shared
+connection service -> peer -> registered native callbacks. The invocation path
+is existing WS/AL admission and dispatch -> shared signaling decoder -> current
+peer -> existing signaling chain -> identity/state decision -> native description
+application -> captured-owner state update. The server only validates and forwards
+the envelope; QueueBox retains all durable admission, claim, retry, and release
+ownership. The new ID flows through the existing serialized RTC payload once.
+
+### Acceptance and execution horizon
+
+The next implementation slice, after design approval, must include the protocol
+change and its semantic regression tests together in PR #566. Prove an old
+answer held by a real admission conflict is ignored after replacement while the
+matching current answer reaches the native port. Also cover successive offers
+on the same peer, duplicate answers, polite rollback, impolite collision,
+missing/malformed IDs, reset during queued work and during native awaits, and
+unchanged transport re-admission identity. Use the existing fixtures; do not
+restore the archived characterization's expectation of faulty behavior.
+
+Validate affected shared/shared-web/shared-server contracts, maintained test
+typing, direct benchmark consumers, the headless and browser bundle boundaries,
+and both game builds. Every changed human-authored file is reviewed/remediated
+in full, support-file changes enter closure recursively, and independent
+untouched code stays outside closure. Keep current canonical names and remove
+affected legacy rather than adding aliases or pass-through layers.
+
+The following proof slice uses real Chromium with the same controlled delayed
+answer: observe the replacement's data channel open and a payload arrive under
+the original deadline. Then run the existing all-scenarios/reconnect acceptance
+on the reviewed candidate, with isolated outputs and no blind retries. Retain
+the first result. These are correctness gates, not stable latency estimates or
+RTC-B06 completion. Later retention and performance work remain outcome-shaped;
+successor continuation remains conditional on its original evidence gate.
 
 ## Evidence and its limits
 
@@ -445,6 +600,10 @@ independent read/write number, gameplay SLO, or unlimited-load guarantee.
 - Remove affected obsolete code; remediate whole touched files and recursively
   affected support files under current repo guidance, not historical line caps.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
+- The separately approved bundle policies are strict `<208 KiB` for the browser
+  facade and `<261 KiB` for headless; compression and exclusions stay unchanged.
+- The proposed RTC answer-correlation section is a design-review request, not
+  permission to bypass the protocol/public-contract constraint during execution.
 - Keep implementation and proof in PR #566. Do not merge test-only experiments.
 - PR #567's related read-session/observation work has landed and is incorporated
   in this branch. Reuse it, retain fresh authority checks, and do not create a

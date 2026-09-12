@@ -26,6 +26,10 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
 - Remove affected obsolete code; remediate whole touched files and recursively
   affected support files under current repo guidance, not historical line caps.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
+- The separately approved bundle ceilings are strict `<208 KiB` for the browser
+  facade and `<261 KiB` for headless; preserve compression and dependency exclusions.
+- RTC answer correlation is authorized for design work only. Review the spec's
+  proposed contract before implementation; no general fencing mechanism is authorized.
 - Keep implementation and proof in PR #566. Do not merge test-only experiments.
 - Main may move. Record each measurement's source and environment; repair actual
   conflicts, but do not rebase a mergeable branch for `BEHIND` alone.
@@ -135,13 +139,14 @@ maintained test typecheck, and scoped static checks pass. The throwaway
 characterization is archived outside the maintained test suite, not committed
 as a test that would preserve this faulty behavior.
 
-There is now a demonstrated cross-negotiation failure mechanism. The next
-decision is whether to authorize explicit RTC negotiation correlation, possibly
-using existing AL reply-correlation fields, or choose a different peer-lifetime
-design. Neither is an incidental performance correction. No new correlation
-requirement, peer generation, fence, or protocol change is authorized by this
-evidence alone; preserve the maintainer's no-additional-fencing constraint until
-that design/compatibility decision is explicit.
+There is now a demonstrated cross-negotiation failure mechanism. The maintainer
+has approved designing the narrow correction. The spec compares RTC-owned offer
+identity, AL-envelope correlation, and peer-lifetime changes, and recommends a
+required offer ID echoed in answers. This is not a general stale-signaling or
+ICE protocol. The written contract, including fail-closed old descriptions and
+no legacy fallback, awaits design review before implementation. QueueBox and
+the no-additional-fencing constraint remain unchanged outside that explicit
+proposed RTC boundary.
 
 The maintainer explicitly approved raising only the browser facade ceiling to
 **strict `<208 KiB`**. The approval-time measurement was **207.16796875 KiB**;
@@ -166,11 +171,12 @@ selector correction: the baseline already exceeds the limit, and the selector
 change adds 57 compressed bytes while reducing uncompressed output. No justified
 removal was identified in that changed surface. At `1598ece11`, the fresh
 headless boundary test measures **260.7724609375 KiB** and still fails only its
-size assertion; operator dependency exclusions pass. The facade approval does not
-authorize a headless budget change; resolve that separate decision before
-readiness, without holding up native measurement. Hosted ALM conformance still
-fails despite the local pass. Outcomes vary across observations without a
-corresponding runtime correction. The latest hosted Release Gate passes the
+size assertion; operator dependency exclusions pass. The maintainer has now
+separately approved increasing headless to strict `<261 KiB`, the smallest
+whole-KiB ceiling above that measurement. This is an explicit bundle policy
+decision, not reduced runtime cost or a passing release gate. Before the heartbeat repair,
+hosted ALM conformance still fails despite a local pass. Outcomes vary across
+those observations without a corresponding runtime correction. That hosted Release Gate passes the
 previous native timing wrapper's `boundary.unknown` check and reaches the root
 suite: **11,000 tests pass, two fail, and 12 are skipped**. The failures are the
 separate headless ceiling and the native fixture tsconfig's missing explicit
@@ -180,6 +186,29 @@ TypeScript 7 boundary tests and both strict fixture compilers pass. The evidence
 slice's independent review and scoped repair are complete; no inherited compiler
 semantics or boundary test was weakened. The topology replay step is skipped
 after the root failure; its missing upload directory is not a topology test result.
+
+After the reviewed heartbeat correction, a distinct hosted observation passes
+all three ALM carriers. Its 18 matching recipe commands complete with zero
+failures, including all three positive delivery receivers. The unchanged
+observation command takes 4 minutes 38 seconds under Node 24.20.0 on Linux/x64
+with memory services and retry zero. All nine regime/control/native artifacts
+are retained under `tmp/perf/ci-34715023711-alm.PRxYAc/`; native methods restore
+with no drops or recorder lifecycle failures. All six pages have two pre-capture
+requests and right-censored observations. Successful native read medians are
+0.4–1.0 ms, but maxima reach 3,129.6 ms; writes have 0.3–0.4 ms medians and
+maxima up to 1,549.5 ms. These are completion waits, not disk or predictable
+gameplay latency. Original receiver batches still last 6,196–7,558 ms.
+
+The same candidate's completed root-suite job reports **11,043 passed, one
+failed, and 12 skipped**: only the unchanged headless ceiling fails, at
+260.7724609375 KiB. The ambient-type failure is gone. The enclosing workflow
+subsequently reports cancelled, so the successful ALM and failed root-job
+results must not be presented as a green release gate. Candidate checkout is
+`c200501fd40e20c691a226329929670856892d05`; the later published plan/spec-only
+change does not alter that runtime. Served-module identity remains unverified.
+This is a fresh hosted correctness pass, not causal performance attribution,
+all-scenarios reconnect, retention-100, or RTC-B06 completion. Earlier failures
+remain retained, and successor continuation remains conditional.
 
 The failed RTC observation includes a 12-claim batch lasting 32,120 ms, with
 18,795 ms running claims and 11,558 ms releasing them. These are batch intervals,
@@ -436,12 +465,14 @@ restored. Censoring prevents absence-based native bottleneck claims.
 The comparison is collected, but it is not four passing native captures or a
 proven speedup. Raw evidence and the corrected projection remain under
 `tmp/perf/alm-mixed-comparison-9545d41e0.qraxQy/`. Measured latency ranges overlap; keep
-continuation conditional. The next two concrete outcomes are a safe
-authority-freshness correction and an evidence-led continuation retain/omit
-decision followed by the existing RTC proof. Hosted claim/run/release attribution
-remains incomplete; the cache hypothesis does not replace it. No deadline
-relaxation, unconditional continuation, or gameplay-latency promise follows from these
-local correctness results.
+continuation conditional. The authority-freshness correction has since passed
+its focused review and hosted ALM proof above. The current execution horizon is
+the approved headless budget correction and review of the proposed RTC
+answer-correlation design. After design approval, keep only its implementation
+with semantic coverage and the native/reconnect proof concrete. An evidence-led
+continuation retain/omit decision remains later work. Hosted claim/run/release
+attribution is incomplete; no deadline relaxation, unconditional continuation,
+or gameplay-latency promise follows from the local correctness results.
 
 | Owner                                                                                                                                           | Planned responsibility                                                                                                       |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -565,10 +596,12 @@ and test usages remain its only consumers.
       Keep the headless ceiling unchanged without its own explicit approval;
       investigate justified reductions in the affected surface first. Preserve
       the failed hosted ALM evidence for Slice 2's causal measurement.
-- [ ] Resolve the separate headless bundle ceiling decision before final
-      readiness. Keep its strict `<260 KiB` limit unchanged without explicit
-      approval. Native timing can proceed on the reviewed runtime meanwhile;
-      source-size accounting is not runtime performance evidence.
+- [x] Obtain separate approval for strict `<261 KiB` headless. Apply the smallest
+      whole-KiB ceiling above the measured bundle without changing the build,
+      compression, dependency exclusions, or other entry budgets. Remove the
+      obsolete budget-history comments. The focused bundle and headless typecheck
+      pass; independent specification and quality review is clean. Source-size
+      accounting is not runtime performance evidence.
 
 Run the focused tests above together with:
 
@@ -745,12 +778,17 @@ ALM job; it adds no fixture, production hook, timing gate, or workload.
       remains causally unjoined, and a callback already entered on a retired peer
       is outside this diagnostic. Archive the throwaway characterization; do not
       retain a shipping test whose expectation protects the faulty behavior.
-- [ ] Obtain the explicit RTC protocol/peer-lifetime design decision before
-      implementing a cross-negotiation identity guard. Existing AL reply-correlation
-      fields are a possible reuse boundary, not an already active RTC contract.
-      Keep QueueBox/retry/lease ownership, no legacy, and no additional fencing
-      unchanged until a narrow revised design is approved. Do not represent the
-      mechanism as proven attribution of the retained browser failure.
+- [x] Obtain approval to design the narrow RTC correction and document the
+      alternatives, recommended owner, lifetime, compatibility consequence, and
+      proof gates in the spec. Existing AL correlation fields are not an active
+      RTC contract; using them requires explicit lifecycle design too.
+- [ ] Review the proposed answer-correlation spec before implementation. Its
+      offer/answer identity does not redefine ICE, delayed remote-offer ordering,
+      room authority, or QueueBox/retry/lease ownership. Keep no legacy and no
+      generic additional fencing. After approval, implement with semantic coverage
+      in this PR, then prove native data-channel opening and unchanged reconnect
+      acceptance. Do not attribute the retained browser failure to this mechanism
+      without its missing causal join or claim protocol work is a storage speedup.
 - [ ] Select continuation only when measured successor rediscovery remains a
       material contributor to an unmet acceptance condition and spare-capacity
       opportunities exist. If full batches/storage/callbacks dominate, document that
