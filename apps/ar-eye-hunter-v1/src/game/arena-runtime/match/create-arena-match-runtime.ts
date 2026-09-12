@@ -1,5 +1,6 @@
-import { rallar } from '@shared-web/browser/rallar.ts';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+
+import { rallar } from '@shared-web/browser/rallar.ts';
 
 import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type {
@@ -10,10 +11,11 @@ import type {
     PickupAccepted,
     PlayerHitAccepted
 } from '../../types.ts';
-import { handleArenaMatchInput } from './handlers/handle-arena-match-input.ts';
-import { handleArenaMatchIntent } from './handlers/handle-arena-match-intent.ts';
+import { acceptArenaMatchInput } from './handlers/accept-arena-match-input.ts';
+import { acceptArenaMatchIntent } from './handlers/accept-arena-match-intent.ts';
 
 export interface ArenaMatchRuntimeInput {
+    readonly nowMs: () => number;
     readonly acceptDirectorOutput: (message: GameRealtimeMessage) => void;
     readonly acceptMatchStartIntent: (intent: MatchStartIntent) => Promise<void>;
     readonly acceptMotionMessage: (senderId: string, message: GameRealtimeMessage) => void;
@@ -43,8 +45,8 @@ export function createArenaMatchRuntime(
                 input.acceptMotionMessage(envelope.senderId, envelope.payload);
             }
         },
-        onInput: (envelope) => handleArenaMatchInput(input, generation, envelope),
-        onIntent: (envelope) => handleArenaMatchIntent(input, generation, envelope),
+        onInput: (envelope) => acceptArenaMatchInput(input, generation, envelope),
+        onIntent: (envelope) => acceptArenaMatchIntent(input, generation, envelope),
         onEvent: (envelope) => {
             if (isCurrent()) {
                 input.acceptDirectorOutput(envelope.payload);

@@ -527,21 +527,6 @@ moved or changed test.
       }
     },
     {
-      "id": "ar-arena-offline-owner-election",
-      "domain": "AR Eye Hunter director election",
-      "owner": "AR Eye Hunter maintainers",
-      "summary": "An online member reports capability and participates in election when the owner is offline. Executable assertion: “auto-appoints regular room members when the owner is offline”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#auto-appoints regular room members when the owner is offline",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "Rallar Game capability-report and director-appointment ports",
-        "observableEffect": "Startup reports capability and attempts election, producing a succeeded attempt.",
-        "requiredConstraint": "Both capability report and appointment attempt occur at least once.",
-        "failureRationale": "Omitting either call prevents an ownerless room from recovering director authority."
-      }
-    },
-    {
       "id": "ar-arena-rallar-game-presence-boundary",
       "domain": "AR Eye Hunter pose transport ownership",
       "owner": "AR Eye Hunter maintainers",
@@ -2116,6 +2101,59 @@ moved or changed test.
         "requiredConstraint": "A requeue that replaced the row announces exactly once; one that wrote nothing announces not at all.",
         "failureRationale": "Without the announcement the requeued row waits out the owner idle ceiling instead of being claimed, and a second announcement per row would make every owner on the engine drop its remembered readiness twice for one write."
       }
+    },
+    {
+      "id": "ar-arena-diagnostics-network-polling",
+      "domain": "AR Eye Hunter browser lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A mounted diagnostics drawer refreshes immediately and every four seconds only while the arena network is enabled.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#stops diagnostics polling when the arena network is disabled",
+      "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ArenaConnection.refreshDiagnostics",
+        "observableEffect": "Opening the drawer requests one refresh, an enabled interval requests the next, and disabling the network stops future refreshes.",
+        "requiredConstraint": "Exactly one refresh on open, one on the next four-second interval, and no additional refresh after disabling the network.",
+        "failureRationale": "Duplicate polling wastes network work; missing polling leaves visible diagnostics stale; continued polling violates signed-out quiescence."
+      }
+    },
+    {
+      "id": "ar-arena-clipboard-json-content",
+      "domain": "AR Eye Hunter browser lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Copy JSON exports the current director-attempt value as JSON while rejecting clipboard errors visibly and ignoring completion after close.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#reports a rejected clipboard write and releases a pending copy when the drawer closes",
+      "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state."
+    },
+    {
+      "id": "ar-arena-replaced-report-appointment-fence",
+      "domain": "AR Eye Hunter browser lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A late capability report cannot invoke director appointment after a newer attempt replaces the pending report within the same generation and timestamp.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#fences replaced reports and releases delivery listeners on replacement and network end",
+      "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game match appointIfElected",
+        "observableEffect": "Resolving the stale report produces no new appointment side effect while the latest attempt or signed-out state remains unchanged.",
+        "requiredConstraint": "No appointment invocation occurs after a newer attempt replaces the pending report within the same generation and timestamp.",
+        "failureRationale": "A stale invocation could appoint authority for an abandoned attempt even if a later UI state guard discarded its result."
+      }
+    },
+    {
+      "id": "ar-arena-signed-out-report-appointment-fence",
+      "domain": "AR Eye Hunter browser lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A late capability report cannot invoke director appointment after logout ends the report attempt before it resolves.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not appoint after an old capability report resolves across logout",
+      "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game match appointIfElected",
+        "observableEffect": "Resolving the stale report produces no new appointment side effect while the latest attempt or signed-out state remains unchanged.",
+        "requiredConstraint": "No appointment invocation occurs after logout ends the report attempt before it resolves.",
+        "failureRationale": "A stale invocation could appoint authority for an abandoned attempt even if a later UI state guard discarded its result."
+      }
     }
   ],
   "entries": [
@@ -3240,28 +3278,6 @@ moved or changed test.
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The create-only port absence assertion directly proves that create-only remains unused during create-and-switch.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players"
-    },
-    {
-      "id": "test-structure-coupling-1e082c65080293d4",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ar-arena-offline-owner-election",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "AR Eye Hunter maintainers",
-      "rationale": "The capability-report invocation assertion directly proves that capability reporting and appointment both occur for an eligible member.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#auto-appoints regular room members when the owner is offline"
-    },
-    {
-      "id": "test-structure-coupling-b3578e40d71b81cd",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ar-arena-offline-owner-election",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "AR Eye Hunter maintainers",
-      "rationale": "The director-appointment invocation assertion directly proves that capability reporting and appointment both occur for an eligible member.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#auto-appoints regular room members when the owner is offline"
     },
     {
       "id": "test-structure-coupling-313ee2116e5ba688",
@@ -4802,6 +4818,72 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "The requeued row is durable state either way; the wake count is the only witness that the owner which must claim it was actually told, and told once.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime"
+    },
+    {
+      "id": "test-structure-coupling-9bc4de74853a4078",
+      "path": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-diagnostics-network-polling",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The first-call assertion proves opening the mounted drawer starts one diagnostic refresh.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#stops diagnostics polling when the arena network is disabled"
+    },
+    {
+      "id": "test-structure-coupling-344bf408f0d98067",
+      "path": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-diagnostics-network-polling",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The second-call assertion proves the enabled four-second interval requests one further refresh.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#stops diagnostics polling when the arena network is disabled"
+    },
+    {
+      "id": "test-structure-coupling-4433546794accd4d",
+      "path": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-diagnostics-network-polling",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unchanged count after disabling the network proves the interval no longer crosses the refresh port.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#stops diagnostics polling when the arena network is disabled"
+    },
+    {
+      "id": "test-structure-coupling-d7cb62e655648f54",
+      "path": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-clipboard-json-content",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "This inspects the JSON payload at the browser clipboard writeText port; it does not constrain invocation count or order. Parsed directorAttempt proves copied content matches the visible diagnostic state.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#reports a rejected clipboard write and releases a pending copy when the drawer closes"
+    },
+    {
+      "id": "test-structure-coupling-ab3a278b4bcc15fe",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-replaced-report-appointment-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unused appointment port proves the stale report is fenced before any authority mutation, which final UI state alone cannot establish.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#fences replaced reports and releases delivery listeners on replacement and network end"
+    },
+    {
+      "id": "test-structure-coupling-04df4b043fc6b2f5",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-report-appointment-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unused appointment port proves the stale report is fenced before any authority mutation, which final UI state alone cannot establish.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not appoint after an old capability report resolves across logout"
     }
   ]
 }

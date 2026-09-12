@@ -876,18 +876,75 @@ the shared one plus that single documented exception.
 
 **Interfaces:** consumes `RallarGameSendResult.ws` as the handle (Task 7).
 
-- [ ] **Step 1: Failing test.** The hook records the capability report's delivery as
+- [x] **Step 1: Failing test.** The hook records the capability report's delivery as
       `{ state: 'pending' }` when the handle is `submitted`/`queued`, `{ state: 'confirmed' }` on
       `transport-accepted`, and `{ state: 'failed', reason }` on `rejected`/`failed`, driven by
       `handle.onEvent`, and unsubscribes on cleanup.
-- [ ] **Step 2: Implement.** `reportCapability()`'s result is no longer discarded: its `ws` handle
+- [x] **Step 2: Implement.** `reportCapability()`'s result is no longer discarded: its `ws` handle
       feeds a `capabilityDelivery` field on the director attempt state through `onEvent`; the UI that
-      renders `directorAttempt` shows it beside the attempt status. Keep it to the one hook and the one
-      state shape; no new component.
+      renders `directorAttempt` shows it beside the attempt status. Keep delivery observation in the one hook and state shape. The authorized
+      closure replan below permits extracting existing UI responsibilities without adding a feature.
       Command: `npx vitest run <the test>`; `npm --workspace ar-eye-hunter-v1 run typecheck` (or the
       workspace's check script named in its `package.json`)
       Expected: PASS.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
+
+**Authorized closure replans and final ownership:**
+
+- The original no-new-component constraint permits extracting the existing App and diagnostics
+  responsibilities solely for touched-file standards closure. `src/app.tsx` now composes
+  `src/arena-ui/` presentation, operations, diagnostics, presence notices and match results with the
+  same visible product surface. The manually imported App filename is kebab-case; `main.tsx`
+  contains one Temporal installation. No forwarding alias remains.
+- The real browser startup prerequisite is fixed in `BrowserDirectorStatusRuntime`: current-room
+  and snapshot reads use `readConfiguredValue` for an unconfigured repository. Explicit room
+  identity, configured status and unrelated faults remain intact; failed initial `onStatus` reads
+  do not register listeners. `rooms.state()` still intentionally throws before configuration.
+- `ArenaDirectorAppointment` owns a complete attempt identity and one observation subscription.
+  It reads initial lifecycle, subscribes to direct lifecycle events without replay, and guards the
+  current attempt, match, room and generation after report, before appointment, after awaited work,
+  and inside state updaters. Appointment completion preserves delivery evidence; delivery updates
+  preserve appointment fields. Replacement, abort and unmount unsubscribe without cancelling work.
+- Removed the mixed `arena-connection-helpers.ts` module and its wrapper error conversion. HTTP
+  probing and pure pose normalization live with their existing owners; match input/intent consumers
+  use canonical `accept` names. Recursive closure covers their auth, transport, message and AI
+  consumers. Clocks are supplied at existing composition boundaries, with timestamps captured
+  before state projection. No new lifecycle registry, reducer, polling or library was introduced.
+- `apps/ar-eye-hunter-v1/README.md` is the durable entry-to-result navigation map for the arena
+  runtime families. This remains one Task 8 change: the UI extraction and startup fix are necessary
+  to make the authorized consumer proof reviewable, and the support edits close those same paths.
+
+**Task 8 evidence:** genuine startup, handle and visible diagnostics RED runs are followed by
+focused GREEN runs. The app suite includes stale-report and same-generation frozen-time
+replacement, stale delivery callbacks, abort/unmount cleanup, independent appointment/delivery
+updates and clipboard cleanup. The real-service browser test logs in, creates an arena, observes the
+existing appointment HTTP response, then verifies visible completion and manual capability delivery
+with JSON readback. It keeps the existing 45-second test and 8-second assertion budgets. The
+response synchronization replaces an unsupported assumption that the asynchronous initial
+appointment always finishes within eight seconds; no product latency contract was changed.
+
+The final acceptance configuration has a desktop Chromium project for the authenticated delivery
+workflow and preserves all three original mobile projects and their mobile-control assertions.
+Exploratory delivery runs on high-DPI mobile profiles exposed unresolved end-to-end timing limits,
+including full-test timeouts with and without continuous tracing; these are recorded rather than
+claimed fixed by desktop coverage. This authorized acceptance split matches Task 8's distinct
+requirements: actual authenticated delivery observation and preservation of the existing mobile
+control surface. All 45-second test, 8-second expectation and existing lane budgets remain intact.
+
+Task 8 validation completed: focused app/shared-web/Playwright-config Vitest170/19; shared and
+shared-web native typechecks plus the app typecheck pass; both game builds pass with existing
+large-chunk warnings; browser public entrypoint/snapshot and bundle-budget checks pass. The
+configured browser acceptance run passes4 tests with3 existing orientation skips; the final
+headed desktop delivery proof passes1/1. Its headless desktop run took43.6s within45s, so timing
+margin remains a disclosed limitation. Repo-governance checks pass428/27. The test compiler's
+remaining8 errors are exclusively the5 known Task9 harness/test paths permitted by the coupled
+Tasks6–9 cutover; no Task8 error remains. Task9 and final S1 conformance remain incomplete.
+
+Clipboard closure was recreated after a failing regression in its current extracted owner; the
+fresh implementation passes the96-test app suite and a real browser clipboard copy/reopen proof.
+The existing test-boundary registry removes two obsolete auto-election call-count entries and
+classifies the narrow diagnostics polling, clipboard payload and stale-report appointment fences.
+No unrelated registry contract or production legacy approval was changed.
 
 ### Task 9: The black-box ledger becomes a projection
 

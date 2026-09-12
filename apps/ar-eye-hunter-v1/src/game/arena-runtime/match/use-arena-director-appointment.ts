@@ -1,17 +1,20 @@
-import { rallar } from '@shared-web/browser/rallar.ts';
-import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import { useCallback, useEffect, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+
+import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { rallar, type RallarDirectorStatus, type RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import type { RallarGameHostAppointResult } from '@shared-web/game/director/rallar-game-director-appointment-contracts.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
-import { useCallback } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { ALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { DirectorAttemptSource } from '../arena-connection-contracts.ts';
-import type { DirectorAttemptState } from '../arena-connection-contracts.ts';
-import { toDirectorAttemptState, toErrorMessage } from '../arena-connection-helpers.ts';
+import type { DirectorAttemptSource, DirectorAttemptState } from '../arena-connection-contracts.ts';
+import { toCapabilityDelivery, toDirectorAttemptState } from './to-director-attempt-state.ts';
 
 interface ArenaDirectorAppointmentInput {
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
     readonly isCurrentNetworkGeneration: (generation: number) => boolean;
+    readonly currentNetworkSignal: () => AbortSignal;
+    readonly nowMs: () => number;
     readonly networkGenerationRef: RefObject<number>;
     readonly roomIdRef: RefObject<string | undefined>;
     readonly setDirectorAttempt: Dispatch<SetStateAction<DirectorAttemptState>>;
@@ -19,92 +22,152 @@ interface ArenaDirectorAppointmentInput {
     readonly setGameDiagnostics: Dispatch<SetStateAction<RallarGameDiagnostics | undefined>>;
 }
 
-export function useArenaDirectorAppointment(
-    input: ArenaDirectorAppointmentInput
-): Readonly<{
-    attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
-}> {
-    const {
-        arenaMatchRef,
-        isCurrentNetworkGeneration,
-        networkGenerationRef,
-        roomIdRef,
-        setDirectorAttempt,
-        setDirectorStatus,
-        setGameDiagnostics
-    } = input;
+interface ArenaDirectorAppointmentActions {
+    attemptDirectorAppointment(source: DirectorAttemptSource): Promise<void>;
+}
 
-    const attemptDirectorAppointment = useCallback(async (
-        source: DirectorAttemptSource
-    ) => {
-        const currentRoomId = roomIdRef.current;
-        const generation = networkGenerationRef.current;
-        const startedAtEpochMs = Date.now();
-        setDirectorAttempt({
-            source,
-            status: 'pending',
-            startedAtEpochMs
-        });
+interface DirectorAppointmentAttempt {
+    readonly source: DirectorAttemptSource;
+    readonly generation: number;
+    readonly roomId: string | undefined;
+    readonly match: ArenaRallarGameMatchHandle | undefined;
+    readonly startedAtEpochMs: number;
+    readonly signal: AbortSignal;
+}
 
-        if (!currentRoomId) {
-            setDirectorAttempt({
-                source,
+export function useArenaDirectorAppointment(input: ArenaDirectorAppointmentInput): ArenaDirectorAppointmentActions {
+    const [appointment] = useState(() => new ArenaDirectorAppointment(input));
+    useEffect(() => () => appointment.stop(), [appointment]);
+    const attemptDirectorAppointment = useCallback(
+        (source: DirectorAttemptSource) => appointment.appoint(source),
+        [appointment]
+    );
+    return { attemptDirectorAppointment };
+}
+
+class ArenaDirectorAppointment {
+    private readonly input: ArenaDirectorAppointmentInput;
+    private current: DirectorAppointmentAttempt | undefined;
+    private unsubscribeDelivery: RallarUnsubscribe | undefined;
+    private readonly stopOnAbort = () => this.stop();
+
+    constructor(input: ArenaDirectorAppointmentInput) {
+        this.input = input;
+    }
+
+    async appoint(source: DirectorAttemptSource): Promise<void> {
+        const attempt = this.start(source);
+        if (!attempt.roomId || !attempt.match) {
+            this.finish(attempt, {
                 status: 'failed',
-                reason: 'Cannot appoint a director without an arena room.',
-                startedAtEpochMs,
-                finishedAtEpochMs: Date.now(),
-                durationMs: Date.now() - startedAtEpochMs
+                reason: !attempt.roomId
+                    ? 'Cannot appoint a director without an arena room.'
+                    : 'Rallar Game match is not ready yet.'
             });
             return;
         }
-
         try {
-            const match = arenaMatchRef.current;
-            if (!match) {
-                setDirectorStatus(rallar.director.status(currentRoomId));
-                setDirectorAttempt(toDirectorAttemptState({
+            const report = await attempt.match.reportCapability();
+            if (!this.isCurrent(attempt)) {
+                return;
+            }
+            this.observeDelivery(attempt, report.ws);
+            if (!this.isCurrent(attempt)) {
+                return;
+            }
+            const result = await attempt.match.appointIfElected();
+            if (!this.isCurrent(attempt)) {
+                return;
+            }
+            const directorStatus = result.directorStatus ?? rallar.director.status(attempt.roomId);
+            const diagnostics = attempt.match.diagnostics();
+            this.input.setDirectorStatus((previous) => this.isCurrent(attempt) ? directorStatus : previous);
+            this.input.setGameDiagnostics((previous) => this.isCurrent(attempt) ? diagnostics : previous);
+            this.finish(attempt, result);
+        }
+        catch (error) {
+            if (!this.isCurrent(attempt)) {
+                return;
+            }
+            this.finish(attempt, { status: 'failed', reason: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    stop(): void {
+        this.current?.signal.removeEventListener('abort', this.stopOnAbort);
+        this.current = undefined;
+        this.unsubscribeDelivery?.();
+        this.unsubscribeDelivery = undefined;
+    }
+
+    private start(source: DirectorAttemptSource): DirectorAppointmentAttempt {
+        this.stop();
+        const attempt: DirectorAppointmentAttempt = {
+            source,
+            generation: this.input.networkGenerationRef.current,
+            roomId: this.input.roomIdRef.current,
+            match: this.input.arenaMatchRef.current,
+            startedAtEpochMs: this.input.nowMs(),
+            signal: this.input.currentNetworkSignal()
+        };
+        this.current = attempt;
+        attempt.signal.addEventListener('abort', this.stopOnAbort, { once: true });
+        this.input.setDirectorAttempt((previous) =>
+            this.isCurrent(attempt)
+                ? {
                     source,
-                    startedAtEpochMs,
-                    resultStatus: 'failed',
-                    reason: 'Rallar Game match is not ready yet.'
-                }));
-                return;
-            }
+                    status: 'pending',
+                    startedAtEpochMs: attempt.startedAtEpochMs,
+                    capabilityDelivery: undefined
+                }
+                : previous
+        );
+        return attempt;
+    }
 
-            await match.reportCapability();
-            const result = await match.appointIfElected();
-            if (!isCurrentNetworkGeneration(generation)) {
-                return;
-            }
-            if (result.directorStatus) {
-                setDirectorStatus(result.directorStatus);
-            }
-            else {
-                setDirectorStatus(rallar.director.status(currentRoomId));
-            }
-            setGameDiagnostics(match.diagnostics());
-            setDirectorAttempt(toDirectorAttemptState({
-                source,
-                startedAtEpochMs,
-                resultStatus: result.status,
-                reason: result.reason
-            }));
-        }
-        catch (err) {
-            if (!isCurrentNetworkGeneration(generation)) {
-                return;
-            }
-            setDirectorStatus(rallar.director.status(currentRoomId));
-            setDirectorAttempt(toDirectorAttemptState({
-                source,
-                startedAtEpochMs,
-                resultStatus: 'failed',
-                reason: toErrorMessage(
-                    err instanceof Error ? err : new Error(String(err))
-                )
-            }));
-        }
-    }, [isCurrentNetworkGeneration]);
+    private isCurrent(attempt: DirectorAppointmentAttempt): boolean {
+        return this.current === attempt && !attempt.signal.aborted &&
+            this.input.isCurrentNetworkGeneration(attempt.generation) &&
+            this.input.arenaMatchRef.current === attempt.match && this.input.roomIdRef.current === attempt.roomId;
+    }
 
-    return { attemptDirectorAppointment };
+    private observeDelivery(attempt: DirectorAppointmentAttempt, handle: RallarMessageHandle | undefined): void {
+        if (!handle) {
+            return;
+        }
+        this.updateDelivery(attempt, handle.lifecycle());
+        this.unsubscribeDelivery = handle.onEvent((lifecycle) => this.updateDelivery(attempt, lifecycle));
+    }
+
+    private updateDelivery(attempt: DirectorAppointmentAttempt, lifecycle: ALDeliveryLifecycle): void {
+        if (!this.isCurrent(attempt)) {
+            return;
+        }
+        const capabilityDelivery = toCapabilityDelivery(lifecycle);
+        this.input.setDirectorAttempt((previous) =>
+            this.isCurrent(attempt) && previous.status !== 'idle' ? { ...previous, capabilityDelivery } : previous
+        );
+    }
+
+    private finish(
+        attempt: DirectorAppointmentAttempt,
+        result: Pick<RallarGameHostAppointResult, 'status' | 'reason'>
+    ): void {
+        if (!this.isCurrent(attempt)) {
+            return;
+        }
+        const finishedAtEpochMs = this.input.nowMs();
+        this.input.setDirectorAttempt((previous) =>
+            this.isCurrent(attempt)
+                ? toDirectorAttemptState({
+                    source: attempt.source,
+                    startedAtEpochMs: attempt.startedAtEpochMs,
+                    finishedAtEpochMs,
+                    resultStatus: result.status,
+                    reason: result.reason,
+                    capabilityDelivery: previous.capabilityDelivery
+                })
+                : previous
+        );
+    }
 }

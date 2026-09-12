@@ -13,8 +13,8 @@ import type { RallarSessionController } from '@shared-web/browser/session/rallar
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import { readSession } from '@shared/api/auth.ts';
-import type { RallarTargetedChannelDefinition } from '../rallar-facade-contract.ts';
 
+import type { RallarTargetedChannelDefinition } from '../rallar-facade-contract.ts';
 import type {
     BrowserMediaComposition,
     BrowserMessagingComposition,
@@ -158,6 +158,7 @@ export function createBrowserDirectorComposition(
     input: CreateBrowserDirectorCompositionInput
 ): BrowserDirectorComposition {
     const directorStatus = new BrowserDirectorStatusRuntime({
+        nowMs: Date.now,
         roomStateStore: input.state.roomStateStore,
         readSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom

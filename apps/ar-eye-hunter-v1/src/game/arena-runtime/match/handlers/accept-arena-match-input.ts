@@ -3,10 +3,10 @@ import type { RallarGameEnvelope } from '@shared-web/game/mod.ts';
 import { isArenaPoseIntentFromSender } from '../../../rallar-game-match-adapter.ts';
 import { hydrateArenaSnapshot, toArenaSnapshot, upsertPlayerPose } from '../../../simulation.ts';
 import { GAME_PROTOCOL, type GameRealtimeMessage } from '../../../types.ts';
-import { withValidatedAvatarProfile } from '../../arena-connection-helpers.ts';
+import { toValidatedPlayerPose } from '../../state/to-validated-player-pose.ts';
 import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 
-export async function handleArenaMatchInput(
+export async function acceptArenaMatchInput(
     input: ArenaMatchRuntimeInput,
     generation: number,
     envelope: RallarGameEnvelope<GameRealtimeMessage>
@@ -14,17 +14,18 @@ export async function handleArenaMatchInput(
     if (!input.isCurrentNetworkGeneration(generation)) {
         return;
     }
-    const data = envelope.payload;
-    if (!isArenaPoseIntentFromSender(data, envelope.senderId)) {
+    const message = envelope.payload;
+    if (!isArenaPoseIntentFromSender(message, envelope.senderId)) {
         return;
     }
-    const pose = withValidatedAvatarProfile(data.pose);
+    const nowEpochMs = input.nowMs();
+    const pose = toValidatedPlayerPose(message.pose);
     const previous = input.arenaSnapshotRef.current;
     if (previous) {
         const next = toArenaSnapshot(
-            upsertPlayerPose(hydrateArenaSnapshot(previous), pose, Date.now()),
+            upsertPlayerPose(hydrateArenaSnapshot(previous), pose, nowEpochMs),
             previous.roomId ?? input.roomIdRef.current,
-            Date.now()
+            nowEpochMs
         );
         input.arenaSnapshotRef.current = next;
         input.setArenaSnapshot(next);

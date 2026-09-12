@@ -17,12 +17,12 @@ import {
     type AiDirectorProposalValue,
     type ArenaEvent
 } from '../../types.ts';
-import { toErrorMessage } from '../arena-connection-helpers.ts';
 import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 
 interface GenerateArenaAiDirectorOutputInput extends
     Pick<
         ArenaAiDirectorScheduleInput,
+        | 'nowMs'
         | 'arenaMatchRef'
         | 'arenaSnapshotRef'
         | 'isCurrentNetworkGeneration'
@@ -87,9 +87,7 @@ export async function generateArenaAiDirectorOutput(
         ) {
             input.setAiStatus('error');
             input.setAiError(
-                toErrorMessage(
-                    error instanceof Error ? error : new Error(String(error))
-                )
+                error instanceof Error ? error.message : String(error)
             );
         }
     }
@@ -123,18 +121,19 @@ async function generateAndPersistArenaAiEvent(
         'proposed'
     );
     const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
+    const nowEpochMs = input.nowMs();
     const proposal: AiDirectorProposal = {
         generationId: accepted.generationId,
         dedupeKey: accepted.dedupeKey ?? accepted.generationId,
         baseStateRevision: accepted.baseStateRevision ?? arenaRevisionKey(state),
         value: accepted.value,
         accepted: true,
-        sentAtEpochMs: Date.now()
+        sentAtEpochMs: nowEpochMs
     };
     const event = materializeAiArenaEvent(
         proposal,
         snapshot.revision + 1,
-        Date.now()
+        nowEpochMs
     );
     await input.ai.broadcastJson({
         result: accepted,

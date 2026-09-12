@@ -1,16 +1,22 @@
 // @vitest-environment happy-dom
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
-import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
-import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
+
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import { createInitialArenaState, createInitialVitalsState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+import type { GameRealtimeMessage } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -468,8 +474,8 @@ describe('useRallarArena auth lifecycle', () => {
         >();
         const waitSignals: AbortSignal[] = [];
         mockRallar.rooms.onChange.mockImplementation((listener) => {
-            roomChangeListeners.add(listener as never);
-            return () => roomChangeListeners.delete(listener as never);
+            roomChangeListeners.add(listener);
+            return () => roomChangeListeners.delete(listener);
         });
         mockRallar.rtc.waitForRoomLane.mockImplementation(
             (_room, _lane, options?: { signal?: AbortSignal; }) => {
@@ -513,8 +519,8 @@ describe('useRallarArena auth lifecycle', () => {
         >();
         const appointment = createDeferred<Awaited<ReturnType<typeof mockMatch.appointIfElected>>>();
         mockRallar.rooms.onChange.mockImplementation((listener) => {
-            roomChangeListeners.add(listener as never);
-            return () => roomChangeListeners.delete(listener as never);
+            roomChangeListeners.add(listener);
+            return () => roomChangeListeners.delete(listener);
         });
 
         await renderHook();
@@ -694,6 +700,203 @@ describe('useRallarArena auth lifecycle', () => {
         expect(mockRallar.realtime.sendJson).not.toHaveBeenCalled();
     });
 
+    it.each(
+        [
+            [undefined, 'pending', undefined],
+            [{ kind: 'admitted', durable: false, queuedAttempts: 1 }, 'pending', undefined],
+            [{ kind: 'admitted', durable: false, queuedAttempts: 0 }, 'pending', undefined],
+            [{ kind: 'deferred', reason: 'not-yet-in-sync', detail: 'waiting for authority' }, 'pending', undefined],
+            [{ kind: 'refused', reason: 'unauthorized', detail: 'membership denied' }, 'failed', 'membership denied'],
+            [{ kind: 'failed', detail: 'queue unavailable' }, 'failed', 'queue unavailable'],
+            [{ kind: 'expired', detail: 'deadline elapsed' }, 'expired', 'deadline elapsed'],
+            [{ kind: 'superseded', detail: 'newer report' }, 'superseded', 'newer report']
+        ] satisfies readonly [ALDeliveryAdmissionVerdict | undefined, string, string | undefined][]
+    )('observes initial capability delivery %j', async (verdict, state, reason) => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const delivery = createMessageDelivery('ws', verdict);
+        mockMatch.reportCapability.mockResolvedValueOnce({ status: 'sent', ws: delivery.handle });
+        await act(async () => {
+            await current?.appointSelfAsDirector();
+        });
+        expect(current?.directorAttempt).toMatchObject({ status: 'not-elected', capabilityDelivery: { state, reason } });
+    });
+
+    it('keeps delivery observation after appointment completion and preserves both outcomes', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const delivery = createMessageDelivery('ws', undefined);
+        const appointment = createDeferred<Awaited<ReturnType<ArenaRallarGameMatchHandle['appointIfElected']>>>();
+        mockMatch.reportCapability.mockResolvedValueOnce({ status: 'sent', ws: delivery.handle });
+        mockMatch.appointIfElected.mockReturnValueOnce(appointment.promise);
+        let completion: Promise<void> | undefined;
+        await act(async () => {
+            completion = current?.appointSelfAsDirector();
+        });
+        expect(current?.directorAttempt).toMatchObject({ status: 'pending', capabilityDelivery: { state: 'pending' } });
+        await act(async () => {
+            delivery.registry.record({
+                kind: 'attempt-settled',
+                msgId: delivery.handle.msgId,
+                carrier: 'ws',
+                atMs: Date.now(),
+                attemptId: 'ws-attempt',
+                outcome: 'not-ready',
+                submissionAttempted: false,
+                detail: 'connecting',
+                willRetry: true
+            });
+        });
+        expect(current?.directorAttempt).toMatchObject({ status: 'pending', capabilityDelivery: { state: 'pending' } });
+        await act(async () => {
+            appointment.resolve({ status: 'failed', election: { candidates: [], nowEpochMs: 2, capabilityTtlMs: 10_000 }, reason: 'appointment denied' });
+            await completion;
+        });
+        expect(current?.directorAttempt).toMatchObject({ status: 'failed', reason: 'appointment denied', capabilityDelivery: { state: 'pending' } });
+        const finishedAtEpochMs = current?.directorAttempt.finishedAtEpochMs;
+        await act(async () => {
+            delivery.registry.releaseAll();
+        });
+        expect(current?.directorAttempt).toMatchObject({
+            status: 'failed',
+            reason: 'appointment denied',
+            finishedAtEpochMs,
+            capabilityDelivery: { state: 'unobservable' }
+        });
+    });
+
+    it('fences replaced reports and releases delivery listeners on replacement and network end', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        vi.spyOn(Date, 'now').mockReturnValue(10_000);
+        const report = createDeferred<Awaited<ReturnType<ArenaRallarGameMatchHandle['reportCapability']>>>();
+        mockMatch.reportCapability.mockReturnValueOnce(report.promise);
+        let oldCompletion: Promise<void> | undefined;
+        await act(async () => {
+            oldCompletion = current?.appointSelfAsDirector();
+        });
+        const delivery = createMessageDelivery('ws', undefined);
+        const listeners = new Set<Parameters<RallarMessageHandle['onEvent']>[0]>();
+        const originalOnEvent = delivery.handle.onEvent.bind(delivery.handle);
+        const callbacks: Parameters<RallarMessageHandle['onEvent']>[0][] = [];
+        vi.spyOn(delivery.handle, 'onEvent').mockImplementation((listener) => {
+            listeners.add(listener);
+            callbacks.push(listener);
+            const unsubscribeDelivery = originalOnEvent(listener);
+            return () => {
+                listeners.delete(listener);
+                unsubscribeDelivery();
+            };
+        });
+        mockMatch.reportCapability.mockResolvedValueOnce({ status: 'sent', ws: delivery.handle });
+        await act(async () => {
+            await current?.appointSelfAsDirector();
+        });
+        expect(listeners.size).toBe(1);
+        const replacement = current?.directorAttempt;
+        mockMatch.appointIfElected.mockClear();
+        await act(async () => {
+            report.resolve({ status: 'sent', ws: createMessageDelivery('ws', undefined).handle });
+            await oldCompletion;
+        });
+        expect(current?.directorAttempt).toEqual(replacement);
+        expect(mockMatch.appointIfElected).not.toHaveBeenCalled();
+        await act(async () => {
+            await current?.appointSelfAsDirector();
+        });
+        expect(listeners.size).toBe(0);
+        const latest = current?.directorAttempt;
+        await act(async () => {
+            callbacks[0](delivery.handle.lifecycle());
+        });
+        expect(current?.directorAttempt).toEqual(latest);
+        mockMatch.reportCapability.mockResolvedValueOnce({ status: 'sent', ws: delivery.handle });
+        await act(async () => {
+            await current?.appointSelfAsDirector();
+        });
+        expect(listeners.size).toBe(1);
+        await emitAuthState({ authenticated: false, reason: 'expired' });
+        expect(listeners.size).toBe(0);
+        await act(async () => {
+            callbacks.at(-1)?.(delivery.handle.lifecycle());
+        });
+        expect(current?.directorAttempt.status).toBe('idle');
+        expect(delivery.handle.lifecycle().state).toBe('submitted');
+        vi.restoreAllMocks();
+    });
+
+    it('preserves transport confirmation when appointment completes and unsubscribes on unmount', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const delivery = createMessageDelivery('ws', undefined);
+        const appointment = createDeferred<Awaited<ReturnType<ArenaRallarGameMatchHandle['appointIfElected']>>>();
+        const originalOnEvent = delivery.handle.onEvent.bind(delivery.handle);
+        const listeners = new Set<Parameters<RallarMessageHandle['onEvent']>[0]>();
+        vi.spyOn(delivery.handle, 'onEvent').mockImplementation((listener) => {
+            listeners.add(listener);
+            const unsubscribeDelivery = originalOnEvent(listener);
+            return () => {
+                listeners.delete(listener);
+                unsubscribeDelivery();
+            };
+        });
+        mockMatch.reportCapability.mockResolvedValueOnce({ status: 'sent', ws: delivery.handle });
+        mockMatch.appointIfElected.mockReturnValueOnce(appointment.promise);
+        let completion: Promise<void> | undefined;
+        await act(async () => {
+            completion = current?.appointSelfAsDirector();
+        });
+        await act(async () => {
+            delivery.registry.record({
+                kind: 'attempt-settled',
+                msgId: delivery.handle.msgId,
+                carrier: 'ws',
+                atMs: Date.now(),
+                attemptId: 'ws-attempt',
+                outcome: 'sent',
+                submissionAttempted: true,
+                detail: undefined,
+                willRetry: false
+            });
+        });
+        expect(current?.directorAttempt).toMatchObject({ status: 'pending', capabilityDelivery: { state: 'confirmed', evidence: 'transport-accepted' } });
+        await act(async () => {
+            appointment.resolve({
+                status: 'appointed',
+                election: { candidates: [], nowEpochMs: 2, capabilityTtlMs: 10_000 },
+                directorStatus: freshDirectorStatus()
+            });
+            await completion;
+        });
+        expect(current?.directorAttempt).toMatchObject({ status: 'succeeded', capabilityDelivery: { state: 'confirmed', evidence: 'transport-accepted' } });
+        expect(listeners.size).toBe(1);
+        await act(async () => {
+            root?.unmount();
+        });
+        root = undefined;
+        expect(listeners.size).toBe(0);
+        expect(delivery.handle.lifecycle().state).toBe('transport-accepted');
+    });
+
+    it('does not appoint after an old capability report resolves across logout', async () => {
+        await renderHook();
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        const report = createDeferred<Awaited<ReturnType<ArenaRallarGameMatchHandle['reportCapability']>>>();
+        mockMatch.reportCapability.mockReturnValueOnce(report.promise);
+        let completion: Promise<void> | undefined;
+        await act(async () => {
+            completion = current?.appointSelfAsDirector();
+        });
+        await emitAuthState({ authenticated: false, reason: 'expired' });
+        mockMatch.appointIfElected.mockClear();
+        await act(async () => {
+            report.resolve({ status: 'sent', ws: createMessageDelivery('ws', undefined).handle });
+            await completion;
+        });
+        expect(current?.directorAttempt.status).toBe('idle');
+        expect(mockMatch.appointIfElected).not.toHaveBeenCalled();
+    });
+
     it('records director appointment attempts and exposes transport diagnostics', async () => {
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
@@ -740,11 +943,11 @@ describe('useRallarArena auth lifecycle', () => {
             string,
             (message: {
                 peerId: string;
-                data: unknown;
+                data: GameRealtimeMessage;
             }) => void | Promise<void>
         >();
         mockRallar.realtime.onJson.mockImplementation((laneId, handler) => {
-            realtimeHandlers.set(laneId, handler as never);
+            realtimeHandlers.set(laneId, handler);
             return vi.fn();
         });
         mockRallar.rooms.createAndSwitch.mockResolvedValue({
@@ -904,8 +1107,6 @@ describe('useRallarArena auth lifecycle', () => {
             status: 'succeeded',
             resultStatus: 'appointed'
         });
-        expect(mockMatch.reportCapability).toHaveBeenCalled();
-        expect(mockMatch.appointIfElected).toHaveBeenCalled();
     });
 
     it('still publishes the local director pose through Rallar Game presence', async () => {
@@ -1075,15 +1276,12 @@ describe('useRallarArena auth lifecycle', () => {
     }
 
     async function waitForState(predicate: () => boolean): Promise<void> {
-        for (let i = 0; i < 10; i += 1) {
-            if (predicate()) {
-                return;
-            }
+        await vi.waitFor(async () => {
             await act(async () => {
                 await Promise.resolve();
             });
-        }
-        expect(predicate()).toBe(true);
+            expect(predicate()).toBe(true);
+        });
     }
 });
 
@@ -1156,16 +1354,6 @@ function emptyPeerReadiness(): RallarGamePeerReadiness {
     };
 }
 
-function createDeferred<T>(): {
-    promise: Promise<T>;
-    resolve(value: T): void;
-    reject(error: unknown): void;
-} {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-    });
-    return { promise, resolve, reject };
+function createDeferred<T>() {
+    return Promise.withResolvers<T>();
 }

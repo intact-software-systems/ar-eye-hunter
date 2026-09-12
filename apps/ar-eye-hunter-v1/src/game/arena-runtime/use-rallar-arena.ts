@@ -1,5 +1,6 @@
-import { readAuthSessionStorageKind } from '@shared/api/auth.ts';
 import { useMemo } from 'react';
+
+import { readAuthSessionStorageKind } from '@shared/api/auth.ts';
 
 import { useArenaDiagnosticActions } from './actions/use-arena-diagnostic-actions.ts';
 import { useArenaSessionActions } from './actions/use-arena-session-actions.ts';
@@ -56,6 +57,7 @@ export function useRallarArena(): ArenaConnection {
         transport
     );
     useArenaAiDirectorLifecycle({
+        nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
         arenaSnapshotRef: state.arenaSnapshotRef,
         connectionState: state.connectionState,
@@ -100,6 +102,7 @@ function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
 
 function useArenaSnapshotTransport(state: ReturnType<typeof useArenaRuntimeState>) {
     return useArenaNetworkTransportSupport({
+        nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
         clearPendingReliableArenaSnapshot: state.clearPendingReliableArenaSnapshot,
         directorStatusRef: state.directorStatusRef,
@@ -126,6 +129,7 @@ function useArenaMessageHandlers(state: ReturnType<typeof useArenaRuntimeState>)
         setRemotePlayerHits: state.setRemotePlayerHits
     });
     const acceptDirectorOutput = useArenaDirectorMessageHandler({
+        nowMs: Date.now,
         acceptEyeAttack: stateAcceptance.acceptEyeAttack,
         acceptPickup: stateAcceptance.acceptPickup,
         acceptPlayerHit: stateAcceptance.acceptPlayerHit,
@@ -139,6 +143,7 @@ function useArenaMessageHandlers(state: ReturnType<typeof useArenaRuntimeState>)
         setRemoteShots: state.setRemoteShots
     });
     const peerMessages = useArenaPeerMessageHandlers({
+        nowMs: Date.now,
         acceptEyeAttack: stateAcceptance.acceptEyeAttack,
         acceptPickup: stateAcceptance.acceptPickup,
         acceptPlayerHit: stateAcceptance.acceptPlayerHit,
@@ -158,6 +163,7 @@ function useArenaConnectionLifecycle(
     messages: ReturnType<typeof useArenaMessageHandlers>
 ) {
     const { connect } = useArenaConnectionSessionLifecycle({
+        nowMs: Date.now,
         acceptMotionMessage: messages.acceptMotionMessage,
         acceptRealtimeMessage: messages.acceptRealtimeMessage,
         bumpNetworkGeneration: state.bumpNetworkGeneration,
@@ -195,6 +201,8 @@ function useArenaMatchLifecycles(
         snapshotLaneReadySyncKeyRef: state.snapshotLaneReadySyncKeyRef
     });
     const { attemptDirectorAppointment } = useArenaDirectorAppointment({
+        nowMs: Date.now,
+        currentNetworkSignal: state.currentNetworkSignal,
         arenaMatchRef: state.arenaMatchRef,
         isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
         networkGenerationRef: state.networkGenerationRef,
@@ -205,6 +213,7 @@ function useArenaMatchLifecycles(
     });
     useArenaMatchRuntime(
         {
+            nowMs: Date.now,
             acceptDirectorOutput: messages.acceptDirectorOutput,
             acceptMatchStartIntent: messages.acceptMatchStartIntent,
             acceptMotionMessage: messages.acceptMotionMessage,
@@ -257,6 +266,7 @@ function useArenaConnectionActions(
         setSession: state.setSession
     });
     const diagnosticActions = useArenaDiagnosticActions({
+        nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
         currentNetworkSignal: state.currentNetworkSignal,
         diagnosticsRefreshRef: state.diagnosticsRefreshRef,
@@ -321,7 +331,7 @@ function useArenaGameActions(
 function useArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
     const { state, presence, connectionActions, gameActions } = input;
     return useMemo(
-        () => createArenaConnectionView(input),
+        () => readArenaConnectionView(input),
         [
             state.activeEvent,
             state.aiError,
@@ -360,7 +370,7 @@ function useArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnectio
     );
 }
 
-function createArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
+function readArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
     const { state, presence, connectionActions, gameActions } = input;
     return {
         session: state.session,

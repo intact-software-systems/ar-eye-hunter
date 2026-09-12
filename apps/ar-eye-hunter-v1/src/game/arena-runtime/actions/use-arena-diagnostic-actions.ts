@@ -1,11 +1,12 @@
-import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
-import { rallar } from '@shared-web/browser/rallar.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
+import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaPresenceNotice } from '../../squadLink.ts';
@@ -17,9 +18,10 @@ import type {
     ArenaHttpDiagnostics,
     ArenaTransportDiagnostics
 } from '../arena-connection-contracts.ts';
-import { probeHttp, toErrorMessage } from '../arena-connection-helpers.ts';
+import { readHttpProbe } from './read-http-probe.ts';
 
 interface ArenaDiagnosticActionsInput {
+    readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
     readonly currentNetworkSignal: () => AbortSignal;
     readonly diagnosticsRefreshRef: RefObject<Promise<void> | undefined>;
@@ -92,7 +94,7 @@ function refreshArenaDiagnostics(
     const context: ArenaDiagnosticsRefreshContext = {
         generation: input.networkGenerationRef.current,
         signal: input.currentNetworkSignal(),
-        refreshedAtEpochMs: Date.now()
+        refreshedAtEpochMs: input.nowMs()
     };
     const run = runArenaDiagnosticsRefresh(input, options, context);
     const tracked = run.finally(() => {
@@ -126,14 +128,15 @@ async function runArenaDiagnosticsRefresh(
 ): Promise<void> {
     await refreshArenaTransportDiagnostics(input, options, context);
     const [apiConfig, ice] = await Promise.all([
-        probeHttp((signal) => readApiConfig({ signal }), context.signal),
-        probeHttp(
+        readHttpProbe((signal) => readApiConfig({ signal }), context.signal, input.nowMs),
+        readHttpProbe(
             (signal) =>
                 readIceCandidates({
                     signal,
                     authSession: input.sessionRef.current ?? null
                 }),
-            context.signal
+            context.signal,
+            input.nowMs
         )
     ]);
     if (!isCurrentDiagnosticsRefresh(input, context)) {
@@ -191,7 +194,7 @@ function recordArenaTransportDiagnosticsError(
         const next = {
             ...previous,
             refreshedAtEpochMs: context.refreshedAtEpochMs,
-            error: toErrorMessage(error)
+            error: error.message
         };
         input.transportDiagnosticsRef.current = next;
         return next;
@@ -214,7 +217,7 @@ async function requestArenaDiagnosticsSync(
     if (!input.isNetworkEnabled()) {
         return;
     }
-    const requestedAtEpochMs = Date.now();
+    const requestedAtEpochMs = input.nowMs();
     const notice: ArenaPresenceNotice = {
         id: `sync:${requestedAtEpochMs}`,
         kind: 'link-forming',

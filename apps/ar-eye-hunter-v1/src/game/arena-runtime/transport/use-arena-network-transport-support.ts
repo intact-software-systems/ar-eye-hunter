@@ -1,15 +1,16 @@
-import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaSnapshot } from '../../types.ts';
 import type { ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';
-import { toErrorMessage } from '../arena-connection-helpers.ts';
 
 const ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS = 1_000;
 
 interface ArenaNetworkTransportSupportInput {
+    readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
     readonly clearPendingReliableArenaSnapshot: () => void;
     readonly directorStatusRef: RefObject<RallarDirectorStatus>;
@@ -64,7 +65,7 @@ function useRecordNetworkSendFailure(
             }
             input.setTransportDiagnostics((previous) => ({
                 ...previous,
-                error: toErrorMessage(error)
+                error: error.message
             }));
         },
         [input.isCurrentNetworkGeneration]
@@ -134,7 +135,7 @@ function useSendReliableArenaSnapshot(
                 return;
             }
             input.reliableSnapshotLastSentRevisionRef.current = snapshot.revision;
-            input.reliableSnapshotLastSentAtRef.current = Date.now();
+            input.reliableSnapshotLastSentAtRef.current = input.nowMs();
             runBestEffortNetworkTask(
                 () =>
                     match.publishSnapshot(snapshot, {
@@ -168,7 +169,7 @@ function useScheduleReliableArenaSnapshot(
                 return;
             }
 
-            const now = Date.now();
+            const now = input.nowMs();
             const lastSentAt = input.reliableSnapshotLastSentAtRef.current;
             if (
                 lastSentAt === undefined ||
