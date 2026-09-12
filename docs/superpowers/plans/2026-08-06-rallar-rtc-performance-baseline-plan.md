@@ -48,8 +48,8 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
   explicitly authorized the bounded control-handoff correction currently in PR
   #566: delete affected obsolete code, retain no legacy or migration path,
   reuse the existing QueueBox and retry owners, and add no fence, retry
-  mechanism, lock, queue, or library. That approval does not choose the next
-  inbound correction or mandate PR #566 as the final delivery. Use explicitly
+  mechanism, lock, queue, or library. The current user request selects critical
+  design analysis and plan publication, not a new runtime implementation. Use explicitly
   non-publishing diagnostics while the hypothesis is tested; do not merge test-
   only slices merely to learn from the next run. Merge only the human-selected,
   proved correction path, then dispatch a fresh observation from moving `main`.
@@ -67,24 +67,25 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Updated:** 2026-09-12
 
-**Status:** Task 10 correction-and-proof work is active, and there is still no
-valid B06 E3-memory primary. The approved one-file, test-only real-IndexedDB/
-real-QueueBox trace now closes the diagnostic slice: the pre-existing handoff
-test stays green, while the new semantic case fails only the unchanged answer
-deadline. It adds no product behavior or test wake.
+**Status:** Task 10 correction-and-proof work is active; there is still no valid
+B06 E3-memory primary. Critical review has superseded the mandatory successor-
+continuation recommendation with the
+[committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
+and its [two-slice plan](2026-09-12-alm-committed-work-progress-plan.md).
 
-That deterministic evidence selects successor continuation after admission
-release as the narrow proposed correction. The proposal remains approval-
-gated; the earlier control-handoff approval does not authorize this inbound
-scheduling behavior. PR #567's disposition also remains a human choice. The
-recommendation is to consolidate only the selected owner-continuation behavior,
-not its broader task changes, but proving PR #567 first remains available.
+First preserve ordinary scan progress while announcing successful fresh/deferred
+data/control commits. Then use native-browser measurements to decide whether
+bounded, original-claims-first continuation earns its additional code. A full
+16-claim batch has no spare continuation capacity; per-commit scan restarts can
+starve later pages and recovery statuses. Neither is solved by treating the
+synthetic deadline test as a browser performance forecast.
 
-The current horizon is explicit human approval and disposition choice, followed
-only after approval by TDD implementation, deterministic green, and independent
-reviews. A browser rerun is a later outcome after the selected correction is
-proved. A mergeable branch does not need refresh merely because `main` moves or
-GitHub reports `BEHIND`.
+The local RED runs production stores/QueueBox against **fake-indexeddb** with
+imposed logical costs. It remains an uncommitted diagnostic, not native storage
+timing or accepted B06 evidence. This update publishes analysis and the selected
+design only; runtime implementation, browser proof, and whole-PR readiness remain
+unfinished. Keep proof in PR #566, reconcile relevant overlap with PR #567, and
+do not refresh a mergeable branch merely because `main` moves or reports `BEHIND`.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -573,18 +574,15 @@ was ready.
 
 ### Current execution horizon
 
-| Order | Slice                                        | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Approve the correction path and disposition  | The human reviews the approved deterministic RED and the exact-successor continuation design, then explicitly chooses between proving PR #567 first against its own gates or consolidating only the selected owner-continuation behavior. The recommendation is the narrow consolidation, not PR #567's broader task changes. If PR #567 is proved first, reassess whether PR #566 remains necessary. No inbound scheduling behavior changes before this choice and approval.                                                                  |
-| 2     | Implement the selected correction test-first | After approval, make the pre-existing semantic case remain green and turn the answer-deadline RED green with the exact-successor continuation. Run focused ALM work/admission and RTC handoff tests, affected type/style/structure/coupling checks, and fresh specification and quality reviews. Every changed human-authored file is reviewed and remediated in full; support files modified by remediation enter closure recursively; independent untouched code remains outside closure. Retain the no-new-mechanism/no-legacy constraints. |
+| Order | Slice                                             | Completion evidence                                                                                                                                                                                                                                |
+| ----- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Restore committed-work progress                   | Follow Slice 1 of the focused plan: semantic RED/GREEN for fresh/deferred data/control notification, callbacks, and finite-backlog recovery without per-commit scan rewind. Preserve existing QueueBox ownership and remove obsolete restart code. |
+| 2     | Measure and select the smallest sufficient result | Follow Slice 2: native timing and causal comparison, then retain original-first bounded continuation only if residual successor rediscovery is material and the comparison proves benefit without harming ordinary work.                           |
 
-The control-handoff approval does not authorize the proposed exact-successor
-continuation or choose PR #567's disposition. The trace slice is complete with
-no product change; do not rerun the unchanged browser candidate. The next
-action is the explicit human choice above. That choice also does not pin
-`main`: repair a real conflict when one exists, but do not refresh, rebase,
-repeat review, or discard already valid proof merely because GitHub reports
-`BEHIND`.
+The current request publishes this design and plan, not runtime changes. PR #567
+is a related implementation to reconcile, not an automatic merge/close decision.
+The synthetic RED alone does not require continuation. Keep implementation and
+proof together; repair real conflicts but do not rebase for `BEHIND` alone.
 
 After the selected path passes deterministic proof and fresh reviews, run one
 new exact-head browser invocation against that result, complete its whole-
@@ -4592,80 +4590,31 @@ investigation boundary. At this point it did not yet prove which individual
 slow claim, replay, `commitPending`, successor creation, or next wake/admission
 ordering consumed the remaining budget.
 
-#### Task 10C.7 approved deterministic continuation evidence
+#### Task 10C.7 deterministic evidence — critically reconciled
 
-The approved next diagnostic extends only
-`packages/tests/shared/webrtc/ws-rtc-control-handoff-latency.test.ts`. It uses
-the real shared IndexedDB stores and the real started QueueBox engine while
-recording payload-free claim, page, admission, and callback events. The original
-handoff case remains green. The new semantic RED fails only its answer deadline:
-the RTC candidate callback completes at modeled `+28,909 ms`, the answer at
-`+39,009 ms`, and the unchanged peer deadline is `+30,000 ms`. Every one of the
-31 control callbacks matches its seeded identity, and the test invokes no wake.
-There is no product change.
+The local diagnostic uses production stores and the started QueueBox engine
+against fake-indexeddb, with imposed logical delays. The original handoff case
+remains green; candidate delivery completes at modeled `+28,909 ms`, answer at
+`+39,009 ms`, against `+30,000 ms`. Its 31 matched control callbacks and absence
+of a test wake help establish causality. Its exact old page/status assertions
+must become failure diagnostics, not regression acceptance contracts.
 
-After the answer admission commits its successor, the exact page reads before
-the answer successor is reserved are `NEW:16`, `NEW:1`, `RETRY:0`,
-`RESERVED:0`, and `NEW:16`. This trace selects ordinary queue ordering—not
-payload handling—as the deterministic boundary after successor commit. A PR-
-#567-style `wroteWork` -> `commitWork` restart is necessary and useful so the
-committed successor earns a fresh run, but projecting that restart into the
-same model places the answer callback around `+33,009 ms`: two older `NEW` pages
-still precede the answer, so that restart alone is not sufficient under this
-model. This is an inference from the trace, not execution proof of PR #567.
+The trace demonstrates a possible rediscovery delay, not measured native read/
+write cost or proof that one specific scheduling design is required. The earlier
+`+33,009 ms` restart projection was unexecuted inference and does not prove
+PR #567 insufficient. Its RTC observation was classified slow and fallback/WS
+unclassified; the observation job failed while the overall Branch Release Gate
+passed. Neither outcome provides a valid B06 primary.
 
-The assessed PR #567 tree improves decision reads, observation, and wake hooks
-while retaining full replay, serial pages, and non-preemptive `commitPending`.
-Its retained hosted RTC case is classified slow; its fallback and WS cases
-remain unclassified. Overall safety and sufficiency remain unresolved. The
-recommended disposition is to consolidate only the selected owner-continuation
-behavior rather than the broader PR #567 task changes, but the human may instead
-choose to prove PR #567 first against its own acceptance gates. If that path is
-chosen, reassess whether PR #566 remains necessary.
-
-#### Proposed exact-successor continuation design — awaiting approval
-
-This is a proposed implementation contract, not authorization. The human must
-explicitly approve both the scheduling behavior and the chosen PR disposition
-before product edits begin.
-
-- Replace the admission result's `wroteWork` boolean with the exact committed
-  `ResourceEntry` successors. Do not reconstruct or broadly rescan to discover
-  what the just-completed admission wrote.
-- `ALWorkHandler` first releases the original admission claim through its
-  existing release path. It then iteratively exact-selects each committed
-  successor, applies the existing readiness decision, CAS-reserves it through
-  the existing QueueBox port, and processes it through the same claim/release
-  path as ordinary work.
-- Continue announcing the committed-work fallback. If exact continuation loses
-  contention, becomes not ready, or exceeds the turn bound, the durable row
-  remains owned by the ordinary QueueBox scan and wake lifecycle.
-- Bound original plus exact-continuation claims together by the existing
-  `pageSize`. Overflow stays durable for a later ordinary turn; continuation
-  does not create an unbounded chain.
-- Apply the same continuation semantics to data and control work. Do not add
-  RTC priority, RTC-specific ordering, or direct delivery.
-- Add no queue, retry mechanism, fence, lock, timer, library, persisted shape,
-  compatibility/legacy path, or migration.
-
-The likely production closure is provisional until implementation exploration:
-
-- `packages/shared/alm/work/al-work-handler.ts`;
-- `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`;
-- `packages/shared/alm/inbound/al-inbound-message-admission.ts`;
-- `packages/shared/alm/inbound/control/al-inbound-control-admission.ts`;
-- `packages/shared/alm/inbound/al-inbound-message-runtime.ts`;
-- `packages/shared/alm/inbound/README.md`; and
-- only a small adaptation in
-  `packages/shared/alm/outbound/al-outbound-message-runtime.ts` if the generic
-  handler's exact-continuation selector becomes mandatory, with no outbound
-  behavior change.
-
-The test scope starts with the existing RTC handoff test above plus focused ALM
-work/admission tests adjacent to affected owners. This list is a likely
-navigation map, not a promise to touch every file. Touched-file closure may add
-only support files actually required by remediation; independent untouched code
-remains outside closure.
+The [selected design](../specs/2026-09-12-alm-committed-work-progress-design.md)
+owns the revised contract: commit notification without scan rewind first;
+conditional continuation only after native causal measurement. A continuation
+must finish original claims first, use actual persisted observations and fresh
+ordinary claims, bound candidate consideration as well as claims, and retain
+ordinary recovery. It cannot promise saturated throughput or gameplay latency.
+The [focused plan](2026-09-12-alm-committed-work-progress-plan.md) owns exact
+files, TDD cases, overlap handling, and proof steps; do not duplicate its algorithm
+or implementation checklist here.
 
 #### Historical approved overlay-gap correction design
 
@@ -5221,7 +5170,8 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Retain and analyze one complete Task 10C.5 storage-backed failure stream;
       select inbound pending admission as the investigation boundary and
       correct the canonical causal parser without another browser rerun.
-- [x] Reproduce Task 10C.6 with real IndexedDB/QueueBox work and its 1,102 ms
+- [x] Reproduce Task 10C.6 with production IndexedDB adapters/QueueBox over
+      fake-indexeddb and its synthetic 1,102 ms
       peer-budget RED; reject and remove retained-settlement and lock-removal
       experiments rather than adding lease fencing or weakening sender order.
 - [x] Implement the initial canonical-control durable handoff in commits
@@ -5236,22 +5186,18 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       preserve its ordinary pass, all-scenarios skip, retention cycle-2 failure,
       full event/result stream, and two bounded causal sidecars. Do not rerun
       this unchanged candidate.
-- [x] Complete and approve the one-file Task 10C.7 payload-free per-claim trace
-      with real IndexedDB and the real QueueBox engine. Preserve the original
-      green case and the answer-only deadline RED, exact page ordering, all
-      matched control callbacks, absence of a test wake, and zero product
-      change. Do not rerun the browser candidate in this slice.
-- [ ] Obtain explicit human approval for the exact-successor continuation and
-      choose its disposition. The recommendation is to consolidate only that
-      owner-continuation behavior, not PR #567's broader task changes; proving
-      PR #567 first remains available, with its RTC result classified slow and
-      fallback/WS results unclassified. If that path is chosen, reassess whether
-      PR #566 remains necessary.
-- [ ] After approval, implement the selected path with TDD; retain the original
-      green and turn the deterministic answer deadline green, close touched
-      files, run focused affected checks, and obtain fresh specification and
-      quality reviews. Keep the no-new-queue/retry/fence/lock/timer/library and
-      no-legacy/migration constraints.
+- [x] Complete the one-file Task 10C.7 payload-free diagnostic with production
+      adapters/QueueBox over fake-indexeddb and synthetic delays. Retain the
+      original green and answer-deadline RED as diagnostic evidence, not a native
+      browser latency measurement or a required old page-order contract.
+- [x] Critically review continuation and write the focused committed-work
+      progress design/plan, superseding the earlier unconditional recommendation.
+- [ ] Execute the focused plan's first slice: semantic TDD for committed-work
+      notification without scan rewind, finite-backlog recovery, touched-file
+      closure, and independent specification/quality reviews.
+- [ ] Execute its second slice: native measurement and evidence-led retention
+      or omission of original-first bounded continuation. Reconcile relevant
+      PR #567 overlap without duplicating its read-session/diagnostic work.
 - [ ] Later, after deterministic proof and reviews, run one new exact-head
       browser proof against the selected result, complete whole-branch review
       and final plan reconciliation, and take only the necessary delivery
@@ -5750,21 +5696,19 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-**2026-09-12 current reconciliation:** The one-file test-only real-IndexedDB/
-real-QueueBox trace is approved and completes the diagnostic slice without a
-product change. The original handoff case remains green; the new case fails
-only the answer deadline and selects exact successor continuation after release
-as the proposed boundary. A general committed-work restart is useful but remains
-insufficient in this deterministic model because older ordinary `NEW` pages
-still precede the answer successor.
+**2026-09-12 current reconciliation:** Critical review selects the
+[committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
+and [focused plan](2026-09-12-alm-committed-work-progress-plan.md). Announce
+committed work without rewinding the natural scan; measure the remaining delay
+before adding bounded original-first continuation. Full batches have no spare
+continuation capacity, and a claim-count bound is not a wall-time guarantee.
 
-The exact-successor continuation design now awaits explicit human approval and
-a disposition choice. The recommendation is to consolidate only the selected
-owner-continuation behavior, not PR #567's broader task changes; proving PR #567
-first remains available, and would trigger reassessment of PR #566's necessity.
-After approval, the next slice is TDD implementation, deterministic green, and
-fresh reviews under the existing QueueBox/no-new-mechanism/no-legacy
-constraints. Browser proof and delivery remain later outcomes.
+The local diagnostic uses fake-indexeddb and a synthetic clock, not native
+storage timing. Its exact old scan-order assertions do not become acceptance
+contracts. PR #567's grouped `ms/op` is a comparative proxy, not individual
+read/write latency. This reconciliation changes documentation only; runtime
+implementation, native proof, and whole-PR readiness remain unfinished in
+PR #566. No valid B06 E3-memory primary is claimed.
 
 **2026-09-11 post-browser investigation reconciliation (historical):** The approved control-handoff and adapter
 corrections retain existing QueueBox/retry ownership, add no new mechanism or

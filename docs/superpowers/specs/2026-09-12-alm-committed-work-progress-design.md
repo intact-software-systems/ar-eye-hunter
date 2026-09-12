@@ -1,0 +1,201 @@
+# ALM committed-work progress design
+
+**Status:** Design selected by critical review for PR #566; not implemented by
+this document. The user requested analysis, a written plan, and publication.
+
+**Goal:** Remove avoidable admission-to-delivery delay without weakening durable
+delivery, starving ordinary recovery, or introducing a second scheduler.
+
+**Plan:** [Implementation plan](../plans/2026-09-12-alm-committed-work-progress-plan.md).
+This design supersedes the earlier mandatory exact-successor recommendation in
+the [RTC baseline plan](../plans/2026-08-06-rallar-rtc-performance-baseline-plan.md).
+It does not claim a valid RTC-B06 observation or approval to merge either PR.
+
+## Decision
+
+Land the smallest correct committed-work lifecycle first, measure it, and retain
+same-batch continuation only if the remaining measured rediscovery cost warrants
+it. The selected lifecycle is:
+
+1. Admission atomically persists its effects using the existing backend.
+2. Both fresh and deferred data/control admission announce committed work to the
+   existing worker before fallible after-commit callbacks.
+3. Announcement invalidates worker readiness and requests its existing follow-up
+   batch. It does **not** rewind an unfinished inbound scan.
+4. Ordinary selection, readiness, CAS reservation, delivery, retry, and release
+   remain authoritative.
+5. If native-browser evidence still identifies material successor rediscovery
+   delay, evaluate the bounded, original-claims-first continuation below. If the
+   simpler lifecycle meets acceptance, omit continuation and its extra API.
+
+The crucial revision is not merely propagating `wroteWork` into today's
+`commitWork()`: that method calls `restartScan()`. Repeated commits can keep
+resetting `NEW` to its first page, delaying later pages, `RETRY`, and expired
+`RESERVED` work. Preserve the existing cursor and cached page/CAS lifecycle;
+new rows behind the cursor become visible on the next natural rotation. Delete
+the obsolete restart hook after verifying its consumers, rather than retaining
+an unused alternative path. The required tests must prove progress for finite
+backlogs, including while bounded commits continue; they cannot prove fairness
+under unlimited arrivals faster than the worker can drain.
+
+## Evidence and its limits
+
+| Evidence                                                           | What it establishes                                                                                                                                                                                                                          | What it does not establish                                                                                                                                                          |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retained browser run at `6a5a0b04e0970964ca290740317cccc09334393c` | Ordinary matrix passed; retention failed in reconnect cycle 2. All 143 observed initial control handoffs committed. Inbound pending admission and multi-second batches are the next investigation boundary.                                  | Aggregate batch events do not identify the exact successor claim sequence or isolate individual storage latency.                                                                    |
+| Local diagnostic in `ws-rtc-control-handoff-latency.test.ts`       | Production stores and the started QueueBox engine, backed by **fake-indexeddb**, reproduce late answer delivery with explicitly imposed logical costs. Candidate completes at +28,909 ms; answer at +39,009 ms against a 30,000 ms deadline. | The imposed 2,000 ms/page, 400 ms/control, 500 ms/replay, and 100 ms/callback are not native browser measurements. The test cannot predict a millisecond improvement in production. |
+| PR #567 observation                                                | The RTC case was classified slow; fallback/WS were unclassified. Its observation job failed while its overall Branch Release Gate passed.                                                                                                    | Neither a green aggregate gate nor the slow classification proves this design sufficient or makes the failed observation valid B06 evidence.                                        |
+| Existing `ms/op` calculation                                       | Median grouped admission-read duration divided by logical read count is a comparative environment proxy.                                                                                                                                     | It is not the latency of a single IndexedDB request, transaction, write, or disk operation.                                                                                         |
+
+The local RED also asserts exact old reservation batches and status rotation.
+Those assertions are diagnostic scaffolding, not product contracts. Replace
+them with behavior assertions before retaining the test as regression coverage;
+keep payload-free traces available on failure. The projected +33,009 ms for a
+PR #567-style restart was an unexecuted inference, not evidence that its actual
+implementation is insufficient. Withdraw the earlier stronger claim.
+
+Relevant owners, relative to the repository root:
+
+- `packages/shared/alm/inbound/al-inbound-message-runtime.ts`: `commitWork()`
+  rewinds the scan; `runInboundClaim()` loses the data replay's committed-work
+  information and runs control callbacks before any such notification.
+- `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`: one bounded
+  page plus serial eligibility checks; shares a probe observation with selection.
+- `packages/shared/alm/work/al-work-handler.ts`: reserves the selected inventory
+  before serial execution; owns batch bounds, wake, retry, and release lifecycle.
+- `packages/shared/alm/inbound/al-inbound-admission-store.ts` and
+  `al-inbound-durable-effect-store.ts`: atomic effect persistence and duplicate
+  identity; currently return commit status, not exact persisted work observations.
+- `packages/shared/persistence/indexed-db-operation-observer.ts` and
+  `packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts`:
+  logical counts and grouped timing interpretation, respectively.
+
+## Critique of immediate successor execution
+
+The proposal correctly avoids rediscovering work whose identity admission already
+knows. It does not remove admission/readiness reads, reservation/release writes,
+callback duration, or the wait before admission itself runs.
+
+- **Saturation:** the current page size is 16. If all 16 original claims were
+  selected, a shared limit of 16 leaves zero continuation capacity. Do not add
+  reserved successor slots or a larger page just to turn the synthetic RED green.
+- **Lease age:** interleaving children ahead of already-reserved originals adds
+  delay while those originals' existing 10-second leases age. Finish originals
+  first. A count bound still does not establish a wall-time or frame-time bound.
+- **Authority:** a committed effect observation is not a reservation. It may be
+  stale, terminal, already owned, expired, or temporarily ineligible.
+- **Release:** `ALWorkQueuePort.release()` deliberately tolerates a lost
+  reservation. Its resolved `Promise<void>` does not certify ownership of the
+  parent. A successor must independently acquire its own normal claim.
+- **Fanout:** limiting successful claims alone does not bound readiness reads.
+  Candidate examination needs its own bound derived from the same remaining
+  page capacity, without replenishment after stale/not-ready candidates.
+- **Complexity:** expanding generic worker result/selector contracts and atomic
+  commit results is materially larger than fixing notification. That extra
+  surface must earn its place through measured benefit.
+
+## Conditional continuation contract
+
+This is the chosen candidate if the measurement gate selects continuation, not
+a second unconditional implementation requirement.
+
+1. Return actual existing/new `ResourceEntry` observations from effect persistence
+   only after the enclosing `backend.write()` commits. On duplicate identity,
+   preserve the stored row's status, attempts, timestamps, and identity. Never
+   reconstruct a `NEW` entry from the computed effect. Conflict, rollback, and
+   expiration expose no candidates.
+2. Announce the commit immediately through the lifecycle above. The wake must
+   survive a later control callback failure even if continuation metadata cannot
+   be returned from that attempt.
+3. `ALWorkHandler` finishes the original `runOne` pass in its existing relative
+   order, including ordinary synchronous releases. Preserve detached retained-
+   settlement behavior: count retained claims in the original budget, do not
+   await their settlement or block unrelated admissions on them, and emit no
+   inline continuation from retained outcomes. Unexpected ordinary release
+   failure ends this batch; committed effects remain durable. Lost-parent
+   ownership creates no new release fence.
+4. Consider admission-produced successors only, in commit/effect order, once per
+   identity. Bound retained candidate metadata and readiness checks by remaining
+   capacity. If `n` original claims were selected, consider at most
+   `max(0, pageSize - n)` candidates and never replenish that allowance.
+5. The inbound selector reuses current decoding, expiry, consumer, predecessor,
+   and readiness checks. The existing port claims exact observed entries using
+   its ordinary CAS. Execute only returned claims; no reservation means no local
+   dispatch or immediate retry loop.
+6. Dispose checks apply before and after asynchronous readiness/reservation.
+   Undispatched reservations remain recoverable through existing lease handling.
+   Retained/asynchronously settling attempts do not launch continuation early.
+7. Apply the same admission-to-effect semantics to data and control, without RTC
+   priority. Do not recursively generalize continuation to arbitrary effect
+   chains or ordered-release work in this slice.
+8. Full capacity, excess fanout, contention, missing consumers/predecessors, and
+   failed candidate selection fall back to ordinary durable progress. Preserve
+   the scan cursor; do not turn the fallback into repeated `NEW` restarts.
+
+The generic handler owns capacity and execution; the inbound selector owns
+eligibility; admission owns which effects actually committed. Extend those
+existing boundaries only. Do not add outbound no-op plumbing, wrapper-only
+modules, alias types, or an optional compatibility branch solely to satisfy a
+new generic callback. If this cannot fit those owners readably, omit the
+optimization and report the residual measured gap.
+
+## Storage and game-performance proof
+
+Reuse the existing native-browser transaction-write fixture and ALM/RTC browser
+harness. Do not claim fake-indexeddb timings as browser storage measurements.
+Collect bounded, payload-free samples using the existing diagnostic ownership:
+
+| Measurement                            | Boundary                                                                                                                         |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `get`/`put` request latency            | Issue to success/error; distinguish operation and outcome.                                                                       |
+| Readonly/readwrite transaction latency | Creation to complete/abort, with scope and request count.                                                                        |
+| Production operation latency           | Entry to return for admission, work-page, reserve, release, and commit.                                                          |
+| Queue delay                            | Admission retained, parent reserved, effect committed, parent released, successor reserved, callback start/end, effect released. |
+
+A successful `put` request is not a committed transaction. Transaction wall time
+includes browser scheduling and event-loop delay and does not isolate disk
+latency. Grouping related reads into the existing short `readWithin()` session
+can reduce transaction overhead, but no session should span network/callback
+awaits or replace fresh post-await authority checks. These boundaries follow the
+[IndexedDB transaction lifecycle and scheduling specification](https://w3c.github.io/IndexedDB/#transaction-lifecycle).
+
+Compare baseline and corrected lifecycle under the same browser, workload,
+storage state, and instrumentation. Separate cold/open work from steady state.
+Keep p50/p95/p99/max, sample count, throughput, transaction/request counts,
+conflicts/retries, oldest eligible work age, and lease/deadline margin. Do not
+sum overlapping intervals or call a handful of samples a stable tail estimate.
+Use order-balanced repeats when host variance could explain a difference.
+
+Cover sparse traffic, a full page of admissions producing successors, excess
+fanout, finite multi-page backlog with eligible retries and stale reservations,
+and mixed live game traffic during reconnect. Shared-database contention must
+use two same-origin tabs/connections in the **same** browser context; separate
+Playwright contexts isolate storage and do not test that contention.
+
+For Rallar, this is durable/control-path work, not a replacement for realtime
+game channels. Room realtime movement/combat keeps current latest-value and
+expiry semantics; durable events keep delivery/ordering semantics; Motion stays
+presentation-only. Measure live-message age and progress under durable backlog.
+The 30-second connection deadline is an unchanged correctness limit, not an
+acceptable gameplay-latency target. This design supplies no arbitrary hardware-
+independent read/write number, gameplay SLO, or unlimited-load guarantee.
+
+## Constraints and delivery
+
+- Use existing QueueBox, readiness, CAS, leases, retries, and release handling.
+- Add no queue, retry mechanism, fence, lock, timer, dependency, persisted format,
+  migration, or legacy path.
+- Remove affected obsolete code; remediate whole touched files and recursively
+  affected support files under current repo guidance, not historical line caps.
+- Do not change protocol/public exports or weaken deadlines, workloads, or gates.
+- Keep implementation and proof in PR #566. Do not merge test-only experiments.
+- PR #567 owns related read-session/observation work. Reconcile its actual diff
+  and tests before reuse; do not cherry-pick its entire branch, silently close it,
+  or create a competing copy. Its scan-restart behavior needs the same fairness
+  correction. If relevant work lands on main, consume it and remove overlap.
+- Main may move. Record each measurement's source and environment; repair actual
+  conflicts, but do not rebase a mergeable branch for `BEHIND` alone.
+- Keep generated profiles under `tmp/perf/`; do not commit them. Continue the
+  normal observation stream only after the correction passes its proof gates.
+
+No independent issue is created: the remaining work belongs to this PR outcome.
