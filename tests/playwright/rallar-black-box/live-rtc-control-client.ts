@@ -20,6 +20,7 @@ import {
 } from './live-rtc-agent-diagnostics.ts';
 import {
     toCausalAgentReference,
+    toCausalIdentity,
     toCausalPeerIds,
     toLiveRtcCausalEvents,
     toLiveRtcReadinessHealth
@@ -1053,9 +1054,11 @@ function toReadinessHealthSessionId(
 ): string | null {
     const rallar = result?.ok ? jsonRecord(jsonRecord(result.result?.value)?.rallar) : null;
     const causalState = jsonRecord(rallar?.rtcCausalState);
-    return toCausalPeerIds(
-        causalState?.localSessionId ?? jsonRecord(rallar?.session)?.sessionId ?? null
-    )[0] ?? null;
+    return toCausalIdentity(
+        jsonRecord(rallar?.rtcDiagnostics)?.sessionId ??
+            causalState?.localSessionId ??
+            jsonRecord(rallar?.session)?.sessionId
+    );
 }
 
 function summarizeLiveRtcFailureAgentHealth(

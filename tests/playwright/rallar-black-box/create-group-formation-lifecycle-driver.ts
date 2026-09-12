@@ -439,8 +439,8 @@ async function connectInitialPair(
     const startedAtMs = performance.now();
     await Promise.all(
         agents.map(
-            async (agent, index) =>
-                await input.control.waitForPeerReadiness({
+            (agent, index) =>
+                input.control.waitForPeerReadiness({
                     runId: input.runId,
                     agent,
                     participantAgents: agents,
@@ -450,14 +450,11 @@ async function connectInitialPair(
                 })
         )
     );
-    const activateCommandId = await activateGroup(config, {
-        ...lifecycle,
-        transport: input.transport
-    });
+    const activateCommandId = await activateGroup(config, lifecycle);
     await Promise.all(
         agents.map(
-            async (agent, index) =>
-                await waitForCanonicalFormationReadiness(config, {
+            (agent, index) =>
+                waitForCanonicalFormationReadiness(config, {
                     control: input.control,
                     runId: input.runId,
                     agent,

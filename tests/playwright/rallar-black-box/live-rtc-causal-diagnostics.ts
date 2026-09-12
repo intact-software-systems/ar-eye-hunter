@@ -75,14 +75,14 @@ const RTC_SIGNAL_ADMISSION_STATUSES = [
     'circuit-open',
     'failed'
 ];
-const INBOUND_CLAIM_PAYLOAD_KINDS = [
-    'admit-message',
-    'admit-control',
-    'send-control',
-    'dispatch-local',
-    'forward-message',
-    'release-buffered'
-];
+const INBOUND_CLAIM_TYPE_BY_PAYLOAD_KIND = new Map<string, 'rtc-signaling' | null>([
+    ['admit-message', 'rtc-signaling'],
+    ['admit-control', 'rtc-signaling'],
+    ['send-control', 'rtc-signaling'],
+    ['dispatch-local', null],
+    ['forward-message', null]
+]);
+const INBOUND_CLAIM_PAYLOAD_KINDS = [...INBOUND_CLAIM_TYPE_BY_PAYLOAD_KIND.keys()];
 const INBOUND_CLAIM_OUTCOMES = ['completed', 'non-retryable', 'retry', 'not-ready'];
 const MANAGER_DIAGNOSTIC_FIELDS = [
     'reconcileRunCount',
@@ -344,11 +344,14 @@ function toCausalInboundWork(
     if (data.kind === 'claim-settled') {
         const msgId = toCausalIdentity(data.msgId);
         const payloadKind = toAllowedValue(data.payloadKind, INBOUND_CLAIM_PAYLOAD_KINDS);
+        const expectedTypeId = INBOUND_CLAIM_TYPE_BY_PAYLOAD_KIND.get(String(payloadKind));
+        const typeId = data.typeId === expectedTypeId ? expectedTypeId : undefined;
         const outcome = toAllowedValue(data.outcome, INBOUND_CLAIM_OUTCOMES);
         const attempts = toNonnegativeInteger(data.attempts);
         const durations = toRequiredDiagnosticNumbers(data, ['durationMs', 'queueWaitMs']);
         if (
-            !msgId || !rtcSignalingMessageIds.has(msgId) || !payloadKind || !outcome || attempts === null || !durations
+            !msgId || !rtcSignalingMessageIds.has(msgId) || !payloadKind || typeId === undefined || !outcome ||
+            attempts === null || !durations
         ) {
             return null;
         }
@@ -357,7 +360,7 @@ function toCausalInboundWork(
             kind: data.kind,
             workerId,
             msgId,
-            typeId: data.typeId === 'rtc-signaling' ? 'rtc-signaling' : null,
+            typeId,
             payloadKind,
             outcome,
             attempts,
@@ -525,7 +528,7 @@ function toBooleanOrNull(value: RtcBaselineJson | undefined): boolean | null {
     return typeof value === 'boolean' ? value : null;
 }
 
-function toCausalIdentity(value: RtcBaselineJson | undefined): string | null {
+export function toCausalIdentity(value: RtcBaselineJson | undefined): string | null {
     return typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,128}$/.test(value) ? value : null;
 }
 

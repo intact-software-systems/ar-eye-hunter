@@ -424,7 +424,8 @@ describe('live RTC control client', () => {
             { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-deleted', peerId: 'session-b' } },
             { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
             { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } },
-            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-established', peerId: 'session-b' } }
+            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-established', peerId: 'session-b' } },
+            { agentId: 'agent-b', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-a' } }
         );
         for (let index = 0; index < 230; index += 1) {
             entries.push({
@@ -492,12 +493,33 @@ describe('live RTC control client', () => {
                     }],
                     arbitrary: sentinel
                 },
+                rtcDiagnostics: {
+                    sessionId: 'session-a',
+                    generatedAtEpochMs: 10,
+                    peers: []
+                },
                 error: sentinel,
                 url: 'https://secret.example.test'
             }
         };
-        healthValues['agent-b'] = { rallar: { session: { sessionId: 'session-b', accessToken: sentinel } } };
-        healthValues['agent-c'] = { rallar: { session: { sessionId: 'session-c', accessToken: sentinel } } };
+        healthValues['agent-b'] = {
+            rallar: {
+                rtcDiagnostics: {
+                    sessionId: 'session-b',
+                    generatedAtEpochMs: 11,
+                    peers: [{ peerId: 'session-a', connection: { state: 'Connecting' }, lanes: [] }]
+                }
+            }
+        };
+        healthValues['agent-c'] = {
+            rallar: {
+                rtcDiagnostics: {
+                    sessionId: 'session-c',
+                    generatedAtEpochMs: 12,
+                    peers: [{ peerId: 'session-a', connection: { state: 'Connecting' }, lanes: [] }]
+                }
+            }
+        };
         healthValues['retired-agent-a'] = { rallar: { session: { sessionId: 'retired-session-a' } } };
         healthValues['retired-agent-b'] = { rallar: { session: { sessionId: 'retired-session-b' } } };
         const allHealthStarted = Promise.withResolvers<void>();
@@ -541,9 +563,9 @@ describe('live RTC control client', () => {
         );
         expect(sidecar.failure).toEqual({ name: 'readiness-failed', message: 'RTC peer readiness observation failed.' });
         expect(sidecar.causalEvents).toHaveLength(200);
-        expect(sidecar.causalEvents[0]).toMatchObject({ atEpochMs: 21 });
+        expect(sidecar.causalEvents[0]).toMatchObject({ atEpochMs: 22 });
         expect(
-            sidecar.causalEvents.slice(-11).map((
+            sidecar.causalEvents.slice(-12).map((
                 event: { agentId: string; kind: string; wsGeneration: number | null; peerLifetime?: number; }
             ) => [event.agentId, event.kind, event.wsGeneration, event.peerLifetime ?? null])
         ).toEqual([
@@ -557,7 +579,14 @@ describe('live RTC control client', () => {
             ['agent-a', 'peer-deleted', 1, 1],
             ['agent-a', 'open', 2, null],
             ['agent-a', 'peer-created', 2, 2],
-            ['agent-a', 'peer-established', 2, 2]
+            ['agent-a', 'peer-established', 2, 2],
+            ['agent-b', 'peer-created', 1, 1]
+        ]);
+        expect(sidecar.healthByAgentId['agent-b'].rtcDiagnostics.peers).toMatchObject([
+            { peerId: 'session-a' }
+        ]);
+        expect(sidecar.healthByAgentId['agent-c'].rtcDiagnostics.peers).toMatchObject([
+            { peerId: 'session-a' }
         ]);
         expect(sidecar.causalEvents.filter((event: { msgId?: string; }) => event.msgId === 'signal-1')).toMatchObject([
             { agentId: 'agent-a', commitOutcome: 'committed' },

@@ -29,6 +29,45 @@ function diagnosticEvent(input: DiagnosticEventInput): LiveRtcControlClient.Even
     };
 }
 
+function toClaimProjection(overrides: LiveRtcJsonRecord) {
+    return toLiveRtcCausalEvents({
+        events: [
+            diagnosticEvent({
+                agentId: 'agent-a',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                atEpochMs: 1,
+                data: {
+                    kind: 'commit-phases',
+                    typeId: 'rtc-signaling',
+                    msgId: 'signal-1'
+                }
+            }),
+            diagnosticEvent({
+                agentId: 'agent-b',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                atEpochMs: 2,
+                data: {
+                    kind: 'claim-settled',
+                    workerId: 'worker-1',
+                    msgId: 'signal-1',
+                    typeId: null,
+                    payloadKind: 'dispatch-local',
+                    durationMs: 1,
+                    attempts: 1,
+                    outcome: 'completed',
+                    queueWaitMs: 1,
+                    ...overrides
+                }
+            })
+        ],
+        agentReferences: new Map([
+            ['agent-a', 'agent-a'],
+            ['agent-b', 'agent-b']
+        ]),
+        peerIds: []
+    });
+}
+
 describe('live RTC causal diagnostics', () => {
     it('retains bounded signaling work evidence with explicit incomplete event coverage', () => {
         const sentinel = 'SENTINEL-must-not-be-retained';
@@ -231,6 +270,74 @@ describe('live RTC causal diagnostics', () => {
         );
         expect(projection.events.at(-2)).not.toHaveProperty('msgId');
         expect(projection.events.at(-2)).not.toHaveProperty('typeId');
+    });
+
+    it.each<{ readonly invalidField: string; readonly overrides: LiveRtcJsonRecord; }>([
+        { invalidField: 'typeId', overrides: { typeId: 'application-message' } },
+        { invalidField: 'payloadKind/typeId', overrides: { payloadKind: 'admit-message' } },
+        { invalidField: 'durationMs', overrides: { durationMs: -1 } },
+        { invalidField: 'queueWaitMs', overrides: { queueWaitMs: Number.NaN } },
+        { invalidField: 'attempts', overrides: { attempts: 1.5 } },
+        { invalidField: 'outcome', overrides: { outcome: 'invented' } },
+        { invalidField: 'payloadKind', overrides: { payloadKind: 'invented' } }
+    ])('drops an otherwise-valid joined claim with invalid $invalidField', ({ overrides }) => {
+        const projection = toClaimProjection(overrides);
+
+        expect(projection.events).toHaveLength(1);
+        expect(projection.events[0]).toMatchObject({ kind: 'commit-phases', msgId: 'signal-1' });
+    });
+
+    it.each([
+        { payloadKind: 'dispatch-local', typeId: null },
+        { payloadKind: 'forward-message', typeId: null },
+        { payloadKind: 'admit-message', typeId: 'rtc-signaling' },
+        { payloadKind: 'admit-control', typeId: 'rtc-signaling' },
+        { payloadKind: 'send-control', typeId: 'rtc-signaling' }
+    ])('retains the valid $payloadKind claim identity', ({ payloadKind, typeId }) => {
+        const projection = toClaimProjection({ payloadKind, typeId });
+
+        expect(projection.events.at(-1)).toMatchObject({
+            kind: 'claim-settled',
+            msgId: 'signal-1',
+            payloadKind,
+            typeId
+        });
+    });
+
+    it.each([
+        { invalidField: 'state', override: { state: 'invented' }, expectedState: null },
+        { invalidField: 'iceCandidateQueueSize', override: { iceCandidateQueueSize: -1 }, expectedState: 'Open' }
+    ])('does not normalize invalid peer $invalidField', ({ invalidField, override, expectedState }) => {
+        const health = toLiveRtcReadinessHealth({
+            commandId: 'health-invalid-peer',
+            ok: true,
+            result: {
+                value: {
+                    rallar: {
+                        rtcDiagnostics: {
+                            generatedAtEpochMs: 1,
+                            peers: [{
+                                peerId: 'session-b',
+                                connection: {
+                                    state: 'Open',
+                                    connectionState: 'connected',
+                                    iceCandidateQueueSize: 0,
+                                    ...override
+                                },
+                                lanes: []
+                            }]
+                        }
+                    }
+                }
+            }
+        }, ['session-b']);
+        const peers = jsonRecord(health.rtcDiagnostics)?.peers;
+        const connection = jsonRecord(jsonRecord(Array.isArray(peers) ? peers[0] : null)?.connection);
+
+        expect(connection?.state).toBe(expectedState);
+        if (invalidField === 'iceCandidateQueueSize') {
+            expect(connection).not.toHaveProperty('iceCandidateQueueSize');
+        }
     });
 
     it('retains bounded replacement-peer state with unknown lifetime and counter timing', () => {

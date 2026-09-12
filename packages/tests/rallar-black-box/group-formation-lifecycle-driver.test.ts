@@ -444,10 +444,12 @@ describe('group formation lifecycle driver', () => {
     });
 
     it.each([
-        { failureKind: 'command' as const, failure: new Error('canonical readiness command failed') },
-        { failureKind: 'refresh' as const, failure: new Error('canonical readiness refresh failed') },
-        { failureKind: 'peer-proof' as const, failure: undefined }
-    ])('records $failureKind failures before reconnect lifecycle cleanup', async ({ failureKind, failure }) => {
+        { failureKind: 'command' as const, failingPrefix: 'A' as const, failure: new Error('agent A command failed') },
+        { failureKind: 'command' as const, failingPrefix: 'B' as const, failure: new Error('agent B command failed') },
+        { failureKind: 'command' as const, failingPrefix: 'C' as const, failure: new Error('agent C command failed') },
+        { failureKind: 'refresh' as const, failingPrefix: 'A' as const, failure: new Error('canonical readiness refresh failed') },
+        { failureKind: 'peer-proof' as const, failingPrefix: 'A' as const, failure: undefined }
+    ])('records $failureKind failure from reconnect agent $failingPrefix before cleanup', async ({ failureKind, failingPrefix, failure }) => {
         const operationOrder: string[] = [];
         const recordReadinessFailure = vi.fn(
             async (
@@ -465,6 +467,16 @@ describe('group formation lifecycle driver', () => {
             }
         };
         const agents = [agentA, createAgent('B'), createAgent('C')] as const;
+        const failingAgent = {
+            A: agents[0],
+            B: agents[1],
+            C: agents[2]
+        }[failingPrefix];
+        const expectedPeerIdsByPrefix = {
+            A: ['session-b', 'session-c-next'],
+            B: ['session-a', 'session-c-next'],
+            C: ['session-a', 'session-b']
+        } as const;
         const control = {
             executeOk: async (
                 input: LiveRtcControlClient.ExecuteInput
@@ -474,7 +486,7 @@ describe('group formation lifecycle driver', () => {
                 }
                 if (
                     input.command.kind === 'formation.readiness' &&
-                    input.agentId === 'agent-a' &&
+                    input.agentId === failingAgent.agentId &&
                     failureKind === 'command'
                 ) {
                     throw failure;
@@ -484,7 +496,7 @@ describe('group formation lifecycle driver', () => {
                         input,
                         canonicalFormationReadinessValue(
                             input.agentId,
-                            input.agentId === 'agent-a' && failureKind === 'peer-proof'
+                            input.agentId === failingAgent.agentId && failureKind === 'peer-proof'
                         )
                     );
                 }
@@ -540,9 +552,11 @@ describe('group formation lifecycle driver', () => {
         expect(recordReadinessFailure).toHaveBeenCalledWith(
             expect.objectContaining({
                 runId: 'run-canonical-failure',
-                agent: expect.objectContaining({ agentId: 'agent-a', prefix: 'A' }),
-                expectedPeerIds: ['session-b', 'session-c-next'],
-                suffix: `canonical-${failureKind}`,
+                agent: expect.objectContaining({ agentId: failingAgent.agentId, prefix: failingPrefix }),
+                expectedPeerIds: expectedPeerIdsByPrefix[failingPrefix],
+                suffix: failingPrefix === 'C'
+                    ? `canonical-${failureKind}-settled`
+                    : `canonical-${failureKind}`,
                 attempt: 0,
                 participantAgents: agents
             })
