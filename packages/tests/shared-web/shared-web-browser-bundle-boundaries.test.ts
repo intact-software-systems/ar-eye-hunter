@@ -21,6 +21,11 @@ interface EsbuildMetafile {
     readonly inputs: Readonly<Record<string, unknown>>;
 }
 
+interface SharedWebPackageManifest {
+    readonly dependencies?: Readonly<Record<string, string>>;
+    readonly devDependencies?: Readonly<Record<string, string>>;
+}
+
 interface BrowserBundleMeasurement {
     readonly label: string;
     readonly brotliKiB: number;
@@ -87,18 +92,39 @@ const budgetedEntries: readonly BundleBoundary[] = [
 
 describe('shared-web browser package boundary', () => {
     it('keeps shared-web from declaring graphology directly', () => {
-        const manifest = JSON.parse(
-            readFileSync(
-                path.join(repoRoot, 'packages/shared-web/package.json'),
-                'utf8'
+        const manifest = toSharedWebPackageManifest(
+            JSON.parse(
+                readFileSync(
+                    path.join(repoRoot, 'packages/shared-web/package.json'),
+                    'utf8'
+                )
             )
-        ) as {
-            dependencies?: Readonly<Record<string, string>>;
-            devDependencies?: Readonly<Record<string, string>>;
-        };
+        );
 
         expect(manifest.dependencies ?? {}).not.toHaveProperty('graphology');
         expect(manifest.devDependencies ?? {}).not.toHaveProperty('graphology');
+    });
+
+    it('validates JSON envelopes before consuming manifest and metafile properties', () => {
+        const manifest = toSharedWebPackageManifest({
+            dependencies: { '@js-temporal/polyfill': '^0.5.1' }
+        });
+        expect(manifest.dependencies).toEqual({ '@js-temporal/polyfill': '^0.5.1' });
+        expect(() => toSharedWebPackageManifest([])).toThrow(
+            'shared-web package manifest must be an object'
+        );
+        expect(() => toSharedWebPackageManifest({ dependencies: [] })).toThrow(
+            'shared-web package manifest.dependencies must be an object'
+        );
+
+        const metafile = toEsbuildMetafile({ inputs: { 'entry.ts': {} } });
+        expect(Object.keys(metafile.inputs)).toEqual(['entry.ts']);
+        expect(() => toEsbuildMetafile([])).toThrow(
+            'esbuild metafile must be an object'
+        );
+        expect(() => toEsbuildMetafile({ inputs: null })).toThrow(
+            'esbuild metafile inputs must be an object'
+        );
     });
 });
 
@@ -188,6 +214,49 @@ function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     return {
         label: entry.label,
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
+        metafile: toEsbuildMetafile(JSON.parse(readFileSync(metafilePath, 'utf8')))
     };
+}
+
+function toSharedWebPackageManifest(value: unknown): SharedWebPackageManifest {
+    const manifest = toJsonObject(value, 'shared-web package manifest');
+    return {
+        dependencies: toOptionalStringRecord(manifest.dependencies, 'shared-web package manifest.dependencies'),
+        devDependencies: toOptionalStringRecord(
+            manifest.devDependencies,
+            'shared-web package manifest.devDependencies'
+        )
+    };
+}
+
+function toEsbuildMetafile(value: unknown): EsbuildMetafile {
+    const metafile = toJsonObject(value, 'esbuild metafile');
+    return {
+        inputs: toJsonObject(metafile.inputs, 'esbuild metafile inputs')
+    };
+}
+
+function toOptionalStringRecord(
+    value: unknown,
+    label: string
+): Readonly<Record<string, string>> | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const record = toJsonObject(value, label);
+    const stringRecord: Record<string, string> = {};
+    for (const [key, entry] of Object.entries(record)) {
+        if (typeof entry !== 'string') {
+            throw new Error(`${label}.${key} must be a string`);
+        }
+        stringRecord[key] = entry;
+    }
+    return stringRecord;
+}
+
+function toJsonObject(value: unknown, label: string): Readonly<Record<string, unknown>> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${label} must be an object`);
+    }
+    return value as Readonly<Record<string, unknown>>;
 }
