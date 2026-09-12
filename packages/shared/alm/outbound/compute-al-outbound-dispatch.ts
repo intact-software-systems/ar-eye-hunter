@@ -4,6 +4,7 @@ import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '../delivery/to-al-outbound-enqueue-status.ts';
 import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
 import type {
     ALOutboundCommitBundle,
@@ -18,7 +19,6 @@ import type {
     ALOutboundEnqueueStatus
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
-import { toALOutboundEnqueueStatus } from './to-al-outbound-enqueue-status.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     toALOutboundPendingAckExpireAtTimestamp,

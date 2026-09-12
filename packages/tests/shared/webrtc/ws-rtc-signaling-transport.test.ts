@@ -15,8 +15,8 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/outbound/to-al-outbound-enqueue-status.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';

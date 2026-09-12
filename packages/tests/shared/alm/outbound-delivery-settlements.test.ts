@@ -9,6 +9,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
+    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
     ALOutboundRuntimeStores,
     ALOutboundSettledSendResult
@@ -16,6 +17,7 @@ import type {
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import {
@@ -32,6 +34,10 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-
 
 const PREPARED: OutboundTestPayload = { kind: 'send' };
 const BACKEND_KINDS = ['memory', 'indexeddb'] as const;
+/** Short enough that the acknowledgement row falls due inside the test, long enough to stay valid. */
+const ACK_TIMEOUT_WINDOW_MS = 50;
+/** Past the row's own retention budget (`deadlineAtMs + timeoutMs * 101`), inside the message TTL. */
+const ACK_TIMEOUT_BUDGET_OVERSHOOT_MS = 8_000;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -74,20 +80,19 @@ function firstAttemptId(msgId: string): string {
 }
 
 function planSend(
-    expectedPeerIds?: readonly string[]
+    ackTracking?: ALOutboundAckTrackingPlan
 ): (msg: ALMessage) => ALOutboundDispatchPlan<OutboundTestPayload> {
     return (msg) => ({
         msg,
         dropReasonCode: undefined,
         persist: true,
         preparedMessages: [PREPARED],
-        ackTracking: expectedPeerIds === undefined ? undefined : {
-            enabled: true,
-            timeoutMs: 60_000,
-            maxAttempts: 3,
-            expectedPeerIds
-        }
+        ackTracking
     });
+}
+
+function trackAcks(expectedPeerIds: readonly string[]): ALOutboundAckTrackingPlan {
+    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds };
 }
 
 it.each(BACKEND_KINDS)(
@@ -188,7 +193,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
     const runtime = createDefaultOutboundTestRuntime({
         stores: createStores(kind),
         settlements: (settlement) => settlements.push(settlement),
-        planOutgoingMessage: planSend(['peer-1', 'peer-2']),
+        planOutgoingMessage: planSend(trackAcks(['peer-1', 'peer-2'])),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const message = createOutboundMessage('msg-acknowledged');
@@ -306,9 +311,9 @@ it.each(BACKEND_KINDS)('states the verdict a retained admission replay reached o
 
 it.each(BACKEND_KINDS)('drains the same work when the settlement sink throws over %s', async (kind) => {
     const stores = createStores(kind);
-    const reported: unknown[] = [];
+    const reported: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...entry) => {
-        reported.push(entry[0]);
+        reported.push(String(entry[0]));
     });
     const sent: string[] = [];
     const runtime = createDefaultOutboundTestRuntime({
@@ -330,3 +335,113 @@ it.each(BACKEND_KINDS)('drains the same work when the settlement sink throws ove
     expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
     expect(reported).toContain('AL outbound delivery settlement sink failed');
 });
+
+it.each(BACKEND_KINDS)('ends the attempt it started when the carrier throws over %s', async (kind) => {
+    const settlements: ALDeliverySettlement[] = [];
+    const stores = createStores(kind);
+    const runtime = createDefaultOutboundTestRuntime({
+        stores,
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: planSend(),
+        sendPreparedMessage: async () => {
+            throw new Error('WS connection dropped mid-send');
+        }
+    });
+    const message = createOutboundMessage('msg-throwing-carrier');
+
+    await runtime.enqueueIfAbsent(message);
+    await runOutboundWorkTask(runtime);
+
+    expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
+    expect(settlements[1]).toMatchObject({
+        kind: 'attempt-settled',
+        msgId: message.id.msgId,
+        attemptId: firstAttemptId(message.id.msgId),
+        outcome: 'failed',
+        submissionAttempted: false,
+        detail: 'WS connection dropped mid-send',
+        willRetry: true
+    });
+    // The work handler still saw the throw: the row is retained for another attempt, not completed.
+    expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeDefined();
+});
+
+/**
+ * An `ack-timeout` row expires on the receipt's own retry budget, never on the message deadline, so
+ * reaching that budget says nothing about the message. The owner's clock passes the row's budget
+ * while the queue, on its own clock, still serves the row.
+ */
+it('states no expiry when a row that expires on its own budget reaches it', async () => {
+    const settlements: ALDeliverySettlement[] = [];
+    const stores = createStores('memory');
+    let ownerNowMs = Date.now();
+    const runtime = createDefaultOutboundTestRuntime({
+        stores,
+        // An engine this test owns and never starts: only the explicit batches below claim work.
+        queueEngine: new InboxOutboxEngine(),
+        nowMs: () => ownerNowMs,
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: planSend({
+            enabled: true,
+            timeoutMs: ACK_TIMEOUT_WINDOW_MS,
+            maxAttempts: 100,
+            expectedPeerIds: ['peer-1']
+        }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+
+    await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-ack-timeout-budget'));
+    expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
+
+    // The acknowledgement row falls due on the queue's clock; the owner's clock is past its budget.
+    await new Promise((resolve) => setTimeout(resolve, ACK_TIMEOUT_WINDOW_MS + 30));
+    ownerNowMs = Date.now() + ACK_TIMEOUT_BUDGET_OVERSHOOT_MS;
+    await runOutboundWorkTask(runtime);
+
+    expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
+    expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled']);
+});
+
+it.each(BACKEND_KINDS)(
+    'states the carrier outcome and then the deadline that ended the message over %s',
+    async (kind) => {
+        const sent = await readSettlementsPastDeadline(kind, { status: 'sent', submissionAttempted: true });
+        expect(sent.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled', 'expired']);
+        expect(sent[1]).toMatchObject({ outcome: 'sent', submissionAttempted: true, willRetry: false });
+
+        // `not-ready` with `willRetry: false` has no meaning: the expiry is the whole fact.
+        const notReady = await readSettlementsPastDeadline(kind, {
+            status: 'not-ready',
+            submissionAttempted: false,
+            retryAfterMs: 50
+        });
+        expect(notReady.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'expired']);
+
+        const failed = await readSettlementsPastDeadline(kind, { status: 'failed', submissionAttempted: true });
+        expect(failed.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-settled', 'expired']);
+        expect(failed[1]).toMatchObject({ outcome: 'failed', submissionAttempted: true, willRetry: false });
+    }
+);
+
+/** Drains one message whose deadline passes inside its carrier, so the deadline guard settles it. */
+async function readSettlementsPastDeadline(
+    kind: 'memory' | 'indexeddb',
+    settled: ALOutboundSettledSendResult
+): Promise<readonly ALDeliverySettlement[]> {
+    const settlements: ALDeliverySettlement[] = [];
+    let ownerNowMs = Date.now();
+    const runtime = createDefaultOutboundTestRuntime({
+        stores: createStores(kind),
+        nowMs: () => ownerNowMs,
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: planSend(),
+        sendPreparedMessage: async () => {
+            ownerNowMs = Date.now() + 60_000;
+            return settled;
+        }
+    });
+
+    await enqueueOutboundOrThrow(runtime, createOutboundMessage(`msg-past-deadline-${settled.status}`));
+
+    return settlements;
+}

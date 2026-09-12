@@ -13,8 +13,8 @@ import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/outbound/to-al-outbound-enqueue-status.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 

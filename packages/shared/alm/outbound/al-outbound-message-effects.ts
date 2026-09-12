@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
+import { toError } from '../../resilience/to-error.ts';
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
@@ -145,7 +146,32 @@ export class ALOutboundMessageEffects<TPrepared> {
         return { status: 'completed' };
     }
 
+    /**
+     * A throwing carrier, admission read or receipt read still ends the attempt this owner already
+     * stated: without this the work handler reschedules and the retry restates `attempt-started`
+     * under the same id, leaving the first attempt open forever.
+     */
     async writePreparedMessage(send: ALOutboundMessageEffects.PreparedSend<TPrepared>): Promise<ALWorkAttemptResult> {
+        try {
+            return await this.writeAttemptedSend(send);
+        }
+        catch (error) {
+            this.dependencies.settlements({
+                kind: 'attempt-settled',
+                msgId: send.payload.message.msgId,
+                attemptId: send.attemptId,
+                outcome: 'failed',
+                submissionAttempted: false,
+                detail: toError(error).message,
+                willRetry: true
+            });
+            throw error;
+        }
+    }
+
+    private async writeAttemptedSend(
+        send: ALOutboundMessageEffects.PreparedSend<TPrepared>
+    ): Promise<ALWorkAttemptResult> {
         const runtime = this.dependencies.runtime;
         const { lifecycle } = send;
         const msgId = send.payload.message.msgId;

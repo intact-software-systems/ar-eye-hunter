@@ -12,6 +12,7 @@ import type {
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '../delivery/to-al-outbound-enqueue-status.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -45,7 +46,6 @@ import {
 } from './al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
-import { toALOutboundEnqueueStatus } from './to-al-outbound-enqueue-status.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -609,16 +609,23 @@ export class ALOutboundMessageRuntime<TPrepared> {
         });
     }
 
-    /** The deadline the work carries passed before its attempt ran; work with no message states nothing. */
+    /**
+     * Only a row whose own deadline *is* the message deadline may call the message expired. A
+     * `send-prepared` or `admit-message` row carries the message's `expiresAtMs` as its queue
+     * expiry, and a foreign dequeue row is stamped from the same deadline; every other kind expires
+     * on a budget of its own -- an `ack-timeout` on the receipt's retry windows, a `nack-retry` on
+     * its schedule -- and says nothing about the message.
+     */
     private emitWorkExpiry(effect: ALOutboundEffectSnapshot<TPrepared>): void {
         const msgId = effect.canonicalMessage?.id.msgId;
-        if (msgId !== undefined) {
-            this.emitSettlement({
-                kind: 'expired',
-                msgId,
-                detail: 'Outbound work reached its deadline before its attempt ran.'
-            });
+        if (msgId === undefined || !statesMessageDeadline(effect.payload.kind)) {
+            return;
         }
+        this.emitSettlement({
+            kind: 'expired',
+            msgId,
+            detail: 'Outbound work reached the message deadline before its attempt ran.'
+        });
     }
 
     /** The one guard over every settlement this owner states: a throwing sink changes no work. */
@@ -665,4 +672,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readNowMs(): number {
         return this.dependencies.clock.nowMs();
     }
+}
+
+/** The effect kinds whose queue row expires exactly when the message it carries does. */
+function statesMessageDeadline(kind: ALOutboundDurableEffect<unknown>['kind']): boolean {
+    return kind === 'send-prepared' || kind === 'admit-message' || kind === 'dequeue-message';
 }

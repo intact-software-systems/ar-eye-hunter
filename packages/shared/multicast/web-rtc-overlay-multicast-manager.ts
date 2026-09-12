@@ -23,6 +23,7 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '../alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundEnqueueResult,
@@ -46,7 +47,6 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundEnqueueStatus } from '../alm/outbound/to-al-outbound-enqueue-status.ts';
 import {
     EnqueuedType,
     OverlayId,

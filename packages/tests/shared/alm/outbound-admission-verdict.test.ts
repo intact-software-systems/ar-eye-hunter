@@ -11,10 +11,10 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/outbound/to-al-outbound-enqueue-status.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';

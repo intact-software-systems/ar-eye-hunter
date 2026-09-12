@@ -20,6 +20,7 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '../alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -47,7 +48,6 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { toALOutboundEnqueueStatus } from '../alm/outbound/to-al-outbound-enqueue-status.ts';
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';

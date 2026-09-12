@@ -4,6 +4,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '../delivery/to-al-outbound-enqueue-status.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -34,7 +35,6 @@ import {
     type ALOutboundComputeIntent,
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
-import { toALOutboundEnqueueStatus } from './to-al-outbound-enqueue-status.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 export namespace ALOutboundDispatchAdmission {

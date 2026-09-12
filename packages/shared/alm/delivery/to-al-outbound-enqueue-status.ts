@@ -1,5 +1,5 @@
-import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundEnqueueStatus } from './al-outbound-message-runtime.ts';
+import type { ALOutboundEnqueueStatus } from '../outbound/al-outbound-message-runtime.ts';
+import type { ALDeliveryAdmissionVerdict } from './al-delivery-lifecycle.ts';
 
 /**
  * The only place `ALOutboundEnqueueStatus` is derived from a verdict. Temporary by design: the S1
