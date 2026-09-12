@@ -5,6 +5,7 @@ import { initHeartbeat } from '@shared-web/browser/session/browser-session-heart
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     afterEach,
@@ -54,6 +55,7 @@ describe('Browser session heartbeat', () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
+        vi.useRealTimers();
     });
 
     it('threads the active state scope into the websocket connection URL', () => {
@@ -186,6 +188,89 @@ describe('Browser session heartbeat', () => {
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBe(newer);
     });
 
+    it('does not mutate client or group caches after an in-flight heartbeat is stopped', async () => {
+        vi.useFakeTimers();
+        const observed = groupSnapshot({
+            groupId: 'active-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
+        const advanced: GroupSnapshot = {
+            ...observed,
+            group: { ...observed.group, snapshotVersion: observed.group.snapshotVersion + 1 },
+            causalRevision: {
+                groupRevision: observed.causalRevision.groupRevision + 1,
+                presenceRevision: observed.causalRevision.presenceRevision
+            }
+        };
+        const groupResponse = Promise.withResolvers<Response>();
+        const groupRequestStarted = Promise.withResolvers<void>();
+        groupStateSnapshotsRepository.setGroupStateSnapshot(observed);
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.includes('/clients/principal-1/')) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+            if (method === 'POST' && url.includes('/groups/active-room/')) {
+                groupRequestStarted.resolve();
+                return groupResponse.promise;
+            }
+            return textResponse('unexpected', 500);
+        });
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await groupRequestStarted.promise;
+        handle.stop();
+        groupResponse.resolve(jsonResponse(advanced));
+        await vi.advanceTimersByTimeAsync(0);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(
+            clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+                authSession.clientId
+            )
+        ).toBeUndefined();
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBe(observed);
+    });
+
+    it('does not report auth invalidation from a replaced heartbeat delayed 401', async () => {
+        vi.useFakeTimers();
+        const firstResponse = Promise.withResolvers<Response>();
+        const replacementRequestStarted = Promise.withResolvers<void>();
+        const firstAuthInvalid = vi.fn();
+        let isFirstRequest = true;
+        stubFetch(() => {
+            if (isFirstRequest) {
+                isFirstRequest = false;
+                return firstResponse.promise;
+            }
+            replacementRequestStarted.resolve();
+            return jsonResponse(clientSnapshot('principal-1'));
+        });
+
+        await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
+            onAuthInvalid: firstAuthInvalid
+        });
+        await vi.waitFor(() => expect(fetchCalls).toHaveLength(1));
+
+        const replacement = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await replacementRequestStarted.promise;
+        firstResponse.resolve(textResponse('Unauthorized', 401));
+        await vi.advanceTimersByTimeAsync(0);
+        replacement.stop();
+
+        expect(firstAuthInvalid).not.toHaveBeenCalled();
+    });
+
     it('stops and reports auth invalidation after a single client heartbeat 401', async () => {
         let authInvalidated = false;
         stubFetch(({ url, method }) => {
@@ -267,7 +352,7 @@ describe('Browser session heartbeat', () => {
     }
 });
 
-function jsonResponse(body: ClientSnapshot, status = 200): Response {
+function jsonResponse(body: ClientSnapshot | GroupSnapshot, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' }

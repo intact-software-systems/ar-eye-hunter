@@ -25,6 +25,7 @@ import {
 } from '@shared/services/group-snapshot-rtc-sync.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import { isGroupHeartbeatSnapshotRenewal } from './group-heartbeat-snapshot-adoption.ts';
 import { dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
 import {
     acceptClientStateSnapshots,
@@ -267,6 +268,11 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             const snapshot = change.snapshot ?? change.previous;
             if (
                 change.kind === ObservableValueEventType.Refreshed ||
+                (
+                    change.previous !== undefined &&
+                    change.snapshot !== undefined &&
+                    isGroupHeartbeatSnapshotRenewal(change.previous, change.snapshot)
+                ) ||
                 change.manager !== undefined ||
                 !snapshot
             ) {
