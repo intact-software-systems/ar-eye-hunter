@@ -1,5 +1,11 @@
 {
   "extends": "../../../apps/rallar-black-box/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
   "files": [
     "browser-alm-committed-work-observer.ts",
     "browser-alm-committed-work-timing-fixture.ts",

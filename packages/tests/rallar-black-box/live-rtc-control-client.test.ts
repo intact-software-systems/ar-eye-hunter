@@ -152,6 +152,7 @@ describe('live RTC control client', () => {
             .waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b', 'session-c'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -184,6 +185,7 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-refresh-retry',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b', 'session-c'],
                 suffix: 'delayed-topology',
                 startedAtMs: 100
@@ -197,7 +199,14 @@ describe('live RTC control client', () => {
         const failure = new Error('refresh failed without diagnostics');
         refreshRoom.mockRejectedValue(failure);
         await expect(
-            withoutSidecar.waitForPeerReadiness({ runId: 'run-disabled', agent, expectedPeerIds: ['session-b'], suffix: 'disabled', startedAtMs: 100 })
+            withoutSidecar.waitForPeerReadiness({
+                runId: 'run-disabled',
+                agent,
+                participantAgents: [agent],
+                expectedPeerIds: ['session-b'],
+                suffix: 'disabled',
+                startedAtMs: 100
+            })
         ).rejects.toBe(failure);
         expect(results).toEqual([]);
         expect(readdirSync(diagnosticsRoot)).toEqual([]);
@@ -336,6 +345,7 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -353,6 +363,7 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
+                participantAgents: [agent],
                 expectedPeerIds: ['session-b'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -381,7 +392,14 @@ describe('live RTC control client', () => {
     });
 
     it('joins a bounded readiness causal tail to concurrent current health without retaining secrets', async () => {
-        runAgentIds = ['agent-c', 'agent-b', 'agent-a', 'agent-outside'];
+        runAgentIds = [
+            'retired-agent-a',
+            'retired-agent-b',
+            'agent-a',
+            'agent-b',
+            'agent-c',
+            'agent-outside'
+        ];
         const sentinel = 'SENTINEL-secret-payload';
         const entries: Array<{ agentId: string; topic: string; data: LiveRtcJsonRecord; }> = [];
         for (let index = 0; index < 210; index += 1) {
@@ -480,6 +498,8 @@ describe('live RTC control client', () => {
         };
         healthValues['agent-b'] = { rallar: { session: { sessionId: 'session-b', accessToken: sentinel } } };
         healthValues['agent-c'] = { rallar: { session: { sessionId: 'session-c', accessToken: sentinel } } };
+        healthValues['retired-agent-a'] = { rallar: { session: { sessionId: 'retired-session-a' } } };
+        healthValues['retired-agent-b'] = { rallar: { session: { sessionId: 'retired-session-b' } } };
         const allHealthStarted = Promise.withResolvers<void>();
         const releaseHealth = Promise.withResolvers<void>();
         const healthAgents: string[] = [];
@@ -495,6 +515,11 @@ describe('live RTC control client', () => {
         const readiness = control.waitForPeerReadiness({
             runId: 'run-causal',
             agent,
+            participantAgents: [
+                agent,
+                { agentId: 'agent-b' },
+                { agentId: 'agent-c' }
+            ],
             expectedPeerIds: ['session-c', 'session-b'],
             suffix: 'causal',
             startedAtMs: 100
@@ -511,7 +536,9 @@ describe('live RTC control client', () => {
         const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-causal.json'), 'utf8');
         const sidecar = JSON.parse(serialized);
         expect(readinessHealthAgents.sort()).toEqual(['agent-a', 'agent-b', 'agent-c']);
-        expect(serialized).not.toMatch(/SENTINEL|secret\.example|accessToken|credentials|payload|application-message|app-1|agent-outside/);
+        expect(serialized).not.toMatch(
+            /SENTINEL|secret\.example|accessToken|credentials|payload|application-message|app-1|agent-outside|retired/u
+        );
         expect(sidecar.failure).toEqual({ name: 'readiness-failed', message: 'RTC peer readiness observation failed.' });
         expect(sidecar.causalEvents).toHaveLength(200);
         expect(sidecar.causalEvents[0]).toMatchObject({ atEpochMs: 21 });
@@ -600,6 +627,7 @@ describe('live RTC control client', () => {
         const readiness = control.waitForPeerReadiness({
             runId: 'run-hostile-agents',
             agent: { ...agent, agentId: failedAgentId },
+            participantAgents: selectedAgentIds.map((agentId) => ({ agentId })),
             expectedPeerIds: ['session-b'],
             suffix: 'hostile',
             startedAtMs: 100
@@ -643,6 +671,7 @@ describe('live RTC control client', () => {
         await expect(control.waitForPeerReadiness({
             runId: 'run-punctuation',
             agent: { ...agent, prefix: 'C', agentId: punctuationAgentId },
+            participantAgents: [{ agentId: punctuationAgentId }],
             expectedPeerIds: ['session-b'],
             suffix: 'punctuation',
             startedAtMs: 100
@@ -671,6 +700,7 @@ describe('live RTC control client', () => {
             await expect(control.waitForPeerReadiness({
                 runId: 'run-shared-suffix',
                 agent: { ...agent, prefix: capture.prefix, agentId: capture.agentId },
+                participantAgents: [{ agentId: capture.agentId }],
                 expectedPeerIds: ['session-c'],
                 suffix: 'shared',
                 startedAtMs: 100
@@ -698,7 +728,14 @@ describe('live RTC control client', () => {
     it('retains only a fixed category when readiness health capture fails', async () => {
         healthCommandFailure = { agentId: 'agent-a', body: 'SENTINEL-health-response' };
         refreshRoom.mockRejectedValue(new Error('SENTINEL-readiness-error'));
-        await expect(control.waitForPeerReadiness({ runId: 'run-health', agent, expectedPeerIds: ['session-b'], suffix: 'health', startedAtMs: 100 })).rejects
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-health',
+            agent,
+            participantAgents: [agent],
+            expectedPeerIds: ['session-b'],
+            suffix: 'health',
+            startedAtMs: 100
+        })).rejects
             .toThrow('SENTINEL-readiness-error');
         const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-health.json'), 'utf8');
         expect(serialized).not.toContain('SENTINEL');
@@ -721,6 +758,7 @@ describe('live RTC control client', () => {
             control.waitForPeerReadiness({
                 runId: 'run-readiness-command-collision',
                 agent: { ...agent, agentId: 'agent:a' },
+                participantAgents: [{ agentId: 'agent:a' }, { agentId: 'agent-a' }],
                 expectedPeerIds: ['session-hyphen'],
                 suffix: 'command-collision',
                 startedAtMs: 100

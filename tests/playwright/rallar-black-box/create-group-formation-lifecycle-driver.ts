@@ -200,6 +200,7 @@ interface WaitForCanonicalFormationReadinessInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.FormationAgent;
+    readonly participantAgents: readonly Pick<LiveRtcControlClient.FormationAgent, 'agentId'>[];
     readonly roomRef: GroupRef;
     readonly expectedPeerIds: readonly string[];
     readonly suffix: string;
@@ -229,12 +230,17 @@ async function reconnectFormationAgent(
         groupId: input.groupId,
         suffix: input.suffix
     });
+    const participantAgents = [
+        ...input.survivingAgents,
+        input.reconnectingAgent
+    ] as const;
     const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
         [
             waitForCanonicalFormationReadiness(config, {
                 control: input.control,
                 runId: input.runId,
                 agent: input.survivingAgents[0],
+                participantAgents,
                 roomRef: toGroupRef(config, input.groupId),
                 expectedPeerIds: [input.survivingSessionIds[1], connection.sessionId],
                 suffix: input.suffix,
@@ -244,6 +250,7 @@ async function reconnectFormationAgent(
                 control: input.control,
                 runId: input.runId,
                 agent: input.survivingAgents[1],
+                participantAgents,
                 roomRef: toGroupRef(config, input.groupId),
                 expectedPeerIds: [input.survivingSessionIds[0], connection.sessionId],
                 suffix: input.suffix,
@@ -253,6 +260,7 @@ async function reconnectFormationAgent(
                 control: input.control,
                 runId: input.runId,
                 agent: input.reconnectingAgent,
+                participantAgents,
                 roomRef: toGroupRef(config, input.groupId),
                 expectedPeerIds: input.survivingSessionIds,
                 suffix: `${input.suffix}-settled`,
@@ -435,6 +443,7 @@ async function connectInitialPair(
                 await input.control.waitForPeerReadiness({
                     runId: input.runId,
                     agent,
+                    participantAgents: agents,
                     expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
                     suffix,
                     startedAtMs
@@ -452,6 +461,7 @@ async function connectInitialPair(
                     control: input.control,
                     runId: input.runId,
                     agent,
+                    participantAgents: agents,
                     roomRef: toGroupRef(config, input.groupId),
                     expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
                     suffix: `${suffix}-activated`,
@@ -524,7 +534,7 @@ async function configureMeshTopology(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `topology/config/requests/${pathSegment(`topology-mesh-${input.suffix}`)}`
+                    `topology/config/requests/${encodeURIComponent(`topology-mesh-${input.suffix}`)}`
                 ),
                 method: 'PUT',
                 body: {
@@ -571,7 +581,7 @@ async function enterGroupConnectionCycle(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`
+                    `lifecycle/${operation}/requests/${encodeURIComponent(`${operation}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: operation === 'reconfigure' ? { landing: 'hold' } : {}
@@ -608,7 +618,7 @@ async function connectPublishedLayout(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/connect/requests/${pathSegment(`connect-${input.suffix}`)}`
+                    `lifecycle/connect/requests/${encodeURIComponent(`connect-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {
@@ -641,7 +651,7 @@ async function activateGroup(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/activate/requests/${pathSegment(`activate-${transport}-${input.suffix}`)}`
+                    `lifecycle/activate/requests/${encodeURIComponent(`activate-${transport}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {}
@@ -757,6 +767,7 @@ async function waitForFormationReadiness(
                 control: input.run.control,
                 runId: input.run.runId,
                 agent,
+                participantAgents: input.run.agents,
                 roomRef: toGroupRef(config, input.run.groupId),
                 expectedPeerIds: input.run.agents
                     .filter((candidate) => candidate.agentId !== agent.agentId)
@@ -826,6 +837,7 @@ async function recordCanonicalReadinessFailure(
         await input.control.recordReadinessFailure({
             runId: input.runId,
             agent: input.agent,
+            participantAgents: input.participantAgents,
             expectedPeerIds: input.expectedPeerIds,
             suffix: input.suffix,
             startedAtMs: input.startedAtMs,
@@ -879,11 +891,11 @@ function groupRequestPath(
     groupId: string,
     suffix?: string
 ): string {
-    const groupPath = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-        pathSegment(
+    const groupPath = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+        encodeURIComponent(
             config.workspaceId
         )
-    }/groups/${pathSegment(groupId)}`;
+    }/groups/${encodeURIComponent(groupId)}`;
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
@@ -987,10 +999,6 @@ function numberValue(value: RtcBaselineJson | undefined): number | undefined {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
         ? value
         : undefined;
-}
-
-function pathSegment(value: string): string {
-    return encodeURIComponent(value);
 }
 
 async function setupGroupMembership(
