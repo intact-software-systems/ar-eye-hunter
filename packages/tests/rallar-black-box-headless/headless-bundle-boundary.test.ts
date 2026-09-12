@@ -51,7 +51,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // S1 lifecycle composition measures 262.2822265625 KiB. The maintainer-approved
+        // S1 lifecycle composition measures 262.419921875 KiB. The maintainer-approved
         // next whole-KiB ceiling is 263, with operator dependency exclusions intact.
         expect(result.brotliKiB).toBeLessThan(263);
     });

@@ -6,7 +6,6 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    throwRallarValidation,
     validateRallarGroupRef,
     validateRallarJsonPayload,
     validateRallarNonNegativeInteger,
@@ -23,10 +22,6 @@ export interface ResolvedWsMessageInput<T> {
     readonly roomRef: GroupRef | undefined;
 }
 
-interface BrowserMessageInputValidatorInput {
-    readonly readMaxPayloadBytes: () => number;
-}
-
 interface PushOptionalRouteIdIssueInput {
     readonly value: string | undefined;
     readonly path: string;
@@ -39,10 +34,16 @@ interface RoomMessageIdentity {
     readonly roomRef?: GroupRef;
 }
 
-export class BrowserMessageInputValidator {
-    private readonly input: BrowserMessageInputValidatorInput;
+export namespace BrowserMessageInputValidator {
+    export interface Input {
+        readonly readMaxPayloadBytes: () => number;
+    }
+}
 
-    public constructor(input: BrowserMessageInputValidatorInput) {
+export class BrowserMessageInputValidator {
+    private readonly input: BrowserMessageInputValidator.Input;
+
+    public constructor(input: BrowserMessageInputValidator.Input) {
         this.input = input;
     }
 
@@ -51,14 +52,13 @@ export class BrowserMessageInputValidator {
             path: '$.payload',
             maxBytes: this.input.readMaxPayloadBytes()
         });
-        this.throwIfIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
         return validation;
     }
 
-    public assertRtc<T>(
+    public validateRtc<T>(
         input: RallarRtcSendInput<T>,
         roomId: string | undefined
-    ): void {
+    ): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushBaseIssues(input, 'rtc', issues);
         this.pushOptionalRouteId({
@@ -79,10 +79,10 @@ export class BrowserMessageInputValidator {
                 issues
             });
         }
-        this.throwIfIssues(issues);
+        return issues;
     }
 
-    public assertWs<T>(resolved: ResolvedWsMessageInput<T>): void {
+    public validateWs<T>(resolved: ResolvedWsMessageInput<T>): readonly RallarValidationIssue[] {
         const { input, scope, roomId, roomRef } = resolved;
         const issues: RallarValidationIssue[] = [];
         this.pushBaseIssues(input, 'ws', issues);
@@ -106,14 +106,14 @@ export class BrowserMessageInputValidator {
         if (scope === 'room') {
             this.pushWsRoomIssues(roomId, roomRef, issues);
         }
-        this.throwIfIssues(issues);
+        return issues;
     }
 
-    public assertResolvedRoomRef(roomRef: GroupRef, path: string): void {
-        this.throwIfIssues(validateRallarGroupRef(roomRef, path).issues);
+    public validateResolvedRoomRef(roomRef: GroupRef, path: string): readonly RallarValidationIssue[] {
+        return validateRallarGroupRef(roomRef, path).issues;
     }
 
-    public assertTypedChannel(topicId: string | undefined, typeId: string): void {
+    public validateTypedChannel(topicId: string | undefined, typeId: string): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushOptionalRouteId({
             value: topicId,
@@ -122,10 +122,10 @@ export class BrowserMessageInputValidator {
             issues
         });
         issues.push(...validateRallarRouteId(typeId, '$.typeId', 'Type ID').issues);
-        this.throwIfIssues(issues);
+        return issues;
     }
 
-    public assertRoomChannel(input: RoomMessageIdentity): void {
+    public validateRoomChannel(input: RoomMessageIdentity): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushOptionalRouteId({
             value: input.roomId,
@@ -135,7 +135,7 @@ export class BrowserMessageInputValidator {
         });
         this.pushOptionalGroupRef(input.roomRef, '$.roomRef', issues);
         this.pushRoomIdentityIssue(input, issues);
-        this.throwIfIssues(issues);
+        return issues;
     }
 
     private pushRtcRouteIssues<T>(
@@ -179,7 +179,7 @@ export class BrowserMessageInputValidator {
         transport: RallarMessageTransport,
         issues: RallarValidationIssue[]
     ): void {
-        issues.push(...toTopicIssues(input, transport));
+        issues.push(...validateTopic(input, transport));
         issues.push(...validateRallarRouteId(input.typeId, '$.typeId', 'Type ID').issues);
         this.pushOptionalRouteId({
             value: input.contextId,
@@ -274,15 +274,9 @@ export class BrowserMessageInputValidator {
             issues.push(...validateRallarNonNegativeInteger(value, path).issues);
         }
     }
-
-    private throwIfIssues(issues: readonly RallarValidationIssue[]): void {
-        if (issues.length > 0) {
-            throwRallarValidation(issues);
-        }
-    }
 }
 
-function toTopicIssues<T>(
+function validateTopic<T>(
     input: RallarMessageSendBase<T>,
     transport: RallarMessageTransport
 ): readonly RallarValidationIssue[] {

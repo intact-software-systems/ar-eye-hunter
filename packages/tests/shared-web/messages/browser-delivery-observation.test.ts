@@ -2,6 +2,7 @@ import { BrowserDeliverySettlements } from '@shared-web/browser/connection/brows
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -57,7 +58,14 @@ describe('browser session delivery observation', () => {
     });
 });
 
-function createObservation() {
+interface DeliveryObservationFixture {
+    readonly registry: BrowserRallarDeliveryRegistry;
+    readonly feed: BrowserDeliverySettlements;
+    readonly owner: BrowserSessionDeliveries;
+    readonly session: AuthSession;
+}
+
+function createObservation(): DeliveryObservationFixture {
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const middleware = createDefaultApiMiddlewareTestDouble();
     const feed = new BrowserDeliverySettlements();

@@ -28,7 +28,7 @@ const esbuildBin = path.join(
 
 const entries = [
     {
-        // S1 lifecycle handles and the shared session observation owner measure 210.4814453125 KiB.
+        // S1 lifecycle handles and the shared session observation owner measure 210.6572265625 KiB.
         // The maintainer-approved next whole-KiB ceiling is 211.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',

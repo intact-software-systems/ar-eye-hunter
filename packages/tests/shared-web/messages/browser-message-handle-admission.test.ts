@@ -1,5 +1,7 @@
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
@@ -17,6 +19,30 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 afterEach(() => vi.useRealTimers());
 
 describe('message handle admission', () => {
+    it.each(['ws', 'rtc', 'unicast', 'fallback'] as const)('captures the once-validated payload before deferred %s connection', async (path) => {
+        const fixture = createSender(20);
+        const connection = Promise.withResolvers<ApiMiddleware>();
+        fixture.connect.mockReturnValue(connection.promise);
+        const payload = { text: 'a' };
+        const envelope = vi.spyOn(
+            fixture.middleware.middleware[path === 'rtc' || path === 'fallback' ? 'rtcRxStreamer' : 'webSocketQueueBox'],
+            'enqueueOutboxIfAbsent'
+        );
+        const sending = path === 'unicast'
+            ? fixture.sender.sendWsUnicast({ peerId: 'peer', typeId: 'app.ready', payload, route: { topicId: 'app.ready', contextId: 'all' } })
+            : path === 'fallback'
+            ? fixture.sender.sendTyped({ typeId: 'app.ready', payload })
+            : path === 'rtc'
+            ? fixture.sender.sendRtc({ typeId: 'app.ready', payload })
+            : fixture.sender.sendWs({ typeId: 'app.ready', payload });
+        payload.text = 'x'.repeat(100);
+        connection.resolve(fixture.middleware);
+        const handle = await sending;
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+        expect(envelope.mock.calls[0][0].payload.resource).toBe('{"text":"a"}');
+        expect(handle.lifecycle().state).toBe('queued');
+    });
+
     it.each(['rtc', 'ws'] as const)('returns the %s handle while carrier admission is pending', async (carrier) => {
         const admission = Promise.withResolvers<ALOutboundEnqueueResult>();
         const fixture = createSender();
@@ -135,7 +161,15 @@ describe('message handle admission', () => {
     });
 });
 
-function createSender(maxPayloadBytes = 64 * 1024) {
+interface SenderFixture {
+    readonly sender: BrowserRallarMessageSender;
+    readonly registry: BrowserRallarDeliveryRegistry;
+    readonly middleware: ApiMiddleware;
+    readonly connect: Mock<() => Promise<ApiMiddleware>>;
+    replaceTransport(): void;
+}
+
+function createSender(maxPayloadBytes = 64 * 1024): SenderFixture {
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const middleware = createDefaultApiMiddlewareTestDouble();
     let activeMiddleware = middleware;
@@ -144,11 +178,18 @@ function createSender(maxPayloadBytes = 64 * 1024) {
     sessionDeliveries.beginSession(middleware.session);
     feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+    const connect = vi.fn<() => Promise<ApiMiddleware>>().mockResolvedValue(middleware);
     const sender = new BrowserRallarMessageSender({
+        creation: {
+            createUnicast: newALUnicastMessage,
+            createMulticast: newALMulticastMessage,
+            createBroadcast: newALBroadcastMessage,
+            newResourceId: crypto.randomUUID.bind(crypto)
+        },
         deliveries: registry,
         dispatch: new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now }),
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => maxPayloadBytes }),
-        connect: async () => middleware,
+        connect,
         requireSession: () => middleware.session,
         resolveDefaultRoom: () => roomRef,
         resolveCurrentRoomRef: () => roomRef,
@@ -158,6 +199,7 @@ function createSender(maxPayloadBytes = 64 * 1024) {
     });
     return {
         sender,
+        connect,
         registry,
         middleware,
         replaceTransport: () => {

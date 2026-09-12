@@ -1,4 +1,4 @@
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -98,11 +98,12 @@ export function toCreateWsUrl(
     return url.toString();
 }
 
-export function toBrowserRttHeartbeatMessage(
+export function createBrowserRttHeartbeatMessage(
     sessionId: string,
-    rtt: RttMeasurementInfo
-) {
-    return newALUntargetedMessage<RttMeasurementInfo>(
+    rtt: RttMeasurementInfo,
+    createMessage: typeof newALUntargetedMessage
+): ALMessage {
+    return createMessage<RttMeasurementInfo>(
         sessionId,
         newALRoute(
             AppTopics.rtt,
@@ -146,7 +147,13 @@ interface BrowserRtcTransport {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
 }
 
+interface BrowserMiddlewareCreation {
+    readonly createMessage: typeof newALUntargetedMessage;
+    newConnectionRequestId(): string;
+}
+
 interface InitialiseBrowserTransportInput {
+    readonly creation: BrowserMiddlewareCreation;
     readonly session: AuthSession;
     readonly clientData: ClientInfo;
     readonly options: MiddlewareInitOptions;
@@ -174,7 +181,11 @@ export async function initialiseMiddleware(
         isOnline: true
     };
     initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
-    const transportInput = { session, clientData, options };
+    const creation: BrowserMiddlewareCreation = {
+        createMessage: newALUntargetedMessage,
+        newConnectionRequestId: crypto.randomUUID.bind(crypto)
+    };
+    const transportInput: InitialiseBrowserTransportInput = { session, clientData, options, creation };
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
         ...transportInput,
@@ -233,7 +244,7 @@ async function initialiseBrowserWebSocketTransport(
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
-        newConnectionRequestId: () => crypto.randomUUID(),
+        newConnectionRequestId: input.creation.newConnectionRequestId,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.ws,
         inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
@@ -431,7 +442,7 @@ function registerBrowserRttEgress(
         onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
             const queueBox = input.webSocketTransport;
             void queueBox.webSocketQueueBox.enqueueOutboxIfAbsent(
-                toBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt)
+                createBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt, input.creation.createMessage)
             ).then((result) => {
                 if (result.verdict.kind === 'admitted' || result.verdict.kind === 'duplicate') {
                     queueBox.qboxEngine.wake();

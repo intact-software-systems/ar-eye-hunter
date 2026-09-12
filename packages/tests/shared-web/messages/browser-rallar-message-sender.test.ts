@@ -55,6 +55,24 @@ describe('Rallar message send', () => {
         mockGroupSnapshots([]);
     });
 
+    it('reports every unsupported fallback constraint before connecting or queueing', async () => {
+        const facade = createFacade();
+        const channel = facade.messages.room({
+            typeId: 'app.ready',
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+        });
+        await expect(channel.send(true, { scope: 'all', membershipEpoch: 1 })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: expect.arrayContaining([
+                expect.objectContaining({ path: '$.scope', code: 'unsupported' }),
+                expect.objectContaining({ path: '$.membershipEpoch', code: 'unsupported' })
+            ])
+        });
+        expect(facade.isConnected()).toBe(false);
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
+
     it('rejects invalid WS user topics before queueing', async () => {
         await expect(
             createFacade().messages.ws.send({

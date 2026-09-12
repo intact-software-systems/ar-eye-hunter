@@ -49,7 +49,7 @@ export interface RallarSessionAuthLifecycle {
         reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
         options: RallarAuthSessionEndOptions
     ): Promise<void>;
-    endUnauthorizedSession(error: Error): Promise<void>;
+    endUnauthorizedSession(error: Error, session: AuthSession | undefined): Promise<void>;
     runAuthAwareOperation<T>(operation: () => T | Promise<T>): Promise<T>;
     waitForAuthEnd(): Promise<void>;
     onAuthChange(
@@ -104,7 +104,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
                 const currentSession = readSession();
                 return currentSession !== undefined && toAuthSessionKey(currentSession) === toAuthSessionKey(session);
             },
-            onAuthInvalid: async (error) => await this.endUnauthorizedSession(error)
+            onAuthInvalid: async (error) => await this.endUnauthorizedSession(error, session)
         });
         this.scheduleAuthExpiry(middleware.session);
         return middleware;
@@ -176,11 +176,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         return await authEnd;
     }
 
-    public async endUnauthorizedSession(error: Error): Promise<void> {
+    public async endUnauthorizedSession(error: Error, session: AuthSession | undefined): Promise<void> {
         if (!(error instanceof ApiHttpError) || error.status !== 401) {
             return;
         }
-        const session = this.resolveSession();
         if (session) {
             await this.endAuthSession('unauthorized', { revoke: false, session });
         }
@@ -189,6 +188,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     public async runAuthAwareOperation<T>(
         operation: () => T | Promise<T>
     ): Promise<T> {
+        const session = readSession();
         try {
             return await operation();
         }
@@ -196,7 +196,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             const operationError = error instanceof Error
                 ? error
                 : new Error('Rallar session operation failed.');
-            await this.endUnauthorizedSession(operationError);
+            await this.endUnauthorizedSession(operationError, session);
             throw operationError;
         }
     }

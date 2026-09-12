@@ -1,4 +1,6 @@
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
+import type { RallarTypedMessageChannel } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     afterEach,
     beforeEach,
@@ -8,6 +10,7 @@ import {
     vi
 } from 'vitest';
 import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
@@ -18,7 +21,7 @@ import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browse
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
-import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchPlan, ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -197,7 +200,19 @@ interface ChannelInput {
 const ADMITTED_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 const NO_ROUTE_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'unroutable', reason: 'no-route', detail: 'no route' };
 
-function createChannel(input: ChannelInput) {
+interface ChannelAttempt {
+    readonly carrier: 'rtc' | 'ws';
+    readonly message: ALMessage;
+}
+
+interface ChannelFixture {
+    readonly originalRoom: GroupRef;
+    readonly attempts: readonly ChannelAttempt[];
+    readonly settlements: BrowserDeliverySettlements.Carriers;
+    readonly channel: RallarTypedMessageChannel<{ action: string; }>;
+}
+
+function createChannel(input: ChannelInput): ChannelFixture {
     const admission = new ChannelAdmission(input);
     const context = createDefaultApiMiddlewareTestDouble({
         middleware: {
@@ -212,6 +227,12 @@ function createChannel(input: ChannelInput) {
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
     const sender = new BrowserRallarMessageSender({
+        creation: {
+            createUnicast: newALUnicastMessage,
+            createMulticast: newALMulticastMessage,
+            createBroadcast: newALBroadcastMessage,
+            newResourceId: crypto.randomUUID.bind(crypto)
+        },
         deliveries,
         dispatch: new BrowserRallarMessageDispatch({ deliveries, sessionDeliveries, nowMs: Date.now }),
         inputValidator,
@@ -255,9 +276,9 @@ function freezeMessage(message: ALMessage): void {
 class ChannelAdmission {
     readonly originalRoom: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-one' };
     currentRoom = this.originalRoom;
-    readonly attempts: { readonly carrier: string; readonly message: ALMessage; }[] = [];
+    readonly attempts: ChannelAttempt[] = [];
     private readonly input: ChannelInput;
-    private readonly firstRuntime;
+    private readonly firstRuntime: ALOutboundMessageRuntime<OutboundTestPayload> | undefined;
 
     constructor(input: ChannelInput) {
         this.input = input;
@@ -271,7 +292,7 @@ class ChannelAdmission {
             : undefined;
     }
 
-    async admit(carrier: string, message: ALMessage) {
+    async admit(carrier: 'rtc' | 'ws', message: ALMessage): Promise<ALOutboundEnqueueResult> {
         freezeMessage(message);
         this.attempts.push({ carrier, message });
         this.currentRoom = { ...this.originalRoom, groupId: 'room-two' };

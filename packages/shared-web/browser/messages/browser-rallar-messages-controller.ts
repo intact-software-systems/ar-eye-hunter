@@ -24,6 +24,7 @@ import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 
 export namespace BrowserRallarMessagesController {
     export interface Input {
+        readonly creation: BrowserRallarMessageSender.Creation;
         readonly deliveries: BrowserRallarDeliveryRegistry;
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly nowMs: () => number;
@@ -63,6 +64,7 @@ export class BrowserRallarMessagesController {
             nowMs: input.nowMs
         });
         this.sender = new BrowserRallarMessageSender({
+            creation: input.creation,
             deliveries: input.deliveries,
             dispatch,
             inputValidator,

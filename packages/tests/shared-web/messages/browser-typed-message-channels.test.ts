@@ -108,6 +108,31 @@ describe('Rallar typed message channel', () => {
         });
     });
 
+    it('reports channel definition problems through the public validation-error boundary', () => {
+        expect(() => createFacade().messages.channel({ topicId: 'bad topic', typeId: '' })).toThrow(
+            expect.objectContaining({
+                name: 'RallarValidationError',
+                issues: expect.arrayContaining([
+                    expect.objectContaining({ path: '$.topicId' }),
+                    expect.objectContaining({ path: '$.typeId' })
+                ])
+            })
+        );
+    });
+
+    it('collects room and channel definition issues together', () => {
+        expect(() => createFacade().messages.room({ roomId: 'bad room', topicId: 'bad topic', typeId: 'bad type' })).toThrow(
+            expect.objectContaining({
+                name: 'RallarValidationError',
+                issues: expect.arrayContaining([
+                    expect.objectContaining({ path: '$.roomId' }),
+                    expect.objectContaining({ path: '$.topicId' }),
+                    expect.objectContaining({ path: '$.typeId' })
+                ])
+            })
+        );
+    });
+
     it('rejects invalid typed message channel definitions', async () => {
         const facade = createFacade();
 
