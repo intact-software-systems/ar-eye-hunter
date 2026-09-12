@@ -12,6 +12,7 @@ export type AlmNativeObservationFailureStage =
     | 'snapshot'
     | 'methods-restored'
     | 'dispose';
+export type AlmNativeObservationStepFailureStage = 'write' | 'control-observation';
 
 export interface AlmNativeObservationParticipant {
     readonly role: AlmNativeObservationRole;
@@ -41,6 +42,11 @@ export interface AlmNativeObservationSourceLabels {
     readonly servedSourceIdentity: 'unverified';
 }
 
+export interface AlmNativeObservationSourceLabelInput {
+    readonly runtime: string | undefined;
+    readonly instrumentation: string | undefined;
+}
+
 export interface AlmNativeObservationEnvironment {
     readonly nodeVersion: string;
     readonly platform: NodeJS.Platform;
@@ -48,7 +54,12 @@ export interface AlmNativeObservationEnvironment {
     readonly apiMode: string;
     readonly apiBaseUrl: string;
     readonly spaBaseUrl: string;
-    readonly workerCount: number;
+    readonly configuredWorkerLimit: number;
+}
+
+export interface AlmNativeObservationStepFailure {
+    readonly stage: AlmNativeObservationStepFailureStage;
+    readonly name: string;
 }
 
 export interface AlmNativeObservationArtifact {
@@ -72,12 +83,13 @@ export interface AlmNativeObservationLifecycleInput {
     readonly databaseName: string;
     readonly sampleCapacity: number;
     readonly recorderModuleUrl: string;
-    readonly sourceLabels: AlmNativeObservationSourceLabels;
+    readonly sourceLabels: AlmNativeObservationSourceLabelInput;
     readonly environment: AlmNativeObservationEnvironment;
     readonly participants: readonly [AlmNativeObservationParticipant, AlmNativeObservationParticipant];
     readonly runScenario: () => Promise<void>;
     readonly writeNativeObservation: (artifact: AlmNativeObservationArtifact) => Promise<void>;
     readonly recordControlObservation: (scenarioFailed: boolean) => Promise<void>;
+    readonly reportObservationFailure: (failure: AlmNativeObservationStepFailure) => void;
     readonly closeRun: () => Promise<void>;
 }
 
@@ -129,10 +141,15 @@ export async function runAlmNativeObservationLifecycle(
     }
     finally {
         const artifact = await stopAlmNativeObservation(input, session);
-        await runNonAuthoritativeObservationStep('write', () => input.writeNativeObservation(artifact));
+        await runNonAuthoritativeObservationStep(
+            'write',
+            () => input.writeNativeObservation(artifact),
+            input.reportObservationFailure
+        );
         await runNonAuthoritativeObservationStep(
             'control-observation',
-            () => input.recordControlObservation(scenarioFailed)
+            () => input.recordControlObservation(scenarioFailed),
+            input.reportObservationFailure
         );
         try {
             await input.closeRun();
@@ -221,7 +238,7 @@ async function stopAlmNativeObservation(
         scope: input.scope,
         retry: input.retry,
         databaseName: input.databaseName,
-        sourceLabels: input.sourceLabels,
+        sourceLabels: toAlmNativeObservationSourceLabels(input.sourceLabels),
         environment: input.environment,
         participants,
         failures: [...session.failures]
@@ -280,13 +297,7 @@ async function stopAlmNativePageObservation(
         failures,
         read: async () => await handle.evaluate((capture) => capture.recorder.methodsRestored)
     });
-    try {
-        await handle.dispose();
-    }
-    catch (error) {
-        const disposeError = error instanceof Error ? error : new Error(String(error));
-        failures.push(toAlmNativeObservationFailure(participant.role, 'dispose', disposeError));
-    }
+    await disposeAlmNativePageObservationHandle(active, failures);
     return {
         role: participant.role,
         agentId: participant.agentId,
@@ -296,6 +307,19 @@ async function stopAlmNativePageObservation(
         nativeTiming,
         methodsRestored
     };
+}
+
+async function disposeAlmNativePageObservationHandle(
+    active: ActiveAlmNativeObservation,
+    failures: AlmNativeObservationFailure[]
+): Promise<void> {
+    try {
+        await active.handle.dispose();
+    }
+    catch (error) {
+        const disposeError = error instanceof Error ? error : new Error(String(error));
+        failures.push(toAlmNativeObservationFailure(active.participant.role, 'dispose', disposeError));
+    }
 }
 
 async function readAlmNativeHandleValue<T>(input: ReadAlmNativeHandleValueInput<T>): Promise<T | null> {
@@ -335,16 +359,27 @@ function toAlmNativeObservationFailure(
     };
 }
 
+function toAlmNativeObservationSourceLabels(
+    sourceLabels: AlmNativeObservationSourceLabelInput
+): AlmNativeObservationSourceLabels {
+    return {
+        runtime: sourceLabels.runtime?.trim() || 'working-tree',
+        instrumentation: sourceLabels.instrumentation?.trim() || 'working-tree',
+        servedSourceIdentity: 'unverified'
+    };
+}
+
 async function runNonAuthoritativeObservationStep(
-    stage: 'write' | 'control-observation',
-    operation: () => Promise<void>
+    stage: AlmNativeObservationStepFailureStage,
+    operation: () => Promise<void>,
+    reportFailure: (failure: AlmNativeObservationStepFailure) => void
 ): Promise<void> {
     try {
         await operation();
     }
     catch (error) {
         const observationError = error instanceof Error ? error : new Error(String(error));
-        console.warn('Failed non-authoritative ALM observation step', {
+        reportFailure({
             stage,
             name: observationError.name.length > 0 ? observationError.name.slice(0, 80) : 'Error'
         });

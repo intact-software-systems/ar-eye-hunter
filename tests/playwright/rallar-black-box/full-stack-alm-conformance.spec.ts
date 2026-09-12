@@ -131,9 +131,8 @@ test.describe('ALM conformance lane', () => {
                 sampleCapacity: NATIVE_OBSERVATION_SAMPLE_CAPACITY,
                 recorderModuleUrl: NATIVE_RECORDER_MODULE_URL,
                 sourceLabels: {
-                    runtime: readSourceLabel('RALLAR_ALM_NATIVE_TIMING_SOURCE'),
-                    instrumentation: readSourceLabel('RALLAR_ALM_NATIVE_TIMING_INSTRUMENTATION_SOURCE'),
-                    servedSourceIdentity: 'unverified'
+                    runtime: process.env.RALLAR_ALM_NATIVE_TIMING_SOURCE,
+                    instrumentation: process.env.RALLAR_ALM_NATIVE_TIMING_INSTRUMENTATION_SOURCE
                 },
                 environment: {
                     nodeVersion: process.version,
@@ -142,7 +141,7 @@ test.describe('ALM conformance lane', () => {
                     apiMode: process.env.RALLAR_BLACK_BOX_API_MODE?.trim() || 'unspecified',
                     apiBaseUrl: config.apiBaseUrl,
                     spaBaseUrl: FULL_STACK_SPA_ORIGIN,
-                    workerCount: testInfo.config.workers
+                    configuredWorkerLimit: testInfo.config.workers
                 },
                 participants: [
                     { role: 'sender', agentId: run.sender.agentId, page: run.sender.page },
@@ -162,6 +161,9 @@ test.describe('ALM conformance lane', () => {
                         carrier,
                         cellOutcome: toCellOutcome(testInfo, scenarioFailed)
                     }),
+                reportObservationFailure: (failure) => {
+                    console.warn('Failed non-authoritative ALM observation step', failure);
+                },
                 closeRun: async () => await run.close()
             });
         });
@@ -199,31 +201,22 @@ function selectScenarios(
     );
 }
 
-/** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */
+/** The lifecycle records observation failure without replacing the cell's recipe outcome. */
 async function recordObservation(
     cell: RecordAlmObservationInput
 ): Promise<void> {
-    try {
-        const snapshot = await cell.run.readSnapshot();
-        const regime = toObservationRegime(snapshot, cell.carrier, cell.cellOutcome);
-        await writeObservationFiles({
-            testInfo: cell.testInfo,
-            carrier: cell.carrier,
-            regime,
-            snapshot
-        });
-        if (cell.cellOutcome === 'failed') {
-            await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
-        }
-        console.info(toALMObservationRegimeSummary(regime));
+    const snapshot = await cell.run.readSnapshot();
+    const regime = toObservationRegime(snapshot, cell.carrier, cell.cellOutcome);
+    await writeObservationFiles({
+        testInfo: cell.testInfo,
+        carrier: cell.carrier,
+        regime,
+        snapshot
+    });
+    if (cell.cellOutcome === 'failed') {
+        await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
     }
-    catch (observationError) {
-        console.warn('Failed to record the ALM conformance observation', {
-            carrier: cell.carrier,
-            runId: cell.run.runId,
-            observationError
-        });
-    }
+    console.info(toALMObservationRegimeSummary(regime));
 }
 
 function toObservationRegime(
@@ -291,12 +284,6 @@ async function attachRunSnapshot(
 /** Soft assertions record their failures on `testInfo` the moment they fire, before the cell ends. */
 function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservationCellOutcome {
     return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
-}
-
-function readSourceLabel(
-    name: 'RALLAR_ALM_NATIVE_TIMING_SOURCE' | 'RALLAR_ALM_NATIVE_TIMING_INSTRUMENTATION_SOURCE'
-): string {
-    return process.env[name]?.trim() || process.env.GITHUB_SHA?.trim() || 'working-tree';
 }
 
 function toJsonText(

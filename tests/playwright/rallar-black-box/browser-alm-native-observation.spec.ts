@@ -4,19 +4,22 @@ import path from 'node:path';
 import {
     runAlmNativeObservationLifecycle,
     type AlmNativeObservationArtifact,
-    type AlmNativeObservationLifecycleInput
+    type AlmNativeObservationLifecycleInput,
+    type AlmNativeObservationStepFailure
 } from './browser-alm-native-observation.ts';
 
 const NATIVE_RECORDER_MODULE_URL = `/@fs${
     path.resolve('tests/playwright/rallar-black-box/browser-native-indexeddb-timing-recorder.ts')
 }`;
 const TARGET_DATABASE_NAME = 'ar-eye-hunter-al-runtime';
+const BOUNDED_FAILURE_NAME = 'F'.repeat(80);
 
 interface LifecycleTestState {
     artifact: AlmNativeObservationArtifact | null;
     scenarioRan: boolean;
     controlObservationScenarioFailed: boolean | null;
     closeRan: boolean;
+    observationFailures: AlmNativeObservationStepFailure[];
 }
 
 test('restores the first participant when the second native recorder cannot start', async ({ context, page }) => {
@@ -37,6 +40,13 @@ test('restores the first participant when the second native recorder cannot star
     expect(state.scenarioRan).toBe(true);
     expect(state.closeRan).toBe(true);
     expect(state.controlObservationScenarioFailed).toBe(false);
+    expect(state.artifact?.environment).toEqual(expect.objectContaining({ configuredWorkerLimit: 1 }));
+    expect(state.artifact?.environment).not.toHaveProperty('workerCount');
+    expect(state.artifact?.sourceLabels).toEqual({
+        runtime: 'working-tree',
+        instrumentation: 'working-tree',
+        servedSourceIdentity: 'unverified'
+    });
     expect(state.artifact?.participants).toEqual(expect.arrayContaining([
         expect.objectContaining({ role: 'sender', methodsRestored: true }),
         expect.objectContaining({ role: 'receiver', nativeTiming: null })
@@ -54,6 +64,9 @@ test('retains native evidence and the recipe error when participant teardown and
     await receiverPage.goto('/');
     const state = createLifecycleTestState();
     const recipeError = new Error('recipe failed');
+    const closeError = new Error('close failed');
+    const artifactWriteError = new Error('native artifact payload must stay private');
+    artifactWriteError.name = `${BOUNDED_FAILURE_NAME}discarded`;
     let observedError: Error | undefined;
 
     try {
@@ -67,11 +80,15 @@ test('retains native evidence and the recipe error when participant teardown and
             },
             writeNativeObservation: async (artifact) => {
                 state.artifact = artifact;
-                throw new Error('artifact write failed');
+                throw artifactWriteError;
             },
             recordControlObservation: async (scenarioFailed) => {
                 state.controlObservationScenarioFailed = scenarioFailed;
-                throw new Error('control observation failed');
+                throw new TypeError('control observation payload must stay private');
+            },
+            closeRun: async () => {
+                state.closeRan = true;
+                throw closeError;
             }
         });
     }
@@ -83,6 +100,10 @@ test('retains native evidence and the recipe error when participant teardown and
     expect(state.scenarioRan).toBe(true);
     expect(state.controlObservationScenarioFailed).toBe(true);
     expect(state.closeRan).toBe(true);
+    expect(state.observationFailures).toEqual([
+        { stage: 'write', name: BOUNDED_FAILURE_NAME },
+        { stage: 'control-observation', name: 'TypeError' }
+    ]);
     expect(state.artifact?.participants).toEqual(expect.arrayContaining([
         expect.objectContaining({
             role: 'sender',
@@ -101,12 +122,41 @@ test('retains native evidence and the recipe error when participant teardown and
     expect(await canReinstallNativeRecorder(page)).toBe(true);
 });
 
+test('returns the close error when the recipe and observations succeed', async ({ context, page }) => {
+    await page.goto('/');
+    const receiverPage = await context.newPage();
+    await receiverPage.goto('/');
+    const state = createLifecycleTestState();
+    const closeError = new Error('close failed');
+    let observedError: Error | undefined;
+
+    try {
+        await runAlmNativeObservationLifecycle({
+            ...toLifecycleTestInput(page, receiverPage, state),
+            closeRun: async () => {
+                state.closeRan = true;
+                throw closeError;
+            }
+        });
+    }
+    catch (error) {
+        observedError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    expect(observedError).toBe(closeError);
+    expect(state.artifact).not.toBeNull();
+    expect(state.controlObservationScenarioFailed).toBe(false);
+    expect(state.closeRan).toBe(true);
+    expect(state.observationFailures).toEqual([]);
+});
+
 function createLifecycleTestState(): LifecycleTestState {
     return {
         artifact: null,
         scenarioRan: false,
         controlObservationScenarioFailed: null,
-        closeRan: false
+        closeRan: false,
+        observationFailures: []
     };
 }
 
@@ -124,9 +174,8 @@ function toLifecycleTestInput(
         sampleCapacity: 50_000,
         recorderModuleUrl: NATIVE_RECORDER_MODULE_URL,
         sourceLabels: {
-            runtime: 'test-runtime-label',
-            instrumentation: 'test-instrumentation-label',
-            servedSourceIdentity: 'unverified'
+            runtime: ' ',
+            instrumentation: ''
         },
         environment: {
             nodeVersion: process.version,
@@ -135,7 +184,7 @@ function toLifecycleTestInput(
             apiMode: 'test-label',
             apiBaseUrl: 'http://127.0.0.1:18080',
             spaBaseUrl: 'http://127.0.0.1:5176',
-            workerCount: 1
+            configuredWorkerLimit: 1
         },
         participants: [
             { role: 'sender', agentId: 'sender-agent', page: senderPage },
@@ -149,6 +198,9 @@ function toLifecycleTestInput(
         },
         recordControlObservation: async (scenarioFailed) => {
             state.controlObservationScenarioFailed = scenarioFailed;
+        },
+        reportObservationFailure: (failure: AlmNativeObservationStepFailure) => {
+            state.observationFailures.push(failure);
         },
         closeRun: async () => {
             state.closeRan = true;
