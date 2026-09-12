@@ -1,5 +1,7 @@
+import type { RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -72,6 +74,30 @@ export interface RallarMessageSendResult {
     readonly entry?: ResourceEntry;
     readonly entries: readonly ResourceEntry[];
     readonly reason?: string;
+}
+
+export type RallarMessageDeliveryListener = (
+    lifecycle: ALDeliveryLifecycle
+) => void | Promise<void>;
+
+export interface RallarMessageWaitOptions extends RallarWaitForOpenOptions {
+    /** Resolve at the first of these states as well as at any terminal state. */
+    readonly until?: readonly ALDeliveryState[];
+}
+
+export interface RallarMessageDeliveryOutcome {
+    readonly status: 'settled' | 'timeout' | 'aborted';
+    readonly lifecycle: ALDeliveryLifecycle;
+}
+
+export interface RallarMessageHandle {
+    readonly msgId: string;
+    readonly typeId: string;
+    /** The current lifecycle; the deadline is applied lazily, so a read after `expiresAtMs` says `expired`. */
+    lifecycle(): ALDeliveryLifecycle;
+    onEvent(listener: RallarMessageDeliveryListener): RallarUnsubscribe;
+    wait(options?: RallarMessageWaitOptions): Promise<RallarMessageDeliveryOutcome>;
+    cancel(): void;
 }
 
 export interface RallarMessageLane<TSendInput, TSelector = string> {

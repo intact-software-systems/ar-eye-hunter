@@ -37,6 +37,28 @@ export function computeALDeliveryLifecycle(
     }
 }
 
+/**
+ * The message deadline has no settlement of its own: no carrier owner emits it, so every observer
+ * applies it when it reads.
+ */
+export function computeALDeliveryDeadline(
+    lifecycle: ALDeliveryLifecycle,
+    nowMs: number
+): ALDeliveryLifecycle {
+    if (isALDeliveryTerminal(lifecycle) || lifecycle.expiresAtMs === undefined || nowMs < lifecycle.expiresAtMs) {
+        return lifecycle;
+    }
+    return toReasonedLifecycle(lifecycle, 'expired', 'The deadline elapsed before a terminal settlement.');
+}
+
+/** The end an observer states for itself when it stops following a message that never settled. */
+export function computeALDeliveryUnobservable(lifecycle: ALDeliveryLifecycle): ALDeliveryLifecycle {
+    if (isALDeliveryTerminal(lifecycle)) {
+        return lifecycle;
+    }
+    return toReasonedLifecycle(lifecycle, 'unobservable', 'The observation was lost before a terminal settlement.');
+}
+
 /** A settlement against an already-terminal lifecycle never reopens it; only evidence may still land. */
 function toTerminalLifecycle(
     previous: ALDeliveryLifecycle,

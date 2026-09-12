@@ -10,7 +10,11 @@ import {
     type ALDeliveryLifecycle,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import {
+    computeALDeliveryDeadline,
+    computeALDeliveryLifecycle,
+    computeALDeliveryUnobservable
+} from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import {
     describe,
     expect,
@@ -20,6 +24,7 @@ import {
 const MSG_ID = 'msg-1';
 const SUBMITTED_AT_MS = 1_000;
 const AT_MS = 2_000;
+const EXPIRES_AT_MS = 9_000;
 const AL_ACK_MODES = ['none', 'receiver'] as const;
 
 describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMode=%s)', (ackMode) => {
@@ -613,6 +618,106 @@ describe('immutability', () => {
     });
 });
 
+describe.each(AL_ACK_MODES)('computeALDeliveryDeadline (ackMode=%s)', (ackMode) => {
+    it('leaves a lifecycle without a deadline unchanged', () => {
+        const previous = createLifecycle(ackMode);
+
+        expect(computeALDeliveryDeadline(previous, EXPIRES_AT_MS + 1_000_000)).toBe(previous);
+    });
+
+    it('leaves a lifecycle unchanged while its deadline is still ahead', () => {
+        const previous = createExpiringLifecycle(ackMode);
+
+        expect(computeALDeliveryDeadline(previous, EXPIRES_AT_MS - 1)).toBe(previous);
+    });
+
+    it('expires the lifecycle at the deadline and states the reason', () => {
+        const previous = createExpiringLifecycle(ackMode);
+
+        const next = computeALDeliveryDeadline(previous, EXPIRES_AT_MS);
+
+        expect(next.state).toBe('expired');
+        expect(next.evidence.reason).toBe('The deadline elapsed before a terminal settlement.');
+        expectSameIdentity(next, previous);
+    });
+
+    it('expires the lifecycle after the deadline', () => {
+        const previous = createExpiringLifecycle(ackMode);
+
+        expect(computeALDeliveryDeadline(previous, EXPIRES_AT_MS + 5_000).state).toBe('expired');
+    });
+
+    it('leaves an already terminal lifecycle unchanged after the deadline', () => {
+        const terminal = computeALDeliveryLifecycle(createExpiringLifecycle(ackMode), toCancelledSettlement());
+        expect(isALDeliveryTerminal(terminal)).toBe(true);
+
+        expect(computeALDeliveryDeadline(terminal, EXPIRES_AT_MS + 5_000)).toBe(terminal);
+    });
+});
+
+describe('computeALDeliveryDeadline against a best-effort transport acceptance', () => {
+    it('leaves the terminal transport-accepted state of a best-effort send unchanged', () => {
+        const accepted = computeALDeliveryLifecycle(
+            createExpiringLifecycle('none'),
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-1',
+                outcome: 'sent',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: undefined
+            })
+        );
+        expect(accepted.state).toBe('transport-accepted');
+        expect(isALDeliveryTerminal(accepted)).toBe(true);
+
+        expect(computeALDeliveryDeadline(accepted, EXPIRES_AT_MS + 5_000)).toBe(accepted);
+    });
+});
+
+describe.each(AL_ACK_MODES)('computeALDeliveryUnobservable (ackMode=%s)', (ackMode) => {
+    it('marks a live lifecycle unobservable and states the reason', () => {
+        const previous = createLifecycle(ackMode);
+
+        const next = computeALDeliveryUnobservable(previous);
+
+        expect(next.state).toBe('unobservable');
+        expect(next.evidence.reason).toBe('The observation was lost before a terminal settlement.');
+        expect(isALDeliveryTerminal(next)).toBe(true);
+        expectSameIdentity(next, previous);
+    });
+
+    it('leaves an already terminal lifecycle unchanged', () => {
+        const terminal = computeALDeliveryLifecycle(createLifecycle(ackMode), toCancelledSettlement());
+        expect(isALDeliveryTerminal(terminal)).toBe(true);
+
+        expect(computeALDeliveryUnobservable(terminal)).toBe(terminal);
+    });
+});
+
+describe('registry transition immutability', () => {
+    it('never mutates a frozen lifecycle when the deadline elapses', () => {
+        const previous = deepFreeze(createExpiringLifecycle('receiver'));
+
+        const next = computeALDeliveryDeadline(previous, EXPIRES_AT_MS);
+
+        expect(previous.state).toBe('submitted');
+        expect(previous.evidence.reason).toBeUndefined();
+        expect(next).not.toBe(previous);
+        expect(next.evidence).not.toBe(previous.evidence);
+    });
+
+    it('never mutates a frozen lifecycle when the observation is lost', () => {
+        const previous = deepFreeze(createLifecycle('receiver'));
+
+        const next = computeALDeliveryUnobservable(previous);
+
+        expect(previous.state).toBe('submitted');
+        expect(previous.evidence.reason).toBeUndefined();
+        expect(next).not.toBe(previous);
+        expect(next.evidence).not.toBe(previous.evidence);
+    });
+});
+
 function createLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
     return createInitialALDeliveryLifecycle({
         msgId: MSG_ID,
@@ -621,6 +726,20 @@ function createLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
         expiresAtMs: undefined,
         submittedAtMs: SUBMITTED_AT_MS
     });
+}
+
+function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
+    return createInitialALDeliveryLifecycle({
+        msgId: MSG_ID,
+        typeId: 'chat.private-text.v1',
+        ackMode,
+        expiresAtMs: EXPIRES_AT_MS,
+        submittedAtMs: SUBMITTED_AT_MS
+    });
+}
+
+function toCancelledSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind: 'cancelled'; }>> {
+    return { kind: 'cancelled', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS };
 }
 
 function expectSameIdentity(next: ALDeliveryLifecycle, previous: ALDeliveryLifecycle): void {
