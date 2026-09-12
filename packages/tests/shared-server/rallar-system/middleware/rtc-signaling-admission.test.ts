@@ -74,7 +74,11 @@ describe('middleware pre-admission', () => {
                     workQueue: signalingBackend.workQueue
                 }
             });
-            onTestFinished(() => runtime.wsQBoxServerService.dispose());
+            runtime.qboxEngine.start();
+            onTestFinished(() => {
+                runtime.wsQBoxServerService.dispose();
+                runtime.qboxEngine.stop();
+            });
             const valid = signalingMessage();
             const invalid = invalidMessage(valid, corruption);
 
