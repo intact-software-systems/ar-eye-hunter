@@ -391,6 +391,71 @@ describe('live RTC control client', () => {
         });
     });
 
+    it('retains sanitized signaling evidence per browser and preserves readiness failure when a reader fails', async () => {
+        const failure = new Error('original readiness failure');
+        refreshRoom.mockRejectedValue(failure);
+        const browserAgent = {
+            ...agent,
+            readSignalingObservation: async () => ({
+                available: true,
+                droppedReceived: 0,
+                droppedAttempts: 0,
+                received: [{
+                    msgId: 'signal-1',
+                    signalType: 'Offer' as const,
+                    offerId: 'offer-1',
+                    fromId: 'session-a',
+                    toId: 'session-b',
+                    receivedAtEpochMs: 10,
+                    sdp: 'secret-sdp',
+                    token: 'secret-token',
+                    fingerprint: 'secret-fingerprint'
+                }],
+                attempts: [{
+                    msgId: 'signal-1',
+                    nativeInstanceOrdinal: 2,
+                    match: 'unique' as const,
+                    signalType: 'Offer' as const,
+                    offerId: 'offer-1',
+                    fromId: 'session-a',
+                    toId: 'session-b',
+                    receivedAtEpochMs: 10,
+                    attemptedAtEpochMs: 20,
+                    settledAtEpochMs: 30,
+                    settlement: 'applied' as const,
+                    state: { signalingState: 'stable', connectionState: 'new', iceConnectionState: 'new', token: 'secret-token' },
+                    description: 'secret-sdp'
+                }],
+                frames: ['secret-frame']
+            })
+        };
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-signaling',
+            agent: browserAgent,
+            participantAgents: [browserAgent, {
+                agentId: 'agent-b',
+                readSignalingObservation: async () => {
+                    throw new Error('secret-token');
+                }
+            }, { agentId: 'agent-c' }],
+            expectedPeerIds: ['session-b'],
+            suffix: 'signaling',
+            startedAtMs: 100
+        })).rejects.toBe(failure);
+
+        const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-signaling.json'), 'utf8');
+        expect(JSON.parse(serialized).signalingByAgentId).toMatchObject({
+            'agent-a': {
+                available: true,
+                received: [{ msgId: 'signal-1', signalType: 'Offer' }],
+                attempts: [{ nativeInstanceOrdinal: 2, settlement: 'applied' }]
+            },
+            'agent-b': { available: false, received: [], attempts: [] },
+            'agent-c': { available: false, received: [], attempts: [] }
+        });
+        expect(serialized).not.toMatch(/secret-|fingerprint|description|frames/);
+    });
+
     it('joins a bounded readiness causal tail to concurrent current health without retaining secrets', async () => {
         runAgentIds = [
             'retired-agent-a',
