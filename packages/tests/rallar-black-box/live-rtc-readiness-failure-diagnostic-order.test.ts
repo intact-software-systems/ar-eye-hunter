@@ -16,44 +16,47 @@ import {
 } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import type { LiveRtcSignalingObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-signaling-observation.ts';
 
-const SENTINEL = 'SENTINEL-secret-readiness-evidence';
-const ARTIFACT_FILE_NAME = 'live-rtc-readiness-failure-agent-a-temporal.json';
-
 interface RawSignalingObservation extends LiveRtcSignalingObservation.Snapshot {
     readonly sdp: string;
     readonly token: string;
 }
 
+interface ReadinessFailureArtifactRead {
+    readonly serialized: string;
+    readonly sidecar: LiveRtcJsonRecord;
+}
+
+const SENTINEL = 'SENTINEL-secret-readiness-evidence';
+const ARTIFACT_FILE_NAME = 'live-rtc-readiness-failure-agent-a-temporal.json';
+
+const BEFORE_FINAL_SIGNALING_CUT = {
+    runCaptureSucceeded: true,
+    causalOrdinalScope: 'retained-event-tail',
+    causalEventCoverage: {
+        runEventCount: 205,
+        relevantEventCount: 205,
+        retainedEventCount: 200,
+        projectionTruncated: true
+    }
+};
+
+const FORWARD_PHASE_TIMES = [1_001, 1_002, 1_003, 1_004, 1_005, 1_006, 1_007] as const;
+
 describe('live RTC readiness failure diagnostic order', () => {
     let api: APIRequestContext;
+    let agent: LiveRtcControlClient.WaitForRtcReadinessInput['agent'];
     let control: LiveRtcControlClient;
     let diagnosticsRoot: string;
     let events: LiveRtcControlClient.Event[];
-    let failFinalRun: boolean;
+    let failTerminalRun: boolean;
     let failFinalSignaling: boolean;
-    let finalEvidenceVisible: boolean;
     let epochReadings: number[];
     let epochMs: number;
-    let runGetCount: number;
+    let finalSignalingReadStarted: boolean;
+    let hasReadInitialSignaling: boolean;
     let server: Server;
 
     const readinessFailure = new Error('original readiness failure');
-    const agent = {
-        agentId: 'agent-a',
-        prefix: 'A' as const,
-        refreshRoom: async () => {
-            throw readinessFailure;
-        },
-        readSignalingObservation: async () => {
-            if (finalEvidenceVisible && failFinalSignaling) {
-                throw new Error(SENTINEL);
-            }
-            return finalEvidenceVisible
-                ? toFinalSignalingObservation()
-                : toInitialSignalingObservation();
-        }
-    };
-
     beforeEach(async () => {
         diagnosticsRoot = mkdtempSync(
             path.join(tmpdir(), 'live-rtc-readiness-order-')
@@ -71,21 +74,36 @@ describe('live RTC readiness failure diagnostic order', () => {
                     }
                 })
         );
-        failFinalRun = false;
+        failTerminalRun = false;
         failFinalSignaling = false;
-        finalEvidenceVisible = false;
         epochReadings = [];
         epochMs = 1_000;
-        runGetCount = 0;
+        finalSignalingReadStarted = false;
+        hasReadInitialSignaling = false;
+        agent = {
+            agentId: 'agent-a',
+            prefix: 'A',
+            refreshRoom: async () => {
+                throw readinessFailure;
+            },
+            readSignalingObservation: async () => {
+                if (!hasReadInitialSignaling) {
+                    hasReadInitialSignaling = true;
+                    return toInitialSignalingObservation();
+                }
+                finalSignalingReadStarted = true;
+                if (failFinalSignaling) {
+                    throw new Error(SENTINEL);
+                }
+                events.push(...toFinalSignalingCausalEvents());
+                return toFinalSignalingObservation();
+            }
+        };
         const results: LiveRtcControlClient.Result[] = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
                 const command = await readCommand(incoming);
                 const commandId = requiredString(command.commandId, '$.commandId');
-                if (!finalEvidenceVisible) {
-                    finalEvidenceVisible = true;
-                    events.push(...toFinalCausalEvents());
-                }
                 results.push({
                     agentId: 'agent-a',
                     commandId,
@@ -106,8 +124,7 @@ describe('live RTC readiness failure diagnostic order', () => {
                 response.writeHead(202).end('{}');
                 return;
             }
-            runGetCount += 1;
-            if (failFinalRun && runGetCount >= 3) {
+            if (failTerminalRun && finalSignalingReadStarted) {
                 response.writeHead(503).end(SENTINEL);
                 return;
             }
@@ -136,26 +153,17 @@ describe('live RTC readiness failure diagnostic order', () => {
         rmSync(diagnosticsRoot, { recursive: true, force: true });
     });
 
-    it('retains initial evidence before health and a final causal/signaling cut after health', async () => {
+    it('brackets the final signaling read with causal cuts', async () => {
         await expect(captureReadinessFailure(control, agent)).rejects.toBe(
             readinessFailure
         );
 
-        const serialized = readFileSync(
-            path.join(diagnosticsRoot, ARTIFACT_FILE_NAME),
-            'utf8'
-        );
-        const sidecar = requiredJsonRecord(
-            normalizeJson(JSON.parse(serialized)),
-            '$.sidecar'
-        );
+        const { serialized, sidecar } = readReadinessFailureArtifact(diagnosticsRoot);
         const initialSignaling = requiredAgentSignaling(
             sidecar.signalingByAgentId
         );
-        const finalCausalCut = requiredJsonRecord(
-            sidecar.finalCausalCut,
-            '$.sidecar.finalCausalCut'
-        );
+        const causalCutBeforeFinalSignaling = requiredCausalCut(sidecar, 'causalCutBeforeFinalSignaling');
+        const causalCutAfterFinalSignaling = requiredCausalCut(sidecar, 'causalCutAfterFinalSignaling');
         const finalSignaling = requiredAgentSignaling(
             sidecar.finalSignalingByAgentId
         );
@@ -167,13 +175,16 @@ describe('live RTC readiness failure diagnostic order', () => {
         expect(JSON.stringify(sidecar.causalEvents)).not.toContain('answer-message');
         expect(initialSignaling).toMatchObject({
             available: true,
+            received: [],
             droppedReceived: 0,
             droppedAttempts: 0,
             droppedNativeLifetimes: 0,
             attempts: [],
             nativeLifetimes: []
         });
-        expect(finalCausalCut).toMatchObject({
+        expect(causalCutBeforeFinalSignaling).toMatchObject(BEFORE_FINAL_SIGNALING_CUT);
+        expect(JSON.stringify(causalCutBeforeFinalSignaling.causalEvents)).not.toContain('answer-message');
+        expect(causalCutAfterFinalSignaling).toMatchObject({
             runCaptureSucceeded: true,
             causalOrdinalScope: 'retained-event-tail',
             causalEventCoverage: {
@@ -183,7 +194,7 @@ describe('live RTC readiness failure diagnostic order', () => {
                 projectionTruncated: true
             }
         });
-        expect(optionalJsonArray(finalCausalCut.causalEvents, '$.final.causalEvents').slice(-2))
+        expect(optionalJsonArray(causalCutAfterFinalSignaling.causalEvents, '$.after.causalEvents').slice(-2))
             .toMatchObject([
                 {
                     kind: 'admission-outcome',
@@ -209,6 +220,8 @@ describe('live RTC readiness failure diagnostic order', () => {
             droppedAttempts: 8,
             droppedNativeLifetimes: 9
         });
+        expect(optionalJsonArray(finalSignaling.received, '$.final.received').at(-1))
+            .toMatchObject({ msgId: 'answer-message', signalType: 'Answer' });
         expect(optionalJsonArray(finalSignaling.attempts, '$.final.attempts').at(-1))
             .toMatchObject({
                 msgId: 'answer-message',
@@ -221,45 +234,30 @@ describe('live RTC readiness failure diagnostic order', () => {
                 nativeInstanceOrdinal: 130,
                 observation: 'live'
             });
-        expect(toObservationTimes(sidecar)).toEqual([
-            1_001,
-            1_002,
-            1_003,
-            1_004,
-            1_005,
-            1_006
-        ]);
+        expect(toObservationTimes(sidecar)).toEqual(FORWARD_PHASE_TIMES);
         expect(serialized).not.toMatch(
             /SENTINEL|secret-|"(?:sdp|token|credentials|payload)"\s*:/u
         );
     });
 
     it('writes bounded unavailable final evidence without replacing the readiness failure', async () => {
-        failFinalRun = true;
+        failTerminalRun = true;
         failFinalSignaling = true;
 
         await expect(captureReadinessFailure(control, agent)).rejects.toBe(
             readinessFailure
         );
 
-        const serialized = readFileSync(
-            path.join(diagnosticsRoot, ARTIFACT_FILE_NAME),
-            'utf8'
-        );
-        const sidecar = requiredJsonRecord(
-            normalizeJson(JSON.parse(serialized)),
-            '$.sidecar'
-        );
-        const finalCausalCut = requiredJsonRecord(
-            sidecar.finalCausalCut,
-            '$.sidecar.finalCausalCut'
-        );
+        const { serialized, sidecar } = readReadinessFailureArtifact(diagnosticsRoot);
+        const causalCutBeforeFinalSignaling = requiredCausalCut(sidecar, 'causalCutBeforeFinalSignaling');
+        const causalCutAfterFinalSignaling = requiredCausalCut(sidecar, 'causalCutAfterFinalSignaling');
         const finalSignaling = requiredAgentSignaling(
             sidecar.finalSignalingByAgentId
         );
 
         expect(sidecar.runCaptureSucceeded).toBe(true);
-        expect(finalCausalCut).toMatchObject({
+        expect(causalCutBeforeFinalSignaling).toMatchObject(BEFORE_FINAL_SIGNALING_CUT);
+        expect(causalCutAfterFinalSignaling).toMatchObject({
             runCaptureSucceeded: false,
             causalOrdinalScope: 'retained-event-tail',
             causalEventCoverage: {
@@ -279,31 +277,18 @@ describe('live RTC readiness failure diagnostic order', () => {
             nativeLifetimes: [],
             droppedNativeLifetimes: 0
         });
-        expect(toObservationTimes(sidecar)).toEqual([
-            1_001,
-            1_002,
-            1_003,
-            1_004,
-            1_005,
-            1_006
-        ]);
+        expect(toObservationTimes(sidecar)).toEqual(FORWARD_PHASE_TIMES);
         expect(serialized).not.toContain(SENTINEL);
     });
 
     it('keeps phase completion times nondecreasing when the epoch clock regresses', async () => {
-        epochReadings = [1_001, 999, 1_003, 1_002, 1_000, 1_004];
+        epochReadings = [1_001, 999, 1_003, 1_002, 1_000, 1_004, 998];
 
         await expect(captureReadinessFailure(control, agent)).rejects.toBe(
             readinessFailure
         );
 
-        const sidecar = requiredJsonRecord(
-            normalizeJson(JSON.parse(readFileSync(
-                path.join(diagnosticsRoot, ARTIFACT_FILE_NAME),
-                'utf8'
-            ))),
-            '$.sidecar'
-        );
+        const { sidecar } = readReadinessFailureArtifact(diagnosticsRoot);
 
         expect(toObservationTimes(sidecar)).toEqual([
             1_001,
@@ -311,6 +296,7 @@ describe('live RTC readiness failure diagnostic order', () => {
             1_003,
             1_003,
             1_003,
+            1_004,
             1_004
         ]);
     });
@@ -330,6 +316,24 @@ async function captureReadinessFailure(
     });
 }
 
+function readReadinessFailureArtifact(diagnosticsRoot: string): ReadinessFailureArtifactRead {
+    const serialized = readFileSync(
+        path.join(diagnosticsRoot, ARTIFACT_FILE_NAME),
+        'utf8'
+    );
+    return {
+        serialized,
+        sidecar: requiredJsonRecord(normalizeJson(JSON.parse(serialized)), '$.sidecar')
+    };
+}
+
+function requiredCausalCut(
+    sidecar: LiveRtcJsonRecord,
+    key: 'causalCutBeforeFinalSignaling' | 'causalCutAfterFinalSignaling'
+): LiveRtcJsonRecord {
+    return requiredJsonRecord(sidecar[key], `$.sidecar.${key}`);
+}
+
 async function readCommand(
     incoming: IncomingMessage
 ): Promise<LiveRtcJsonRecord> {
@@ -346,14 +350,7 @@ async function readCommand(
 function toInitialSignalingObservation(): RawSignalingObservation {
     return {
         available: true,
-        received: [{
-            msgId: 'answer-message',
-            signalType: 'Answer',
-            offerId: 'offer-1',
-            fromId: 'session-b',
-            toId: 'session-a',
-            receivedAtEpochMs: 250
-        }],
+        received: [],
         attempts: [],
         droppedReceived: 0,
         droppedAttempts: 0,
@@ -415,7 +412,7 @@ function nativeState(): LiveRtcSignalingObservation.NativeState {
     };
 }
 
-function toFinalCausalEvents(): readonly LiveRtcControlClient.Event[] {
+function toFinalSignalingCausalEvents(): readonly LiveRtcControlClient.Event[] {
     return [
         toDiagnosticEvent({
             atEpochMs: 300,
@@ -492,8 +489,9 @@ function toObservationTimes(sidecar: LiveRtcJsonRecord): readonly (number | unde
         numberValue(observationTimes.initialRunCompletedAtEpochMs),
         numberValue(observationTimes.initialSignalingCompletedAtEpochMs),
         numberValue(observationTimes.healthCompletedAtEpochMs),
-        numberValue(observationTimes.finalRunCompletedAtEpochMs),
+        numberValue(observationTimes.causalCutBeforeFinalSignalingCompletedAtEpochMs),
         numberValue(observationTimes.finalSignalingCompletedAtEpochMs),
+        numberValue(observationTimes.causalCutAfterFinalSignalingCompletedAtEpochMs),
         numberValue(sidecar.capturedAtEpochMs)
     ];
 }
