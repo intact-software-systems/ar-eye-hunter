@@ -1383,16 +1383,17 @@ and quality with no remaining actionable finding. The observer's review-tier
 cognitive score is retained as one self-contained serialization/privacy owner;
 it is not a standards exception or a browser-product bundle surface.
 
-**Exit:** A retained failure can say which admitted signaling message was an
-Offer/Answer and whether that exact description was attempted and accepted by
-which native peer instance. This diagnostic evidence selects the next repair;
-it does not itself claim RTC readiness, fix retention, or authorize another
-100-cycle run.
+**Exit as reviewed:** the intended retained failure can say which admitted
+signaling message was an Offer/Answer and whether that exact description was
+attempted and accepted by which native peer instance. Task 16 later disproved
+actual Playwright-loader installation, so this exit is not achieved until Task
+17 closes that tooling boundary. The diagnostic does not itself claim RTC
+readiness or fix retention.
 
 ### Task 16: Observe the changed retention candidate once
 
-**Status: selected and authorized by the active RTC performance goal.** Publish
-the reviewed Task 15 witness first, then run exactly one newly source-labelled
+**Status: complete; first result retained and not rerun.** The reviewed Task 15
+witness was published first, then exactly one newly source-labelled
 `retention-100 / warmup / 1` observation on that published candidate. This is a
 changed candidate and a new diagnostic question, not an unchanged retry of the
 Task 12 failure. It remains a local diagnostic rather than an accepted B06
@@ -1406,33 +1407,137 @@ worker, zero retries, the original 100 cycles and the original operation/test
 deadlines. Do not modify source or run another browser/performance workload while
 the observation is active.
 
-- [ ] Initialize and select only the predeclared retention warmup attempt against
+- [x] Initialize and select only the predeclared retention warmup attempt against
       the published Task 15 source. Record exact HEAD, runtime versions, source
       cleanliness and tracked-diff digest before and after the producer.
-- [ ] Run the producer once and preserve its first process result, checkpoint
+- [x] Run the producer once and preserve its first process result, checkpoint
       stream, raw diagnostic sidecars and readiness-failure artifact. Never rerun
       the same candidate to seek a green result.
-- [ ] Record the actual result through the existing external-attempt boundary,
+- [x] Record the actual result through the existing external-attempt boundary,
       including a failure. Independently verify sample completeness and the
       single-run heap rule; do not finalize or publish a B06 cohort from this
       diagnostic.
-- [ ] If readiness fails, use `signalingByAgentId` and its native-lifetime window
+- [x] If readiness fails, use `signalingByAgentId` and its native-lifetime window
       to determine whether the exact admitted Offer/Answer was attempted and
       accepted on the relevant native instance before closure/replacement. State
       unavailable, dropped, ambiguous and unjoined evidence explicitly. If the run
       passes, retain all required checkpoints and select the next acceptance step
       without manufacturing a causal failure claim.
-- [ ] Reconcile the result into both plans and select only the evidence-backed
+- [x] Reconcile the result into both plans and select only the evidence-backed
       successor: a focused correction, another missing discriminator, or the
       remaining RTC-B06 acceptance work. Any source correction requires semantic
       RED coverage and independent review; this authorization does not select one
       in advance.
+
+The sole producer on `b110393a5215a42db4cc551e25cd251882ac4086` exits 1 at
+reconnect cycle 2. A is ready with B and C; B and C are each ready only with A.
+B reports a local Offer and inbound Answer without remote description or open
+lanes; C reports stable descriptions without open lanes. Only cycle 0 is
+captured: three agents and 123,147,960 aggregate post-GC heap bytes. Final heap,
+state return and the single-run heap rule remain unavailable.
+
+All six signaling/native projections across the two readiness artifacts are
+unavailable with empty arrays and zero drop counts. A focused Playwright-loader
+RED then identifies the tooling cause: the test runner lowers the observer's
+private fields to module-scoped helpers, while class `toString()` injects only
+the transformed class. Browser installation throws before publishing the reader.
+Node type-stripping and Vitest preserve different transform behavior and did not
+cover this boundary. The retained failure therefore selects Task 17, not an RTC
+transport correction or another long run.
 
 **Exit:** One honest changed-candidate retention result whose signaling/native
 join either narrows the reconnect failure or whose complete passing checkpoints
 advance retention acceptance. The first result is preserved; no automatic rerun,
 new queue, retry, fence, lock, timer, dependency, migration or legacy path is
 introduced.
+
+### Task 17: Make the signaling witness self-contained under Playwright
+
+**Status: complete after independent review.** Commit
+`8bd821e3790a84223ce156a919ccd2a41611d0c1` corrects the test-owned installation
+boundary before another retention observation. This is a harness serialization
+fix, not production RTC behavior.
+
+Replace class-string injection with one exported plain installer whose page
+state and operations are closure-owned and whose entire runtime is serialized by
+Playwright. Keep strict untrusted snapshot decoding on the host side. Delete the
+obsolete static installer/class-string path rather than retaining a compatibility
+fallback. Preserve bounds, privacy, native return/rejection identity, wrapper
+composition, message-to-native matching and weak native lifetime semantics.
+
+- [x] Promote the focused real Playwright-loader reproduction into a tracked
+      semantic test beside the harness. Observe it fail because the installed
+      page global is absent and the missing transformed helper reaches the page.
+      Do not replace this with a source-string assertion or a Node/Vitest-only
+      test.
+- [x] Implement the self-contained plain installer and have the browser-agent
+      registration owner pass it directly to `page.addInitScript`. Split only at
+      the real page-runtime/host-decoder boundary. Delete old installation code;
+      add no generated source bundle, dynamic module load, legacy path, dependency
+      or asynchronous installation ordering.
+- [x] Re-run the Playwright-loader test to GREEN, existing observer/browser-agent/
+      control-client semantics, both wrapper orders, canonical test typing and
+      touched-file style/structure/coupling/format/whitespace checks. Run the
+      short native Chromium/local-WebSocket proof through the actual Playwright
+      loader.
+- [x] Review every touched file in full, remove affected unused helpers/tests,
+      and obtain independent specification and quality review. Publish the
+      coherent correction and plan reconciliation to PR #566.
+- [x] Only after that proof, select one short real three-browser installation/read
+      check. Do not spend another 100-cycle observation merely to prove the init
+      script exists; any future retention run requires a distinct evidence question.
+
+The tracked real-loader RED fails in 148 ms with
+`_classPrivateFieldInitSpec is not defined`; after the correction it passes.
+The plain installer owns its page state in one closure and the strict host
+decoder is now a separate pure boundary. The obsolete runtime class, static
+installer and class-string consumer are deleted without alias or fallback. A
+same-origin native Chromium/WebSocket proof under the actual loader joins an
+Offer to applied native ordinal 2 and records peer closure.
+
+Seven focused suites pass 90 tests; maintained typing covers 1,201 files with
+zero errors. Changed style, structure, coupling, formatting and whitespace pass.
+Independent review repeats the actual-loader and native join proofs and finds no
+actionable issue. The 602-line module and cognitive scores 163/110 are retained
+after qualitative review: the page program must serialize as one function, while
+host decoding is already outside it. Moving page operations to module helpers
+would recreate the missing-runtime boundary rather than improve navigation.
+
+**Exit:** The actual Playwright test runner installs an available bounded witness
+before navigation, and a short real-path check can read it. The first Task 16
+failure remains unchanged and causally unjoined; no production, protocol, queue,
+retry, fence, lock, timer, dependency, migration, legacy path or acceptance
+threshold changes.
+
+### Task 18: Prove the witness through the real three-browser app path
+
+**Status: selected.** On the published Task 17 head, run one short ignored
+full-stack memory-mode proof through `openLiveRtcBrowserAgent`, the existing
+three-agent environment and initial `messages.rtc` formation. This is a harness
+installation/read check, not an RTC-B06 attempt, performance sample, or retained
+matrix case.
+
+- [ ] Use fresh task-owned memory services, one worker, zero retries and a unique
+      ignored output directory. Do not initialize the RTC baseline CLI or select
+      default/all-scenarios/retention evidence identities.
+- [ ] Open the real A/B/C browser agents, complete the existing initial formation,
+      and read each agent through its actual `readSignalingObservation` boundary.
+      Require available bounded snapshots, native lifetimes and at least one
+      message-to-native attempt join across the trio. Preserve privacy and report
+      drops/ambiguity rather than demanding an exact incidental ordering.
+- [ ] Close/reset the formation and all browser contexts through existing owners,
+      preserve the first result, and verify task ports are free. Do not rerun an
+      unchanged source to seek green.
+- [ ] Reconcile the result before selecting another long observation. A passing
+      proof permits a separately source-labelled retention diagnostic whose
+      distinct question is the cycle-2 signaling/native join. A failing proof
+      selects the smallest real-path harness correction; it does not select an
+      RTC transport fix by itself.
+
+**Exit:** The real app/browser-agent/formation path can read the installed witness
+and join actual signaling to native lifetime evidence, or its first failure
+selects a narrower tooling correction. No tracked source change is required by
+this proof and no acceptance metric is claimed.
 
 ## Later outcomes, not additional speculative implementation slices
 

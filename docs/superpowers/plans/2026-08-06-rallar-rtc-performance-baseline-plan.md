@@ -82,13 +82,16 @@ could not join an admitted Offer/Answer to its exact native peer lifetime. Task
 15 now adds that test-owned, bounded and redacted join and has passed independent
 correction review.
 
-Task 16 is the selected next slice: publish the Task 15 witness to PR #566 and
-run exactly one newly source-labelled `retention-100 / warmup / 1` observation
-on that changed candidate. Preserve the first result and use its native join to
-select the next correction or acceptance step. This is not an unchanged rerun,
-a valid primary by itself, or authority for speculative runtime work. Keep proof
-in PR #566 and do not refresh a mergeable branch merely because `main` moves or
-reports `BEHIND`.
+Task 16's one source-labelled changed-candidate retention observation is retained.
+It fails reconnect cycle 2 with only cycle-0 heap evidence; all six signaling/
+native projections are unavailable. Task 17 reproduces and fixes the tooling
+cause under the actual Playwright loader: the witness is now one self-contained
+plain page installer with a separate strict host decoder, and the obsolete
+class-string path is deleted. Independent review passes. Task 18 is the selected
+next slice: one short ignored full-app three-browser formation/read proof on the
+published correction, not another retention or RTC-B06 attempt. Keep proof in PR
+#566 and do not refresh a mergeable branch merely because `main` moves or reports
+`BEHIND`.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -5205,10 +5208,17 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       retained-failure diagnosis, and the independently reviewed, bounded,
       redacted message-to-native/lifetime witness. This is diagnostic evidence,
       not RTC-B06 acceptance.
-- [ ] Execute Task 16 once on the published changed candidate with a new capture,
+- [x] Execute Task 16 once on the published changed candidate with a new capture,
       diagnostics and Playwright output directory. Preserve its first result,
       classify the native signaling/lifetime join, and select only the resulting
       evidence-backed correction or acceptance step.
+- [x] Complete Task 17's Playwright-loader tooling correction: real semantic RED,
+      self-contained plain page installer, obsolete class-string path deleted,
+      focused native/semantic validation and independent review. Do not infer an
+      RTC transport fix from Task 16's unavailable witness.
+- [ ] Run Task 18 once through the actual full-app A/B/C browser-agent and initial
+      formation path. Require an available bounded witness and a real signaling/
+      native join before selecting any further retention observation.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.
