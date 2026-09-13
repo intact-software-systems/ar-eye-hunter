@@ -5,6 +5,7 @@ import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-co
 import type { QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { LiveRtcSignalingObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-signaling-observation.ts';
+import { installLiveRtcWireObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-wire-observation.ts';
 
 class NativeSocket extends EventTarget {
     static readonly OPEN = 1;
@@ -27,14 +28,35 @@ class NativePeer extends EventTarget {
     setRemoteDescription(_description: RTCSessionDescriptionInit): Promise<void> {
         return NativePeer.completion;
     }
+
+    close(): void {
+        this.signalingState = 'closed';
+        this.connectionState = 'closed';
+        this.iceConnectionState = 'closed';
+    }
+
+    createDataChannel(): EventTarget {
+        return new EventTarget();
+    }
 }
 
-function installObserver(clock: Pick<Performance, 'timeOrigin' | 'now'> = performance): void {
+class CollectableReference<T extends WeakKey> extends WeakRef<T> {
+    static collected = false;
+    static reads = 0;
+
+    override deref(): T | undefined {
+        CollectableReference.reads++;
+        return CollectableReference.collected ? undefined : super.deref();
+    }
+}
+
+function installObserver(clock: Pick<Performance, 'timeOrigin' | 'now'> = performance, reference = WeakRef): void {
     vi.stubGlobal('window', { WebSocket: NativeSocket, RTCPeerConnection: NativePeer });
     runInNewContext(`(${LiveRtcSignalingObservation.toString()}).install()`, {
         window,
         crypto,
-        performance: clock
+        performance: clock,
+        WeakRef: reference
     });
 }
 
@@ -59,13 +81,180 @@ function signalFrame(msgId: string, signalType: 'Offer' | 'Answer' | 'IceCandida
 function readSnapshot(): LiveRtcSignalingObservation.Snapshot {
     const observation = window.__liveRtcSignalingObservation;
     if (!observation) {
-        return { available: false, received: [], attempts: [], droppedReceived: 0, droppedAttempts: 0 };
+        return LiveRtcSignalingObservation.decodeSnapshot(null);
     }
     return observation.read();
 }
 
 describe('live RTC signaling observation', () => {
-    afterEach(() => vi.unstubAllGlobals());
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('captures old native retirement and replacement creation without another description attempt', async () => {
+        let now = 1;
+        installObserver({ timeOrigin: 1_000, now: () => now });
+        NativePeer.completion = Promise.resolve();
+        const socket = new window.WebSocket('ws://localhost');
+        socket.dispatchEvent(new MessageEvent('message', { data: signalFrame('retired-offer', 'Offer') }));
+        const first = new window.RTCPeerConnection();
+        await first.setRemoteDescription({ type: 'offer', sdp: 'secret-sdp' });
+        now = 2;
+        expect(first.close()).toBeUndefined();
+        now = 3;
+        const replacement = new window.RTCPeerConnection();
+        Object.assign(replacement, { connectionState: 'connecting' });
+        now = 4;
+        const snapshot = LiveRtcSignalingObservation.decodeSnapshot(readSnapshot());
+        expect(snapshot.attempts).toMatchObject([{ nativeInstanceOrdinal: 1, msgId: 'retired-offer', settlement: 'applied' }]);
+        expect(snapshot).toMatchObject({
+            nativeLifetimes: [
+                {
+                    nativeInstanceOrdinal: 1,
+                    createdAtEpochMs: 1_001,
+                    closedAtEpochMs: 1_002,
+                    creationState: { connectionState: 'new' },
+                    closeState: { connectionState: 'closed' },
+                    observation: 'live',
+                    observedAtEpochMs: 1_004,
+                    state: { connectionState: 'closed' }
+                },
+                {
+                    nativeInstanceOrdinal: 2,
+                    createdAtEpochMs: 1_003,
+                    closedAtEpochMs: null,
+                    closeState: null,
+                    observation: 'live',
+                    observedAtEpochMs: 1_004,
+                    state: { connectionState: 'connecting' }
+                }
+            ],
+            droppedNativeLifetimes: 0
+        });
+    });
+
+    it('keeps only a bounded weak lifetime window and exposes collection without stale current state', () => {
+        CollectableReference.collected = false;
+        CollectableReference.reads = 0;
+        installObserver(performance, CollectableReference);
+        const first = new window.RTCPeerConnection();
+        for (let index = 1; index < 300; index++) {
+            new window.RTCPeerConnection();
+        }
+        first.close();
+        CollectableReference.collected = true;
+        const snapshot = readSnapshot();
+        expect(snapshot.nativeLifetimes).toHaveLength(128);
+        expect(snapshot.droppedNativeLifetimes).toBe(172);
+        expect(CollectableReference.reads).toBe(128);
+        expect(snapshot.nativeLifetimes[0]).toMatchObject({ nativeInstanceOrdinal: 173, closedAtEpochMs: null });
+        expect(snapshot.nativeLifetimes.every((lifetime) => lifetime.observation === 'collected')).toBe(true);
+        expect(snapshot.nativeLifetimes[0].state).toEqual({ signalingState: null, connectionState: null, iceConnectionState: null });
+        expect(JSON.stringify(snapshot)).not.toMatch(/reference|deref|secret-/);
+    });
+
+    it('preserves close return and throw identity and marks unreadable current state unavailable', () => {
+        installObserver();
+        const peer = new window.RTCPeerConnection();
+        const failure = new Error('secret-native-close');
+        vi.spyOn(NativePeer.prototype, 'close').mockImplementationOnce(() => {
+            throw failure;
+        });
+        try {
+            peer.close();
+            expect.fail('Expected native close rejection');
+        }
+        catch (cause) {
+            expect(cause).toBe(failure);
+        }
+        expect(readSnapshot().nativeLifetimes[0].closedAtEpochMs).toBeNull();
+        vi.spyOn(NativePeer.prototype, 'close').mockImplementationOnce(() => 42);
+        expect(peer.close()).toBe(42);
+        Object.defineProperty(peer, 'connectionState', {
+            get: () => {
+                throw failure;
+            }
+        });
+        const snapshot = readSnapshot();
+        expect(snapshot.nativeLifetimes[0]).toMatchObject({ observation: 'unavailable', observedAtEpochMs: null });
+        expect(snapshot.nativeLifetimes[0].state.connectionState).toBeNull();
+        expect(JSON.stringify(snapshot)).not.toContain('secret-');
+    });
+
+    it.each(['wire-first', 'signaling-first'])('preserves data-channel observation and native lifetimes in %s order', async (order) => {
+        if (order === 'wire-first') {
+            vi.stubGlobal('window', { WebSocket: NativeSocket, RTCPeerConnection: NativePeer });
+            runInNewContext(`(${installLiveRtcWireObservation.toString()})()`, { window });
+            runInNewContext(`(${LiveRtcSignalingObservation.toString()}).install()`, { window, crypto, performance });
+        }
+        else {
+            installObserver();
+            runInNewContext(`(${installLiveRtcWireObservation.toString()})()`, { window });
+        }
+        NativePeer.completion = Promise.resolve();
+        const peer = new window.RTCPeerConnection();
+        const channel = peer.createDataChannel('test');
+        window.__liveRtcWireObservation?.start();
+        channel.dispatchEvent(new MessageEvent('message', { data: 'safe-wire-frame' }));
+        await peer.setRemoteDescription({ type: 'offer', sdp: 'secret-sdp' });
+        peer.close();
+        new window.RTCPeerConnection();
+        expect(window.__liveRtcWireObservation?.read()).toEqual(['safe-wire-frame']);
+        expect(readSnapshot().attempts[0]).toMatchObject({ nativeInstanceOrdinal: 1, settlement: 'applied' });
+        expect(readSnapshot().nativeLifetimes).toMatchObject([
+            { nativeInstanceOrdinal: 1, state: { connectionState: 'closed' } },
+            { nativeInstanceOrdinal: 2, closedAtEpochMs: null }
+        ]);
+        window.__liveRtcWireObservation?.stop();
+    });
+
+    it('does not resurrect evicted native lifetimes or attempts when pending descriptions settle', async () => {
+        installObserver();
+        let complete = () => {};
+        NativePeer.completion = new Promise<void>((resolve) => {
+            complete = resolve;
+        });
+        const completions: Promise<void>[] = [];
+        for (let index = 0; index < 300; index++) {
+            completions.push(new window.RTCPeerConnection().setRemoteDescription({ type: 'offer', sdp: 'secret-sdp' }));
+        }
+        expect(readSnapshot().attempts.every((attempt) => attempt.settlement === 'attempted')).toBe(true);
+        complete();
+        await Promise.all(completions);
+        const snapshot = readSnapshot();
+        expect(snapshot.attempts).toHaveLength(128);
+        expect(snapshot.nativeLifetimes).toHaveLength(128);
+        expect(snapshot.droppedAttempts).toBe(172);
+        expect(snapshot.droppedNativeLifetimes).toBe(172);
+        expect(snapshot.attempts[0]).toMatchObject({ nativeInstanceOrdinal: 173, settlement: 'applied' });
+        expect(snapshot.nativeLifetimes[0].nativeInstanceOrdinal).toBe(173);
+    });
+
+    it('bounds and sanitizes native lifetime artifacts and rejects malformed lifetime evidence', () => {
+        installObserver();
+        new window.RTCPeerConnection();
+        const observed = readSnapshot();
+        const lifetime = {
+            ...observed.nativeLifetimes[0],
+            state: { signalingState: 'stable', connectionState: 'secret-state', iceConnectionState: 'new', token: 'secret-token' },
+            reference: { secret: 'secret-peer' },
+            description: 'secret-sdp'
+        };
+        const decoded = LiveRtcSignalingObservation.decodeSnapshot({ ...observed, nativeLifetimes: Array(300).fill(lifetime) });
+        expect(decoded.nativeLifetimes).toHaveLength(128);
+        expect(decoded.droppedNativeLifetimes).toBe(172);
+        expect(decoded.nativeLifetimes[0].state.connectionState).toBeNull();
+        expect(JSON.stringify(decoded)).not.toMatch(/secret-|reference|description|token/);
+        for (
+            const invalid of [{ ...lifetime, nativeInstanceOrdinal: 0 }, { ...lifetime, observation: 'secret-state' }, {
+                ...lifetime,
+                closedAtEpochMs: Infinity
+            }]
+        ) {
+            expect(LiveRtcSignalingObservation.decodeSnapshot({ ...observed, nativeLifetimes: [invalid] }).available).toBe(false);
+        }
+    });
 
     it('marks an observer runtime failure unavailable while preserving delivery', () => {
         installObserver({

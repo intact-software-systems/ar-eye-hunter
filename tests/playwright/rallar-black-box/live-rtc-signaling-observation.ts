@@ -41,6 +41,24 @@ export namespace LiveRtcSignalingObservation {
         readonly attempts: readonly Attempt[];
         readonly droppedReceived: number;
         readonly droppedAttempts: number;
+        readonly nativeLifetimes: readonly NativeLifetime[];
+        readonly droppedNativeLifetimes: number;
+    }
+
+    export interface NativeLifetime {
+        readonly nativeInstanceOrdinal: number;
+        readonly createdAtEpochMs: number;
+        readonly creationState: NativeState;
+        readonly closedAtEpochMs: number | null;
+        readonly closeState: NativeState | null;
+        readonly observedAtEpochMs: number | null;
+        readonly observation: 'live' | 'collected' | 'unavailable';
+        readonly state: NativeState;
+    }
+
+    export interface TrackedNative {
+        readonly reference: WeakRef<RTCPeerConnection>;
+        lifetime: NativeLifetime;
     }
 
     export interface Join {
@@ -66,11 +84,13 @@ export class LiveRtcSignalingObservation {
     readonly #joins: (LiveRtcSignalingObservation.Join | null)[] = [];
     readonly #attempts = new Map<number, LiveRtcSignalingObservation.Attempt>();
     readonly #nativeOrdinals = new WeakMap<RTCPeerConnection, number>();
+    readonly #nativeLifetimes = new Map<number, LiveRtcSignalingObservation.TrackedNative>();
     #nativeOrdinal = 0;
     #attemptOrdinal = 0;
     #available = true;
     #droppedReceived = 0;
     #droppedAttempts = 0;
+    #droppedNativeLifetimes = 0;
 
     constructor(dependencies: LiveRtcSignalingObservation.Dependencies) {
         this.#salt = dependencies.salt;
@@ -87,7 +107,15 @@ export class LiveRtcSignalingObservation {
     }
 
     static decodeSnapshot(snapshot: unknown): LiveRtcSignalingObservation.Snapshot {
-        const unavailable = { available: false, received: [], attempts: [], droppedReceived: 0, droppedAttempts: 0 };
+        const unavailable = {
+            available: false,
+            received: [],
+            attempts: [],
+            nativeLifetimes: [],
+            droppedReceived: 0,
+            droppedAttempts: 0,
+            droppedNativeLifetimes: 0
+        };
         if (
             !snapshot || typeof snapshot !== 'object' || !('available' in snapshot) || snapshot.available !== true ||
             !('received' in snapshot) || !Array.isArray(snapshot.received) || !('attempts' in snapshot) ||
@@ -95,13 +123,23 @@ export class LiveRtcSignalingObservation {
             !('droppedReceived' in snapshot) || typeof snapshot.droppedReceived !== 'number' ||
             !Number.isSafeInteger(snapshot.droppedReceived) || snapshot.droppedReceived < 0 ||
             !('droppedAttempts' in snapshot) || typeof snapshot.droppedAttempts !== 'number' ||
-            !Number.isSafeInteger(snapshot.droppedAttempts) || snapshot.droppedAttempts < 0
+            !Number.isSafeInteger(snapshot.droppedAttempts) || snapshot.droppedAttempts < 0 ||
+            !('nativeLifetimes' in snapshot) || !Array.isArray(snapshot.nativeLifetimes) ||
+            !('droppedNativeLifetimes' in snapshot) || typeof snapshot.droppedNativeLifetimes !== 'number' ||
+            !Number.isSafeInteger(snapshot.droppedNativeLifetimes) || snapshot.droppedNativeLifetimes < 0
         ) {
             return unavailable;
         }
         const received = Array.from(snapshot.received.slice(-128), LiveRtcSignalingObservation.decodeReceived);
         const attempts = Array.from(snapshot.attempts.slice(-128), LiveRtcSignalingObservation.decodeAttempt);
-        if (received.some((entry) => entry === null) || attempts.some((entry) => entry === null)) {
+        const nativeLifetimes = Array.from(
+            snapshot.nativeLifetimes.slice(-128),
+            LiveRtcSignalingObservation.decodeNativeLifetime
+        );
+        if (
+            received.some((entry) => entry === null) || attempts.some((entry) => entry === null) ||
+            nativeLifetimes.some((entry) => entry === null)
+        ) {
             return unavailable;
         }
         return {
@@ -109,7 +147,48 @@ export class LiveRtcSignalingObservation {
             received: received.filter((entry) => entry !== null),
             attempts: attempts.filter((entry) => entry !== null),
             droppedReceived: Number(snapshot.droppedReceived) + Math.max(0, snapshot.received.length - 128),
-            droppedAttempts: Number(snapshot.droppedAttempts) + Math.max(0, snapshot.attempts.length - 128)
+            droppedAttempts: Number(snapshot.droppedAttempts) + Math.max(0, snapshot.attempts.length - 128),
+            nativeLifetimes: nativeLifetimes.filter((entry) => entry !== null),
+            droppedNativeLifetimes: snapshot.droppedNativeLifetimes + Math.max(0, snapshot.nativeLifetimes.length - 128)
+        };
+    }
+
+    static decodeNativeLifetime(lifetime: unknown): LiveRtcSignalingObservation.NativeLifetime | null {
+        if (
+            !lifetime || typeof lifetime !== 'object' ||
+            !('nativeInstanceOrdinal' in lifetime) || typeof lifetime.nativeInstanceOrdinal !== 'number' ||
+            !Number.isSafeInteger(lifetime.nativeInstanceOrdinal) || lifetime.nativeInstanceOrdinal <= 0 ||
+            !('createdAtEpochMs' in lifetime) || typeof lifetime.createdAtEpochMs !== 'number' ||
+            !Number.isFinite(lifetime.createdAtEpochMs) ||
+            !('closedAtEpochMs' in lifetime) || (lifetime.closedAtEpochMs !== null &&
+                (typeof lifetime.closedAtEpochMs !== 'number' || !Number.isFinite(lifetime.closedAtEpochMs))) ||
+            !('observedAtEpochMs' in lifetime) || (lifetime.observedAtEpochMs !== null &&
+                (typeof lifetime.observedAtEpochMs !== 'number' || !Number.isFinite(lifetime.observedAtEpochMs))) ||
+            !('observation' in lifetime) ||
+            (lifetime.observation !== 'live' && lifetime.observation !== 'collected' &&
+                lifetime.observation !== 'unavailable')
+        ) {
+            return null;
+        }
+        return {
+            nativeInstanceOrdinal: lifetime.nativeInstanceOrdinal,
+            createdAtEpochMs: lifetime.createdAtEpochMs,
+            creationState: LiveRtcSignalingObservation.decodeNativeState(
+                'creationState' in lifetime ? lifetime.creationState : null
+            ),
+            closedAtEpochMs: lifetime.closedAtEpochMs,
+            closeState: lifetime.closedAtEpochMs === null
+                ? null
+                : LiveRtcSignalingObservation.decodeNativeState('closeState' in lifetime ? lifetime.closeState : null),
+            observedAtEpochMs: lifetime.observedAtEpochMs,
+            observation: lifetime.observation === 'live'
+                ? 'live'
+                : lifetime.observation === 'collected'
+                ? 'collected'
+                : 'unavailable',
+            state: LiveRtcSignalingObservation.decodeNativeState(
+                lifetime.observation === 'live' && 'state' in lifetime ? lifetime.state : null
+            )
         };
     }
 
@@ -190,7 +269,13 @@ export class LiveRtcSignalingObservation {
         window.RTCPeerConnection = class extends NativePeerConnection {
             constructor(configuration?: RTCConfiguration) {
                 super(configuration);
-                observation.#nativeOrdinals.set(this, ++observation.#nativeOrdinal);
+                observation.recordNativeCreation(this);
+            }
+
+            override close(): void {
+                const result = super.close();
+                observation.recordNativeClose(this);
+                return result;
             }
 
             override setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
@@ -214,8 +299,83 @@ export class LiveRtcSignalingObservation {
             received: this.#received.map((received) => ({ ...received })),
             attempts: [...this.#attempts.values()].map((attempt) => ({ ...attempt, state: { ...attempt.state } })),
             droppedReceived: this.#droppedReceived,
-            droppedAttempts: this.#droppedAttempts
+            droppedAttempts: this.#droppedAttempts,
+            nativeLifetimes: [...this.#nativeLifetimes.values()].map((tracked) => this.readNativeLifetime(tracked)),
+            droppedNativeLifetimes: this.#droppedNativeLifetimes
         };
+    }
+
+    recordNativeCreation(peer: RTCPeerConnection): void {
+        const ordinal = ++this.#nativeOrdinal;
+        this.#nativeOrdinals.set(peer, ordinal);
+        try {
+            const createdAtEpochMs = this.#epochNow();
+            const creationState = LiveRtcSignalingObservation.decodeNativeState(peer);
+            this.#nativeLifetimes.set(ordinal, {
+                reference: new WeakRef(peer),
+                lifetime: {
+                    nativeInstanceOrdinal: ordinal,
+                    createdAtEpochMs,
+                    creationState,
+                    closedAtEpochMs: null,
+                    closeState: null,
+                    observedAtEpochMs: createdAtEpochMs,
+                    observation: 'live',
+                    state: creationState
+                }
+            });
+            if (this.#nativeLifetimes.size > 128) {
+                const oldest = this.#nativeLifetimes.keys().next().value;
+                if (oldest !== undefined) {
+                    this.#nativeLifetimes.delete(oldest);
+                    this.#droppedNativeLifetimes++;
+                }
+            }
+        }
+        catch {
+            this.#available = false;
+        }
+    }
+
+    recordNativeClose(peer: RTCPeerConnection): void {
+        try {
+            const tracked = this.#nativeLifetimes.get(this.#nativeOrdinals.get(peer) ?? 0);
+            if (tracked && tracked.lifetime.closedAtEpochMs === null) {
+                tracked.lifetime = {
+                    ...tracked.lifetime,
+                    closedAtEpochMs: this.#epochNow(),
+                    closeState: LiveRtcSignalingObservation.decodeNativeState(peer)
+                };
+            }
+        }
+        catch {
+            this.#available = false;
+        }
+    }
+
+    readNativeLifetime(tracked: LiveRtcSignalingObservation.TrackedNative): LiveRtcSignalingObservation.NativeLifetime {
+        const lifetime = {
+            ...tracked.lifetime,
+            creationState: { ...tracked.lifetime.creationState },
+            closeState: tracked.lifetime.closeState === null ? null : { ...tracked.lifetime.closeState }
+        };
+        try {
+            const peer = tracked.reference.deref();
+            return {
+                ...lifetime,
+                observedAtEpochMs: this.#epochNow(),
+                observation: peer ? 'live' : 'collected',
+                state: LiveRtcSignalingObservation.decodeNativeState(peer)
+            };
+        }
+        catch {
+            return {
+                ...lifetime,
+                observedAtEpochMs: null,
+                observation: 'unavailable',
+                state: LiveRtcSignalingObservation.decodeNativeState(null)
+            };
+        }
     }
 
     receive(frame: string): void {

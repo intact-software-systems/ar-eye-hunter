@@ -400,6 +400,18 @@ describe('live RTC control client', () => {
                 available: true,
                 droppedReceived: 0,
                 droppedAttempts: 0,
+                droppedNativeLifetimes: 0,
+                nativeLifetimes: [{
+                    nativeInstanceOrdinal: 2,
+                    createdAtEpochMs: 5,
+                    creationState: { signalingState: 'stable', connectionState: 'new', iceConnectionState: 'new' },
+                    closedAtEpochMs: 40,
+                    closeState: { signalingState: 'closed', connectionState: 'closed', iceConnectionState: 'closed' },
+                    observation: 'live' as const,
+                    observedAtEpochMs: 50,
+                    state: { signalingState: 'closed', connectionState: 'closed', iceConnectionState: 'closed', token: 'secret-token' },
+                    reference: 'secret-native-reference'
+                }],
                 received: [{
                     msgId: 'signal-1',
                     signalType: 'Offer' as const,
@@ -448,7 +460,8 @@ describe('live RTC control client', () => {
             'agent-a': {
                 available: true,
                 received: [{ msgId: 'signal-1', signalType: 'Offer' }],
-                attempts: [{ nativeInstanceOrdinal: 2, settlement: 'applied' }]
+                attempts: [{ nativeInstanceOrdinal: 2, settlement: 'applied' }],
+                nativeLifetimes: [{ nativeInstanceOrdinal: 2, closedAtEpochMs: 40, observation: 'live', state: { connectionState: 'closed' } }]
             },
             'agent-b': { available: false, received: [], attempts: [] },
             'agent-c': { available: false, received: [], attempts: [] }
