@@ -1652,27 +1652,26 @@ public contract, compatibility path, migration or issue results.
 
 ### Task 21: Recapture retention with temporally complete evidence
 
-**Status: selected by the active plan goal after Task 20 review.** Publish the
-Task 20 correction, then run exactly one new source-labelled
-`retention-100 / warmup / 1 / E3-memory` diagnostic on that candidate. This is a
-distinct observation: if readiness fails, one artifact can now retain the final
-post-health admission/claim/native cut that Task 19 lacked.
+**Status: complete; first result retained on the published Task 20 candidate.**
+Exactly one new source-labelled `retention-100 / warmup / 1 / E3-memory`
+diagnostic ran. It exited 1 at reconnect cycle 2 after approximately 166 seconds;
+`record-external` ran once and the producer was not rerun.
 
-- [ ] Reuse the Task 19 canonical initializer, exact attempt selector, one-worker
+- [x] Reuse the Task 19 canonical initializer, exact attempt selector, one-worker
       zero-retry producer and one `record-external` call. Preserve exact source,
       runtime, dirty-diff and isolation facts; use fresh memory services, unique
       capture/diagnostic/output paths, 100 cycles and unchanged deadlines.
-- [ ] Preserve the first result without rerun. If it passes, require all eleven
+- [x] Preserve the first result without rerun. If it passes, require all eleven
       checkpoints, three distinct agents, returned settled state and the strict
       greater-than-10-percent plus greater-than-5-MiB single-run heap rule. Do
       not infer leak freedom from one non-breach.
-- [ ] If readiness fails, require the relevant final signaling snapshot and
+- [x] If readiness fails, require the relevant final signaling snapshot and
       final causal cut to be available. Join the exact Offer/Answer across
       receipt, admission, local claim, native attempt/settlement, ordinal
       lifetime, health and close/replacement ordering. Treat missing/truncated
       work as unknown and do not infer a production defect from an unavailable
       final cut.
-- [ ] Record and reconcile the result before any source change or additional
+- [x] Record and reconcile the result before any source change or additional
       observation. Do not construct/finalize a cohort or call this diagnostic a
       B06 primary. Select only a correction supported by the final temporal cut
       or advance complete retention evidence.
@@ -1681,6 +1680,78 @@ post-health admission/claim/native cut that Task 19 lacked.
 classification or distinguishes post-admission progress from a precisely bounded
 unknown. No automatic rerun, new queue, retry, fence, lock, timer, dependency,
 migration, legacy path, deadline, threshold or workload change.
+
+Only cycle-0 heap exists, so retention remains inconclusive. All initial/final
+witnesses and run cuts are available with zero witness drops. The retained
+timeline corrects an initially tempting but false attribution: delayed Answer 4
+was dispatched only after its native peer closed and peer 5 had sent Offer 5, so
+its offer-ID mismatch and stale rejection were correct. Matching Answer 5 reached
+B's socket during health, but the current final run cut precedes the final
+signaling cut and retains no later admission or local claim. It cannot show that
+Answer 5 reached `handleAnswer` or native application. No RTC behavior or stale-
+Answer correction is selected.
+
+### Task 22: Audit the stale-Answer attribution before changing behavior
+
+**Status: complete, read-only.** Static owner tracing and an identifier-free
+timeline prove the Task 21 stale counter belongs to delayed Answer 4, not matching
+Answer 5. The existing matching-current-Offer semantic test correctly applies an
+Answer; forcing a different ID or signaling state would test legitimate stale
+input rather than reproduce the observed unknown.
+
+- [x] Trace `QRtcPeerConnection.handleSignal` and `handleAnswer`, peer creation/
+      replacement, admission/local dispatch, native lifetimes and existing
+      delayed-Answer coverage without editing source or running another browser.
+- [x] Rule out the redundant current-peer predicate as the counted branch: the
+      outer current-peer check and synchronous Answer guard have no re-entry
+      boundary. Attribute Answer 4 to the offer-ID mismatch using its retained
+      dispatch-after-replacement order; do not attribute any guard to Answer 5.
+- [x] Reject a behavioral RTC fix and defer the exported stale-counter split.
+      Exact reason counters could improve future diagnostics but do not answer
+      the earlier missing admission/dispatch fact, and replacing the public
+      diagnostic field would be a separate compatibility decision.
+
+**Exit:** The apparent stale-Answer defect is falsified. The missing fact is
+bounded to Answer 5's post-socket admission/local-dispatch interval.
+
+### Task 23: Add the terminal causal cut after final signaling
+
+**Status: selected by the active plan goal.** Complete the test-only temporal
+artifact without waiting: retain a bounded causal cut immediately after the
+existing final signaling/native read. This allows a message first exposed by
+that read to be classified against admission and local dispatch that became
+visible during it.
+
+**Files:** amend only
+`tests/playwright/rallar-black-box/live-rtc-control-client.ts` and the existing
+focused
+`packages/tests/rallar-black-box/live-rtc-readiness-failure-diagnostic-order.test.ts`.
+Keep that test at or below its current repository limit by consolidating its
+fixture rather than creating a duplicate adjacent test owner.
+
+- [ ] RED: make the final signaling reader expose a newly received Answer and
+      publish its admission/local-claim events only during that read. Prove the
+      current post-health/pre-signaling run cut cannot contain them.
+- [ ] GREEN: after the final signaling read, take one immediate terminal
+      `#captureRun` and record its nondecreasing completion time. Rename the
+      misleading `finalCausalCut` and its time to an explicit before-final-
+      signaling name; add one explicit after-final-signaling causal cut. Do not
+      retain aliases, versioned fields or a legacy artifact shape.
+- [ ] Reuse the existing 200-event projection, run-capture degradation,
+      sanitization and one-write owner. Preserve initial evidence, health, the
+      final signaling snapshot and phase order. Add no wait, timer, poll, retry,
+      queue, fence, lock, dependency, deadline, threshold or behavior change.
+- [ ] Prove terminal-read degradation still writes bounded unsuccessful/empty
+      evidence and preserves the original readiness error. Preserve all 128-item
+      signaling bounds/drop counts and secret redaction.
+- [ ] Run strict focused TDD, the existing control/signaling suites, maintained
+      test typing, changed checks and independent review. Publish before another
+      retention observation.
+
+**Exit:** One readiness-failure artifact brackets the final signaling/native
+read with bounded causal cuts, so post-socket admission/claim is either retained
+or remains a precisely timed unknown. Production RTC, ALM, QueueBox and retry
+behavior remain unchanged.
 
 ## Later outcomes, not additional speculative implementation slices
 

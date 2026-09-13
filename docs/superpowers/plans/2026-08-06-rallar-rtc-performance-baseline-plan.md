@@ -98,8 +98,13 @@ Task 20 is selected to correct that test-only temporal diagnostic ordering befor
 another long observation. It is now complete and independently reviewed: the
 sidecar retains final bounded causal and signaling/native cuts after health, its
 phase times remain nondecreasing across wall-clock correction, and focused tests,
-maintained typing and changed checks pass. Task 21 is selected to run one new
-source-labelled retention diagnostic with that temporally complete evidence. No
+maintained typing and changed checks pass. Task 21's one new source-labelled run
+then fails reconnect cycle 2 with only cycle-0 heap. Its exact timeline proves an
+older delayed Answer was correctly rejected after peer replacement; the latest
+matching Answer reached only the socket boundary in retained evidence. Task 22's
+read-only audit rejects the tempting stale-Answer behavior change. Task 23 is
+selected to bracket the final signaling read with bounded causal cuts so the
+latest Answer's admission/local dispatch is observable without a wait. No
 production RTC, ALM, QueueBox or retry change is selected.
 Keep proof in PR #566 and do not refresh a mergeable branch merely because `main`
 moves or reports `BEHIND`.
@@ -5240,11 +5245,20 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       migration, legacy path, deadline or threshold change. Require focused TDD,
       maintained typing, changed checks and independent review before another
       retention observation.
-- [ ] Execute Task 21 once on the published Task 20 candidate with a new
+- [x] Execute Task 21 once on the published Task 20 candidate with a new
       source-labelled retention capture. Preserve the first result; on failure
       classify the final post-health causal/signaling/native cut, and on success
       classify all retention checkpoints and the single-run heap rule. Do not
       rerun unchanged source or construct/finalize a diagnostic cohort.
+- [x] Complete Task 22's read-only stale-Answer attribution audit. Preserve the
+      delayed Answer 4 versus matching Answer 5 distinction and reject a
+      behavioral or stale-counter correction unsupported by Answer 5's missing
+      admission/local-dispatch evidence.
+- [ ] Complete Task 23's test-only terminal causal cut after final signaling.
+      Rename the now-misleading pre-signaling final-cut fields directly, retain
+      no aliases/legacy shape, keep existing bounds/sanitizers, and require TDD,
+      maintained typing, changed checks and independent review before another
+      retention observation.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.
