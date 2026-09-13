@@ -235,8 +235,6 @@ export class QRtcPeerConnection {
         pc.onnegotiationneeded = null;
         pc.ondatachannel = null;
         pc.onconnectionstatechange = null;
-        pc.oniceconnectionstatechange = null;
-        pc.onsignalingstatechange = null;
         pc.ontrack = null;
         this.stopTransceivers(pc);
         try {

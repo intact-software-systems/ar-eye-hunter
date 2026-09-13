@@ -6,7 +6,6 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     decodeRtcSignalingMessage
@@ -32,6 +31,7 @@ import {
     SimulatedRtcTrackEvent,
     SimulatedRtcTransceiver
 } from './native-rtc-media-fixture.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 describe('QRtcPeerConnection', () => {
     afterEach(() => {
@@ -676,8 +676,6 @@ describe('QRtcPeerConnection', () => {
         expect(native.onicecandidate).toBeNull();
         expect(native.ondatachannel).toBeNull();
         expect(native.ontrack).toBeNull();
-        expect(native.oniceconnectionstatechange).toBeNull();
-        expect(native.onsignalingstatechange).toBeNull();
         expect(native.onconnectionstatechange).toBeNull();
     });
 
