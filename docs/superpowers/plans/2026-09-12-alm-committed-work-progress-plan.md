@@ -1597,11 +1597,10 @@ artifacts are preserved without rerun, cohort or acceptance claim.
 
 ### Task 20: Make readiness-failure evidence temporally complete
 
-**Status: selected by Task 19 and authorized by the active plan goal.** Correct
-only the test-owned readiness-failure artifact ordering. The next ordinary
-failure must retain an immediate final causal cut after health and then a final
-signaling/native snapshot after that cut. This is instrumentation, not a runtime
-RTC correction and not another retention observation.
+**Status: complete and independently reviewed.** The test-owned readiness-
+failure artifact now retains an immediate final causal cut after health and then
+a final signaling/native snapshot after that cut. This is instrumentation, not
+a runtime RTC correction and not a retention observation.
 
 **Files:**
 
@@ -1612,28 +1611,28 @@ RTC correction and not another retention observation.
   behavior actually requires correction; do not grow it with the new focused
   temporal contract.
 
-- [ ] RED: drive a readiness failure through a minimal local control server.
+- [x] RED: drive a readiness failure through a minimal local control server.
       Make the first signaling read contain an Answer without a native attempt;
       during the existing health captures add its admission/local-claim events
       and make the final read contain the uniquely applied native attempt. Prove
       the current artifact lacks the final cut and final signaling snapshot.
-- [ ] GREEN: retain the existing initial causal/signaling evidence, then capture
+- [x] GREEN: retain the existing initial causal/signaling evidence, then capture
       health, one final bounded run cut and one final bounded signaling/native
       map in that exact order. Record nondecreasing phase-completion times. Keep
       the final run cut and final signaling map explicitly named; do not create
       versioned decoders, aliases or a legacy artifact branch.
-- [ ] Preserve existing sanitizer and bounds owners: at most 200 relevant causal
+- [x] Preserve existing sanitizer and bounds owners: at most 200 relevant causal
       events, at most three agents and 128 received/attempt/lifetime records per
       snapshot with explicit drops. Add no wait, timer, poll, retry, queue, fence,
       lock, dependency, deadline or threshold change.
-- [ ] Prove degradation: if the final run read and final browser read fail, still
+- [x] Prove degradation: if the final run read and final browser read fail, still
       write the artifact with an unsuccessful/empty final causal cut and an
       unavailable final snapshot, while preserving the original readiness error.
-- [ ] Refactor the readiness artifact assembly only where it makes the five
+- [x] Refactor the readiness artifact assembly only where it makes the five
       capture phases directly visible. Review both touched files in full under
       current touched-file closure; delete affected obsolete code and retain no
       compatibility facade or migration.
-- [ ] Run the focused new and existing control/signaling tests, maintained test
+- [x] Run the focused new and existing control/signaling tests, maintained test
       typecheck, changed style/structure/coupling/format/whitespace checks, and an
       independent scoped code review. Publish the reviewed correction before
       selecting any further long observation.
@@ -1642,6 +1641,46 @@ RTC correction and not another retention observation.
 health from admission/claim/native work visible after health, or report a
 precisely bounded unknown. Production RTC, ALM, QueueBox and retry behavior stay
 unchanged.
+
+The strict RED failed both cases on the absent final cut. The final focused suite
+passes 42 tests; maintained typing covers 1,202 test files with zero errors.
+Independent review found and closed two standards/correctness issues: phase times
+now clamp a regressing wall clock to the previous completion bound, and the five-
+phase orchestration is 55 lines after extracting only that real clock policy.
+Changed style, coupling, formatting and whitespace pass. No production code,
+public contract, compatibility path, migration or issue results.
+
+### Task 21: Recapture retention with temporally complete evidence
+
+**Status: selected by the active plan goal after Task 20 review.** Publish the
+Task 20 correction, then run exactly one new source-labelled
+`retention-100 / warmup / 1 / E3-memory` diagnostic on that candidate. This is a
+distinct observation: if readiness fails, one artifact can now retain the final
+post-health admission/claim/native cut that Task 19 lacked.
+
+- [ ] Reuse the Task 19 canonical initializer, exact attempt selector, one-worker
+      zero-retry producer and one `record-external` call. Preserve exact source,
+      runtime, dirty-diff and isolation facts; use fresh memory services, unique
+      capture/diagnostic/output paths, 100 cycles and unchanged deadlines.
+- [ ] Preserve the first result without rerun. If it passes, require all eleven
+      checkpoints, three distinct agents, returned settled state and the strict
+      greater-than-10-percent plus greater-than-5-MiB single-run heap rule. Do
+      not infer leak freedom from one non-breach.
+- [ ] If readiness fails, require the relevant final signaling snapshot and
+      final causal cut to be available. Join the exact Offer/Answer across
+      receipt, admission, local claim, native attempt/settlement, ordinal
+      lifetime, health and close/replacement ordering. Treat missing/truncated
+      work as unknown and do not infer a production defect from an unavailable
+      final cut.
+- [ ] Record and reconcile the result before any source change or additional
+      observation. Do not construct/finalize a cohort or call this diagnostic a
+      B06 primary. Select only a correction supported by the final temporal cut
+      or advance complete retention evidence.
+
+**Exit:** One first-result diagnostic either completes retention checkpoint/heap
+classification or distinguishes post-admission progress from a precisely bounded
+unknown. No automatic rerun, new queue, retry, fence, lock, timer, dependency,
+migration, legacy path, deadline, threshold or workload change.
 
 ## Later outcomes, not additional speculative implementation slices
 
