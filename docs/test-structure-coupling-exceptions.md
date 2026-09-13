@@ -366,7 +366,7 @@ moved or changed test.
       "domain": "AR Eye Hunter reliable snapshot coalescing",
       "owner": "AR Eye Hunter maintainers",
       "summary": "Rapid reliable snapshots publish the first revision immediately and the latest once after the coalescing interval. Executable assertion: “coalesces rapid reliable director snapshots to the latest revision”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#coalesces rapid reliable director snapshots to the latest revision",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
         "interactionKind": "order",
@@ -381,7 +381,7 @@ moved or changed test.
       "domain": "AR Eye Hunter network-generation snapshot fencing",
       "owner": "AR Eye Hunter maintainers",
       "summary": "A network-generation reset cancels a queued reliable snapshot before transport. Executable assertion: “cancels pending reliable director snapshots when the network generation resets”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#cancels pending reliable director snapshots when the network generation resets",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#cancels pending reliable director snapshots when the network generation resets",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
         "interactionKind": "absence",
@@ -516,7 +516,7 @@ moved or changed test.
       "domain": "AR Eye Hunter pose transport ownership",
       "owner": "AR Eye Hunter maintainers",
       "summary": "Director poses use Rallar Game presence and never bypass it through raw realtime JSON. Executable assertion: “still publishes the local director pose through Rallar Game presence”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#still publishes the local director pose through Rallar Game presence",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#still publishes the local director pose through Rallar Game presence",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
         "interactionKind": "absence",
@@ -531,7 +531,7 @@ moved or changed test.
       "domain": "AR Eye Hunter reliable snapshot deduplication",
       "owner": "AR Eye Hunter maintainers",
       "summary": "Repeated publication of one revision produces one reliable write. Executable assertion: “deduplicates reliable director snapshots by revision”.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#deduplicates reliable director snapshots by revision",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#deduplicates reliable director snapshots by revision",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
         "interactionKind": "count",
@@ -2115,7 +2115,7 @@ moved or changed test.
       "domain": "AR Eye Hunter browser lifecycle",
       "owner": "AR Eye Hunter maintainers",
       "summary": "A late capability report cannot invoke director appointment after a newer attempt replaces the pending report within the same generation and timestamp.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#fences replaced reports and releases delivery listeners on replacement and network end",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#fences replaced reports and releases delivery listeners on replacement and network end",
       "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state.",
       "interactionRequirement": {
         "interactionKind": "absence",
@@ -2130,7 +2130,7 @@ moved or changed test.
       "domain": "AR Eye Hunter browser lifecycle",
       "owner": "AR Eye Hunter maintainers",
       "summary": "A late capability report cannot invoke director appointment after logout ends the report attempt before it resolves.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not appoint after an old capability report resolves across logout",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#does not appoint after an old capability report resolves across logout",
       "coverageRelation": "The assertion operates the real arena hook or App and observes the named external port alongside resulting visible or public state.",
       "interactionRequirement": {
         "interactionKind": "absence",
@@ -2924,70 +2924,70 @@ moved or changed test.
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts#loads one engine, requests JSON mode, and parses JSON results"
     },
     {
-      "id": "test-structure-coupling-d3f3345b3e0c0aca",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-feb107391cef56d5",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-reliable-snapshot-coalescing",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The immediate single-publication count directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#coalesces rapid reliable director snapshots to the latest revision"
     },
     {
-      "id": "test-structure-coupling-1bc723f2706cc67a",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-ccebff9c1bfa7b04",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-reliable-snapshot-coalescing",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The unchanged pre-deadline publication count directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#coalesces rapid reliable director snapshots to the latest revision"
     },
     {
-      "id": "test-structure-coupling-8965491a17b28c8c",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-03187bba1898faa6",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-reliable-snapshot-coalescing",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The post-deadline two-publication count directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#coalesces rapid reliable director snapshots to the latest revision"
     },
     {
-      "id": "test-structure-coupling-3da9554c3b61b3dd",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-1f960b77a6335777",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-reliable-snapshot-coalescing",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The delayed publication reliable-options assertion directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#coalesces rapid reliable director snapshots to the latest revision"
     },
     {
-      "id": "test-structure-coupling-ddcc353b38f840bc",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-cd943707d2b8f889",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-pending-snapshot-generation-cancellation",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The initial one-publication baseline directly proves that no queued second snapshot publishes after the generation resets.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#cancels pending reliable director snapshots when the network generation resets"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#cancels pending reliable director snapshots when the network generation resets"
     },
     {
-      "id": "test-structure-coupling-deb29b8fd46fada2",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-a564ee6e182295f3",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-pending-snapshot-generation-cancellation",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The unchanged count after reset and timer expiry directly proves that no queued second snapshot publishes after the generation resets.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#cancels pending reliable director snapshots when the network generation resets"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#cancels pending reliable director snapshots when the network generation resets"
     },
     {
       "id": "test-structure-coupling-84f796b5286f7e78",
@@ -3254,26 +3254,26 @@ moved or changed test.
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players"
     },
     {
-      "id": "test-structure-coupling-313ee2116e5ba688",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-46026812f3ff7fcd",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-rallar-game-presence-boundary",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The raw motion-lane send absence assertion directly proves that raw realtime motion send remains unused for game-owned presence.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#still publishes the local director pose through Rallar Game presence"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#still publishes the local director pose through Rallar Game presence"
     },
     {
-      "id": "test-structure-coupling-f7c28d6e20d2d1f7",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-a11fa3d3637bdb5c",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-reliable-snapshot-deduplication",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The single-publication count directly proves that a repeated revision produces one reliable publication.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#deduplicates reliable director snapshots by revision"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#deduplicates reliable director snapshots by revision"
     },
     {
       "id": "test-structure-coupling-1ad6c91810eec4cf",
@@ -4838,26 +4838,26 @@ moved or changed test.
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/app-diagnostics-lifecycle.test.ts#reports a rejected clipboard write and releases a pending copy when the drawer closes"
     },
     {
-      "id": "test-structure-coupling-ab3a278b4bcc15fe",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-e11609c733133cce",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-replaced-report-appointment-fence",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The unused appointment port proves the stale report is fenced before any authority mutation, which final UI state alone cannot establish.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#fences replaced reports and releases delivery listeners on replacement and network end"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#fences replaced reports and releases delivery listeners on replacement and network end"
     },
     {
-      "id": "test-structure-coupling-04df4b043fc6b2f5",
-      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "id": "test-structure-coupling-69913dd14575b229",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "ar-arena-signed-out-report-appointment-fence",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The unused appointment port proves the stale report is fenced before any authority mutation, which final UI state alone cannot establish.",
-      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not appoint after an old capability report resolves across logout"
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#does not appoint after an old capability report resolves across logout"
     }
   ]
 }

@@ -972,6 +972,13 @@ queued snapshots. Real mounted-owner tests control publication ordering; these
 are callback-lifetime proofs, not browser scheduling reproductions. No new
 lifecycle framework or shared wire contract is introduced.
 
+Consumer tests follow the three actual owners: authentication/room lifecycle,
+director delivery/appointment, and game realtime acceptance/egress. Their shared
+external network fixture and mounted-hook lifecycle live in one test harness;
+domain-only intent/shot fixtures remain beside their realtime suite. This closes
+the oversized auth test's navigation boundary without duplicating setup or
+removing assertions. Existing coupling metadata follows the moved semantic tests.
+
 ### Task 9: The black-box ledger becomes a projection
 
 **Files:**
