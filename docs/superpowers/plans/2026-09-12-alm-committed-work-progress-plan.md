@@ -65,7 +65,8 @@ the scoped re-review are complete. Local native ALM conformance now
 passes all three carriers, and the ordinary three-browser RTC matrix passes.
 Earlier all-scenarios runs fail formation and reconnect readiness; the new
 answer-correlated candidate passes its one unchanged all-scenarios run below.
-The 100-cycle retention case remains unrun on this correction. These are correctness results, not native
+The new 100-cycle diagnostic fails reconnect cycle 2, as recorded in Task 12;
+heap retention remains inconclusive. These are correctness results, not native
 storage timing or B06 observation evidence.
 
 The all-scenarios test at `c35aa9879120336904690b9b2e27b71dee609c4d` runs once
@@ -899,10 +900,13 @@ claim based only on the synthetic diagnostic.
 
 ## Approved RTC correction: current execution horizon
 
-Tasks 10 and 11 are completed history. The current concrete horizon is Task 12's
-one unchanged retention diagnostic. Earlier
-completed tasks are not reopened. Conditional successor continuation remains
-unselected and is not part of these tasks.
+Tasks 10 and 11 are completed history; Task 12 retains its failed diagnostic.
+Task 13's obsolete-observer cleanup passes final-source validation and independent
+review; its delivery stays in PR #566. Task 14's bounded read-only diagnosis is complete:
+the offer's native-instance handoff remains unobserved. The next decision is a
+test-owned diagnostic design, not another runtime correction or unchanged run.
+Conditional successor continuation remains unselected and is not part of these
+tasks.
 
 ### Task 10: Correlate answers with the offer owned by the current peer
 
@@ -1118,10 +1122,37 @@ RTC-B06 and Phase 1 completion remain the larger plan's acceptance decisions.
 
 ### Task 12: Retain one unchanged 100-cycle diagnostic with full checkpoints
 
-**Status:** Next after Task 11's reviewed fixture repair and coherent publication.
+**Status: first-failure capture complete; retention acceptance failed.**
 This is a local correctness/retention diagnostic, not an accepted B06 primary or
 the three-run retention cohort. Use the existing runner and recorder; no runtime
 or test-source change is selected.
+
+The one configured producer at `8cf46d785692a0e8e68fda96989bc390d70b1a60` exits 1
+after 3.2 minutes, failing reconnect cycle 2. C remains `connecting` for its
+remaining 55,775.188958 ms readiness budget. Initial formation and the first
+reconnect complete; that reconnect-ready interval is 28,965.062166 ms. Only
+cycle 0 is captured: three agents and 124,834,208 aggregate post-GC heap bytes.
+No final heap, state-return or single-run heap-breach verdict can be established.
+The stored `settledStateReturned: true` compares only that baseline to itself;
+the failed sample correctly rejects incomplete checkpoints and matrix assertions.
+
+Real initialization and attempt listing pass. `record-external` exits 1 and
+retains the failed warmup plus canonical causal-not-run member/cohort-unavailable
+failure records. Those generated records are not additional executions or a
+measured cohort. The capture remains under
+`tmp/perf/rtc-baseline/20260913T072150697Z-8cf46d785692-e3-memory-local/`.
+Actual `git.clean` is false; HEAD and tracked-diff digest remain unchanged
+through recording. Node 24.19.0, Playwright 1.61.1, Chromium 149.0.7827.55,
+fresh local memory services, one worker, zero retries and original deadlines are
+retained. Task-owned services stop normally. No unchanged rerun is selected.
+
+Failure-time A and C each have B ready but not each other. C's current A peer
+has a local offer and no answer; A's current C peer has neither description nor
+an observed inbound offer on that instance. The retained projection has 180
+relevant events, but its upstream 2,000-event tail is full and completeness is
+unknown. These counters do not prove transport loss across replaced lifetimes.
+Trace the captured C-to-A offer before choosing another correction; the controlled
+stale-answer proof does not establish repeated application reconnect success.
 
 **Owners:** The existing `full-stack-live-rtc-three-browser-matrix.spec.ts`
 100-cycle case owns reconnect, state and CDP post-GC capture.
@@ -1133,26 +1164,26 @@ The standalone Playwright case computes heap/state but does not write aggregate
 attempt evidence when no capture context is configured. Do not spend the long
 run without that context or treat its process exit as a retention verdict.
 
-- [ ] Initialize a new real local E3-memory RTC-B06 capture using the existing
+- [x] Initialize a new real local E3-memory RTC-B06 capture using the existing
       CLI and actual clock/HEAD/runtime. Select only its predeclared
       `retention-100 / warmup / 1` attempt. Preserve the actual `git.clean` value,
       unrelated dirty diagnostic and untracked artifacts; never manufacture a
       clean tree or import another run's environment. Record before/after source
       facts and a digest of the tracked diff. The initialized manifest remains
       incomplete and explicitly diagnostic; no later executions are implied.
-- [ ] Use the existing three catalog flags for initialization/recording, but
+- [x] Use the existing three catalog flags for initialization/recording, but
       unset all-scenarios for the actual retention producer. Run exactly the
       100-cycle test once, using fresh local memory services, actual Node 24,
       one worker, zero retries, original 1,800,000 ms test limit and original
       per-operation deadlines. Use unique diagnostics and Playwright output
       directories under this capture. No overlapping browser/performance work,
       unchanged retry, external deployment, or source changes during observation.
-- [ ] Record the actual producer exit through `record-external` using the
+- [x] Record the actual producer exit through `record-external` using the
       original controller configuration, including failures. Verify the staged
       sample outcome and issues independently of Playwright exit: all eleven
       checkpoints at 0, 10, ..., 100, three distinct agents, and returned settled
       state are required. Retain raw checkpoints even if the run fails early.
-- [ ] Report measured heaps and the single-run breach criterion separately:
+- [x] Report measured heaps and the single-run breach criterion separately:
       final heap must exceed both cycle-0 by 10% and cycle-0 by 5 MiB to breach.
       One non-breach is not leak freedom; one breach cannot be hidden by a green
       test. Do not construct/finalize a cohort, add missing samples, publish an
@@ -1175,6 +1206,118 @@ a distinct output directory. Bare invocation is not the configured capture.
 **Exit:** One honestly source-labelled run with retained full checkpoint evidence
 and separately classified process, sample, settled-state and single-run heap
 outcomes. No new code, migration, legacy path, retry owner or performance claim.
+
+### Task 13: Finish obsolete observer cleanup and verify final bundle bytes
+
+**Status: complete, independently reviewed amendment for PR #566.** Implemented
+and locally validated at `5113a376730f6d927c2f28e49d00c4b6476bc4c4`.
+Hosted run 34743469782 on
+`6c7a6a26169c144d3c8f52cfdf50b875b9c93099` passes changed style/coupling and
+11,068 root tests, with 12 skipped. Its only root failure is headless size:
+261.0234375 KiB versus strict `<261 KiB`. The pre-cleanup local check matches
+exactly; all five facade tests pass. This is not a platform-only discrepancy.
+Earlier local bundle validation preceded the final descriptive-local/forwarder
+cleanup, so that pass did not certify the published bytes. Final-source byte
+checks must follow the final source edit.
+
+After the final source edit, peer/room-authority tests pass **36/36**, shared
+typing exits 0, and the unchanged bundle tests pass **6/6**. Headless is now
+267,152 Brotli bytes (**260.890625 KiB**), saving 136 bytes and leaving 112 bytes
+below the strict threshold. The facade is 212,313 bytes (**207.3369140625 KiB**),
+679 bytes below its threshold. Measurement uses Node 24.19.0/Darwin arm64,
+Brotli 1.2.0 at quality 11 and unchanged esbuild settings. The actual emitted
+headless JS SHA-256 is
+`dbe3608a9f4f0dd56249f8870db186f69306f9028247bf1b984384190926c690`;
+facade JS is `27e3cea736188e9d674cbe1f0d24fd1dad9a967476bd00740270fdd7a052548c`.
+Tested source matches the two committed files. Changed style/coupling, full
+touched-file advisory review, structure, formatting and whitespace pass; four
+native rollback vocabulary matches are current protocol behavior, not legacy.
+This is a local final-source result, not an unrun hosted checkpoint or speedup.
+Independent scoped review reports specification/quality **PASS/PASS**, no
+actionable findings. The reviewer traces both whole files, verifies ownership
+and source identity, and independently reproduces both saved artifact hashes and
+compressed sizes. Test/build chronology remains attributed to the implementation
+report; root also independently reproduces the saved byte measurements. No
+standard, legacy, compatibility or budget exception is added.
+
+The same hosted ALM run passes all six WS recipes but fails every RTC/fallback
+recipe at readiness. Their `normal` timing labels do not override failed
+acceptance. Later broad API recipes are not reached, so earlier WS receipt
+failures remain unresolved. Raw logs and ALM artifacts are retained under
+`tmp/perf/ci-34743469782-reviewed-runtime.Ura2tf/`.
+
+**Owners:** `packages/shared/webrtc/qrtc-peer-connection.ts` cleanup and its
+existing `packages/tests/shared/qrtc-peer-connection.test.ts` assertions.
+Task 10 removed two log-only native registrations but left the corresponding
+`oniceconnectionstatechange = null` and `onsignalingstatechange = null` writes.
+Current production/consumer searches find no registration owned by this runtime.
+Remove those obsolete writes and the two assertions that only observe null
+fixture defaults. Keep all five active handler detachments, native diagnostics,
+timer cancellation, independent transceiver stop/native close and lifetime guards.
+Native fake interface members remain required WebIDL shape, not legacy product
+behavior; do not delete them or weaken room native-state readback.
+
+- [x] Implement only that justified cleanup and its directly coupled assertion
+      removal. Review both whole touched files and recursively changed support
+      files; independent untouched code stays outside closure. No public or wire
+      change, restored forwarder, name shortening or arbitrary compression edit.
+- [x] Run peer/room-authority tests and shared typing, then the unchanged
+      headless/facade bundle boundaries on the final source. Record actual emitted
+      JS identity and same-settings Brotli bytes. Strict `<261 KiB` requires at
+      least 25 bytes saved from the current result; source removal does not
+      guarantee that saving. Preserve `<208 KiB` facade and all exclusions.
+- [x] Obtain independent scoped code review and run affected style/coupling/
+      formatting checks. Publish the coherent result to PR #566. If the cleanup
+      does not satisfy the budget, report the remaining evidence; do not make
+      arbitrary edits or silently increase the ceiling. A genuine remaining
+      budget exception needs explicit maintainer approval.
+
+**Exit:** Clear ownership-preserving obsolete-code removal, unchanged semantic
+behavior, and an honestly reported final-source bundle result. No claim of
+runtime speedup, retention repair or release readiness follows from byte size.
+
+### Task 14: Locate the retained cycle-2 offer handoff before selecting a fix
+
+**Status: read-only diagnosis complete.** No additional browser run, production
+fix or protocol amendment is selected.
+
+Two C-to-A RTC-signaling message IDs join exactly from C outbound commit to A
+admission, 2,660 ms and 2,513 ms later. Both admissions follow the latest retained
+A peer creation. Neither retained message includes signal kind, so neither can
+be named as the offer. Neither has a retained matching claim. A later 15/15
+completed-claim drain lasts 21,176 ms with 52,587 ms oldest-row queue wait, but
+has no message identity; it cannot establish that either message was processed.
+
+The run snapshot precedes C/A health by 2,874/3,289 ms beyond the last retained
+relevant event. Lifecycle ordinals are projection counters, not native-instance
+IDs, and deletion notification is deferred. Thus the health counters cannot be
+assigned to those admissions or used to prove pipeline loss. QueueBox delay,
+native-peer turnover/stale queued work, and post-snapshot offer/delivery remain
+competing explanations. This analysis does not measure one IndexedDB operation.
+
+The next diagnostic needs a safe positive receive witness after the native-PC
+identity guard, joining message ID, decoded signal kind, timestamp and native
+instance, with the same identity in lifecycle/health observations. Existing
+wire/AL recorders do not provide that complete join. First assess a test-owned
+mechanism in the existing browser harness; do not add a production/public health
+field, source-text patch, retry, timer or bundle surface by default. A bounded
+diagnostic design must be presented for approval before implementation. If the
+complete join cannot be achieved at existing supported boundaries, state the
+remaining gap and obtain separate approval for any material interface change.
+
+- [x] Join the cycle-2 C-to-A outbound offer with retained transport admission,
+      claim execution/release, and A's observed peer lifetime where the evidence
+      permits. Distinguish original message identity, replay, and replacement
+      counters; absence from a full upstream tail is not loss proof.
+- [x] State what is proven, what remains unobserved and competing explanations.
+      Select the smallest bounded discriminator only if current artifacts cannot
+      answer the ownership question. Preserve deadlines, QueueBox/retry ownership
+      and the narrow approved offer-ID contract. Ask for any new material public/
+      protocol authority before implementation; do not infer it from a timeout.
+
+**Exit:** An evidence-backed next decision, not a manufactured root cause or
+another unchanged run. Heap retention remains inconclusive until a complete
+future observation exists; this failed run is never replaced.
 
 ## Later outcomes, not additional speculative implementation slices
 

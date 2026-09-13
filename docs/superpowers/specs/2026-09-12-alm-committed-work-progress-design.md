@@ -13,8 +13,9 @@ task-reviewed; that later run's root suite, builds, and Postgres integration pas
 Native performance proof and complete RTC lifecycle proof remain unresolved.
 The maintainer has also approved implementing the narrow delayed-answer protocol
 correction below, including its fail-closed compatibility consequence and no
-legacy fallback. Native and reconnect proof remain required.
-Independent review accepts correlation behavior but requires internal cleanup,
+legacy fallback. The controlled native/reconnect proof below now passes, while
+repeated lifecycle acceptance remains unresolved.
+Independent review accepted correlation behavior and required internal cleanup,
 media-policy separation and the public-contract amendment below. The maintainer
 approved that amendment on 2026-09-13; Task 10 fix round 1 now passes independent
 specification and quality review. Task 11's controlled native payload proof and
@@ -33,8 +34,46 @@ one worker and zero retries; its RTC warning/timeouts remain in the raw log.
 Retained output is under `tmp/perf/rtc-answer-native-20260913-first/`.
 Neither this local pass nor the native controlled case establishes reliable
 hosted ALM delivery, 100-cycle retention, storage performance or RTC-B06 acceptance.
-A subsequent
-published correlation candidate still fails hosted ALM readiness/delivery; its
+The following real configured retention diagnostic at
+`8cf46d785692a0e8e68fda96989bc390d70b1a60` fails reconnect cycle 2 after 3.2
+minutes, without retry. Only cycle 0 is captured (124,834,208 aggregate post-GC
+heap bytes); no final heap/state or leak verdict follows. C's current A peer
+has a local offer and no answer; A's current C peer has no observed offer on
+that instance. Its 180 relevant events sit within a full 2,000-event upstream
+tail, so missing events and replacement counters are not loss proof. Diagnose
+the retained offer handoff before selecting another runtime correction.
+The existing recorder preserves the failed sample and causal-not-run member/
+cohort-unavailable records, not additional executions. Actual dirty-source facts
+and unchanged HEAD/diff through recording remain with the raw capture under
+`tmp/perf/rtc-baseline/20260913T072150697Z-8cf46d785692-e3-memory-local/`.
+
+A completed hosted run of the reviewed runtime reaches 11,068 passing
+tests with 12 skipped; headless size alone fails at 261.0234375 KiB. Pre-cleanup
+local measurement matches exactly, and the facade passes. Earlier local bundle
+validation preceded final cleanup; final-byte checks must follow the last edit.
+The narrow maintenance amendment at `5113a3767` removes only obsolete cleanup writes for
+two already removed log-only native observers, keeping five active handlers,
+all diagnostics and exceptional cleanup. Final-source tests pass 36 peer/room
+cases and six bundle cases; shared typing and changed style/coupling also pass.
+Headless is 260.890625 KiB (136 compressed bytes saved), facade 207.3369140625 KiB.
+Neither approved ceiling, compression setting nor runtime behavior changes.
+Independent scoped review passes specification/quality with no actionable issue,
+confirms retained artifact identities/bytes, and keeps delivery in PR #566.
+Hosted WS ALM now passes while RTC/fallback readiness fails. Neither local
+correctness nor a future byte-budget pass substitutes for hosted acceptance.
+
+The retained cycle-2 diagnosis joins two C-to-A RTC-signaling messages to A
+admission but cannot identify which is Offer versus ICE. Neither has a retained
+matching claim; a later aggregate drain has no message identity. Event coverage
+ends several seconds before health, and projected lifecycle ordinals are not
+native-instance identities. QueueBox delay, native turnover and post-snapshot
+progress remain competing explanations, not a proven loss mechanism. The next
+decision is a bounded test-owned receive-witness design linking message, signal
+kind and native instance at the actual RTC handoff. Present that design for
+approval before implementation; no new production/public diagnostic surface,
+source-text patch, retry or timer is selected by this analysis.
+An earlier
+published correlation candidate fails hosted ALM readiness/delivery; its
 broad gate stops at the five known style findings. Neither outcome is evidence
 for or against the later review fixes.
 
@@ -61,8 +100,9 @@ evidence, actual claim type relationships, and independent malformed-field and
 reconnect-recipient coverage. This is diagnostic correctness, not a runtime fix.
 Retain the first failure and use the next observation for a distinct bounded
 question; do not infer native storage cost from outer readiness time. The faster
-authority-cache discriminator below precedes another browser run. The 100-cycle
-retention proof remains unrun on this correction.
+authority-cache discriminator below precedes another browser run. At that
+checkpoint the 100-cycle retention proof was unrun; the later cycle-2 failure
+above remains the current incomplete retention result.
 
 An earlier hosted root suite confirms both server suites pass and leaves
 only the headless bundle test failing (11,001 passed, one failed, 12 skipped).
@@ -486,12 +526,16 @@ answer: observe the replacement's data channel open and a payload arrive under
 the original deadline. Then run the existing all-scenarios/reconnect acceptance
 on the reviewed candidate, with isolated outputs and no blind retries. Retain
 the first result. These are correctness gates, not stable latency estimates or
-RTC-B06 completion. This proof slice is complete. The next bounded task uses
-the existing recorder for one local 100-cycle diagnostic with full heap/state
-checkpoints, actual source/runtime/dirty facts, and unchanged deadlines. It uses
-one predeclared catalog warmup identity without constructing a primary or
-retention cohort. Sample/state outcomes and single-run heap growth are checked
-separately from Playwright exit. Later performance work remains outcome-shaped;
+RTC-B06 completion. This proof slice is complete. The following local 100-cycle
+diagnostic uses the existing recorder and actual source/runtime/dirty facts,
+but fails cycle 2 before complete heap/state checkpoints exist. It uses one
+predeclared catalog warmup identity without constructing a primary or measured
+retention cohort. The failed sample and missing final heap are not hidden by its
+baseline-only state flag. The narrow obsolete-observer cleanup now passes
+final-byte checks and independent review for PR #566. Retained cycle-2 analysis is
+complete but cannot resolve the offer's native-instance handoff; a test-owned
+diagnostic design is the next decision, not a selected runtime correction.
+Later performance work remains outcome-shaped;
 successor continuation remains conditional on its original evidence gate.
 
 ## Evidence and its limits
