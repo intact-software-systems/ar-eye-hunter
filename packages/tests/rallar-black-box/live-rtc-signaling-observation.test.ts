@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
-import { LiveRtcSignalingObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-signaling-observation.ts';
+import {
+    decodeLiveRtcSignalingObservationSnapshot,
+    installLiveRtcSignalingObservation,
+    type LiveRtcSignalingObservation
+} from '../../../tests/playwright/rallar-black-box/live-rtc-signaling-observation.ts';
 import { installLiveRtcWireObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-wire-observation.ts';
 
 class NativeSocket extends EventTarget {
@@ -52,7 +56,7 @@ class CollectableReference<T extends WeakKey> extends WeakRef<T> {
 
 function installObserver(clock: Pick<Performance, 'timeOrigin' | 'now'> = performance, reference = WeakRef): void {
     vi.stubGlobal('window', { WebSocket: NativeSocket, RTCPeerConnection: NativePeer });
-    runInNewContext(`(${LiveRtcSignalingObservation.toString()}).install()`, {
+    runInNewContext(`(${installLiveRtcSignalingObservation.toString()})()`, {
         window,
         crypto,
         performance: clock,
@@ -81,7 +85,7 @@ function signalFrame(msgId: string, signalType: 'Offer' | 'Answer' | 'IceCandida
 function readSnapshot(): LiveRtcSignalingObservation.Snapshot {
     const observation = window.__liveRtcSignalingObservation;
     if (!observation) {
-        return LiveRtcSignalingObservation.decodeSnapshot(null);
+        return decodeLiveRtcSignalingObservationSnapshot(null);
     }
     return observation.read();
 }
@@ -106,7 +110,7 @@ describe('live RTC signaling observation', () => {
         const replacement = new window.RTCPeerConnection();
         Object.assign(replacement, { connectionState: 'connecting' });
         now = 4;
-        const snapshot = LiveRtcSignalingObservation.decodeSnapshot(readSnapshot());
+        const snapshot = decodeLiveRtcSignalingObservationSnapshot(readSnapshot());
         expect(snapshot.attempts).toMatchObject([{ nativeInstanceOrdinal: 1, msgId: 'retired-offer', settlement: 'applied' }]);
         expect(snapshot).toMatchObject({
             nativeLifetimes: [
@@ -186,7 +190,7 @@ describe('live RTC signaling observation', () => {
         if (order === 'wire-first') {
             vi.stubGlobal('window', { WebSocket: NativeSocket, RTCPeerConnection: NativePeer });
             runInNewContext(`(${installLiveRtcWireObservation.toString()})()`, { window });
-            runInNewContext(`(${LiveRtcSignalingObservation.toString()}).install()`, { window, crypto, performance });
+            runInNewContext(`(${installLiveRtcSignalingObservation.toString()})()`, { window, crypto, performance });
         }
         else {
             installObserver();
@@ -241,7 +245,7 @@ describe('live RTC signaling observation', () => {
             reference: { secret: 'secret-peer' },
             description: 'secret-sdp'
         };
-        const decoded = LiveRtcSignalingObservation.decodeSnapshot({ ...observed, nativeLifetimes: Array(300).fill(lifetime) });
+        const decoded = decodeLiveRtcSignalingObservationSnapshot({ ...observed, nativeLifetimes: Array(300).fill(lifetime) });
         expect(decoded.nativeLifetimes).toHaveLength(128);
         expect(decoded.droppedNativeLifetimes).toBe(172);
         expect(decoded.nativeLifetimes[0].state.connectionState).toBeNull();
@@ -252,7 +256,7 @@ describe('live RTC signaling observation', () => {
                 closedAtEpochMs: Infinity
             }]
         ) {
-            expect(LiveRtcSignalingObservation.decodeSnapshot({ ...observed, nativeLifetimes: [invalid] }).available).toBe(false);
+            expect(decodeLiveRtcSignalingObservationSnapshot({ ...observed, nativeLifetimes: [invalid] }).available).toBe(false);
         }
     });
 

@@ -4,7 +4,7 @@ import type { BlackBoxRallarRoomRefreshOptions } from '../../../packages/shared-
 
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import { LiveRtcSignalingObservation } from './live-rtc-signaling-observation.ts';
+import { installLiveRtcSignalingObservation } from './live-rtc-signaling-observation.ts';
 import { installLiveRtcWireObservation } from './live-rtc-wire-observation.ts';
 
 export interface LiveRtcBrowserAgentConfig {
@@ -56,7 +56,7 @@ export async function openLiveRtcBrowserAgent(
     try {
         const page = await context.newPage();
         await page.addInitScript(installLiveRtcWireObservation);
-        await page.addInitScript({ content: `(${LiveRtcSignalingObservation.toString()}).install()` });
+        await page.addInitScript(installLiveRtcSignalingObservation);
 
         if (input.auth.kind === 'restore') {
             await page.addInitScript((session) => {

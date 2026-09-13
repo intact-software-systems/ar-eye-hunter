@@ -57,7 +57,10 @@ import type {
     LiveRtcNackProbeStage,
     LiveRtcNackResultClassification
 } from './live-rtc-performance-evidence.ts';
-import { LiveRtcSignalingObservation } from './live-rtc-signaling-observation.ts';
+import {
+    readLiveRtcSignalingObservation,
+    type LiveRtcSignalingObservation
+} from './live-rtc-signaling-observation.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 
 export namespace LiveRtcControlClient {
@@ -663,7 +666,7 @@ export class LiveRtcControlClient {
                 const agent = [input.agent, ...input.participantAgents].find((participant) =>
                     participant.agentId === agentId
                 );
-                return [reference, await LiveRtcSignalingObservation.readFrom(agent ?? {})];
+                return [reference, await readLiveRtcSignalingObservation(agent ?? {})];
             }))
         );
     }
