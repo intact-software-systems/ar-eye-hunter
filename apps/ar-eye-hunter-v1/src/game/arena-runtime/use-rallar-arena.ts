@@ -119,6 +119,7 @@ function useArenaSnapshotTransport(state: ReturnType<typeof useArenaRuntimeState
 
 function useArenaMessageHandlers(state: ReturnType<typeof useArenaRuntimeState>) {
     const stateAcceptance = useArenaStateAcceptance({
+        nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
         arenaSnapshotRef: state.arenaSnapshotRef,
         roomIdRef: state.roomIdRef,

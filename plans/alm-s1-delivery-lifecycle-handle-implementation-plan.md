@@ -963,6 +963,15 @@ game envelope still uses bare `roomId`; this correction neither changes its publ
 wire contract nor claims general canonical scope isolation. Existing desktop
 browser acceptance and mobile timing limitations remain unchanged.
 
+The second review correction carries the same captured lifetime through deferred
+start/end, event, accepted hit/pickup/eye and motion publications. The existing
+state acceptance owner centralizes snapshot/ref/derived-event projection, captures
+the injected clock before deferred work, and retains the match/room/lifetime
+across match-start event egress. Its required runtime/intent callers also guard
+queued snapshots. Real mounted-owner tests control publication ordering; these
+are callback-lifetime proofs, not browser scheduling reproductions. No new
+lifecycle framework or shared wire contract is introduced.
+
 ### Task 9: The black-box ledger becomes a projection
 
 **Files:**

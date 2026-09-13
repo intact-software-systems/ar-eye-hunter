@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createElement } from 'react';
+import { createElement, type SetStateAction } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +29,7 @@ import {
     toArenaSnapshot,
     upsertPlayerPose
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { ArenaSnapshot, GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import type { ArenaEvent, ArenaSnapshot, GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -1568,6 +1568,94 @@ describe('useRallarArena auth lifecycle', () => {
         await completion;
         expect(publishedSnapshots).toEqual([]);
         mockMatch.publishSnapshot.mockReset();
+    });
+
+    it.each(['snapshot', 'hit', 'pickup'] as const)('keeps deferred %s publication out of a replacement runtime', async (kind) => {
+        const fixture = acceptedIntentFixture(kind === 'snapshot' ? 'hit' : kind);
+        let networkEnabled = true;
+        let snapshot: ArenaSnapshot | undefined = fixture.snapshot;
+        let activeEvent = fixture.snapshot.activeEvent;
+        let events = fixture.snapshot.events;
+        const pendingSnapshots: SetStateAction<ArenaSnapshot | undefined>[] = [];
+        const pendingActiveEvents: SetStateAction<typeof activeEvent>[] = [];
+        const pendingEvents: SetStateAction<typeof events>[] = [];
+        const input: ArenaMatchRuntimeInput = {
+            nowMs: () => fixture.nowEpochMs,
+            arenaMatchRef: { current: undefined },
+            arenaSnapshotRef: { current: fixture.snapshot },
+            roomIdRef: { current: 'arena-1' },
+            isCurrentNetworkGeneration: () => networkEnabled,
+            acceptDirectorOutput: () => {},
+            acceptPeerShot: () => {},
+            acceptMatchStartIntent: async () => {},
+            acceptMotionMessage: () => {},
+            acceptPickup: () => {},
+            acceptPlayerHit: () => {},
+            setActiveEvent: (update) => pendingActiveEvents.push(update),
+            setArenaSnapshot: (update) => pendingSnapshots.push(update),
+            setRemoteEvents: (update) => pendingEvents.push(update)
+        };
+        input.arenaMatchRef.current = createArenaMatchRuntime(input, 1, 'arena-1');
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        if (!config?.onSnapshot || !config.onIntent) {
+            throw new Error('The arena runtime did not install its incoming callbacks.');
+        }
+        if (kind === 'snapshot') {
+            const event: ArenaEvent = {
+                id: 'previous-room-event',
+                kind: 'spawn-eye',
+                source: 'director',
+                startsAtEpochMs: fixture.nowEpochMs,
+                expiresAtEpochMs: fixture.nowEpochMs + 4000,
+                revision: fixture.snapshot.revision
+            };
+            await config.onSnapshot(
+                createRallarGameEnvelope({
+                    protocol: 'ar-eye-hunter.v1',
+                    kind: 'snapshot',
+                    roomId: 'arena-1',
+                    senderId: 'peer-1',
+                    seq: 1,
+                    directorEpoch: 1,
+                    sentAtEpochMs: fixture.nowEpochMs,
+                    payload: { ...fixture.snapshot, activeEvent: event, events: [event] }
+                })
+            );
+        }
+        else {
+            await config.onIntent(
+                createRallarGameEnvelope({
+                    protocol: 'ar-eye-hunter.v1',
+                    kind: 'intent',
+                    roomId: 'arena-1',
+                    senderId: 'peer-1',
+                    seq: 1,
+                    directorEpoch: 1,
+                    sentAtEpochMs: fixture.nowEpochMs,
+                    payload: fixture.message
+                })
+            );
+        }
+        networkEnabled = false;
+        const replacement = toArenaSnapshot(createInitialArenaState(12, fixture.nowEpochMs), 'replacement', fixture.nowEpochMs);
+        snapshot = replacement;
+        activeEvent = undefined;
+        events = [];
+        input.arenaSnapshotRef.current = replacement;
+        input.roomIdRef.current = 'replacement';
+        for (const update of pendingSnapshots) {
+            snapshot = typeof update === 'function' ? update(snapshot) : update;
+        }
+        for (const update of pendingActiveEvents) {
+            activeEvent = typeof update === 'function' ? update(activeEvent) : update;
+        }
+        for (const update of pendingEvents) {
+            events = typeof update === 'function' ? update(events) : update;
+        }
+        expect(snapshot).toBe(replacement);
+        expect(input.arenaSnapshotRef.current).toBe(replacement);
+        expect(activeEvent).toBeUndefined();
+        expect(events).toEqual([]);
     });
 
     async function renderHook(): Promise<void> {

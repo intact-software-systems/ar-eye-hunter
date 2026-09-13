@@ -20,6 +20,11 @@ export interface ArenaPeerShotReception {
     readonly isCurrent: () => boolean;
 }
 
+export interface ArenaPeerMessageHandlers {
+    readonly acceptMotionMessage: (peerId: string, message: GameRealtimeMessage, isCurrent: () => boolean) => void;
+    readonly acceptPeerShot: (reception: ArenaPeerShotReception) => void;
+}
+
 interface ArenaPeerMessageHandlersInput {
     readonly nowMs: () => number;
     readonly sessionRef: RefObject<AuthSession | undefined>;
@@ -27,14 +32,16 @@ interface ArenaPeerMessageHandlersInput {
     readonly setRemoteShots: Dispatch<SetStateAction<readonly RemoteShot[]>>;
 }
 
-export interface ArenaPeerMessageHandlers {
-    readonly acceptMotionMessage: (peerId: string, message: GameRealtimeMessage) => void;
-    readonly acceptPeerShot: (reception: ArenaPeerShotReception) => void;
+interface ArenaMotionReception {
+    readonly peerId: string;
+    readonly message: GameRealtimeMessage;
+    readonly isCurrent: () => boolean;
 }
 
 export function useArenaPeerMessageHandlers(input: ArenaPeerMessageHandlersInput): ArenaPeerMessageHandlers {
     const acceptMotionMessage = useCallback(
-        (peerId: string, message: GameRealtimeMessage) => acceptArenaMotion(input, peerId, message),
+        (peerId: string, message: GameRealtimeMessage, isCurrent: () => boolean) =>
+            acceptArenaMotion(input, { peerId, message, isCurrent }),
         [input.nowMs, input.sessionRef, input.setRemotePlayers]
     );
     const acceptPeerShot = useCallback((reception: ArenaPeerShotReception) => {
@@ -55,8 +62,9 @@ export function useArenaPeerMessageHandlers(input: ArenaPeerMessageHandlersInput
     return { acceptMotionMessage, acceptPeerShot };
 }
 
-function acceptArenaMotion(input: ArenaPeerMessageHandlersInput, peerId: string, message: GameRealtimeMessage): void {
-    if (message.protocol !== GAME_PROTOCOL) {
+function acceptArenaMotion(input: ArenaPeerMessageHandlersInput, reception: ArenaMotionReception): void {
+    const { peerId, message, isCurrent } = reception;
+    if (!isCurrent() || message.protocol !== GAME_PROTOCOL) {
         return;
     }
 
@@ -69,6 +77,9 @@ function acceptArenaMotion(input: ArenaPeerMessageHandlersInput, peerId: string,
         }
 
         input.setRemotePlayers((previous) => {
+            if (!isCurrent()) {
+                return previous;
+            }
             const next = new Map(previous);
             const existing = next.get(pose.sessionId);
             if (existing && existing.pose.seq > pose.seq) {

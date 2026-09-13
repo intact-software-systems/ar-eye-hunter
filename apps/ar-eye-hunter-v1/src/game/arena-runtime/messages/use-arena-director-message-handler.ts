@@ -32,42 +32,50 @@ function acceptArenaDirectorOutput(
         return;
     }
 
-    if (acceptArenaDirectorPeerMessage(input, message, isCurrent) || acceptArenaDirectorMatchUpdate(input, message)) {
+    if (
+        acceptArenaDirectorPeerMessage(input, message, isCurrent) ||
+        acceptArenaDirectorMatchUpdate(input, message, isCurrent)
+    ) {
         return;
     }
 
     if (message.kind === 'director-player-hit-accepted') {
-        input.acceptPlayerHit(message.accepted);
+        input.acceptPlayerHit(message.accepted, isCurrent);
         return;
     }
 
     if (message.kind === 'director-pickup-accepted') {
-        input.acceptPickup(message.accepted);
+        input.acceptPickup(message.accepted, isCurrent);
         return;
     }
 
     if (message.kind === 'director-eye-attack-accepted') {
-        input.acceptEyeAttack(message.accepted);
+        input.acceptEyeAttack(message.accepted, isCurrent);
         return;
     }
 
     if (message.kind === 'arena-event') {
-        input.setRemoteEvents((previous) => [
-            ...previous.filter((event) => event.id !== message.event.id).slice(-12),
-            message.event
-        ]);
-        input.setActiveEvent(message.event);
+        input.setRemoteEvents((previous) =>
+            isCurrent()
+                ? [
+                    ...previous.filter((event) => event.id !== message.event.id).slice(-12),
+                    message.event
+                ]
+                : previous
+        );
+        input.setActiveEvent((previous) => isCurrent() ? message.event : previous);
         return;
     }
 }
 
 function acceptArenaDirectorMatchUpdate(
     input: ArenaDirectorMessageHandlerInput,
-    message: GameRealtimeMessage
+    message: GameRealtimeMessage,
+    isCurrent: () => boolean
 ): boolean {
     if (message.kind === 'director-match-started') {
         input.setArenaSnapshot((previous) => {
-            if (!previous || message.accepted.revision < previous.revision) {
+            if (!isCurrent() || !previous || message.accepted.revision < previous.revision) {
                 return previous;
             }
             const next = {
@@ -92,7 +100,7 @@ function acceptArenaDirectorMatchUpdate(
 
     if (message.kind === 'director-match-ended') {
         input.setArenaSnapshot((previous) => {
-            if (!previous || message.accepted.revision < previous.revision) {
+            if (!isCurrent() || !previous || message.accepted.revision < previous.revision) {
                 return previous;
             }
             const next = {

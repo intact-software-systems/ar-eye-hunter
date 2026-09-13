@@ -58,7 +58,7 @@ export async function acceptArenaMatchIntent(
     if (isArenaMatchStartIntentFromSender(message, envelope.senderId)) {
         const status = match.status();
         if (status?.directorPeerId === envelope.senderId) {
-            await input.acceptMatchStartIntent(message.intent);
+            await input.acceptMatchStartIntent(message.intent, () => isCurrentArenaIntentOwner(owner));
         }
         return;
     }
@@ -88,8 +88,8 @@ async function acceptArenaPlayerHitIntent(owner: ArenaIntentOwner, intent: Playe
         nowEpochMs
     );
     input.arenaSnapshotRef.current = snapshot;
-    input.setArenaSnapshot(snapshot);
-    input.acceptPlayerHit(result.acceptedHit);
+    input.setArenaSnapshot((current) => isCurrentArenaIntentOwner(owner) ? snapshot : current);
+    input.acceptPlayerHit(result.acceptedHit, () => isCurrentArenaIntentOwner(owner));
     await match.publishEvent({
         protocol: GAME_PROTOCOL,
         kind: 'director-player-hit-accepted',
@@ -121,8 +121,8 @@ async function acceptArenaPickupIntent(owner: ArenaIntentOwner, intent: PickupIn
         nowEpochMs
     );
     input.arenaSnapshotRef.current = snapshot;
-    input.setArenaSnapshot(snapshot);
-    input.acceptPickup(result.acceptedPickup);
+    input.setArenaSnapshot((current) => isCurrentArenaIntentOwner(owner) ? snapshot : current);
+    input.acceptPickup(result.acceptedPickup, () => isCurrentArenaIntentOwner(owner));
     await match.publishEvent({
         protocol: GAME_PROTOCOL,
         kind: 'director-pickup-accepted',
