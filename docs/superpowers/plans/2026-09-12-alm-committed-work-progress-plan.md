@@ -904,21 +904,24 @@ remains unselected and is not part of these tasks.
 
 ### Task 10: Correlate answers with the offer owned by the current peer
 
-The coherent correction is implemented locally and independently reviewed.
-Its final focused candidate passes 115 tests including both unchanged strict
-bundle boundaries. The affected suites pass 340 tests; benchmark checks pass
-414 tests; maintained typing covers 1,199 files with no errors. Package checks
-and both game builds pass, with builds preceding the final console-only observer
-removal; final lifecycle, bundle and shared/test typing checks cover that removal.
-Three initial semantic REDs reproduced stale native application and retired offer
-publication. Review accepts the correlation behavior but requests three fixes:
-exception-safe retired native cleanup, separation of cohesive media policy, and
-truthful public DTO/dependency contracts. The decoder boundary and three directory/
-prefix prompts have narrow reviewed keep judgments; peer cohesion is a genuine
-unresolved finding, not a suppression candidate. No dispositions or standards
-exceptions have been added. The report's automatic inbound-retry claim is not
-proved; native failure only preserves identity for a later explicit matching
-delivery. This is not accepted completion, browser convergence, or PR readiness.
+**Status: complete after independent fix-round re-review.** The initial semantic
+REDs reproduced stale native application and retired offer publication. Review
+then identified exceptional cleanup, media-policy ownership and public DTO issues;
+all three are now resolved under the approved amendment. Three cleanup REDs became
+a passing 23-test peer suite. The correction passes 95 focused tests, 364 affected
+tests, 32 public API/entrypoint/bundle tests, and 414 benchmark tests. Maintained
+typing covers 1,200 files with zero errors. Package checks and both game builds
+pass. Only final descriptive-local/forwarder cleanup followed those broad checks;
+128 targeted tests and final browser typing cover that adjustment.
+
+The changed-style check passes. Peer cognitive load falls from 162 to 130 through
+a real native media-policy extraction; the remaining lifetime owner passes
+qualitative review, without suppression. Only the exact reviewed decoder and
+three directory/prefix facts receive supported dispositions; no standards or
+legacy exception is added. Native failure preserves identity for a later explicit
+matching delivery, not proven automatic inbound retry. Independent review finds
+no new actionable defect. This completes Task 10, not browser convergence,
+performance acceptance, RTC-B06, or PR readiness.
 
 **Current decision:** the maintainer approved the spec's public-contract closure
 amendment on 2026-09-13: replace `QRtcPeerDto` with
@@ -927,8 +930,8 @@ amendment on 2026-09-13: replace `QRtcPeerDto` with
 data input to its existing third dependency argument alongside `createOfferId`.
 This additional approval covers the exported name/input-shape changes beyond
 the earlier offer-ID approval. Update all repo consumers together and retain no
-legacy aliases or overloads. Fix round 1 handles this replacement, exception-safe
-cleanup, and cohesive media policy in the same task's reviewed fix loop;
+legacy aliases or overloads. Fix round 1 implemented this replacement,
+exception-safe cleanup, and cohesive media policy, and passed scoped re-review;
 Task 11 remains the following proof slice. Do not restart completed tasks or
 interpret this decision as a request to freeze main or wait for branch gates.
 
@@ -959,7 +962,7 @@ independent signal type plus unrelated nullable payload. Composition supplies a
 required ID-generation dependency; production uses the existing platform UUID
 facility and tests supply deterministic distinct identities.
 
-- [ ] Write and run semantic REDs before production edits. Hold an old answer
+- [x] Write and run semantic REDs before production edits. Hold an old answer
       behind a real conditional-write conflict, replace the native peer, replay
       it, and assert that only the matching current answer reaches the native
       description port. Cover successive offers on one peer, duplicate answers,
@@ -967,7 +970,7 @@ facility and tests supply deterministic distinct identities.
       queued and during native awaits, and transport re-admission identity.
       Derive expected identities independently; do not preserve the archived
       diagnostic's expectation that the stale answer is applied.
-- [ ] Replace the uncorrelated contract and use the existing signaling chain
+- [x] Replace the uncorrelated contract and use the existing signaling chain
       for local description creation and incoming application. The core decision
       at the actual native-write boundary is:
 
@@ -987,20 +990,20 @@ facility and tests supply deterministic distinct identities.
   it on an impolite ignored collision. Guard deferred outbound work and
   post-await mutations against retirement. Do not add a chain, retry, timer,
   queue, generic fence, or ICE correlation scheme.
-- [ ] Update every verified direct producer/consumer together. Reject the old
+- [x] Update every verified direct producer/consumer together. Reject the old
       description shape; remove superseded types, entry signatures, unused
       methods, and aliases. Keep browser and server validation consistent and
       retain payload-safe errors and sender/target checks. Preserve the unrelated
       uncommitted synthetic latency diagnostic. If its old import/fixture shape
       prevents contract alignment, archive its exact pre-change content and
       align only that dependency, leaving the diagnostic body uncommitted.
-- [ ] Run the focused semantic tests, maintained test typecheck, shared,
+- [x] Run the focused semantic tests, maintained test typecheck, shared,
       shared-web and shared-server typechecks, and the benchmark's existing
       typecheck/test command. Inspect affected executable performance harness
       consumers and run their existing native checks if the contract reaches them.
       Run the headless/browser bundle boundaries and both game builds once on
       the coherent candidate. Preserve the approved ceilings and build settings.
-- [ ] Review/remediate every changed human-authored file in full and support
+- [x] Review/remediate every changed human-authored file in full and support
       files recursively, leaving independent untouched code outside closure.
       Perform code-derived registration/invocation traces for negotiation,
       incoming signals, reset, and deferred outbound work. Run style, structure,
@@ -1026,6 +1029,10 @@ and focused validation plus independent review pass. This is correctness, not
 native convergence or a storage-performance result.
 
 ### Task 11: Prove native delayed-answer recovery and unchanged reconnect
+
+**Status:** Implementation underway after Task 10's clean independent re-review.
+The controlled Chromium proof and fresh local three-browser matrix have not yet
+produced candidate results. Keep first failures and existing deadlines.
 
 **Interfaces:** Consume Task 10's actual shared RTC peer and correlated signaling
 contract. Use the existing Playwright Chromium configuration and browser fixture

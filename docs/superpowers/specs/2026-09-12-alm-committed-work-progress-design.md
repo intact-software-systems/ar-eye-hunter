@@ -16,10 +16,12 @@ correction below, including its fail-closed compatibility consequence and no
 legacy fallback. Native and reconnect proof remain required.
 Independent review accepts correlation behavior but requires internal cleanup,
 media-policy separation and the public-contract amendment below. The maintainer
-approved that amendment on 2026-09-13; Task 10 fix round 1 is active. A subsequent
+approved that amendment on 2026-09-13; Task 10 fix round 1 now passes independent
+specification and quality review. Task 11's native delivery proof is underway.
+A subsequent
 published correlation candidate still fails hosted ALM readiness/delivery; its
 broad gate stops at the five known style findings. Neither outcome is evidence
-for or against the currently unpublished review fixes.
+for or against the later review fixes.
 
 The first all-scenarios local RTC command on the current correction exits after
 211 seconds: C's `messages.rtc` formation-readiness command exhausts its remaining
