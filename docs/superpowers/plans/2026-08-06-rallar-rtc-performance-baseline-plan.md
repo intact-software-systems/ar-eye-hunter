@@ -89,8 +89,14 @@ cause and passes independent review. Task 18's first short real-app A/B/C proof
 then passes: all readers are available, all agents have native lifetimes and at
 least one actual Offer/Answer joins a settled native ordinal. Exact pass-side
 aggregate counts were discarded and remain uncaptured; the proof was not rerun.
-Task 19 is the selected next slice: one newly source-labelled retention diagnostic
-whose distinct question is the recurring cycle-2 signaling/native lifetime join.
+Task 19's one newly source-labelled retention diagnostic fails reconnect cycle 4.
+Its corrected witness proves that the Offer uniquely applied and the matching
+Answer reached the browser, but the native snapshot completes 47 ms before the
+later causal cut shows the Answer's inbound admission committed. It cannot prove
+or refute post-admission dispatch/application and supplies only cycle-0 heap.
+Task 20 is selected to correct that test-only temporal diagnostic ordering before
+another long observation; no production RTC, ALM, QueueBox or retry change is
+selected.
 Keep proof in PR #566 and do not refresh a mergeable branch merely because `main`
 moves or reports `BEHIND`.
 
@@ -5220,9 +5226,16 @@ the next pushed head restarts the three-run diagnostic proof from zero.
 - [x] Run Task 18 once through the actual full-app A/B/C browser-agent and initial
       formation path. Require an available bounded witness and a real signaling/
       native join before selecting any further retention observation.
-- [ ] Execute Task 19 once with a new source-labelled retention capture on the
+- [x] Execute Task 19 once with a new source-labelled retention capture on the
       corrected witness. Preserve its first result and classify the exact
-      cycle-2 signaling/native lifetime join before selecting a correction.
+      failing signaling/native lifetime join before selecting a correction.
+- [ ] Complete Task 20's test-only readiness-failure ordering correction with
+      explicit phase times, a bounded final causal cut after health and a final
+      signaling/native snapshot after that cut. Preserve existing bounds and
+      sanitizers; add no wait, timer, retry, queue, fence, lock, dependency,
+      migration, legacy path, deadline or threshold change. Require focused TDD,
+      maintained typing, changed checks and independent review before another
+      retention observation.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.

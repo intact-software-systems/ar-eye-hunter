@@ -1554,40 +1554,94 @@ this proof and no acceptance metric is claimed.
 
 ### Task 19: Capture the cycle-2 join with the corrected witness
 
-**Status: selected by the active RTC performance goal.** Run one newly
-source-labelled `retention-100 / warmup / 1` diagnostic after publishing the
-Task 18 reconciliation. The candidate differs from Task 16 by the reviewed Task
-17 installation correction, and Task 18 proves the real app path can read its
-witness. The distinct question is now whether the recurring cycle-2 signaling
-reaches and settles on the relevant native peer before close/replacement.
+**Status: complete; first result retained at `52a32dc71977`.** Exactly one
+source-labelled `retention-100 / warmup / 1` diagnostic ran after the Task 18
+reconciliation. The producer exited 1 at reconnect cycle 4 after 5.2 minutes;
+`record-external` ran once. The producer was not rerun.
 
-- [ ] Reuse the canonical Task 12/16 initializer, selector, producer and
+- [x] Reuse the canonical Task 12/16 initializer, selector, producer and
       `record-external` path with a new capture, diagnostics and Playwright output
       directory. Preserve actual HEAD/runtime/dirty-source facts and tracked-diff
       digest. Use fresh memory services, one worker, zero retries, 100 cycles and
       unchanged deadlines; run exactly one producer.
-- [ ] Preserve and record the first result, including a failure. Independently
+- [x] Preserve and record the first result, including a failure. Independently
       validate checkpoint completeness, returned state and the single-run heap
       criterion; do not construct/finalize a cohort or call this diagnostic a B06
       primary.
-- [ ] If readiness fails, require each selected agent's signaling snapshot to be
+- [x] If readiness fails, require each selected agent's signaling snapshot to be
       available before drawing a join conclusion. Correlate the relevant exact
       received Offer/Answer to unique/ambiguous/unmatched native attempts,
       settlement, ordinal lifetime, close/replacement and bounded drop/coverage
       facts. Missing or truncated evidence remains unknown, never nonexecution.
-- [ ] If the run passes, retain all eleven checkpoints and classify the heap rule
+- [x] If the run passes, retain all eleven checkpoints and classify the heap rule
       without inventing a failure cause. If it fails with available evidence,
       select the smallest semantic RTC correction or missing discriminator. If
       the witness is unexpectedly unavailable again, stop at the harness boundary;
       do not rerun or infer a transport defect.
-- [ ] Reconcile both plans and publish the retained conclusion before any source
+- [x] Reconcile both plans and publish the retained conclusion before any source
       correction or additional long observation. A selected correction follows
       TDD, no legacy/migration, touched-file closure and independent review.
 
-**Exit:** One first-result retention diagnostic on the corrected, real-path-
-proven witness either supplies the cycle-2 message/native lifetime join or
-advances complete retention evidence. No automatic rerun, new queue, retry,
-fence, lock, timer, dependency, migration, legacy path or threshold change.
+All three witness readers are available with zero witness drops. B uniquely
+applies C's Offer on native ordinal 9. C receives B's matching Answer, but the C
+signaling/native snapshot completes 47 ms before the later causal cut shows that
+Answer's inbound admission committed. The retained snapshot therefore cannot
+observe post-admission dispatch or native application. Only cycle-0 heap exists;
+retention and leak conclusions remain unavailable. This is a diagnostic ordering
+gap, not evidence for an RTC, QueueBox, retry, deadline or successor-continuation
+change.
+
+**Exit:** The corrected witness supplies an exact Offer join and bounds the
+Answer gap to a pre-admission native cut. The first result, source identity and
+artifacts are preserved without rerun, cohort or acceptance claim.
+
+### Task 20: Make readiness-failure evidence temporally complete
+
+**Status: selected by Task 19 and authorized by the active plan goal.** Correct
+only the test-owned readiness-failure artifact ordering. The next ordinary
+failure must retain an immediate final causal cut after health and then a final
+signaling/native snapshot after that cut. This is instrumentation, not a runtime
+RTC correction and not another retention observation.
+
+**Files:**
+
+- Modify `tests/playwright/rallar-black-box/live-rtc-control-client.ts`.
+- Add
+  `packages/tests/rallar-black-box/live-rtc-readiness-failure-diagnostic-order.test.ts`.
+- Keep the existing large control-client test unchanged unless its verified
+  behavior actually requires correction; do not grow it with the new focused
+  temporal contract.
+
+- [ ] RED: drive a readiness failure through a minimal local control server.
+      Make the first signaling read contain an Answer without a native attempt;
+      during the existing health captures add its admission/local-claim events
+      and make the final read contain the uniquely applied native attempt. Prove
+      the current artifact lacks the final cut and final signaling snapshot.
+- [ ] GREEN: retain the existing initial causal/signaling evidence, then capture
+      health, one final bounded run cut and one final bounded signaling/native
+      map in that exact order. Record nondecreasing phase-completion times. Keep
+      the final run cut and final signaling map explicitly named; do not create
+      versioned decoders, aliases or a legacy artifact branch.
+- [ ] Preserve existing sanitizer and bounds owners: at most 200 relevant causal
+      events, at most three agents and 128 received/attempt/lifetime records per
+      snapshot with explicit drops. Add no wait, timer, poll, retry, queue, fence,
+      lock, dependency, deadline or threshold change.
+- [ ] Prove degradation: if the final run read and final browser read fail, still
+      write the artifact with an unsuccessful/empty final causal cut and an
+      unavailable final snapshot, while preserving the original readiness error.
+- [ ] Refactor the readiness artifact assembly only where it makes the five
+      capture phases directly visible. Review both touched files in full under
+      current touched-file closure; delete affected obsolete code and retain no
+      compatibility facade or migration.
+- [ ] Run the focused new and existing control/signaling tests, maintained test
+      typecheck, changed style/structure/coupling/format/whitespace checks, and an
+      independent scoped code review. Publish the reviewed correction before
+      selecting any further long observation.
+
+**Exit:** A readiness-failure sidecar can distinguish work retained before
+health from admission/claim/native work visible after health, or report a
+precisely bounded unknown. Production RTC, ALM, QueueBox and retry behavior stay
+unchanged.
 
 ## Later outcomes, not additional speculative implementation slices
 
