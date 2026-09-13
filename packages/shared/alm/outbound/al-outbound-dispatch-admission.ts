@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
@@ -9,8 +10,10 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
-import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
-import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import {
+    toALOutboundCanonicalKey,
+    toALOutboundMessageReference
+} from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import type {
     ALOutboundCommitOrigin,
@@ -80,7 +83,7 @@ export namespace ALOutboundDispatchAdmission {
     }
 }
 
-/** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
+/** Owns optimistic admission; initial controls hand off durably before sender-serialized replay. */
 export class ALOutboundDispatchAdmission<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private readonly commitQueuesBySenderId = new Map<string, ALOutboundDispatchAdmission.SenderCommitQueue>();
@@ -108,6 +111,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             getReadOperationCount: () => this.admissionStore.getReadOperationCount()
         });
         try {
+            if (this.isInitialControlHandoff(dispatch)) {
+                return await this.commitDispatchOnce(dispatch, phases);
+            }
             return await this.withSenderCommitQueue(
                 dispatch,
                 () => this.commitDispatchOnce(dispatch, phases)
@@ -166,45 +172,70 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
         }
 
-        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
-        if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
-            return await this.retainPendingDispatch(input, computed);
+        if (this.isInitialControlHandoff(dispatch)) {
+            return await this.handoffInitialControl(input, computed, phases);
         }
+
+        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
         if (status === 'conflict' && dispatch.options.pendingAdmission) {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
+        }
+        if (status === 'conflict' && dispatch.intent === 'enqueue') {
+            return await this.retainPendingDispatch(input, computed, phases);
         }
         return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
     }
 
+    private async handoffInitialControl(
+        input: ComputeALOutboundDispatchInput<TPrepared>,
+        computed: ALOutboundComputedDto<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        const retained = await this.retainPendingDispatch(input, computed, phases);
+        if (retained.computed.status === 'failed') {
+            throw new RetryableConflictError('Outbound control handoff conflict');
+        }
+        return retained;
+    }
+
     private async retainPendingDispatch(
         input: ComputeALOutboundDispatchInput<TPrepared>,
-        computed: ALOutboundComputedDto<TPrepared>
+        computed: ALOutboundComputedDto<TPrepared>,
+        phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         const canonicalEntry = computed.bundle?.canonicalEntry;
         if (!canonicalEntry) {
             throw new NonRetryableException('Pending admission requires its validated canonical candidate');
         }
-        const status = await this.admissionStore.retainPendingAdmission({
-            canonicalEntry,
-            creationExpiry: input.read.creationExpiry,
-            payload: {
-                kind: 'admit-message',
-                message: toALOutboundMessageReference(
-                    this.admissionStore.canonicalScope,
-                    canonicalEntry,
-                    input.read.msg
-                ),
-                policy: captureALOutboundPolicy(input.read.plan),
-                preparedMessages: input.read.plan.preparedMessages
-            }
+        const status = await phases.withCommitPhase(async () => {
+            const retained = await this.admissionStore.retainPendingAdmission({
+                canonicalEntry,
+                creationExpiry: input.read.creationExpiry,
+                payload: {
+                    kind: 'admit-message',
+                    message: toALOutboundMessageReference(
+                        this.admissionStore.canonicalScope,
+                        canonicalEntry,
+                        input.read.msg
+                    ),
+                    policy: captureALOutboundPolicy(input.read.plan),
+                    preparedMessages: input.read.plan.preparedMessages
+                }
+            });
+            return retained === 'pending' ? 'committed' : retained;
         });
-        if (status !== 'pending') {
+        if (status !== 'committed') {
             return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
         }
         return {
             computed: { msg: input.read.msg, status: 'pending-admission', entries: [canonicalEntry] },
             committed: false
         };
+    }
+
+    private isInitialControlHandoff(dispatch: ALOutboundDispatchAdmission.Input<TPrepared>): boolean {
+        return dispatch.intent === 'enqueue' && dispatch.origin === 'send' &&
+            decodeALControlMessage(dispatch.msg).right !== undefined;
     }
 
     private async readPendingDispatch(
@@ -255,7 +286,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         if (status === 'expired') {
             return {
                 computed: {
-                    msg: msg,
+                    msg,
                     status: 'expired',
                     reason: 'Message expired before commit',
                     entries: []
@@ -267,7 +298,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             if (intent === 'enqueue') {
                 return {
                     computed: {
-                        msg: msg,
+                        msg,
                         status: 'failed',
                         reason: 'Outbound commit conflict',
                         entries: []
@@ -291,8 +322,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             }
             return;
         }
-        if (computed.status === 'superseded' || computed.status === 'no-route') {
-            console.warn(computed.reason);
+        switch (computed.status) {
+            case 'superseded':
+            case 'no-route':
+                console.warn(computed.reason);
         }
     }
 

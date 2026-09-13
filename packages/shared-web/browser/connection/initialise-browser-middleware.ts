@@ -18,11 +18,7 @@ import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import type {
-    QRtcPeerDto,
-    RtcDataChannelLaneConfig,
-    WebRtcConnectionService
-} from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -119,14 +115,13 @@ export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
 ): void {
-    const peerIsInCurrentLayout = (peerId: string): boolean => webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId);
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        peerIsInCurrentLayout(peerId)
+        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
             : { decision: 'retry', reason: 'stage-layout-mismatch' }
     );
     webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
-        peerIsInCurrentLayout(peerId)
+        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
             : { decision: 'deny', reason: 'stage-layout-mismatch' }
     );
@@ -417,11 +412,11 @@ function registerBrowserRtcPeerStreaming(
     rtcRxStreamer: WebRtcRxStreamerService
 ): void {
     webRtcConnectionService.onRtcPeerLifecycleDo('rtc-rx-streamer', {
-        onCreated(peerDto: QRtcPeerDto) {
-            rtcRxStreamer.addPeer(peerDto);
+        onCreated(peer: WebRtcConnectionService.Peer) {
+            rtcRxStreamer.addPeer(peer);
         },
-        onDeleted(peerDto: QRtcPeerDto) {
-            rtcRxStreamer.removePeer(peerDto);
+        onDeleted(peer: WebRtcConnectionService.Peer) {
+            rtcRxStreamer.removePeer(peer);
         }
     });
 }

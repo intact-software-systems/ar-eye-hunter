@@ -9,6 +9,7 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { readBlackBoxRtcCausalState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/read-black-box-rtc-causal-state.ts';
 
 import {
     createSpaBrowserRallarRuntime,
@@ -542,7 +543,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     workspaceId: 'workspace-1',
                     groupId: 'room-1'
                 },
-                ws: { connected: true } as never,
+                ws: facade.rallar.ws.status(),
                 rtc: {
                     desired: true,
                     mode: 'lazy',
@@ -630,12 +631,79 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     timeoutMs: 100
                 }
             ]);
+            facade.behavior.rtcCausalState.mockImplementation(() => {
+                throw new Error('Ordinary health must not read current RTC causal state.');
+            });
+            await expect(runtime.health()).resolves.not.toHaveProperty('rtcCausalState');
+            facade.behavior.rtcCausalState.mockImplementation(() =>
+                readBlackBoxRtcCausalState({
+                    readMiddleware: () => ({
+                        session: facade.session,
+                        middleware: {
+                            webRtcGroupManager: {
+                                state: () => ({
+                                    groupIds: ['room-1'],
+                                    desiredPeerIds: ['peer-2', 'peer-1', 'peer-1'],
+                                    onlinePeerIds: ['peer-3', 'peer-1', 'peer-3'],
+                                    onlineDesiredPeerIds: ['peer-1'],
+                                    connectablePeerIds: ['peer-2', 'peer-1'],
+                                    peerIdsWithNoReconnectableLanes: [],
+                                    peerOwners: new Map()
+                                }),
+                                readDiagnostics: () => ({
+                                    reconcileRunCount: 3,
+                                    reconcileAwaitedInFlightCount: 0,
+                                    reconcileCoalescedRerunCount: 1,
+                                    lastDesiredPeerCount: 2,
+                                    connectAttemptCount: 4,
+                                    connectFailureCount: 0,
+                                    connectDeferredBudgetCount: 0,
+                                    connectDeferredPacingCount: 0,
+                                    disconnectCount: 0,
+                                    retainedCreatedCount: 0,
+                                    retainedExpiredCount: 0,
+                                    retainedEvictionCount: 0
+                                })
+                            },
+                            webRtcConnectionService: {
+                                knownPeerIds: () => ['peer-3', 'peer-2', 'peer-3'],
+                                peerConnectionAttemptDiagnostics: (peerId) =>
+                                    peerId === 'peer-3'
+                                        ? undefined
+                                        : ({
+                                            peerId,
+                                            attempts: 2,
+                                            firstAttemptAtEpochMs: 10,
+                                            lastAttemptAtEpochMs: 20,
+                                            maxAttempts: 3,
+                                            maxTotalDurationMs: 90000,
+                                            cooldownMs: 30000
+                                        })
+                            }
+                        }
+                    })
+                })
+            );
             await expect(
                 runtime.health({ includeRtcDiagnostics: true })
             ).resolves.toMatchObject({
                 connected: true,
-                rtcDiagnostics: { sessionId: facade.session.sessionId, peerCount: 1 }
+                rtcDiagnostics: { sessionId: facade.session.sessionId, peerCount: 1 },
+                rtcCausalState: {
+                    localSessionId: 'session-1',
+                    desiredPeerIds: ['peer-1', 'peer-2'],
+                    onlinePeerIds: ['peer-1', 'peer-3'],
+                    connectablePeerIds: ['peer-1', 'peer-2'],
+                    knownPeerIds: ['peer-2', 'peer-3'],
+                    managerDiagnostics: { reconcileRunCount: 3 },
+                    attempts: [{ peerId: 'peer-1', diagnostics: { attempts: 2 } }, { peerId: 'peer-2', diagnostics: { attempts: 2 } }, {
+                        peerId: 'peer-3',
+                        diagnostics: null
+                    }]
+                }
             });
+            facade.behavior.rtcCausalState.mockImplementation(() => readBlackBoxRtcCausalState({ readMiddleware: () => undefined }));
+            await expect(runtime.health({ includeRtcDiagnostics: true })).resolves.not.toHaveProperty('rtcCausalState');
             await expect(runtime.close()).resolves.toMatchObject({
                 status: 'closed',
                 disconnected: true,
@@ -894,7 +962,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     workspaceId: 'workspace-1',
                     groupId: 'room-1'
                 },
-                ws: { connected: true } as never,
+                ws: facade.rallar.ws.status(),
                 rtc: {
                     desired: true,
                     mode: 'lazy',
@@ -974,7 +1042,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     workspaceId: 'workspace-1',
                     groupId: 'room-1'
                 },
-                ws: { connected: true } as never,
+                ws: facade.rallar.ws.status(),
                 rtc: {
                     desired: true,
                     mode: 'lazy',

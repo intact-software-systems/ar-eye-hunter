@@ -22,7 +22,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import type { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
-import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { QRtcSignalingType } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';

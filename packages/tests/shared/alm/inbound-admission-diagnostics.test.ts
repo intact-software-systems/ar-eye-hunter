@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
@@ -8,7 +8,6 @@ import {
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import {
     createInboundTestMessage,
@@ -46,7 +45,7 @@ afterEach(() => {
 });
 
 function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntime {
-    return createInboundTestRuntime({
+    const fixture = createInboundTestRuntime({
         stores: createInboundTestStores({
             namespace: DIAGNOSTICS_NAMESPACE,
             storage: input.kind,
@@ -58,50 +57,40 @@ function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntim
         dispatchOutcome: input.dispatchOutcome,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority
     });
+    onTestFinished(() => fixture.queueEngine.stop());
+    return fixture;
 }
 
-function admissionOutcomesOf(
+function toAdmissionOutcomes(
     diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
 ): readonly AdmissionOutcomeEvent[] {
     return diagnostics.filter((event): event is AdmissionOutcomeEvent => event.kind === 'admission-outcome');
 }
 
-function drainsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly EffectDrainEvent[] {
+function toDrainEvents(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly EffectDrainEvent[] {
     return diagnostics.filter((event): event is EffectDrainEvent => event.kind === 'effect-drain');
 }
 
-function rotationsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly RotationAliveEvent[] {
+function toRotationEvents(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly RotationAliveEvent[] {
     return diagnostics.filter((event): event is RotationAliveEvent => event.kind === 'rotation-alive');
 }
 
-function claimsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly ClaimSettledEvent[] {
+function toClaimEvents(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly ClaimSettledEvent[] {
     return diagnostics.filter((event): event is ClaimSettledEvent => event.kind === 'claim-settled');
-}
-
-/** Runs bounded engine rounds until the rotation reports itself alive, so an absence can be read. */
-async function runRotationUntilAlive(
-    queueEngine: InboxOutboxEngine,
-    diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
-): Promise<void> {
-    const roundLimit = AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS * 8;
-    for (let round = 0; round < roundLimit && rotationsOf(diagnostics).length === 0; round += 1) {
-        await queueEngine.executeOnce();
-        // A round the owner spends inside a batch it started itself reports no work: let it settle.
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
 }
 
 it.each(['memory', 'indexeddb'] as const)(
     'names the message an ingress committed and the drain that delivered it over %s',
     async (kind) => {
-        const { runtime, diagnostics, delivered } = createRuntime({ kind });
+        const { runtime, diagnostics, delivered, queueEngine } = createRuntime({ kind });
+        queueEngine.start();
         const message = createInboundTestMessage({ msgId: 'committed-delivery' });
 
         await runtime.ready();
         const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
 
         expect(admitted.right).toEqual({ kind: 'admitted' });
-        expect(admissionOutcomesOf(diagnostics)).toEqual([{
+        expect(toAdmissionOutcomes(diagnostics)).toEqual([{
             kind: 'admission-outcome',
             workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
@@ -112,7 +101,8 @@ it.each(['memory', 'indexeddb'] as const)(
 
         await expect.poll(() => delivered).toEqual(['dispatched']);
         // Only batches that touched work report; the rotation's empty rounds stay silent.
-        const claimed = drainsOf(diagnostics);
+        await expect.poll(() => toDrainEvents(diagnostics).length).toBe(1);
+        const claimed = toDrainEvents(diagnostics);
         expect(claimed.map((event) => ({
             workerId: event.workerId,
             claimedCount: event.claimedCount,
@@ -129,7 +119,7 @@ it.each(['memory', 'indexeddb'] as const)(
 
         // The one claim that drain ran, named: the delivery effect holds a reference to the message,
         // which carries its id and not its type.
-        const settled = claimsOf(diagnostics);
+        const settled = toClaimEvents(diagnostics);
         expect(settled.map((event) => ({
             kind: event.kind,
             workerId: event.workerId,
@@ -160,19 +150,20 @@ it.each(['memory', 'indexeddb'] as const)(
 it.each(['memory', 'indexeddb'] as const)(
     'settles the claim as a retry when the dispatch it ran asked for one over %s',
     async (kind) => {
-        const { runtime, diagnostics, delivered } = createRuntime({ kind, dispatchOutcome: 'retry' });
+        const { runtime, diagnostics, delivered, queueEngine } = createRuntime({ kind, dispatchOutcome: 'retry' });
+        queueEngine.start();
 
         await runtime.ready();
         await runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'rescheduled-delivery' }),
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
-        await expect.poll(() => delivered).toEqual(['dispatched']);
-        await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
+        await expect.poll(() => delivered).toContain('dispatched');
+        await expect.poll(() => toClaimEvents(diagnostics).length).toBeGreaterThanOrEqual(1);
 
         // The row goes back to the queue, so the drain counts it rescheduled and the claim says why.
-        expect(claimsOf(diagnostics)[0]?.outcome).toBe('retry');
-        expect(drainsOf(diagnostics)[0]).toMatchObject({ claimedCount: 1, completedCount: 0, rescheduledCount: 1 });
+        expect(toClaimEvents(diagnostics)[0]?.outcome).toBe('retry');
+        expect(toDrainEvents(diagnostics)[0]).toMatchObject({ claimedCount: 1, completedCount: 0, rescheduledCount: 1 });
     }
 );
 
@@ -184,10 +175,11 @@ it.each(
 )(
     'settles a retained admission as %s and names the message it replayed',
     async (outcome, readPendingAdmissionAuthority) => {
-        const { runtime, stores, diagnostics } = createRuntime({
+        const { runtime, stores, diagnostics, queueEngine } = createRuntime({
             kind: 'memory',
             readPendingAdmissionAuthority
         });
+        queueEngine.start();
         const message = createInboundTestMessage({ msgId: `retained-${outcome}` });
 
         await runtime.ready();
@@ -198,10 +190,10 @@ it.each(
         );
 
         expect(admitted.right).toEqual({ kind: 'pending-admission' });
-        await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
+        await expect.poll(() => toClaimEvents(diagnostics).length).toBeGreaterThanOrEqual(1);
 
         // A retained admission keeps the message itself, so this claim names both halves of its identity.
-        expect(claimsOf(diagnostics)[0]).toMatchObject({
+        expect(toClaimEvents(diagnostics)[0]).toMatchObject({
             kind: 'claim-settled',
             workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
@@ -233,7 +225,7 @@ it.each(['memory', 'indexeddb'] as const)(
 
         // Without this event the drop is indistinguishable from a delivery still on its way.
         expect(admitted.right).toEqual({ kind: 'not-admitted', reason: 'unauthorized' });
-        expect(admissionOutcomesOf(diagnostics)).toEqual([{
+        expect(toAdmissionOutcomes(diagnostics)).toEqual([{
             kind: 'admission-outcome',
             workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
@@ -246,38 +238,12 @@ it.each(['memory', 'indexeddb'] as const)(
 );
 
 it.each(['memory', 'indexeddb'] as const)(
-    'separates a committed admission no consumer claims from one that was never admitted over %s',
-    async (kind) => {
-        const { runtime, diagnostics, delivered, queueEngine } = createRuntime({
-            kind,
-            canDispatchMessage: () => false
-        });
-        const message = createInboundTestMessage({ msgId: 'no-inbox-consumer' });
-
-        await runtime.ready();
-        const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
-        await runRotationUntilAlive(queueEngine, diagnostics);
-
-        expect(admitted.right).toEqual({ kind: 'admitted' });
-        expect(admissionOutcomesOf(diagnostics).map((event) => event.outcome)).toEqual(['committed']);
-
-        // The rotation ran over the committed row often enough to report itself alive, so this is the
-        // absence of a claim rather than the absence of a rotation: no drain ever selects the row
-        // while the consumer is missing, and a batch that touched nothing reports nothing.
-        expect(rotationsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
-        expect(delivered).toEqual([]);
-        expect(drainsOf(diagnostics)).toEqual([]);
-    },
-    30_000
-);
-
-it.each(['memory', 'indexeddb'] as const)(
     'reports the rotation still running while it claims nothing over %s',
     async (kind) => {
-        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false });
+        const { runtime, diagnostics, delivered, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false });
 
         await runtime.ready();
-        await runtime.admitIncomingMessage(
+        const admitted = await runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'rotation-liveness' }),
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
@@ -285,21 +251,25 @@ it.each(['memory', 'indexeddb'] as const)(
             for (let round = 0; round < ROTATION_ROUNDS_PER_ATTEMPT; round += 1) {
                 await queueEngine.executeOnce();
             }
-            return rotationsOf(diagnostics).length;
+            return toRotationEvents(diagnostics).length;
         }, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+
+        expect(admitted.right).toEqual({ kind: 'admitted' });
+        expect(toAdmissionOutcomes(diagnostics).map((event) => event.outcome)).toEqual(['committed']);
+        expect(delivered).toEqual([]);
 
         // The witness that separates "no consumer is registered for this typeId" from "the rotation
         // stopped": the row is still there, still scanned, and still claimed by nobody.
-        expect(rotationsOf(diagnostics)[0]).toMatchObject({
+        expect(toRotationEvents(diagnostics)[0]).toMatchObject({
             kind: 'rotation-alive',
             workerId: DIAGNOSTICS_WORKER_ID,
             emptyRoundCount: AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS
         });
         // The slowest single round of them: a rotation that crawls says so without stopping.
-        const rotation = rotationsOf(diagnostics)[0]!;
+        const rotation = toRotationEvents(diagnostics)[0]!;
         expect(rotation.durationMs).toBeGreaterThanOrEqual(0);
         expect(rotation.longestRoundMs).toBeLessThanOrEqual(rotation.durationMs);
-        expect(drainsOf(diagnostics)).toEqual([]);
+        expect(toDrainEvents(diagnostics)).toEqual([]);
     },
     30_000
 );

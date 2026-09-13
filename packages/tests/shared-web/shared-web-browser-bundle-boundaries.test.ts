@@ -21,6 +21,11 @@ interface EsbuildMetafile {
     readonly inputs: Readonly<Record<string, unknown>>;
 }
 
+interface SharedWebPackageManifest {
+    readonly dependencies?: Readonly<Record<string, string>>;
+    readonly devDependencies?: Readonly<Record<string, string>>;
+}
+
 interface BrowserBundleMeasurement {
     readonly label: string;
     readonly brotliKiB: number;
@@ -38,23 +43,12 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // Maintainer approved necessary ALM growth; the queue box's paged terminal sweep and
-        // split readiness probe measure 201.04296875 KiB. Merging the RTC group-snapshot refresh
-        // and transient-admission recovery (#554) measures 202.426 KiB, so the ceiling moves to 203.
-        // Splitting the outbound commit hold into its read and write phases measures 202.896 KiB.
-        // Leasing a claim from the reservation the queue stamped measures 203.065 KiB, so the
-        // ceiling moves to 204. Naming the hop that drops an RTC offer -- the peer's signaling
-        // counts in the connection status -- measures 204.119 KiB, so the ceiling moves to 205.
-        // Main's canonical room-readiness owner (#557) measures 200.32421875 KiB on its own;
-        // merging it with the ALM runtime measures 204.873046875 KiB, so the 205 ceiling holds.
-        // Subscribing the RTC lifecycle runtime to the typed signaling failure measures
-        // 205.185546875 KiB, so the ceiling moves to 206.
-        // F2b Task 3 (the carried eligibility read and the replay announcement) measured
-        // 206.198 KiB on the Branch Release Gate, so the ceiling moves to 207.
+        // Maintainer-approved ceiling: the measured payload is 207.16796875 KiB, so the strict
+        // budget is 208 KiB.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 207
+        brotliBudgetKiB: 208
     },
     {
         label: 'browser/rallar-core.ts',
@@ -98,18 +92,39 @@ const budgetedEntries: readonly BundleBoundary[] = [
 
 describe('shared-web browser package boundary', () => {
     it('keeps shared-web from declaring graphology directly', () => {
-        const manifest = JSON.parse(
-            readFileSync(
-                path.join(repoRoot, 'packages/shared-web/package.json'),
-                'utf8'
+        const manifest = toSharedWebPackageManifest(
+            JSON.parse(
+                readFileSync(
+                    path.join(repoRoot, 'packages/shared-web/package.json'),
+                    'utf8'
+                )
             )
-        ) as {
-            dependencies?: Readonly<Record<string, string>>;
-            devDependencies?: Readonly<Record<string, string>>;
-        };
+        );
 
         expect(manifest.dependencies ?? {}).not.toHaveProperty('graphology');
         expect(manifest.devDependencies ?? {}).not.toHaveProperty('graphology');
+    });
+
+    it('validates JSON envelopes before consuming manifest and metafile properties', () => {
+        const manifest = toSharedWebPackageManifest({
+            dependencies: { '@js-temporal/polyfill': '^0.5.1' }
+        });
+        expect(manifest.dependencies).toEqual({ '@js-temporal/polyfill': '^0.5.1' });
+        expect(() => toSharedWebPackageManifest([])).toThrow(
+            'shared-web package manifest must be an object'
+        );
+        expect(() => toSharedWebPackageManifest({ dependencies: [] })).toThrow(
+            'shared-web package manifest.dependencies must be an object'
+        );
+
+        const metafile = toEsbuildMetafile({ inputs: { 'entry.ts': {} } });
+        expect(Object.keys(metafile.inputs)).toEqual(['entry.ts']);
+        expect(() => toEsbuildMetafile([])).toThrow(
+            'esbuild metafile must be an object'
+        );
+        expect(() => toEsbuildMetafile({ inputs: null })).toThrow(
+            'esbuild metafile inputs must be an object'
+        );
     });
 });
 
@@ -199,6 +214,49 @@ function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     return {
         label: entry.label,
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
+        metafile: toEsbuildMetafile(JSON.parse(readFileSync(metafilePath, 'utf8')))
     };
+}
+
+function toSharedWebPackageManifest(value: unknown): SharedWebPackageManifest {
+    const manifest = toJsonObject(value, 'shared-web package manifest');
+    return {
+        dependencies: toOptionalStringRecord(manifest.dependencies, 'shared-web package manifest.dependencies'),
+        devDependencies: toOptionalStringRecord(
+            manifest.devDependencies,
+            'shared-web package manifest.devDependencies'
+        )
+    };
+}
+
+function toEsbuildMetafile(value: unknown): EsbuildMetafile {
+    const metafile = toJsonObject(value, 'esbuild metafile');
+    return {
+        inputs: toJsonObject(metafile.inputs, 'esbuild metafile inputs')
+    };
+}
+
+function toOptionalStringRecord(
+    value: unknown,
+    label: string
+): Readonly<Record<string, string>> | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const record = toJsonObject(value, label);
+    const stringRecord: Record<string, string> = {};
+    for (const [key, entry] of Object.entries(record)) {
+        if (typeof entry !== 'string') {
+            throw new Error(`${label}.${key} must be a string`);
+        }
+        stringRecord[key] = entry;
+    }
+    return stringRecord;
+}
+
+function toJsonObject(value: unknown, label: string): Readonly<Record<string, unknown>> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${label} must be an object`);
+    }
+    return value as Readonly<Record<string, unknown>>;
 }

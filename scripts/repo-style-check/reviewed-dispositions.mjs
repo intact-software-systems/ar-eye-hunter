@@ -366,7 +366,7 @@ export const reviewedDispositions = Object.freeze([
     Object.freeze({
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
         rule: 'boundary.unknown',
-        symbol: 'decodeRtcSignalingPayload'
+        symbol: 'decodeRtcSignal'
     }),
     Object.freeze({
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
@@ -706,6 +706,27 @@ export const reviewedDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 105
+    }),
+    // Lane waiting owns channel open/abort/failure translation beside its
+    // connection-service caller. These exact sibling service/policy clusters
+    // expose distinct direct entry owners, not fragments of that wait flow.
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.directory-density',
+        symbol: 'services',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:web',
+        maximumMagnitude: 5
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:webrtc',
+        maximumMagnitude: 5
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions

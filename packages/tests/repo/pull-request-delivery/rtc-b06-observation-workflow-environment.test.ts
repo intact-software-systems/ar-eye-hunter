@@ -93,23 +93,23 @@ describe('RTC-B06 observation workflow environment', () => {
         });
 
         expect(result).toMatchObject({ status: 0, stderr: '' });
-        expect(
-            JSON.parse(readFileSync(`${fixtureRoot}/environment.json`, 'utf8'))
-        ).toEqual({
-            DATABASE_URL: null,
-            RALLAR_ICE_MODE: null,
-            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
-            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
-            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
-            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null
-        });
+        expect(readEnvironmentRecords(fixtureRoot)).toEqual([
+            {
+                DATABASE_URL: null,
+                RALLAR_ICE_MODE: null,
+                RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
+                RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
+                RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
+                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null
+            }
+        ]);
     });
 
-    it('preserves diagnostic output while propagating a failed browser execution', () => {
+    it('runs all diagnostic cases without retries and propagates browser failure', () => {
         const fixtureRoot = createEnvironmentCaptureFixture();
-        const outputDirectory = path.join(fixtureRoot, 'output');
+        const outputDirectory = path.join(fixtureRoot, 'diagnostic');
         mkdirSync(outputDirectory);
-        const diagnostic = readRunCommand('Exercise RTC-B06 branch candidate');
+        const diagnostic = readRunCommand('Exercise RTC-B06 diagnostic cases');
         const result = spawnSync('bash', ['-e', '-c', diagnostic], {
             cwd: repoRoot,
             encoding: 'utf8',
@@ -118,21 +118,55 @@ describe('RTC-B06 observation workflow environment', () => {
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
                 RTC_B06_FAKE_EXIT_STATUS: '23',
-                RTC_OBSERVATION_OUTPUT: outputDirectory
+                RTC_DIAGNOSTIC_OUTPUT: outputDirectory
             }
         });
 
         expect(result.status).toBe(23);
-        expect(readFileSync(path.join(outputDirectory, 'diagnostic.log'), 'utf8'))
-            .toContain('fake RTC-B06 execution');
-        expect(
-            JSON.parse(readFileSync(`${fixtureRoot}/environment.json`, 'utf8'))
-        ).toMatchObject({
-            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: path.join(
-                outputDirectory,
-                'readiness-diagnostics'
-            )
-        });
+        expect(readEnvironmentRecords(fixtureRoot)).toEqual([
+            {
+                DATABASE_URL: null,
+                RALLAR_ICE_MODE: null,
+                RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
+                RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
+                RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: null,
+                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: path.join(
+                    outputDirectory,
+                    'default',
+                    'failure-diagnostics'
+                )
+            },
+            {
+                DATABASE_URL: null,
+                RALLAR_ICE_MODE: null,
+                RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
+                RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
+                RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: null,
+                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: path.join(
+                    outputDirectory,
+                    'all-scenarios',
+                    'failure-diagnostics'
+                )
+            },
+            {
+                DATABASE_URL: null,
+                RALLAR_ICE_MODE: null,
+                RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
+                RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
+                RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
+                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: path.join(
+                    outputDirectory,
+                    'retention-100',
+                    'failure-diagnostics'
+                )
+            }
+        ]);
+        for (const caseId of ['default', 'all-scenarios', 'retention-100']) {
+            expect(
+                readFileSync(path.join(outputDirectory, caseId, 'diagnostic.log'), 'utf8')
+            ).toContain('fake RTC-B06 execution');
+        }
+        expect(result.stdout.match(/--retries=0/g)).toHaveLength(3);
     });
 });
 
@@ -161,7 +195,7 @@ function createEnvironmentCaptureFixture(): string {
     writeFileSync(
         fakeNpmPath,
         `#!/usr/bin/env node
-const { writeFileSync } = require('node:fs');
+const { appendFileSync } = require('node:fs');
 const names = [
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
@@ -170,14 +204,23 @@ const names = [
     'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
     'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR'
 ];
-writeFileSync(
+appendFileSync(
     process.env.RTC_B06_ENVIRONMENT_RECORD,
-    JSON.stringify(Object.fromEntries(names.map((name) => [name, process.env[name] ?? null])))
+    JSON.stringify(Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))) + '\\n'
 );
-process.stdout.write('fake RTC-B06 execution\\n');
+process.stdout.write('fake RTC-B06 execution ' + process.argv.slice(2).join(' ') + '\\n');
 process.exit(Number(process.env.RTC_B06_FAKE_EXIT_STATUS ?? '0'));
 `
     );
     chmodSync(fakeNpmPath, 0o755);
     return fixtureRoot;
+}
+
+function readEnvironmentRecords(
+    fixtureRoot: string
+): readonly Readonly<Record<string, string | null>>[] {
+    return readFileSync(`${fixtureRoot}/environment.json`, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
 }

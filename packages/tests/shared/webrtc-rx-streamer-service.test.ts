@@ -7,6 +7,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     createDefaultALOutboundDequeueResilience,
@@ -16,7 +17,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
@@ -30,7 +31,7 @@ interface MediaFixture extends MediaPeerFixture {
 }
 
 interface MediaPeerFixture {
-    readonly peer: QRtcPeerDto;
+    readonly peer: WebRtcConnectionService.Peer;
     readonly publishRemoteStream: QRtcOnRemoteStreamCallback;
     readonly attachedStreams: MediaStream[];
     readonly stoppedMediaKinds: string[];
@@ -128,7 +129,7 @@ function createMediaPeerFixture(): MediaPeerFixture {
         token: 'test-token',
         iceCandidates,
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const media = new QRtcMediaChannel(connection, { peerId: 'peer-1' });
     const subscription = vi.spyOn(connection, 'onRemoteStreamDo');

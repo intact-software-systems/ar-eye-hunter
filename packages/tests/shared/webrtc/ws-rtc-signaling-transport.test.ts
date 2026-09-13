@@ -26,7 +26,7 @@ import {
     type QRtcSignalingMessage,
     type QRtcSignalingTransport,
     type QRtcSignalingTransportCallbacks
-} from '@shared/webrtc/QRtcSignalingContracts.ts';
+} from '@shared/webrtc/qrtc-signaling-contracts.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -142,6 +142,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(attempts).toHaveLength(2);
         expect(attempts[1].id.msgId).toBe(attempts[0].id.msgId);
         expect(JSON.parse(attempts[1].payload.resource)).toEqual(JSON.parse(attempts[0].payload.resource));
+        expect(JSON.parse(attempts[1].payload.resource)).toMatchObject({ signalType: 'Offer', offerId: 'offer-1' });
         expect(wakes).toBe(1);
 
         attempts.length = 0;
@@ -259,7 +260,8 @@ function createSignalingPayload(): QRtcSignalingMessage {
         sessionId: 'session-1',
         token: 'token-1',
         signalType: QRtcSignalingType.Offer,
-        payload: { sdp: 'offer' }
+        offerId: 'offer-1',
+        payload: { description: { type: 'offer', sdp: 'offer' }, candidate: null }
     };
 }
 

@@ -1,5 +1,4 @@
 import type { RallarRealtimeLaneHealth } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRtcDiagnostics } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBlackBoxRallarLaneId, resolveBlackBoxRallarTransport } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
@@ -9,10 +8,7 @@ import type {
     BlackBoxRallarHealthInput
 } from './black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarScopeDiagnosticsOf } from './black-box-rallar-operation-policy.ts';
-import {
-    toBlackBoxRallarSerializedError,
-    type BlackBoxRallarSerializedError
-} from './black-box-rallar-serialized-error.ts';
+import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
 export namespace BlackBoxRallarHealthReader {
     export interface Dependencies {
@@ -74,24 +70,12 @@ export class BlackBoxRallarHealthReader {
         const transport = config ? resolveBlackBoxRallarTransport(config) : undefined;
         const rtcLaneId = transport === 'realtime' && config ? resolveBlackBoxRallarLaneId(config) : undefined;
         const rtcStatus = this.#rallar.rtc.status({ laneId: rtcLaneId });
-        let rtcDiagnostics: RallarRtcDiagnostics | undefined;
-        let rtcDiagnosticsError: BlackBoxRallarSerializedError | undefined;
-        if (read.input.includeRtcDiagnostics === true) {
-            try {
-                rtcDiagnostics = await this.#rallar.rtc.diagnostics(
-                    rtcLaneId ? { laneIds: [rtcLaneId] } : undefined
-                );
-            }
-            catch (caught) {
-                const error = toError(caught);
-                rtcDiagnosticsError = toBlackBoxRallarSerializedError(error);
-                this.#runtimeDiagnostics.emitError({
-                    config: config,
-                    topic: 'rallar.browser.rtc.diagnostics_failed',
-                    error: error
-                });
-            }
-        }
+        const rtcCausalState = read.input.includeRtcDiagnostics === true
+            ? this.#rallar.readRtcCausalState()
+            : undefined;
+        const rtcDiagnostics = read.input.includeRtcDiagnostics === true
+            ? await this.#readRtcDiagnostics(config, rtcLaneId)
+            : {};
         return {
             connected: this.#rallar.isConnected(),
             status: this.#rallar.status(),
@@ -104,11 +88,27 @@ export class BlackBoxRallarHealthReader {
             ...(config ? blackBoxRallarScopeDiagnosticsOf(config) : {}),
             session: this.#rallar.session(),
             health: config ? this.readHealth(config) : [],
-            ...(rtcDiagnostics !== undefined ? { rtcDiagnostics } : {}),
-            ...(rtcDiagnosticsError !== undefined ? { rtcDiagnosticsError } : {}),
+            ...rtcDiagnostics,
+            ...(rtcCausalState !== undefined ? { rtcCausalState } : {}),
             crdt: read.crdt,
             director: read.director,
             ...(read.formation !== undefined ? { formation: read.formation } : {})
         };
     };
+
+    async #readRtcDiagnostics(
+        config: BlackBoxRallarConnectionConfig | undefined,
+        rtcLaneId: string | undefined
+    ): Promise<Pick<BlackBoxRallarHealthDiagnostics, 'rtcDiagnostics' | 'rtcDiagnosticsError'>> {
+        try {
+            return {
+                rtcDiagnostics: await this.#rallar.rtc.diagnostics(rtcLaneId ? { laneIds: [rtcLaneId] } : undefined)
+            };
+        }
+        catch (caught) {
+            const error = toError(caught);
+            this.#runtimeDiagnostics.emitError({ config, topic: 'rallar.browser.rtc.diagnostics_failed', error });
+            return { rtcDiagnosticsError: toBlackBoxRallarSerializedError(error) };
+        }
+    }
 }

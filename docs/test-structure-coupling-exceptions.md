@@ -80,6 +80,51 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "inbound-control-no-work-no-notification",
+      "domain": "Inbound control admission scheduling",
+      "owner": "Rallar realtime maintainers",
+      "summary": "An acknowledgement commit that writes no work does not request scheduling.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when the acknowledgement commit wrote no work",
+      "coverageRelation": "The runtime accepts a partial acknowledgement without creating work; the test observes no wake after bootstrap and preserves the unrelated retained control row.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InboxOutboxEngine.wake",
+        "observableEffect": "A control commit without work leaves the existing worker's scheduling untouched.",
+        "requiredConstraint": "No scheduling request occurs between completed bootstrap and the no-work control admission result.",
+        "failureRationale": "An erroneous notification can scan an empty later status and leave the seeded NEW row untouched, so queue state alone cannot prove notification absence."
+      }
+    },
+    {
+      "id": "inbound-expired-retention-no-notification",
+      "domain": "Inbound expired admission scheduling",
+      "owner": "Rallar realtime maintainers",
+      "summary": "An admission that expires after conflict and before retention does not request scheduling.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when conflicted admission expires before retention",
+      "coverageRelation": "The runtime returns expired after a controlled conflicting write; the test observes no wake and verifies unrelated retained work remains unchanged.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "InboxOutboxEngine.wake",
+        "observableEffect": "Rejected expired retention leaves the worker's scheduling untouched because no pending row was retained.",
+        "requiredConstraint": "No scheduling request occurs between completed bootstrap and the expired retention result.",
+        "failureRationale": "Natural rotation can absorb an erroneous notification without claiming unrelated NEW work, so absence of delivery cannot establish absence of a scheduling request."
+      }
+    },
+    {
+      "id": "inbound-retained-control-commit-notification",
+      "domain": "Inbound retained control work scheduling",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Retaining a conflicted control admission requests the existing worker before returning pending-admission.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#announces retained control work after a conflicting admission",
+      "coverageRelation": "The test retains a control row through the runtime, observes its scheduling request before starting the engine, then verifies the real worker sends the committed control.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine.wake",
+        "observableEffect": "The runtime requests scheduling for the durable retained control row before admission returns.",
+        "requiredConstraint": "At least one scheduling request follows successful pending-control retention; no exact batch or page sequence is prescribed.",
+        "failureRationale": "Eventual delivery alone also passes when engine polling discovers the row, concealing a missing committed-work notification."
+      }
+    },
+    {
       "id": "api-v1-medium-scale-routing",
       "domain": "API-v1 medium-scale recipe routing",
       "owner": "Rallar server maintainers",
@@ -812,6 +857,21 @@ moved or changed test.
       }
     },
     {
+      "id": "shared-web-heartbeat-renewal-downstream-suppression",
+      "domain": "Shared-web heartbeat renewal downstream suppression",
+      "owner": "Shared Web maintainers",
+      "summary": "A lease-only authority renewal retains its raw cache update without invoking RTC group mutation or notifying state-cache UI listeners. Executable assertion: “does not amplify a lease-only group authority renewal to RTC or state-cache listeners”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners",
+      "coverageRelation": "The named assertion installs the renewed snapshot through the real repository CAS, observes its raw updated event, and directly observes the RTC group-mutation and public lifecycle-listener ports.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRTC group-manager active-update/delete ports and BrowserStateCacheLifecycle change-listener port",
+        "observableEffect": "The renewed authority is stored and emits its raw updated event while RTC group mutation and state-cache/UI notification remain untouched.",
+        "requiredConstraint": "Active update, delete, and lifecycle change notification remain unused for a lease-only same-authority renewal.",
+        "failureRationale": "Stored authority and raw event readback cannot reveal unnecessary RTC mutation or public notification that rebuilds, tears down, or redraws unchanged authority."
+      }
+    },
+    {
       "id": "shared-web-hydration-incomparable-recovery",
       "domain": "Shared-web initialized incomparable recovery",
       "owner": "Shared Web maintainers",
@@ -824,6 +884,21 @@ moved or changed test.
         "observableEffect": "Recovered state replaces divergence and drives one recomputation.",
         "requiredConstraint": "Recovery performs one reread and one recomputation while divergent input never reaches active update.",
         "failureRationale": "Missing recovery preserves divergence; duplicates race; active update bypasses the oracle."
+      }
+    },
+    {
+      "id": "shared-web-replaced-heartbeat-auth-invalidation-fence",
+      "domain": "Shared-web replaced heartbeat auth invalidation",
+      "owner": "Shared Web maintainers",
+      "summary": "A delayed 401 from a replaced heartbeat cannot invoke its retired auth-invalid callback. Executable assertion: “does not report auth invalidation from a replaced heartbeat delayed 401”.",
+      "semanticCoverage": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts#does not report auth invalidation from a replaced heartbeat delayed 401",
+      "coverageRelation": "The named assertion starts the replacement before resolving the retired heartbeat's 401 and directly observes the retired runtime's auth-invalid callback.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Retired browser heartbeat auth-invalid callback",
+        "observableEffect": "The retired heartbeat's delayed 401 produces no auth-invalid notification after its replacement starts.",
+        "requiredConstraint": "The stopped or replaced heartbeat's auth-invalid callback remains unused after replacement begins.",
+        "failureRationale": "Invoking the retired callback can tear down the active replacement; replacement cache state cannot prove that obsolete callback absence."
       }
     },
     {
@@ -2119,6 +2194,39 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-f6bcceb7062f196b",
+      "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "inbound-control-no-work-no-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Observing the scheduling port is necessary because an empty later-status batch can hide an erroneous notification from the unchanged NEW-row assertion.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when the acknowledgement commit wrote no work"
+    },
+    {
+      "id": "test-structure-coupling-a1518ca29d5d86f7",
+      "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "inbound-expired-retention-no-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "A direct absence assertion at the scheduling port proves expired retention announces nothing even when natural rotation would leave unrelated durable rows unchanged.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#does not request scheduling when conflicted admission expires before retention"
+    },
+    {
+      "id": "test-structure-coupling-2bebd29c36f6d739",
+      "path": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "inbound-retained-control-commit-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "A scheduling request at the existing engine port is independently required after retention; polling-driven delivery cannot prove that notification happened before the pending result returned.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts#announces retained control work after a conflicting admission"
+    },
     {
       "id": "test-structure-coupling-8476c70422e7a937",
       "path": "packages/tests/shared/alm/al-outbound-control-admission.test.ts",
@@ -3440,6 +3548,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/rooms/leave-room.test.ts#returns undefined without a workflow when no room can be resolved"
     },
     {
+      "id": "test-structure-coupling-b03d419644a551dd",
+      "path": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-replaced-heartbeat-auth-invalidation-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The retired callback absence assertion directly proves that a delayed 401 cannot report auth invalidation after a replacement owns the heartbeat lifecycle.",
+      "semanticCoverage": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts#does not report auth invalidation from a replaced heartbeat delayed 401"
+    },
+    {
       "id": "test-structure-coupling-67f803ee1f1dfc75",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -3542,11 +3661,44 @@ moved or changed test.
       "id": "test-structure-coupling-f9d11d5598249f3f",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
       "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-heartbeat-renewal-downstream-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The active-update absence assertion directly proves that lease-only same-authority renewal does not reapply unchanged authority to RTC.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-7b44c7a4d33da48f",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-heartbeat-renewal-downstream-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The delete absence assertion directly proves that lease-only same-authority renewal does not remove unchanged RTC group state.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-5dbeb5981a460f8a",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-heartbeat-renewal-downstream-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The listener absence assertion directly proves that lease-only same-authority renewal does not notify state-cache/UI consumers.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-69e7ce65f836a3fc",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
       "contract": "shared-web-hydration-incomparable-recovery",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The divergent active-update absence assertion directly proves that one reread and recomputation occur while divergent input is not applied.",
+      "rationale": "The divergent active-update absence assertion directly proves that incomparable recovery uses the durable reread and recomputation path without applying divergent input.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
     },
     {

@@ -39,7 +39,7 @@ import {
     WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import type { QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
@@ -144,14 +144,18 @@ describe('browser RTC runtime composition', () => {
         overlaysRepository.setPlannedOverlayById(overlayId, overlay(group, 2, ['planned-peer']));
         overlaysRepository.setAcceptedOverlayById(overlayId, overlay(group, 1, ['accepted-peer']));
         const nativeRuntime = installNativeRtcRuntime();
-        const fixture = createNativeRtcConnectionFixture({
-            sessionId: 'self',
-            token: 'fixture-token',
-            faultPort: createPassThroughTransportFaultPort(),
-            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-            dataChannelName: 'test',
-            rtcSignalingTopicId: 'rtc'
-        }, nativeRuntime);
+        const fixture = createNativeRtcConnectionFixture(
+            {
+                sessionId: 'self',
+                token: 'fixture-token',
+
+                iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+                dataChannelName: 'test',
+                rtcSignalingTopicId: 'rtc'
+            },
+            nativeRuntime,
+            createPassThroughTransportFaultPort()
+        );
         onTestFinished(() => {
             try {
                 fixture.dispose();
@@ -221,6 +225,7 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
         sessionId: peerId,
         token: 'fixture-token',
         signalType: 'Offer',
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: `${peerId}-offer` }, candidate: null }
     };
     const message: ALMessage = newALUnicastMessage(

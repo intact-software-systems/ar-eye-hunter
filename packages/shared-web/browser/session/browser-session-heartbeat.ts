@@ -2,10 +2,12 @@ import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { RallarSessionHeartbeat } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     refreshStateHeartbeat,
+    type RefreshStateHeartbeatResult,
     type StateHeartbeatWorkflowValue
 } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
+import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
-import { ClientInfo, type AuthSession } from '@shared/api/api-config.ts';
+import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
@@ -65,14 +67,15 @@ class BrowserStateHeartbeatRuntime {
 
     private async runHeartbeat(): Promise<void> {
         try {
-            await refreshHeartbeat(
-                this.#clientData,
-                this.handle.generationId,
-                this.#options
-            );
-            this.schedule(intervalMsecs);
+            await this.refreshHeartbeat();
+            if (this.isCurrent()) {
+                this.schedule(intervalMsecs);
+            }
         }
         catch (error) {
+            if (!this.isCurrent()) {
+                return;
+            }
             if (isUnauthorizedApiError(error)) {
                 this.handle.stop();
                 await this.#options.onAuthInvalid?.(error);
@@ -86,6 +89,30 @@ class BrowserStateHeartbeatRuntime {
                 this.schedule(retryIntervalMsecs);
             }
         }
+    }
+
+    private async refreshHeartbeat(): Promise<void> {
+        const joinedGroups = groupStateSnapshotsRepository
+            .getAllGroupStateSnapshots()
+            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#options.scope))
+            .filter((snapshot) =>
+                snapshot.activeSessions.some((session) => session.sessionId === this.#clientData.sessionId)
+            );
+        const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
+            generationId: this.handle.generationId,
+            authSession: this.#options.authSession,
+            scope: this.#options.scope,
+            policies: this.#options.policies
+        });
+        if (!this.isCurrent()) {
+            return;
+        }
+
+        await writeHeartbeatResult(this.#clientData, joinedGroups, refreshed);
+    }
+
+    private isCurrent(): boolean {
+        return !this.#stopped && activeHeartbeat === this.handle;
     }
 }
 
@@ -106,29 +133,17 @@ export function stopHeartbeat(
     handle?.stop();
 }
 
-async function refreshHeartbeat(
+async function writeHeartbeatResult(
     clientData: ClientInfo,
-    generationId: string,
-    options: InitHeartbeatOptions
+    joinedGroups: readonly GroupSnapshot[],
+    refreshed: RefreshStateHeartbeatResult
 ): Promise<void> {
-    const joinedGroups = groupStateSnapshotsRepository
-        .getAllGroupStateSnapshots()
-        .filter((snapshot) => isGroupSnapshotInScope(snapshot, options.scope))
-        .filter((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === clientData.sessionId));
-
-    const refreshed = await refreshStateHeartbeat(clientData, joinedGroups, {
-        generationId,
-        authSession: options.authSession,
-        scope: options.scope,
-        policies: options.policies
-    });
-
     clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
         refreshed.client.principal.principalId,
         refreshed.client
     );
 
-    groupStateSnapshotsRepository.setGroupStateSnapshots(refreshed.groups);
+    adoptGroupSnapshotsFromHeartbeat(joinedGroups, refreshed.groups);
     for (const missingGroup of refreshed.missingGroups) {
         const removed = groupStateSnapshotsRepository.removeGroupStateSnapshotIfUnchanged(
             missingGroup.group,

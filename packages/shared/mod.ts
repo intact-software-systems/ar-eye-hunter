@@ -91,7 +91,7 @@ export * from './webrtc/qrtc-client-callbacks.ts';
 export * from './webrtc/qrtc-data-channel.ts';
 export * from './webrtc/qrtc-media-channel.ts';
 export * from './webrtc/qrtc-peer-connection.ts';
-export * from './webrtc/QRtcSignalingContracts.ts';
+export * from './webrtc/qrtc-signaling-contracts.ts';
 export * from './webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
 export * from './multicast/overlay-multicast-contracts.ts';

@@ -593,16 +593,19 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 89
     }),
+    // The existing runtime README links command entry, composition, health,
+    // diagnostic publication and failures. The causal-state read adapter belongs
+    // to that same private middleware boundary; no new lifecycle is introduced.
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime',
         rule: 'layout.directory-density',
         symbol: 'rallar-browser-runtime',
-        maximumMagnitude: 21
+        maximumMagnitude: 22
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime',
         rule: 'layout.feature-prefix-cluster',
         symbol: 'prefix:black',
-        maximumMagnitude: 12
+        maximumMagnitude: 13
     })
 ]);
