@@ -19,7 +19,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
@@ -28,7 +28,7 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 interface StreamingEndpoint {
     readonly streamer: WebRtcRxStreamerService;
-    readonly peer: QRtcPeerDto;
+    readonly peer: WebRtcConnectionService.Peer;
     readonly wire: LoopbackDataChannel;
     readonly measurements: RttMeasurementInfo[];
 }
@@ -183,7 +183,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: peerSessionId, dataChannelName: 'rtc-test' });
     const wire = new LoopbackDataChannel();
     vi.spyOn(connection, 'createDataChannel').mockReturnValue(wire);
-    const peer: QRtcPeerDto = {
+    const peer: WebRtcConnectionService.Peer = {
         peerId: peerSessionId,
         connection,
         channel,
@@ -195,9 +195,9 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         token: 'test-token',
         iceCandidates,
         dataChannelName: 'rtc-test',
-        faultPort: createPassThroughTransportFaultPort(),
+
         rtcSignalingTopicId: 'rtc-signaling'
-    }, new DeterministicRtcOfferIds());
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     const multicast = new WebRtcOverlayMulticastManager({
         connectionService: connectionService,
         groupCache: new LatestRepository(),

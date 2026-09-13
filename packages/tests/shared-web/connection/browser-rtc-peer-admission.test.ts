@@ -234,14 +234,18 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
             nextHopSessionIds: ['peer-planned', 'peer-shared']
         });
     }
-    const connection = createNativeRtcConnectionFixture({
-        sessionId: 'self',
-        token: 'fixture-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc'
-    }, nativeRuntime);
+    const connection = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'self',
+            token: 'fixture-token',
+
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        },
+        nativeRuntime,
+        createPassThroughTransportFaultPort()
+    );
     connections.add(connection);
     const manager = new WebRtcGroupManager(connection.service, {
         groupCache: new LatestRepository<string, GroupSnapshot>(),

@@ -2,7 +2,7 @@ import type { PeerId } from '../api/api-config.ts';
 import { CommandCancelledError, CommandTimedOutError } from '../cache/Command.ts';
 import { toError } from '../resilience/to-error.ts';
 import { QRtcDataChannel, type RtcDataChannelHealth } from '../webrtc/qrtc-data-channel.ts';
-import type { QRtcPeerDto, WebRtcConnectionService } from './web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 
 interface PeerLaneIdentity {
     readonly peerId: PeerId;
@@ -10,7 +10,7 @@ interface PeerLaneIdentity {
 }
 
 export interface PeerLaneWaitInput extends PeerLaneIdentity {
-    readonly existingPeer: QRtcPeerDto | undefined;
+    readonly existingPeer: WebRtcConnectionService.Peer | undefined;
     readonly connected: WebRtcConnectionService.PeerConnectionResult;
     readonly timeoutMs: number | undefined;
     readonly signal: AbortSignal | undefined;
@@ -80,7 +80,7 @@ function toPeerLaneOpenFailureFromConnectLeft(
 export function toPeerLaneOpenResultFromError(
     error: Error,
     lane: PeerLaneIdentity,
-    peer: QRtcPeerDto | undefined
+    peer: WebRtcConnectionService.Peer | undefined
 ): WebRtcConnectionService.PeerLaneOpenResult {
     const status = error instanceof WebRtcPeerLaneOpenFailure
         ? error.status

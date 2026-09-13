@@ -3,7 +3,7 @@ import type { RallarRealtimeHandler, RallarRealtimeMessage } from '@shared-web/b
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelPayload } from '@shared/webrtc/qrtc-data-channel.ts';
 
 const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
@@ -59,8 +59,8 @@ export class BrowserRealtimeReceiveRuntime {
         };
     }
 
-    attachPeerLifecycle(ctx: ApiMiddleware): void {
-        ctx.middleware.webRtcConnectionService.onRtcPeerLifecycleDo(
+    attachPeerLifecycle(middlewareContext: ApiMiddleware): void {
+        middlewareContext.middleware.webRtcConnectionService.onRtcPeerLifecycleDo(
             RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID,
             {
                 onCreated: (peer) => this.registerCallbacksForPeer(peer),
@@ -69,8 +69,8 @@ export class BrowserRealtimeReceiveRuntime {
         );
     }
 
-    detachPeerLifecycle(ctx = this.input.readMiddleware()): void {
-        ctx?.middleware.webRtcConnectionService.removeRtcPeerLifecycleById(
+    detachPeerLifecycle(middlewareContext = this.input.readMiddleware()): void {
+        middlewareContext?.middleware.webRtcConnectionService.removeRtcPeerLifecycleById(
             RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID
         );
     }
@@ -81,12 +81,12 @@ export class BrowserRealtimeReceiveRuntime {
         }
     }
 
-    detachLaneCallbacks(ctx = this.input.readMiddleware()): void {
-        if (!ctx) {
+    detachLaneCallbacks(middlewareContext = this.input.readMiddleware()): void {
+        if (!middlewareContext) {
             return;
         }
-        for (const peerId of ctx.middleware.webRtcConnectionService.knownPeerIds()) {
-            const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
+        for (const peerId of middlewareContext.middleware.webRtcConnectionService.knownPeerIds()) {
+            const peer = middlewareContext.middleware.webRtcConnectionService.readPeer(peerId);
             if (peer) {
                 this.removeCallbacksForPeer(peer);
             }
@@ -101,7 +101,7 @@ export class BrowserRealtimeReceiveRuntime {
         return `rallar:realtime:${laneId}`;
     }
 
-    private registerCallbacksForPeer(peer: QRtcPeerDto, laneId?: string): void {
+    private registerCallbacksForPeer(peer: WebRtcConnectionService.Peer, laneId?: string): void {
         const selectedLaneIds = laneId ? [laneId] : this.laneIds();
         for (const currentLaneId of selectedLaneIds) {
             peer.channels.get(currentLaneId)?.onRawMessageDo(
@@ -120,19 +120,19 @@ export class BrowserRealtimeReceiveRuntime {
     }
 
     private registerLaneCallbacks(laneId: string): void {
-        const ctx = this.input.readMiddleware();
-        if (!ctx) {
+        const middlewareContext = this.input.readMiddleware();
+        if (!middlewareContext) {
             return;
         }
-        for (const peerId of ctx.middleware.webRtcConnectionService.activePeerIds()) {
-            const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
+        for (const peerId of middlewareContext.middleware.webRtcConnectionService.activePeerIds()) {
+            const peer = middlewareContext.middleware.webRtcConnectionService.readPeer(peerId);
             if (peer) {
                 this.registerCallbacksForPeer(peer, laneId);
             }
         }
     }
 
-    private removeCallbacksForPeer(peer: QRtcPeerDto): void {
+    private removeCallbacksForPeer(peer: WebRtcConnectionService.Peer): void {
         for (const laneId of this.laneIds()) {
             peer.channels.get(laneId)?.removeOnRawMessageCallbackById(
                 this.callbackId(laneId)
@@ -187,9 +187,9 @@ export class BrowserRealtimeReceiveRuntime {
         if (this.jsonListeners.has(laneId) || this.binaryListeners.has(laneId)) {
             return;
         }
-        const ctx = this.input.readMiddleware();
-        for (const peerId of ctx?.middleware.webRtcConnectionService.knownPeerIds() ?? []) {
-            ctx?.middleware.webRtcConnectionService.readPeer(peerId)?.channels.get(laneId)
+        const middlewareContext = this.input.readMiddleware();
+        for (const peerId of middlewareContext?.middleware.webRtcConnectionService.knownPeerIds() ?? []) {
+            middlewareContext?.middleware.webRtcConnectionService.readPeer(peerId)?.channels.get(laneId)
                 ?.removeOnRawMessageCallbackById(this.callbackId(laneId));
         }
     }

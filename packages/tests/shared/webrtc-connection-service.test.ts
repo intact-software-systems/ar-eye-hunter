@@ -7,11 +7,7 @@ import {
     vi
 } from 'vitest';
 
-import {
-    isPeerSetupStarted,
-    QRtcPeerDto,
-    WebRtcConnectionService
-} from '@shared/services/web-rtc-connection-service.ts';
+import { isPeerSetupStarted, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     QRtcSignalingChannel,
@@ -46,14 +42,13 @@ function createInput(): WebRtcConnectionService.InputDto {
         sessionId: 'a-self',
         token: 'private-transport-token',
         dataChannelName: 'room',
-        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 1_000 }
     };
 }
 
 function createFixture(input = createInput()): NativeRtcConnectionFixture {
-    const fixture = createNativeRtcConnectionFixture(input, runtime);
+    const fixture = createNativeRtcConnectionFixture(input, runtime, createPassThroughTransportFaultPort());
     fixtures.push(fixture);
     return fixture;
 }
@@ -380,8 +375,8 @@ describe('WebRtcConnectionService signaling and creation', () => {
 describe('WebRtcConnectionService peer and lane lifecycle', () => {
     it.each([false, true])('reuses the native peer when creation observers ensure it again (deny later dials: %s)', async (denyLaterDials) => {
         const fixture = createFixture(budgetInput());
-        const created: QRtcPeerDto[] = [];
-        const reentered: (QRtcPeerDto | undefined)[] = [];
+        const created: WebRtcConnectionService.Peer[] = [];
+        const reentered: (WebRtcConnectionService.Peer | undefined)[] = [];
         const allocationsBeforeCallbacks: number[] = [];
         const opened = vi.fn(async () => {});
         fixture.service.onRtcPeerLifecycleDo('reentrant', {

@@ -21,7 +21,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -774,17 +774,16 @@ function createConnectionService(connectedPeerIds: readonly string[], readyState
     const connectionService = new shared.WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
         sessionId: 'self',
         token: 'test-token',
-        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, new DeterministicRtcOfferIds());
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     return Object.assign(connectionService, { sendByPeerId });
 }
 
-function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPeerId: Map<string, object[]>): QRtcPeerDto {
+function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPeerId: Map<string, object[]>): WebRtcConnectionService.Peer {
     const connection = new shared.QRtcPeerConnection({ send: async () => undefined }, {
         sessionId: 'self',
         peerSessionId: peerId,

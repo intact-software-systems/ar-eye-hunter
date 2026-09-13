@@ -167,9 +167,9 @@ export function runWebRtcGroupCacheFallback(
             token: 'benchmark-token',
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
             dataChannelName: 'realtime',
-            faultPort: createPassThroughTransportFaultPort(),
+
             rtcSignalingTopicId: 'rtc'
-        }, { createOfferId: () => crypto.randomUUID() }),
+        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: () => crypto.randomUUID() }),
         {
             ...targetScope,
             groupId: targetGroupId

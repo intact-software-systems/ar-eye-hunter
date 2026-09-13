@@ -58,7 +58,7 @@ export interface QRtcSignalingTransportCallbacks {
     onMessage: (sessionId: string, token: string, data: ALMessage) => Promise<void | 'retry'>;
 }
 
-export interface QRtcSignalingTransportInputDto {
+export interface QRtcSignalingTransportInput {
     readonly callbacks: QRtcSignalingTransportCallbacks;
     readonly sessionId: string;
     readonly token: string;
@@ -69,5 +69,5 @@ export interface QRtcSignalingSender {
 }
 
 export interface QRtcSignalingTransport extends QRtcSignalingSender {
-    connect(input: QRtcSignalingTransportInputDto): Promise<void>;
+    connect(input: QRtcSignalingTransportInput): Promise<void>;
 }

@@ -205,9 +205,9 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         token: 'benchmark-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'benchmark',
-        faultPort: createPassThroughTransportFaultPort(),
+
         rtcSignalingTopicId: 'rtc'
-    }, { createOfferId: () => crypto.randomUUID() });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: () => crypto.randomUUID() });
     return {
         service,
         dispose: () => {

@@ -2,11 +2,12 @@ import { vi } from 'vitest';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { QRtcPeerDto, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
-    QRtcSignalingTransportInputDto
+    QRtcSignalingTransportInput
 } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 export interface NativeRtcRuntime {
@@ -47,9 +48,10 @@ export interface NativeRtcConnectionFixture {
 
 export function createNativeRtcConnectionFixture(
     input: WebRtcConnectionService.InputDto,
-    runtime: NativeRtcRuntime
+    runtime: NativeRtcRuntime,
+    faultPort: TransportFaultPort
 ): NativeRtcConnectionFixture {
-    let connected: QRtcSignalingTransportInputDto | undefined;
+    let connected: QRtcSignalingTransportInput | undefined;
     const sentSignals: QRtcSignalingMessage[] = [];
     const signaler: QRtcSignalingTransport = {
         connect: async (value) => {
@@ -59,8 +61,11 @@ export function createNativeRtcConnectionFixture(
             sentSignals.push(message);
         }
     };
-    const service = new WebRtcConnectionService(signaler, input, new DeterministicRtcOfferIds());
-    const allocatedPeers: QRtcPeerDto[] = [];
+    const service = new WebRtcConnectionService(signaler, input, {
+        faultPort,
+        createOfferId: new DeterministicRtcOfferIds().createOfferId
+    });
+    const allocatedPeers: WebRtcConnectionService.Peer[] = [];
     service.onRtcPeerLifecycleDo('native-fixture', {
         onCreated: (peer) => {
             allocatedPeers.push(peer);

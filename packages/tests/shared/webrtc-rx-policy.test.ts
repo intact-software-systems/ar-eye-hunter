@@ -429,13 +429,13 @@ interface RtcChannelPorts {
 
 interface RtcReceiveTransport {
     readonly connections: shared.WebRtcConnectionService;
-    readonly peers: Map<string, shared.QRtcPeerDto>;
+    readonly peers: Map<string, shared.WebRtcConnectionService.Peer>;
     readonly sent: shared.ALMessage[];
     receive(message: shared.ALMessage, peerId: string): Promise<void>;
 }
 
 function createRtcReceiveTransport(): RtcReceiveTransport {
-    const peers = new Map<string, shared.QRtcPeerDto>();
+    const peers = new Map<string, shared.WebRtcConnectionService.Peer>();
     const receivers = new Map<string, OnQRtcMessageCallback>();
     const sent: shared.ALMessage[] = [];
     const signaler = { send: async () => undefined, connect: async () => undefined };
@@ -443,11 +443,10 @@ function createRtcReceiveTransport(): RtcReceiveTransport {
     const connections = new shared.WebRtcConnectionService(signaler, {
         sessionId: 'self',
         token: 'test-token',
-        faultPort: createPassThroughTransportFaultPort(),
         iceCandidates,
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, new DeterministicRtcOfferIds());
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     vi.spyOn(connections, 'readyPeerIdsForLane').mockImplementation(() => [...peers.keys()]);
     vi.spyOn(connections, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     for (const peerId of ['peer-1', 'peer-2', 'peer-3']) {
@@ -467,7 +466,7 @@ function createRtcReceiveTransport(): RtcReceiveTransport {
     };
 }
 
-function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QRtcPeerDto {
+function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.WebRtcConnectionService.Peer {
     const connection = new shared.QRtcPeerConnection(ports.signaler, {
         sessionId: 'self',
         peerSessionId: peerId,

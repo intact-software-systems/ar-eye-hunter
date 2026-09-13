@@ -28,7 +28,9 @@ import {
     SimulatedMediaStream,
     SimulatedMediaTrack,
     SimulatedNativeMediaPeerConnection,
-    SimulatedRtcTrackEvent
+    SimulatedRtcSender,
+    SimulatedRtcTrackEvent,
+    SimulatedRtcTransceiver
 } from './native-rtc-media-fixture.ts';
 
 describe('QRtcPeerConnection', () => {
@@ -678,6 +680,61 @@ describe('QRtcPeerConnection', () => {
         expect(native.onsignalingstatechange).toBeNull();
         expect(native.onconnectionstatechange).toBeNull();
     });
+
+    it.each(['transceiver-stop', 'transceiver-enumeration', 'native-close'] as const)(
+        'releases retired resources and isolates replacement after %s fails',
+        async (failure) => {
+            vi.useFakeTimers();
+            const { peer, native, sentSignals } = createPeerFixture(true);
+            const track = new SimulatedMediaTrack('audio');
+            const first = new SimulatedRtcTransceiver(new SimulatedRtcSender(track), track);
+            const remaining = new SimulatedRtcTransceiver(new SimulatedRtcSender(track), track);
+            const enumerate = vi.spyOn(native, 'getTransceivers').mockReturnValue([first, remaining]);
+            const error = new Error('Native cleanup failed');
+            const errors: Error[] = [];
+            vi.spyOn(console, 'error').mockImplementation((_message, cause: Error) => errors.push(cause));
+            if (failure === 'transceiver-stop') {
+                vi.spyOn(first, 'stop').mockImplementationOnce(() => {
+                    throw error;
+                });
+            }
+            else if (failure === 'transceiver-enumeration') {
+                enumerate.mockImplementationOnce(() => {
+                    throw error;
+                });
+            }
+            else {
+                vi.spyOn(native, 'close').mockImplementationOnce(() => {
+                    throw error;
+                });
+            }
+            const retiredNegotiation = native.onnegotiationneeded;
+            native.connectionState = 'disconnected';
+            native.onconnectionstatechange?.call(native, new Event('connectionstatechange'));
+            await peer.handleReconnect();
+            expect(vi.getTimerCount()).toBe(2);
+
+            peer.reset();
+
+            expect.soft(remaining.stopped).toBe(failure !== 'transceiver-enumeration');
+            expect.soft(native.connectionState).toBe(failure === 'native-close' ? 'disconnected' : 'closed');
+            expect.soft(peer.readDiagnostics().closedPeerConnectionCount).toBe(failure === 'native-close' ? 0 : 1);
+            expect.soft(native.onnegotiationneeded).toBeNull();
+            expect.soft(native.onicecandidate).toBeNull();
+            expect.soft(native.ondatachannel).toBeNull();
+            expect.soft(native.ontrack).toBeNull();
+            expect.soft(native.onconnectionstatechange).toBeNull();
+            expect.soft(vi.getTimerCount()).toBe(0);
+            expect(errors).toContain(error);
+            peer.connect();
+            await retiredNegotiation?.call(native, new Event('negotiationneeded'));
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(peer.status.pc).not.toBe(native);
+            expect(peer.status.pc?.signalingState).toBe('stable');
+            expect(sentSignals).toEqual([]);
+            expect(peer.readDiagnostics().reconnectAttemptsInFlight).toBe(0);
+        }
+    );
 
     it('stops reporting to the session reset closed, even for a hop still in flight', async () => {
         const runtime = installNativeRtcRuntime();

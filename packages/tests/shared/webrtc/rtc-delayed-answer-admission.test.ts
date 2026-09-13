@@ -47,10 +47,10 @@ it('settles an answer delayed by admission conflict without applying it to a rep
         sessionId: 'receiver',
         token: 'test-token',
         dataChannelName: 'room',
-        faultPort: createPassThroughTransportFaultPort(),
+
         rtcSignalingTopicId: 'rtc',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
-    }, new DeterministicRtcOfferIds());
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     const blockerStarted = Promise.withResolvers<void>();
     const releaseBlocker = Promise.withResolvers<void>();
     queueBoxClient.onInboxMessageDo('blocker', {

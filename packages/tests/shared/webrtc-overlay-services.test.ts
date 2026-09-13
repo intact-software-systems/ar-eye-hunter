@@ -960,9 +960,9 @@ function createConnectionService(
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
-        faultPort: createPassThroughTransportFaultPort(),
+
         rtcSignalingTopicId: 'rtc-signaling'
-    }, new DeterministicRtcOfferIds());
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => {
         const channel = peersById[peerId]?.channel;

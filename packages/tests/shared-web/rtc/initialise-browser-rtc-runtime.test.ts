@@ -144,14 +144,18 @@ describe('browser RTC runtime composition', () => {
         overlaysRepository.setPlannedOverlayById(overlayId, overlay(group, 2, ['planned-peer']));
         overlaysRepository.setAcceptedOverlayById(overlayId, overlay(group, 1, ['accepted-peer']));
         const nativeRuntime = installNativeRtcRuntime();
-        const fixture = createNativeRtcConnectionFixture({
-            sessionId: 'self',
-            token: 'fixture-token',
-            faultPort: createPassThroughTransportFaultPort(),
-            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-            dataChannelName: 'test',
-            rtcSignalingTopicId: 'rtc'
-        }, nativeRuntime);
+        const fixture = createNativeRtcConnectionFixture(
+            {
+                sessionId: 'self',
+                token: 'fixture-token',
+
+                iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+                dataChannelName: 'test',
+                rtcSignalingTopicId: 'rtc'
+            },
+            nativeRuntime,
+            createPassThroughTransportFaultPort()
+        );
         onTestFinished(() => {
             try {
                 fixture.dispose();

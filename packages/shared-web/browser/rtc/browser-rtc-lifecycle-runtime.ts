@@ -10,7 +10,7 @@ import type {
     RallarRtcStatusSubscriptionOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { QRtcSignalingType } from '@shared/webrtc/qrtc-signaling-contracts.ts';
@@ -137,7 +137,7 @@ export class BrowserRtcLifecycleRuntime {
         }
     }
 
-    private registerPeerCallbacks(peer: QRtcPeerDto): void {
+    private registerPeerCallbacks(peer: WebRtcConnectionService.Peer): void {
         for (const [laneId, channel] of peer.channels.entries()) {
             channel.onRtcCallbacksDo(
                 RALLAR_RTC_STATUS_CALLBACK_ID,
@@ -175,7 +175,7 @@ export class BrowserRtcLifecycleRuntime {
         }
     }
 
-    private unregisterPeerCallbacks(peer: QRtcPeerDto): void {
+    private unregisterPeerCallbacks(peer: WebRtcConnectionService.Peer): void {
         for (const channel of peer.channels.values()) {
             channel.removeRtcCallbackById(RALLAR_RTC_STATUS_CALLBACK_ID);
         }

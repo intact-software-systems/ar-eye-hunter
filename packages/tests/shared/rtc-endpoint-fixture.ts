@@ -21,7 +21,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     createDefaultWebRtcRxStreamerService,
     WebRtcRxStreamerService
@@ -50,11 +50,11 @@ export class RtcEndpointFixture {
     readonly inbound = createDefaultInMemoryALInboundRuntimeStores();
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];
-    readonly peer: QRtcPeerDto;
+    readonly peer: WebRtcConnectionService.Peer;
     readonly multicast: WebRtcOverlayMulticastManager;
     readonly streamer: WebRtcRxStreamerService;
     private readonly messageCallbacks = new Map<string, RtcMessageCallbackRegistry>();
-    readonly peers = new Map<string, QRtcPeerDto>();
+    readonly peers = new Map<string, WebRtcConnectionService.Peer>();
     readonly received: ALMessage[] = [];
     private readonly pendingDeliveries: Promise<void>[] = [];
 
@@ -69,9 +69,9 @@ export class RtcEndpointFixture {
             token: 'fixture-token',
             iceCandidates,
             dataChannelName: 'test',
-            faultPort: createPassThroughTransportFaultPort(),
+
             rtcSignalingTopicId: 'rtc'
-        }, new DeterministicRtcOfferIds());
+        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
         for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {
             const peer = createPeer(sessionId, peerId);
             this.peers.set(peerId, peer);
@@ -207,7 +207,7 @@ function createRtcMessageCallbackRegistry(channel: QRtcDataChannel): RtcMessageC
     };
 }
 
-function createPeer(sessionId: string, peerId: string): QRtcPeerDto {
+function createPeer(sessionId: string, peerId: string): WebRtcConnectionService.Peer {
     const connection = new QRtcPeerConnection({ send: async () => undefined }, {
         sessionId,
         peerSessionId: peerId,

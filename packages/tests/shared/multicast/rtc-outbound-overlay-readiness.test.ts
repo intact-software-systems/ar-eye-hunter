@@ -664,9 +664,8 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'alm',
-        rtcSignalingTopicId: 'rtc',
-        faultPort: createPassThroughTransportFaultPort()
-    }, new DeterministicRtcOfferIds());
+        rtcSignalingTopicId: 'rtc'
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     for (const peerId of ['peer-1', 'peer-2']) {
         connection.ensurePeerConnectionStarted(peerId, true);
     }
