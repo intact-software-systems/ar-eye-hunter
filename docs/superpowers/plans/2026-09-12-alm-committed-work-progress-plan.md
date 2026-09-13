@@ -32,6 +32,9 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
   including fail-closed old descriptions and coordinated consumer replacement.
   This is the sole exception to the protocol-change constraint; no general
   fencing mechanism or compatibility fallback is authorized.
+- The 2026-09-13 approval additionally authorizes the spec's exact canonical
+  runtime-handle/registration contract replacements and faultPort relocation to
+  service dependencies. Update consumers together; no aliases or old overloads.
 - Keep implementation and proof in PR #566. Do not merge test-only experiments.
 - Main may move. Record each measurement's source and environment; repair actual
   conflicts, but do not rebase a mergeable branch for `BEHIND` alone.
@@ -232,6 +235,18 @@ later Postgres browser/presence checks are not reached; the missing topology
 artifact upload also fails. Original API artifacts are retained under
 `tmp/perf/ci-34718820234-api.W4BGai/`. These are unresolved acceptance failures,
 not compilation errors or evidence that answer correlation fixes WS delivery.
+
+A subsequent hosted run includes the published answer-correlation candidate,
+before Task 10 review fixes. Its broad gate stops at the five known changed-style
+findings; later API recipes are not executed, so the earlier three API failures
+remain unresolved evidence. Its ALM cells all fail: WS expiry/positive sends
+abort and positive delivery is absent; every RTC/fallback scenario fails room
+readiness. Fallback's aggregate timing label is `normal` despite its failed cell;
+timing classification is not recipe acceptance. The artifact and job logs are
+retained under `tmp/perf/ci-34723201782-review-fix.0S0V76/`. Standalone Postgres
+formation-large, medium-scale and topology checks pass, but do not replace the
+failed broad gate or browser acceptance. Continue the reviewed fix and native
+proof; no unchanged CI rerun or new runtime remedy is selected from this summary.
 
 Read-only triage narrows these API failures to a possible shared-work/local-socket
 ownership mismatch. Relevant sockets upgraded on the primary API process;
@@ -905,15 +920,15 @@ exceptions have been added. The report's automatic inbound-retry claim is not
 proved; native failure only preserves identity for a later explicit matching
 delivery. This is not accepted completion, browser convergence, or PR readiness.
 
-**Current decision:** the spec's `Review amendment: public contract closure
-awaiting approval` proposes replacing `QRtcPeerDto` with
+**Current decision:** the maintainer approved the spec's public-contract closure
+amendment on 2026-09-13: replace `QRtcPeerDto` with
 `WebRtcConnectionService.Peer`, replacing `QRtcSignalingTransportInputDto` with
 `QRtcSignalingTransportInput`, and moving `faultPort` from the public service
 data input to its existing third dependency argument alongside `createOfferId`.
-These exported name/input-shape changes exceed the approved offer-ID change.
-Obtain one explicit approval for this coordinated replacement, with all repo
-consumers updated and no legacy aliases/overloads retained. The internal cleanup
-and media-policy fixes will be handled in the same task's reviewed fix loop;
+This additional approval covers the exported name/input-shape changes beyond
+the earlier offer-ID approval. Update all repo consumers together and retain no
+legacy aliases or overloads. Fix round 1 handles this replacement, exception-safe
+cleanup, and cohesive media policy in the same task's reviewed fix loop;
 Task 11 remains the following proof slice. Do not restart completed tasks or
 interpret this decision as a request to freeze main or wait for branch gates.
 

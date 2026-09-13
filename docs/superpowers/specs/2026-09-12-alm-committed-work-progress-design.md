@@ -14,8 +14,12 @@ Native performance proof and complete RTC lifecycle proof remain unresolved.
 The maintainer has also approved implementing the narrow delayed-answer protocol
 correction below, including its fail-closed compatibility consequence and no
 legacy fallback. Native and reconnect proof remain required.
-Independent review accepts correlation behavior but requires the public-contract
-amendment below, which awaits separate approval, plus internal cleanup/cohesion fixes.
+Independent review accepts correlation behavior but requires internal cleanup,
+media-policy separation and the public-contract amendment below. The maintainer
+approved that amendment on 2026-09-13; Task 10 fix round 1 is active. A subsequent
+published correlation candidate still fails hosted ALM readiness/delivery; its
+broad gate stops at the five known style findings. Neither outcome is evidence
+for or against the currently unpublished review fixes.
 
 The first all-scenarios local RTC command on the current correction exits after
 211 seconds: C's `messages.rtc` formation-readiness command exhausts its remaining
@@ -390,7 +394,7 @@ ownership. The new ID flows through the existing serialized RTC payload once.
 
 ### Acceptance and execution horizon
 
-#### Review amendment: public contract closure awaiting approval
+#### Approved review amendment: public contract closure
 
 Independent Task 10 review accepts the answer-correlation behavior but requires
 exception-safe retired-peer cleanup, a cohesive native media-policy owner, and
@@ -400,7 +404,8 @@ wire change and required offer-ID source. These contracts are exported by
 `packages/shared/mod.ts`; browser runtime and maintained fixtures use them.
 No external package consumer is assumed or asserted.
 
-The recommended coordinated correction is:
+The maintainer explicitly approved this coordinated public-contract replacement
+on 2026-09-13. Implement it in Task 10's existing reviewed fix loop:
 
 - Replace `QRtcPeerDto` with the canonical `WebRtcConnectionService.Peer`
   runtime-handle contract. Preserve its peer/channel/media field meanings and
@@ -432,15 +437,16 @@ would preserve the reported violation or require a deliberate exception. Neither
 is the selected approach under the maintainer's no-legacy requirement. The
 coordinated canonical replacement is the smallest complete correction.
 
-On approval, cover cleanup failures through the existing native test port,
+Cover cleanup failures through the existing native test port,
 extract media policy without moving negotiation guards away from native writes,
 and verify consumer typing, semantic tests and unchanged strict bundle ceilings.
 Record only the independently reviewed exact decoder/directory findings; do not
 suppress the real peer-cohesion finding. Correct the evidence statement to say
 native failure preserves identity for a later explicit matching delivery, not
 that automatic inbound retry has been proved. Re-review the actual fix before
-the native-browser proof. This amendment is design-only pending maintainer
-approval; it does not authorize implementation by its presence in the document.
+the native-browser proof. The explicit maintainer approval authorizes these
+source-contract changes; it does not waive review, validation, or the remaining
+native-browser acceptance.
 
 The protocol correction and its semantic regression tests must stay together
 in PR #566. Prove an old
