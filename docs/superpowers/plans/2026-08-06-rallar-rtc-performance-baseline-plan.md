@@ -65,27 +65,30 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-12
+**Updated:** 2026-09-13
 
-**Status:** Task 10 correction-and-proof work is active; there is still no valid
-B06 E3-memory primary. Critical review has superseded the mandatory successor-
+**Status:** Task 10 correction-and-proof work remains active; there is still no
+valid B06 E3-memory primary. Critical review superseded the mandatory successor-
 continuation recommendation with the
 [committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
 and its [two-slice plan](2026-09-12-alm-committed-work-progress-plan.md).
 
-First preserve ordinary scan progress while announcing successful fresh/deferred
-data/control commits. Then use native-browser measurements to decide whether
-bounded, original-claims-first continuation earns its additional code. A full
-16-claim batch has no spare continuation capacity; per-commit scan restarts can
-starve later pages and recovery statuses. Neither is solved by treating the
-synthetic deadline test as a browser performance forecast.
+The committed-work lifecycle and finite-backlog Slice 1 are complete. Native
+comparison has not justified successor continuation, so that optional mechanism
+remains unselected. Task 11's changed candidate passed its one all-scenarios
+observation; Task 12's one retention diagnostic failed reconnect cycle 2. Tasks
+13 and 14 closed obsolete diagnostics and established that retained AL evidence
+could not join an admitted Offer/Answer to its exact native peer lifetime. Task
+15 now adds that test-owned, bounded and redacted join and has passed independent
+correction review.
 
-The local RED runs production stores/QueueBox against **fake-indexeddb** with
-imposed logical costs. It remains an uncommitted diagnostic, not native storage
-timing or accepted B06 evidence. This update publishes analysis and the selected
-design only; runtime implementation, browser proof, and whole-PR readiness remain
-unfinished. Keep proof in PR #566, reconcile relevant overlap with PR #567, and
-do not refresh a mergeable branch merely because `main` moves or reports `BEHIND`.
+Task 16 is the selected next slice: publish the Task 15 witness to PR #566 and
+run exactly one newly source-labelled `retention-100 / warmup / 1` observation
+on that changed candidate. Preserve the first result and use its native join to
+select the next correction or acceptance step. This is not an unchanged rerun,
+a valid primary by itself, or authority for speculative runtime work. Keep proof
+in PR #566 and do not refresh a mergeable branch merely because `main` moves or
+reports `BEHIND`.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -5192,16 +5195,23 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       browser latency measurement or a required old page-order contract.
 - [x] Critically review continuation and write the focused committed-work
       progress design/plan, superseding the earlier unconditional recommendation.
-- [ ] Execute the focused plan's first slice: semantic TDD for committed-work
+- [x] Execute the focused plan's first slice: semantic TDD for committed-work
       notification without scan rewind, finite-backlog recovery, touched-file
       closure, and independent specification/quality reviews.
 - [ ] Execute its second slice: native measurement and evidence-led retention
       or omission of original-first bounded continuation. Reconcile relevant
       PR #567 overlap without duplicating its read-session/diagnostic work.
-- [ ] Later, after deterministic proof and reviews, run one new exact-head
-      browser proof against the selected result, complete whole-branch review
-      and final plan reconciliation, and take only the necessary delivery
-      through `pr:delivery`. `BEHIND` alone creates no rebase work.
+- [x] Complete Tasks 13-15: final-source obsolete-observer/bundle closure,
+      retained-failure diagnosis, and the independently reviewed, bounded,
+      redacted message-to-native/lifetime witness. This is diagnostic evidence,
+      not RTC-B06 acceptance.
+- [ ] Execute Task 16 once on the published changed candidate with a new capture,
+      diagnostics and Playwright output directory. Preserve its first result,
+      classify the native signaling/lifetime join, and select only the resulting
+      evidence-backed correction or acceptance step.
+- [ ] After that changed-candidate proof and final plan reconciliation, complete
+      whole-branch review and take only the necessary delivery through
+      `pr:delivery`. `BEHIND` alone creates no rebase work.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.

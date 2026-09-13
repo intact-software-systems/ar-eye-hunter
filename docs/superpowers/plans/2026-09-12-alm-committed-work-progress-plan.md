@@ -902,11 +902,14 @@ claim based only on the synthetic diagnostic.
 
 Tasks 10 and 11 are completed history; Task 12 retains its failed diagnostic.
 Task 13's obsolete-observer cleanup passes final-source validation and independent
-review; its delivery stays in PR #566. Task 14's bounded read-only diagnosis is complete:
-the offer's native-instance handoff remains unobserved. The next decision is a
-test-owned diagnostic design, not another runtime correction or unchanged run.
-Conditional successor continuation remains unselected and is not part of these
-tasks.
+review; its delivery stays in PR #566. Task 14's bounded read-only diagnosis is
+complete. Task 15 now supplies the missing test-owned message-to-native and
+native-lifetime witness, with independent review complete. Task 16 is now the
+selected next slice: one source-labelled retention observation on the published
+changed candidate, not another runtime correction or an unchanged rerun. The
+active RTC performance goal authorizes that bounded observation and its evidence
+analysis without another permission checkpoint. Conditional successor
+continuation remains unselected and is not part of these tasks.
 
 ### Task 10: Correlate answers with the offer owned by the current peer
 
@@ -1318,6 +1321,118 @@ remaining gap and obtain separate approval for any material interface change.
 **Exit:** An evidence-backed next decision, not a manufactured root cause or
 another unchanged run. Heap retention remains inconclusive until a complete
 future observation exists; this failed run is never replaced.
+
+### Task 15: Join admitted RTC descriptions to the native peer in the browser harness
+
+**Status: complete after independent correction re-review.** Commits
+`ac55fccc860e72d627a332b9b8c3557f6b57af23` and
+`30aa33d2b0bcf7afd81c74ac80bb1b4f88712e88` implement the bounded discriminator;
+it is not a production transport change or a new readiness policy.
+
+Add one test-owned browser observer before application startup. It observes
+incoming WebSocket AL envelopes whose type is `rtc-signaling`, classifies only
+the safe signaling identity (`msgId`, Offer/Answer/ICE kind, `offerId` when
+present, sender, target and receive time), and joins Offer/Answer descriptions
+to calls on the exact native `RTCPeerConnection` instance. The description is
+matched transiently with a page-local salted fingerprint; raw frames, SDP, ICE
+candidates, tokens, credentials and fingerprints must never enter the retained
+snapshot or diagnostic artifact. A match records attempt and settlement on a
+monotonic test-owned native-instance ordinal, after production has already
+selected the current peer and passed its identity guard.
+
+Keep the observer bounded and non-owning: do not retain native peer references,
+do not patch production source, and do not alter delivery, queueing, retry,
+fencing, locking, timers, dependencies, bundle surfaces or public health
+contracts. Install it through the existing Playwright init-script boundary and
+include its sanitized per-agent snapshot in readiness-failure artifacts. An
+observer failure must be represented as unavailable diagnostic evidence and
+must not replace the original readiness failure.
+
+- [x] Write focused semantic tests first and observe the expected failure. Prove
+      exact message-to-native-instance correlation, distinct replacement
+      instances, applied/rejected settlement, bounded retention, transparent
+      delivery to existing listeners, and exclusion of sensitive/raw fields.
+- [x] Implement the smallest behavior-named observer and wire its read boundary
+      into the existing live-browser agent/readiness-failure capture. Reuse the
+      actual AL and signaling wire shape; do not add a second decoder to
+      production or retain a legacy path.
+- [x] Run the focused observer/control-client tests, canonical test typing and
+      touched-file style/structure/coupling/format checks. Run a short native
+      browser proof if the existing local fixture can exercise the installed
+      observer without a broad or unchanged retention run. Review every whole
+      touched file and recursively changed support file, then obtain an
+      independent scoped review before publication to PR #566.
+
+The initial observer joined exact safe AL signaling identity to attempted,
+applied or rejected `setRemoteDescription` calls and preserved native Promise
+and error identity. Independent review found that an applied native peer could
+close and be replaced without another description while leaving the snapshot
+unchanged. The correction adds a separate 128-entry weak native-lifetime window
+using the same ordinal. It records construction, first successful close, and
+capture-time allowlisted state without retaining native objects or assigning an
+unmatched instance to a remote peer. Eviction, collection and unavailable reads
+remain explicit; raw frames, SDP, ICE, tokens, credentials and fingerprints do
+not enter output.
+
+Final focused validation passes 90 tests across seven suites; maintained test
+typing covers 1,201 files with zero errors. The real Chromium/local-WebSocket
+proof covers native application, rejection, close and description-free
+replacement. Changed style, structure, test-structure coupling, format and
+whitespace checks pass. Independent correction re-review passes specification
+and quality with no remaining actionable finding. The observer's review-tier
+cognitive score is retained as one self-contained serialization/privacy owner;
+it is not a standards exception or a browser-product bundle surface.
+
+**Exit:** A retained failure can say which admitted signaling message was an
+Offer/Answer and whether that exact description was attempted and accepted by
+which native peer instance. This diagnostic evidence selects the next repair;
+it does not itself claim RTC readiness, fix retention, or authorize another
+100-cycle run.
+
+### Task 16: Observe the changed retention candidate once
+
+**Status: selected and authorized by the active RTC performance goal.** Publish
+the reviewed Task 15 witness first, then run exactly one newly source-labelled
+`retention-100 / warmup / 1` observation on that published candidate. This is a
+changed candidate and a new diagnostic question, not an unchanged retry of the
+Task 12 failure. It remains a local diagnostic rather than an accepted B06
+primary or retention cohort.
+
+Reuse Task 12's existing capture CLI, recorder, three-browser runner and
+deadlines. Preserve the actual dirty-source fact and tracked-diff digest; do not
+stage, hide or consume unrelated workspace changes. Give the capture, diagnostics
+and Playwright runner distinct new directories. Use fresh memory services, one
+worker, zero retries, the original 100 cycles and the original operation/test
+deadlines. Do not modify source or run another browser/performance workload while
+the observation is active.
+
+- [ ] Initialize and select only the predeclared retention warmup attempt against
+      the published Task 15 source. Record exact HEAD, runtime versions, source
+      cleanliness and tracked-diff digest before and after the producer.
+- [ ] Run the producer once and preserve its first process result, checkpoint
+      stream, raw diagnostic sidecars and readiness-failure artifact. Never rerun
+      the same candidate to seek a green result.
+- [ ] Record the actual result through the existing external-attempt boundary,
+      including a failure. Independently verify sample completeness and the
+      single-run heap rule; do not finalize or publish a B06 cohort from this
+      diagnostic.
+- [ ] If readiness fails, use `signalingByAgentId` and its native-lifetime window
+      to determine whether the exact admitted Offer/Answer was attempted and
+      accepted on the relevant native instance before closure/replacement. State
+      unavailable, dropped, ambiguous and unjoined evidence explicitly. If the run
+      passes, retain all required checkpoints and select the next acceptance step
+      without manufacturing a causal failure claim.
+- [ ] Reconcile the result into both plans and select only the evidence-backed
+      successor: a focused correction, another missing discriminator, or the
+      remaining RTC-B06 acceptance work. Any source correction requires semantic
+      RED coverage and independent review; this authorization does not select one
+      in advance.
+
+**Exit:** One honest changed-candidate retention result whose signaling/native
+join either narrows the reconnect failure or whose complete passing checkpoints
+advance retention acceptance. The first result is preserved; no automatic rerun,
+new queue, retry, fence, lock, timer, dependency, migration or legacy path is
+introduced.
 
 ## Later outcomes, not additional speculative implementation slices
 
