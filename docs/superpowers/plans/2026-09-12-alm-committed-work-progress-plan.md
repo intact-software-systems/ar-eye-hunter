@@ -1716,11 +1716,11 @@ bounded to Answer 5's post-socket admission/local-dispatch interval.
 
 ### Task 23: Add the terminal causal cut after final signaling
 
-**Status: selected by the active plan goal.** Complete the test-only temporal
-artifact without waiting: retain a bounded causal cut immediately after the
-existing final signaling/native read. This allows a message first exposed by
-that read to be classified against admission and local dispatch that became
-visible during it.
+**Status: complete and independently reviewed on the published candidate.** The
+test-only artifact now retains a bounded causal cut immediately before and after
+the final signaling/native read. This allows a message first exposed by that
+read to be classified against admission and local dispatch that became visible
+during it without waiting.
 
 **Files:** amend only
 `tests/playwright/rallar-black-box/live-rtc-control-client.ts` and the existing
@@ -1729,22 +1729,22 @@ focused
 Keep that test at or below its current repository limit by consolidating its
 fixture rather than creating a duplicate adjacent test owner.
 
-- [ ] RED: make the final signaling reader expose a newly received Answer and
+- [x] RED: make the final signaling reader expose a newly received Answer and
       publish its admission/local-claim events only during that read. Prove the
       current post-health/pre-signaling run cut cannot contain them.
-- [ ] GREEN: after the final signaling read, take one immediate terminal
+- [x] GREEN: after the final signaling read, take one immediate terminal
       `#captureRun` and record its nondecreasing completion time. Rename the
       misleading `finalCausalCut` and its time to an explicit before-final-
       signaling name; add one explicit after-final-signaling causal cut. Do not
       retain aliases, versioned fields or a legacy artifact shape.
-- [ ] Reuse the existing 200-event projection, run-capture degradation,
+- [x] Reuse the existing 200-event projection, run-capture degradation,
       sanitization and one-write owner. Preserve initial evidence, health, the
       final signaling snapshot and phase order. Add no wait, timer, poll, retry,
       queue, fence, lock, dependency, deadline, threshold or behavior change.
-- [ ] Prove terminal-read degradation still writes bounded unsuccessful/empty
+- [x] Prove terminal-read degradation still writes bounded unsuccessful/empty
       evidence and preserves the original readiness error. Preserve all 128-item
       signaling bounds/drop counts and secret redaction.
-- [ ] Run strict focused TDD, the existing control/signaling suites, maintained
+- [x] Run strict focused TDD, the existing control/signaling suites, maintained
       test typing, changed checks and independent review. Publish before another
       retention observation.
 
@@ -1752,6 +1752,44 @@ fixture rather than creating a duplicate adjacent test owner.
 read with bounded causal cuts, so post-socket admission/claim is either retained
 or remains a precisely timed unknown. Production RTC, ALM, QueueBox and retry
 behavior remain unchanged.
+
+The strict RED failed all three focused cases on the missing before/after
+contract. GREEN passes 3/3; the related client/signaling suite passes 42/42 and
+maintained test typing covers 1,202 files with zero errors. Changed checks pass,
+the focused test is 497 lines, orchestration is 59 lines, and independent review
+reports no actionable finding. Obsolete cut/time names are deleted without an
+alias or alternate artifact shape.
+
+### Task 24: Recapture retention with the terminal causal cut
+
+**Status: selected by the active plan goal after Task 23 review.** Run exactly
+one new source-labelled `retention-100 / warmup / 1 / E3-memory` diagnostic on
+the published Task 23 candidate. Preserve the first result. This is a new
+observation after a reviewed tooling change, not an unchanged rerun and not a
+valid B06 primary by itself.
+
+- [ ] Reuse the canonical Task 21 initializer, exact attempt selector, one-worker
+      zero-retry producer and one `record-external` call. Require exact source,
+      runtime, dirty-diff and isolation facts; fresh memory services; unique
+      capture, diagnostic and Playwright output paths; 100 cycles; and unchanged
+      deadlines.
+- [ ] Preserve the first result without rerun. On readiness failure, require the
+      final signaling snapshot and both bracketing causal cuts. Join the matching
+      Answer across socket receipt, admission, local claim, native attempt/
+      settlement, native lifetime and peer replacement; treat unavailable or
+      truncated work as unknown.
+- [ ] On success, require all eleven checkpoints, three distinct agents, returned
+      settled state, and the strict greater-than-10-percent plus greater-than-5-MiB
+      single-run heap rule. Do not infer leak freedom from one non-breach.
+- [ ] Record and reconcile once before any source change or further observation.
+      Do not construct/finalize a cohort, archive a primary, or call this a B06
+      primary. Select only a correction supported by the newly complete terminal
+      cut or advance valid retention evidence.
+
+**Exit:** The first Task 24 result is retained once and either supplies complete
+retention evidence or bounds the latest readiness failure through the terminal
+causal cut. No automatic rerun, new queue, retry, fence, lock, timer, dependency,
+migration, legacy path, deadline, threshold or workload change.
 
 ## Later outcomes, not additional speculative implementation slices
 

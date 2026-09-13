@@ -102,10 +102,13 @@ maintained typing and changed checks pass. Task 21's one new source-labelled run
 then fails reconnect cycle 2 with only cycle-0 heap. Its exact timeline proves an
 older delayed Answer was correctly rejected after peer replacement; the latest
 matching Answer reached only the socket boundary in retained evidence. Task 22's
-read-only audit rejects the tempting stale-Answer behavior change. Task 23 is
-selected to bracket the final signaling read with bounded causal cuts so the
-latest Answer's admission/local dispatch is observable without a wait. No
-production RTC, ALM, QueueBox or retry change is selected.
+read-only audit rejects the tempting stale-Answer behavior change. Task 23 now
+brackets the final signaling read with bounded causal cuts so the latest
+Answer's admission/local dispatch is observable without a wait; focused and
+nearby tests, maintained typing, changed checks and independent review pass.
+Task 24 is selected for exactly one new source-labelled retention diagnostic on
+that published tooling candidate. No production RTC, ALM, QueueBox or retry
+change is selected.
 Keep proof in PR #566 and do not refresh a mergeable branch merely because `main`
 moves or reports `BEHIND`.
 
@@ -5254,11 +5257,15 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       delayed Answer 4 versus matching Answer 5 distinction and reject a
       behavioral or stale-counter correction unsupported by Answer 5's missing
       admission/local-dispatch evidence.
-- [ ] Complete Task 23's test-only terminal causal cut after final signaling.
+- [x] Complete Task 23's test-only terminal causal cut after final signaling.
       Rename the now-misleading pre-signaling final-cut fields directly, retain
       no aliases/legacy shape, keep existing bounds/sanitizers, and require TDD,
       maintained typing, changed checks and independent review before another
       retention observation.
+- [ ] Execute Task 24 once on the published Task 23 candidate with a new
+      source-labelled retention capture. Preserve the first result, require both
+      bracketing causal cuts on readiness failure, and do not rerun unchanged
+      source or construct/finalize a diagnostic cohort.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.
