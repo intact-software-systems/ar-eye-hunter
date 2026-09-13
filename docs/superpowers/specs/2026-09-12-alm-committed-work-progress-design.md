@@ -17,7 +17,22 @@ legacy fallback. Native and reconnect proof remain required.
 Independent review accepts correlation behavior but requires internal cleanup,
 media-policy separation and the public-contract amendment below. The maintainer
 approved that amendment on 2026-09-13; Task 10 fix round 1 now passes independent
-specification and quality review. Task 11's native delivery proof is underway.
+specification and quality review. Task 11's controlled native payload proof and
+one unchanged all-scenarios/reconnect run pass at `ceee81626658b39fac516b82ffbb9f7b5101c14d`.
+The native proof's single-timer timeout/cleanup repair at
+`6df7a09a34aa29a6c78740615599aa4f5bfdc209` passes independent specification and
+quality review. Four native tests pass in a fresh 12.2-second invocation;
+controlled pending native awaits cannot keep peers open past the test deadline
+or allocate/send after cleanup. Real channels may first enter `closing`, then
+must emit their native close event. Exact retained sensitivity source proves
+the unchanged control passes while removing only the delayed case's answer-ID
+comparison causes a five-second failure. The temporary test route is removed.
+No production behavior changes or matrix rerun accompany this fixture repair.
+The all-scenarios run takes 5.3 minutes with fresh memory services, Node 24.19.0,
+one worker and zero retries; its RTC warning/timeouts remain in the raw log.
+Retained output is under `tmp/perf/rtc-answer-native-20260913-first/`.
+Neither this local pass nor the native controlled case establishes reliable
+hosted ALM delivery, 100-cycle retention, storage performance or RTC-B06 acceptance.
 A subsequent
 published correlation candidate still fails hosted ALM readiness/delivery; its
 broad gate stops at the five known style findings. Neither outcome is evidence
@@ -471,7 +486,12 @@ answer: observe the replacement's data channel open and a payload arrive under
 the original deadline. Then run the existing all-scenarios/reconnect acceptance
 on the reviewed candidate, with isolated outputs and no blind retries. Retain
 the first result. These are correctness gates, not stable latency estimates or
-RTC-B06 completion. Later retention and performance work remain outcome-shaped;
+RTC-B06 completion. This proof slice is complete. The next bounded task uses
+the existing recorder for one local 100-cycle diagnostic with full heap/state
+checkpoints, actual source/runtime/dirty facts, and unchanged deadlines. It uses
+one predeclared catalog warmup identity without constructing a primary or
+retention cohort. Sample/state outcomes and single-run heap growth are checked
+separately from Playwright exit. Later performance work remains outcome-shaped;
 successor continuation remains conditional on its original evidence gate.
 
 ## Evidence and its limits

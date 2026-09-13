@@ -62,9 +62,10 @@ engine-startup defects. The correction waits for actual delivery or durable
 settlement, preserves expiry boundaries, and mutation-checks forbidden control
 delivery, readiness bypass, and post-disposal delivery. Independent review and
 the scoped re-review are complete. Local native ALM conformance now
-passes all three carriers, and the ordinary three-browser RTC matrix passes;
-the first all-scenarios run now fails formation readiness, and 100-cycle retention
-remains unrun on this correction. These are correctness results, not native
+passes all three carriers, and the ordinary three-browser RTC matrix passes.
+Earlier all-scenarios runs fail formation and reconnect readiness; the new
+answer-correlated candidate passes its one unchanged all-scenarios run below.
+The 100-cycle retention case remains unrun on this correction. These are correctness results, not native
 storage timing or B06 observation evidence.
 
 The all-scenarios test at `c35aa9879120336904690b9b2e27b71dee609c4d` runs once
@@ -898,9 +899,10 @@ claim based only on the synthetic diagnostic.
 
 ## Approved RTC correction: current execution horizon
 
-The following two tasks are the current concrete horizon within this plan.
-Earlier completed tasks are not reopened. Conditional successor continuation
-remains unselected and is not part of these tasks.
+Tasks 10 and 11 are completed history. The current concrete horizon is Task 12's
+one unchanged retention diagnostic. Earlier
+completed tasks are not reopened. Conditional successor continuation remains
+unselected and is not part of these tasks.
 
 ### Task 10: Correlate answers with the offer owned by the current peer
 
@@ -1030,9 +1032,54 @@ native convergence or a storage-performance result.
 
 ### Task 11: Prove native delayed-answer recovery and unchanged reconnect
 
-**Status:** Implementation underway after Task 10's clean independent re-review.
-The controlled Chromium proof and fresh local three-browser matrix have not yet
-produced candidate results. Keep first failures and existing deadlines.
+**Status: complete after independent fix-round review.** Controlled native
+delivery and the unchanged all-scenarios matrix pass. The test-only timeout/
+cleanup repair at `6df7a09a34aa29a6c78740615599aa4f5bfdc209` also passes.
+
+At `ceee81626658b39fac516b82ffbb9f7b5101c14d`, the real Chromium control and
+delayed-answer cases both open their channels and deliver the literal payload:
+two tests pass in 1.8 seconds. A separate sensitivity invocation leaves the
+control unchanged and disables only the delayed case's answer-ID guard; the
+control passes and delayed case times out at 5,000 ms without payload. Its first
+invocation also had an incidental full-SDP equality assertion failure, which was
+removed because trickled ICE changes that description. Preserve this mixed
+harness failure separately. The earlier temporary mutation source was not
+retained contemporaneously, so its exact scope cannot be independently verified
+from the saved logs alone. The follow-up must retain its runnable source before
+execution, without rewriting that historical limitation.
+
+The same candidate's existing all-scenarios case runs once with fresh local
+memory services, Node 24.19.0, one worker, zero retries and unchanged deadlines.
+It passes in 5.3 minutes, including reconnect, post-reconnect delivery and final
+artifact assertions. Raw outputs remain under
+`tmp/perf/rtc-answer-native-20260913-first/`, with separate native proof and
+matrix artifact/diagnostics directories. The matrix log still contains rejected
+malformed RTC data-channel messages and two 30,000 ms establishment warnings;
+a passing invocation is not warning-free operation, stable latency, or causal
+attribution of the earlier failures. Those earlier observations remain retained.
+
+Independent review identified one fixture lifetime gap: aborting event waits
+does not settle a pending native signaling await, so cleanup can exceed the
+five-second observation window. The repair races the outer observation against
+its existing single timer, independently closes both pair lifetimes, and checks
+abort before late continuations allocate or send. Two controlled pending-native
+REDs hit the old fixture's 30-second fallback. The first corrected run exposed
+an over-specific synchronous channel-close assertion; native channels may first
+be `closing`. The final tests require peers closed at the deadline, channels
+closing/closed then fully closed on their native event, and no late allocation
+or send. All four tests pass; a fresh unmodified verification passes in 12.2
+seconds. Strict typing and formatting pass. This is a test-boundary correction,
+not evidence of a spontaneous production native stall.
+
+The new sensitivity invocation retains its exact runnable patch before running:
+the unchanged control passes and the delayed case, with only its offer-ID
+comparison removed from the served response, fails at 5,000 ms. The temporary
+test route is removed and both proof files match the committed candidate.
+Independent re-review verifies that provenance, the timeout/continuation remedy
+and the original matrix result. Specification and quality both pass with no
+actionable finding. Callback depth five is reviewed as genuine browser/native
+event boundaries, not hidden workflow indirection; no suppression or exception
+is added. The unchanged full matrix is not repeated for this fixture-only fix.
 
 **Interfaces:** Consume Task 10's actual shared RTC peer and correlated signaling
 contract. Use the existing Playwright Chromium configuration and browser fixture
@@ -1047,7 +1094,7 @@ Include the files in a focused strict test project with explicit inherited
 ambient types. Keep the existing full-stack matrix unchanged unless its actual
 failure identifies a harness defect.
 
-- [ ] Extend the existing native peer test boundary with a controlled delayed
+- [x] Extend the existing native peer test boundary with a controlled delayed
       old answer followed by the matching answer for a replacement. Exercise
       real native descriptions, then require the replacement data channel to
       open and a literal payload to arrive under the original deadline. Retain
@@ -1056,11 +1103,11 @@ failure identifies a harness defect.
       a test bound, not a new production timeout. Assert real delivery, not only
       `signalingState === 'stable'`, and close every native peer/channel in
       independently attempted cleanup even after a failed assertion.
-- [ ] Run the existing all-scenarios/reconnect acceptance once on the reviewed
+- [x] Run the existing all-scenarios/reconnect acceptance once on the reviewed
       correction, with fresh memory services, one worker, zero retries, original
       workload/deadlines, and unique per-invocation artifact directories. Do not
       rerun an unchanged candidate to seek a green result.
-- [ ] Classify the first result from current artifacts, review any harness
+- [x] Classify the first result from current artifacts, review any harness
       change independently, and publish the coherent correction and proof to
       PR #566. A passing result advances to the later retention/performance
       outcomes; a failing result selects the next evidence-backed correction.
@@ -1068,6 +1115,66 @@ failure identifies a harness defect.
 **Exit:** Real native channel opening and payload delivery prove the controlled
 case, and the existing reconnect case has a retained, honestly classified result.
 RTC-B06 and Phase 1 completion remain the larger plan's acceptance decisions.
+
+### Task 12: Retain one unchanged 100-cycle diagnostic with full checkpoints
+
+**Status:** Next after Task 11's reviewed fixture repair and coherent publication.
+This is a local correctness/retention diagnostic, not an accepted B06 primary or
+the three-run retention cohort. Use the existing runner and recorder; no runtime
+or test-source change is selected.
+
+**Owners:** The existing `full-stack-live-rtc-three-browser-matrix.spec.ts`
+100-cycle case owns reconnect, state and CDP post-GC capture.
+`live-rtc-performance-evidence.ts` owns staged attempt evidence and semantic
+checkpoint validation. The `perf:rtc-baseline` CLI owns real local identity,
+manifest/environment observation and external-attempt recording.
+
+The standalone Playwright case computes heap/state but does not write aggregate
+attempt evidence when no capture context is configured. Do not spend the long
+run without that context or treat its process exit as a retention verdict.
+
+- [ ] Initialize a new real local E3-memory RTC-B06 capture using the existing
+      CLI and actual clock/HEAD/runtime. Select only its predeclared
+      `retention-100 / warmup / 1` attempt. Preserve the actual `git.clean` value,
+      unrelated dirty diagnostic and untracked artifacts; never manufacture a
+      clean tree or import another run's environment. Record before/after source
+      facts and a digest of the tracked diff. The initialized manifest remains
+      incomplete and explicitly diagnostic; no later executions are implied.
+- [ ] Use the existing three catalog flags for initialization/recording, but
+      unset all-scenarios for the actual retention producer. Run exactly the
+      100-cycle test once, using fresh local memory services, actual Node 24,
+      one worker, zero retries, original 1,800,000 ms test limit and original
+      per-operation deadlines. Use unique diagnostics and Playwright output
+      directories under this capture. No overlapping browser/performance work,
+      unchanged retry, external deployment, or source changes during observation.
+- [ ] Record the actual producer exit through `record-external` using the
+      original controller configuration, including failures. Verify the staged
+      sample outcome and issues independently of Playwright exit: all eleven
+      checkpoints at 0, 10, ..., 100, three distinct agents, and returned settled
+      state are required. Retain raw checkpoints even if the run fails early.
+- [ ] Report measured heaps and the single-run breach criterion separately:
+      final heap must exceed both cycle-0 by 10% and cycle-0 by 5 MiB to breach.
+      One non-breach is not leak freedom; one breach cannot be hidden by a green
+      test. Do not construct/finalize a cohort, add missing samples, publish an
+      archive, or call this a valid B06 primary. A failed result selects the next
+      bounded diagnostic; a passing result advances the outstanding acceptance.
+
+Producer entry point after the real capture selection has been configured:
+
+```sh
+RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
+  npm run test:rallar:full-stack:memory:live-rtc-3 -- \
+  --grep 'returns RTC state and post-GC heap to baseline after 100 reconnect cycles' \
+  --workers=1 --retries=0 --output <unique-output-directory>
+```
+
+The five `RALLAR_BLACK_BOX_RTC_*` selection fields must name the initialized
+baseline, retention case/input, warmup phase and ordinal 1; diagnostics also need
+a distinct output directory. Bare invocation is not the configured capture.
+
+**Exit:** One honestly source-labelled run with retained full checkpoint evidence
+and separately classified process, sample, settled-state and single-run heap
+outcomes. No new code, migration, legacy path, retry owner or performance claim.
 
 ## Later outcomes, not additional speculative implementation slices
 
