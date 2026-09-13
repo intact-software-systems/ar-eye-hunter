@@ -1511,33 +1511,83 @@ threshold changes.
 
 ### Task 18: Prove the witness through the real three-browser app path
 
-**Status: selected.** On the published Task 17 head, run one short ignored
-full-stack memory-mode proof through `openLiveRtcBrowserAgent`, the existing
-three-agent environment and initial `messages.rtc` formation. This is a harness
-installation/read check, not an RTC-B06 attempt, performance sample, or retained
-matrix case.
+**Status: complete; first result passed and was not rerun.** On the published
+Task 17 head, one short ignored full-stack memory-mode proof ran through
+`openLiveRtcBrowserAgent`, the existing three-agent environment and initial
+`messages.rtc` formation. This is a harness installation/read check, not an
+RTC-B06 attempt, performance sample, or retained matrix case.
 
-- [ ] Use fresh task-owned memory services, one worker, zero retries and a unique
+- [x] Use fresh task-owned memory services, one worker, zero retries and a unique
       ignored output directory. Do not initialize the RTC baseline CLI or select
       default/all-scenarios/retention evidence identities.
-- [ ] Open the real A/B/C browser agents, complete the existing initial formation,
+- [x] Open the real A/B/C browser agents, complete the existing initial formation,
       and read each agent through its actual `readSignalingObservation` boundary.
       Require available bounded snapshots, native lifetimes and at least one
       message-to-native attempt join across the trio. Preserve privacy and report
       drops/ambiguity rather than demanding an exact incidental ordering.
-- [ ] Close/reset the formation and all browser contexts through existing owners,
+- [x] Close/reset the formation and all browser contexts through existing owners,
       preserve the first result, and verify task ports are free. Do not rerun an
       unchanged source to seek green.
-- [ ] Reconcile the result before selecting another long observation. A passing
+- [x] Reconcile the result before selecting another long observation. A passing
       proof permits a separately source-labelled retention diagnostic whose
       distinct question is the cycle-2 signaling/native join. A failing proof
       selects the smallest real-path harness correction; it does not select an
       RTC transport fix by itself.
 
+The sole proof at `f690f9445ba2da7c8894699a5eedbe2a4ff723a0` passes in
+1.2 minutes. All three readers are available, every agent retains at least one
+native lifetime, and the trio contains at least one unique settled Offer/Answer
+attempt whose native ordinal exists in the same lifetime window. Existing
+formation close/reset and context cleanup pass; all task ports are free.
+
+The ignored spec attached safe aggregate counts, but the line reporter's
+failures-only output deleted pass-side attachments. Exact per-agent received,
+attempt, match, native-observation and drop counts are therefore uncaptured, not
+zero. The run was not repeated to enrich evidence. Its runtime assertions prove
+the selected Boolean installation/read gate and are sufficient to select Task
+19; they are not a performance or RTC-B06 result.
+
 **Exit:** The real app/browser-agent/formation path can read the installed witness
 and join actual signaling to native lifetime evidence, or its first failure
 selects a narrower tooling correction. No tracked source change is required by
 this proof and no acceptance metric is claimed.
+
+### Task 19: Capture the cycle-2 join with the corrected witness
+
+**Status: selected by the active RTC performance goal.** Run one newly
+source-labelled `retention-100 / warmup / 1` diagnostic after publishing the
+Task 18 reconciliation. The candidate differs from Task 16 by the reviewed Task
+17 installation correction, and Task 18 proves the real app path can read its
+witness. The distinct question is now whether the recurring cycle-2 signaling
+reaches and settles on the relevant native peer before close/replacement.
+
+- [ ] Reuse the canonical Task 12/16 initializer, selector, producer and
+      `record-external` path with a new capture, diagnostics and Playwright output
+      directory. Preserve actual HEAD/runtime/dirty-source facts and tracked-diff
+      digest. Use fresh memory services, one worker, zero retries, 100 cycles and
+      unchanged deadlines; run exactly one producer.
+- [ ] Preserve and record the first result, including a failure. Independently
+      validate checkpoint completeness, returned state and the single-run heap
+      criterion; do not construct/finalize a cohort or call this diagnostic a B06
+      primary.
+- [ ] If readiness fails, require each selected agent's signaling snapshot to be
+      available before drawing a join conclusion. Correlate the relevant exact
+      received Offer/Answer to unique/ambiguous/unmatched native attempts,
+      settlement, ordinal lifetime, close/replacement and bounded drop/coverage
+      facts. Missing or truncated evidence remains unknown, never nonexecution.
+- [ ] If the run passes, retain all eleven checkpoints and classify the heap rule
+      without inventing a failure cause. If it fails with available evidence,
+      select the smallest semantic RTC correction or missing discriminator. If
+      the witness is unexpectedly unavailable again, stop at the harness boundary;
+      do not rerun or infer a transport defect.
+- [ ] Reconcile both plans and publish the retained conclusion before any source
+      correction or additional long observation. A selected correction follows
+      TDD, no legacy/migration, touched-file closure and independent review.
+
+**Exit:** One first-result retention diagnostic on the corrected, real-path-
+proven witness either supplies the cycle-2 message/native lifetime join or
+advances complete retention evidence. No automatic rerun, new queue, retry,
+fence, lock, timer, dependency, migration, legacy path or threshold change.
 
 ## Later outcomes, not additional speculative implementation slices
 

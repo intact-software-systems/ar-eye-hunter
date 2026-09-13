@@ -84,14 +84,15 @@ correction review.
 
 Task 16's one source-labelled changed-candidate retention observation is retained.
 It fails reconnect cycle 2 with only cycle-0 heap evidence; all six signaling/
-native projections are unavailable. Task 17 reproduces and fixes the tooling
-cause under the actual Playwright loader: the witness is now one self-contained
-plain page installer with a separate strict host decoder, and the obsolete
-class-string path is deleted. Independent review passes. Task 18 is the selected
-next slice: one short ignored full-app three-browser formation/read proof on the
-published correction, not another retention or RTC-B06 attempt. Keep proof in PR
-#566 and do not refresh a mergeable branch merely because `main` moves or reports
-`BEHIND`.
+native projections are unavailable. Task 17 fixes the actual Playwright-loader
+cause and passes independent review. Task 18's first short real-app A/B/C proof
+then passes: all readers are available, all agents have native lifetimes and at
+least one actual Offer/Answer joins a settled native ordinal. Exact pass-side
+aggregate counts were discarded and remain uncaptured; the proof was not rerun.
+Task 19 is the selected next slice: one newly source-labelled retention diagnostic
+whose distinct question is the recurring cycle-2 signaling/native lifetime join.
+Keep proof in PR #566 and do not refresh a mergeable branch merely because `main`
+moves or reports `BEHIND`.
 
 **Historical reconciliation (superseded current status):** Earlier focused
 corrections include PRs #499, #510, and #517. Run 33991439486 produced the sixth archive in
@@ -5216,9 +5217,12 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       self-contained plain page installer, obsolete class-string path deleted,
       focused native/semantic validation and independent review. Do not infer an
       RTC transport fix from Task 16's unavailable witness.
-- [ ] Run Task 18 once through the actual full-app A/B/C browser-agent and initial
+- [x] Run Task 18 once through the actual full-app A/B/C browser-agent and initial
       formation path. Require an available bounded witness and a real signaling/
       native join before selecting any further retention observation.
+- [ ] Execute Task 19 once with a new source-labelled retention capture on the
+      corrected witness. Preserve its first result and classify the exact
+      cycle-2 signaling/native lifetime join before selecting a correction.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.
