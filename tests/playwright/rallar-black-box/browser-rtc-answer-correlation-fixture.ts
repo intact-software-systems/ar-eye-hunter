@@ -97,7 +97,8 @@ class NativeRtcPair {
         });
     }
 
-    start(): void {
+    start(signal: AbortSignal): void {
+        signal.throwIfAborted();
         this.left.connect();
         this.right.connect();
         this.channel = this.left.createDataChannel('native-answer-proof');
@@ -106,11 +107,14 @@ class NativeRtcPair {
 
     async readAnswer(signal: AbortSignal): Promise<Extract<QRtcSignal, { signalType: 'Answer'; }>> {
         const offer = await this.signaling.readDescription('Offer', signal);
+        signal.throwIfAborted();
         await this.right.handleSignal(offer);
+        signal.throwIfAborted();
         return await this.signaling.readDescription('Answer', signal);
     }
 
     async writePayload(signal: AbortSignal): Promise<void> {
+        signal.throwIfAborted();
         const channel = this.channel;
         if (!channel) {
             throw new Error('Native proof channel was not started');
@@ -118,6 +122,7 @@ class NativeRtcPair {
         if (channel.readyState !== 'open') {
             await readNativeEvent(channel, 'open', signal);
         }
+        signal.throwIfAborted();
         channel.send('current-answer-native-payload');
         if (this.receivedPayload === undefined) {
             await readNativeEvent(this.events, 'payload', signal);
@@ -159,9 +164,17 @@ export async function runBrowserRtcAnswerCorrelation(
     const current = new NativeRtcPair(createOfferId);
     const observation = new AbortController();
     const cleanupErrors: string[] = [];
+    const deadline = new Promise<never>((_resolve, reject) => {
+        observation.signal.addEventListener('abort', () => {
+            reject(new Error('Native RTC observation exceeded 5000 ms'));
+        }, { once: true });
+    });
     const timeout = setTimeout(() => observation.abort(), 5000);
     try {
-        return await observeAnswerCorrelation({ previous, current, delayedOldAnswer, observation, cleanupErrors });
+        return await Promise.race([
+            observeAnswerCorrelation({ previous, current, delayedOldAnswer, observation, cleanupErrors }),
+            deadline
+        ]);
     }
     finally {
         clearTimeout(timeout);
@@ -178,29 +191,25 @@ async function observeAnswerCorrelation(
     const signal = observation.observation.signal;
     let oldAnswer: Extract<QRtcSignal, { signalType: 'Answer'; }> | undefined;
     if (delayedOldAnswer) {
-        previous.start();
+        previous.start(signal);
         oldAnswer = await previous.readAnswer(signal);
+        signal.throwIfAborted();
         previous.close(cleanupErrors);
     }
-    current.start();
+    current.start(signal);
     const currentAnswer = await current.readAnswer(signal);
     const currentOffer = await current.signaling.readDescription('Offer', signal);
     if (oldAnswer) {
         await current.left.handleSignal(oldAnswer);
+        signal.throwIfAborted();
     }
     const signalingAfterOldAnswer = current.left.status.pc?.signalingState;
     const oldDescriptionSelected = oldAnswer !== undefined &&
         current.left.status.pc?.remoteDescription?.type === 'answer';
     await current.left.handleSignal(currentAnswer);
+    signal.throwIfAborted();
     const signalingAfterCurrentAnswer = current.left.status.pc?.signalingState;
-    try {
-        await current.writePayload(signal);
-    }
-    catch (error) {
-        if (!signal.aborted) {
-            throw error;
-        }
-    }
+    await current.writePayload(signal);
     return {
         delayedOldAnswer,
         distinctOfferIds: oldAnswer !== undefined && oldAnswer.offerId !== currentOffer.offerId,
