@@ -676,6 +676,7 @@ describe('rallar-bb-test distributed run contract', () => {
                 {
                     recipeId: 'inline-probe',
                     recipe: {
+                        schemaVersion: 1,
                         recipeId: 'inline-probe',
                         commands: [{ kind: 'health', commandId: 'probe-health' }]
                     }

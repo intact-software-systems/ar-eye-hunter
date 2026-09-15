@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { MultiDirectedGraph } from 'graphology';
 
 export type RallarTopologyNodeKind =

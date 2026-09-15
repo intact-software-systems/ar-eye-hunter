@@ -3,7 +3,7 @@ import { flattenRallarBlackBoxCompositeResults } from '../composite-results.ts';
 import type { ControlResultEnvelope } from '../control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
-import type { RallarBlackBoxTestResult } from '../types.ts';
+import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { lookupPayloadPath } from '../wait/wait-event-match.ts';
 import type {
     RallarBlackBoxGroupAssertionEvidenceStatus,

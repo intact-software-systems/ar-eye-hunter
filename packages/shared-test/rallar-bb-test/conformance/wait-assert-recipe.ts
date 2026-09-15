@@ -1,18 +1,20 @@
-import type { RallarBlackBoxTestRecipe } from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
 import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
+import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 import {
-    closeCommand,
-    commandMetadata,
-    configureCommand,
     DEFAULT_CONNECTION,
     DEFAULT_ROOM_ID,
-    recipeId,
-    recipeMetadata,
-    rtcConnectCommand,
-    scopeFields,
-    statsCommand,
-    timeoutMs
+    toCloseCommand,
+    toCommandMetadata,
+    toConfigureCommand,
+    toConformanceMessageProbe,
+    toConformanceMessageWait,
+    toRecipeId,
+    toRecipeMetadata,
+    toRtcConnectCommand,
+    toStatsCommand,
+    toTimeoutMs
 } from './composite-conformance-command-fixtures.ts';
 
 export function waitAssertRecipe(
@@ -22,108 +24,92 @@ export function waitAssertRecipe(
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
     return {
-        recipeId: recipeId('wait-assert-evidence', options),
+        schemaVersion: 1,
+        recipeId: toRecipeId('wait-assert-evidence', options),
         name: 'Composite conformance: wait and assert evidence',
         continueOnFailure: false,
-        metadata: recipeMetadata('wait-assert-evidence'),
+        metadata: toRecipeMetadata('wait-assert-evidence'),
         commands: [
-            configureCommand('wait-assert-evidence', options),
-            rtcConnectCommand(
-                'wait-assert-evidence',
-                'wait-assert-connect',
+            toConfigureCommand('wait-assert-evidence', options),
+            toRtcConnectCommand({
+                caseId: 'wait-assert-evidence',
+                commandId: 'wait-assert-connect',
+                connection: connection,
+                roomId: roomId,
+                transport: transport,
+                options: options
+            }),
+            toConformanceMessageProbe({
+                options,
+                caseId: 'wait-assert-evidence',
+                commandId: 'wait-assert-send',
                 connection,
                 roomId,
                 transport,
-                options
-            ),
-            {
-                kind: 'rtc.send',
-                commandId: 'wait-assert-send',
-                connection,
-                transport,
-                timeoutMs: timeoutMs(options),
-                send: {
-                    data: {
-                        topic: 'rallar.conformance.wait-assert',
-                        marker: 'wait-assert-evidence'
-                    },
-                    roomId,
-                    ...scopeFields(options)
-                },
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-send')
-            },
-            {
-                kind: 'wait',
+                data: {
+                    topic: 'rallar.conformance.wait-assert',
+                    marker: 'wait-assert-evidence'
+                }
+            }),
+            toConformanceMessageWait({
                 commandId: 'wait-assert-wait-message',
-                timeoutMs: timeoutMs(options),
-                match: {
-                    kind: 'message',
-                    topic: 'rallar.conformance.message',
-                    payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.wait-assert'
-                },
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-wait-message')
-            },
-            {
-                kind: 'assert',
-                commandId: 'wait-assert-check-message',
-                source: 'messages.0.payload.data.marker',
-                operator: 'equals',
-                expected: 'wait-assert-evidence',
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-message')
-            },
-            {
-                kind: 'assert',
-                commandId: 'wait-assert-check-gt',
-                source: 'state.messages.length',
-                operator: 'gt',
-                expected: 0,
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-gt')
-            },
-            {
-                kind: 'assert',
-                commandId: 'wait-assert-check-between',
-                source: 'state.messages.length',
-                operator: 'between',
-                expected: [1, 50],
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-between')
-            },
-            {
-                kind: 'assert',
-                commandId: 'wait-assert-check-marker-length',
-                source: 'messages.0.payload.data.marker',
-                operator: 'length',
-                expected: 'wait-assert-evidence'.length,
-                metadata: commandMetadata(
-                    'wait-assert-evidence',
-                    'wait-assert-check-marker-length'
-                )
-            },
-            {
-                kind: 'assert',
-                commandId: 'wait-assert-check-topic-pattern',
-                source: 'messages.0.payload.data.topic',
-                operator: 'matches',
-                expected: '^rallar\\.conformance\\.',
-                metadata: commandMetadata(
-                    'wait-assert-evidence',
-                    'wait-assert-check-topic-pattern'
-                )
-            },
-            {
-                kind: 'assert',
-                commandId: 'wait-assert-check-shape',
-                source: 'messages.0.payload',
-                operator: 'matchesShape',
-                expected: {
-                    data: {
-                        marker: 'wait-assert-evidence'
-                    }
-                },
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-shape')
-            },
-            statsCommand('wait-assert-stats', 'wait-assert-evidence'),
-            closeCommand('wait-assert-close', 'wait-assert-evidence')
+                timeoutMs: toTimeoutMs(options),
+                topic: 'rallar.conformance.wait-assert',
+                caseId: 'wait-assert-evidence'
+            }),
+            ...toWaitEvidenceAssertions(),
+            toStatsCommand('wait-assert-stats', 'wait-assert-evidence'),
+            toCloseCommand('wait-assert-close', 'wait-assert-evidence')
         ]
     };
+}
+
+const WAIT_EVIDENCE_ASSERTIONS:
+    readonly (Extract<RallarBlackBoxTestCommand, { kind: 'assert'; }> & { readonly commandId: string; })[] = [{
+        kind: 'assert',
+        commandId: 'wait-assert-check-message',
+        source: 'messages.0.payload.data.marker',
+        operator: 'equals',
+        expected: 'wait-assert-evidence'
+    }, {
+        kind: 'assert',
+        commandId: 'wait-assert-check-gt',
+        source: 'state.messages.length',
+        operator: 'gt',
+        expected: 0
+    }, {
+        kind: 'assert',
+        commandId: 'wait-assert-check-between',
+        source: 'state.messages.length',
+        operator: 'between',
+        expected: [1, 50]
+    }, {
+        kind: 'assert',
+        commandId: 'wait-assert-check-marker-length',
+        source: 'messages.0.payload.data.marker',
+        operator: 'length',
+        expected: 'wait-assert-evidence'.length
+    }, {
+        kind: 'assert',
+        commandId: 'wait-assert-check-topic-pattern',
+        source: 'messages.0.payload.data.topic',
+        operator: 'matches',
+        expected: '^rallar\\.conformance\\.'
+    }, {
+        kind: 'assert',
+        commandId: 'wait-assert-check-shape',
+        source: 'messages.0.payload',
+        operator: 'matchesShape',
+        expected: {
+            data: {
+                marker: 'wait-assert-evidence'
+            }
+        }
+    }];
+
+function toWaitEvidenceAssertions(): readonly RallarBlackBoxTestCommand[] {
+    return WAIT_EVIDENCE_ASSERTIONS.map((command) => ({
+        ...command,
+        metadata: toCommandMetadata('wait-assert-evidence', command.commandId)
+    }));
 }

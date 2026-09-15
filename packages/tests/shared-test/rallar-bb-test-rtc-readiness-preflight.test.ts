@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { distributedRecipePreflight } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const ROOM_IDENTITY_WARNING = 'Browser Rallar RTC readiness cannot point-refresh room state without an exact room reference';
 const ROOM_IDENTITY_REMEDY = 'provide roomRef or applicationId plus roomId on rtc.connect or the active configure command.';
 
 function recipeWith(commands: readonly RallarBlackBoxTestCommand[]): RallarBlackBoxTestRecipe {
     return {
+        schemaVersion: 1,
         recipeId: 'rtc-readiness-room-identity',
         commands
     };
@@ -154,6 +155,7 @@ describe('RTC readiness room identity preflight', () => {
             {
                 kind: 'recipe.run',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'embedded-readiness',
                     commands: [readinessConnect({ commandId: 'recipe-connect' })]
                 }
@@ -182,6 +184,7 @@ describe('RTC readiness room identity preflight', () => {
             {
                 kind: 'recipe.run',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'embedded-readiness',
                     commands: [
                         {
@@ -221,6 +224,7 @@ describe('RTC readiness room identity preflight', () => {
                 composite: {
                     kind: 'recipe.run',
                     recipe: {
+                        schemaVersion: 1,
                         recipeId: 'embedded-config',
                         commands: [{
                             kind: 'configure',

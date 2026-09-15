@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxTestRtcStreamThresholdFailure,
     RallarBlackBoxTestRtcStreamThresholds,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 const STREAM_PLACEHOLDER_PATTERN = /\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}/g;
 const STREAM_EXACT_PLACEHOLDER_PATTERN = /^\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}$/;

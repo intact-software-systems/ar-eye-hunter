@@ -1,3 +1,4 @@
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
     'recipe.load',
@@ -94,29 +95,29 @@ export type RallarBlackBoxTestRuntimeStatus =
     | 'failed'
     | 'cancelled';
 
-export type RallarBlackBoxTestConfig = Readonly<{
-    runId?: string;
-    agentId?: string;
-    environment?: string;
-    apiBaseUrl?: string;
-    actor?: string;
-    sessionId?: string;
-    roomId?: string;
-    transport?: RallarBlackBoxTestTransport;
-    rallar?: RallarBlackBoxTestRecord;
-    browser?: RallarBlackBoxTestRecord;
-    control?: RallarBlackBoxTestRecord;
-    defaults?: RallarBlackBoxTestRecord;
-    fleet?: RallarBlackBoxTestRecord;
-    redaction?: RallarBlackBoxTestRedactionOptions;
-}>;
+export interface RallarBlackBoxTestConfig {
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly environment?: string;
+    readonly apiBaseUrl?: string;
+    readonly actor?: string;
+    readonly sessionId?: string;
+    readonly roomId?: string;
+    readonly transport?: RallarBlackBoxTestTransport;
+    readonly rallar?: RallarBlackBoxTestRecord;
+    readonly browser?: RallarBlackBoxTestRecord;
+    readonly control?: RallarBlackBoxTestRecord;
+    readonly defaults?: RallarBlackBoxTestRecord;
+    readonly fleet?: RallarBlackBoxTestRecord;
+    readonly redaction?: RallarBlackBoxTestRedactionOptions;
+}
 
-export type RallarBlackBoxTestRedactionOptions = Readonly<{
-    keys?: readonly string[];
-    keySubstrings?: readonly string[];
-    secretValues?: readonly string[];
-    replacement?: string;
-}>;
+export interface RallarBlackBoxTestRedactionOptions {
+    readonly keys?: readonly string[];
+    readonly keySubstrings?: readonly string[];
+    readonly secretValues?: readonly string[];
+    readonly replacement?: string;
+}
 
 export type RallarBlackBoxTestCommandBase<K extends RallarBlackBoxTestCommandKind> = Readonly<{
     kind: K;
@@ -133,15 +134,15 @@ export type RallarBlackBoxTestConfigureCommand =
         config: RallarBlackBoxTestConfig;
     }>;
 
-export type RallarBlackBoxTestRecipe = Readonly<{
-    schemaVersion?: 1;
-    recipeId: string;
-    name?: string;
-    description?: string;
-    continueOnFailure?: boolean;
-    commands: readonly RallarBlackBoxTestCommand[];
-    metadata?: RallarBlackBoxTestRecord;
-}>;
+export interface RallarBlackBoxTestRecipe {
+    readonly schemaVersion: 1;
+    readonly recipeId: string;
+    readonly name?: string;
+    readonly description?: string;
+    readonly continueOnFailure?: boolean;
+    readonly commands: readonly RallarBlackBoxTestCommand[];
+    readonly metadata?: RallarBlackBoxTestRecord;
+}
 
 export type RallarBlackBoxTestRecipeLoadCommand =
     & RallarBlackBoxTestCommandBase<'recipe.load'>
@@ -155,14 +156,14 @@ export type RallarBlackBoxTestRecipeRunCommand =
         recipe?: RallarBlackBoxTestRecipe;
     }>;
 
-export type RallarBlackBoxTestLoopThresholds = Readonly<{
-    minAchievedRateHz?: number;
-    maxAverageStartDriftMs?: number;
-    maxStartDriftMs?: number;
-    maxJitterMs?: number;
-    minSendSuccessRatio?: number;
-    failOnBackpressure?: boolean;
-}>;
+export interface RallarBlackBoxTestLoopThresholds {
+    readonly minAchievedRateHz?: number;
+    readonly maxAverageStartDriftMs?: number;
+    readonly maxStartDriftMs?: number;
+    readonly maxJitterMs?: number;
+    readonly minSendSuccessRatio?: number;
+    readonly failOnBackpressure?: boolean;
+}
 
 export type RallarBlackBoxTestRecipeCancelCommand =
     & RallarBlackBoxTestCommandBase<'recipe.cancel'>
@@ -185,12 +186,12 @@ export type RallarBlackBoxTestLoopCommand =
         thresholds?: RallarBlackBoxTestLoopThresholds;
     }>;
 
-export type RallarBlackBoxTestParallelGroup = Readonly<{
-    groupId?: string;
-    label?: string;
-    commands: readonly RallarBlackBoxTestCommand[];
-    metadata?: RallarBlackBoxTestRecord;
-}>;
+export interface RallarBlackBoxTestParallelGroup {
+    readonly groupId?: string;
+    readonly label?: string;
+    readonly commands: readonly RallarBlackBoxTestCommand[];
+    readonly metadata?: RallarBlackBoxTestRecord;
+}
 
 export type RallarBlackBoxTestParallelCommand =
     & RallarBlackBoxTestCommandBase<'parallel'>
@@ -201,24 +202,19 @@ export type RallarBlackBoxTestParallelCommand =
         continueOnFailure?: boolean;
     }>;
 
-export type RallarBlackBoxTestWaitMatch = Readonly<{
-    kind?: RallarBlackBoxTestEventKind;
-    topic?: string;
-    commandId?: string;
-    connection?: string;
-    transport?: RallarBlackBoxTestTransport;
-    severity?: RallarBlackBoxTestSeverity;
-    payloadPath?: string;
-    equals?: unknown;
-    contains?: string;
-    exists?: boolean;
-    /**
-     * Ignore events recorded before this wall-clock stamp. A wait scans the whole buffer and
-     * answers with the newest match, so a scenario that legitimately produced the same event
-     * earlier needs the cursor to say which occurrence it means.
-     */
-    sinceEpochMs?: number;
-}>;
+export interface RallarBlackBoxTestWaitMatch {
+    readonly kind?: RallarBlackBoxTestEventKind;
+    readonly topic?: string;
+    readonly commandId?: string;
+    readonly connection?: string;
+    readonly transport?: RallarBlackBoxTestTransport;
+    readonly severity?: RallarBlackBoxTestSeverity;
+    readonly payloadPath?: string;
+    readonly equals?: unknown;
+    readonly contains?: string;
+    readonly exists?: boolean;
+    readonly sinceEpochMs?: number;
+}
 
 export type RallarBlackBoxTestWaitCommand =
     & RallarBlackBoxTestCommandBase<'wait'>
@@ -250,11 +246,11 @@ export type RallarBlackBoxTestAssertCommand =
         expected?: unknown;
     }>;
 
-export type RallarBlackBoxTestRtcConnectReadiness = Readonly<{
-    minReadyPeers?: number;
-    timeoutMs?: number;
-    intervalMs?: number;
-}>;
+export interface RallarBlackBoxTestRtcConnectReadiness {
+    readonly minReadyPeers?: number;
+    readonly timeoutMs?: number;
+    readonly intervalMs?: number;
+}
 
 export type RallarBlackBoxTestRtcConnectCommand =
     & RallarBlackBoxTestCommandBase<'rtc.connect'>
@@ -312,7 +308,7 @@ export type RallarBlackBoxTestMessagesObserveCommand =
     & Readonly<{
         connection?: string;
         handleId: string;
-        state: readonly string[];
+        state: readonly ALDeliveryState[];
     }>;
 
 export type RallarBlackBoxTestMessagesCancelCommand =
@@ -352,16 +348,16 @@ export type RallarBlackBoxTestAgentReloadCommand =
     & RallarBlackBoxTestCommandBase<'agent.reload'>
     & Readonly<{ readyTimeoutMs: number; }>;
 
-export type RallarBlackBoxTestRtcStreamThresholds = Readonly<{
-    minSendSuccessRatio?: number;
-    maxDroppedFrames?: number;
-    maxBackpressureCount?: number;
-    maxP95SendDurationMs?: number;
-    maxP99SendDurationMs?: number;
-    maxAverageStartDriftMs?: number;
-    maxStartDriftMs?: number;
-    maxJitterMs?: number;
-}>;
+export interface RallarBlackBoxTestRtcStreamThresholds {
+    readonly minSendSuccessRatio?: number;
+    readonly maxDroppedFrames?: number;
+    readonly maxBackpressureCount?: number;
+    readonly maxP95SendDurationMs?: number;
+    readonly maxP99SendDurationMs?: number;
+    readonly maxAverageStartDriftMs?: number;
+    readonly maxStartDriftMs?: number;
+    readonly maxJitterMs?: number;
+}
 
 export type RallarBlackBoxTestRtcStreamCommand =
     & RallarBlackBoxTestCommandBase<'rtc.stream'>
@@ -491,12 +487,12 @@ export type RallarBlackBoxTestCrdtWaitOperator =
     | 'gte'
     | 'lte';
 
-export type RallarBlackBoxTestCrdtWaitCondition = Readonly<{
-    source: RallarBlackBoxTestCrdtWaitConditionSource;
-    path?: string;
-    operator: RallarBlackBoxTestCrdtWaitOperator;
-    expected?: unknown;
-}>;
+export interface RallarBlackBoxTestCrdtWaitCondition {
+    readonly source: RallarBlackBoxTestCrdtWaitConditionSource;
+    readonly path?: string;
+    readonly operator: RallarBlackBoxTestCrdtWaitOperator;
+    readonly expected?: unknown;
+}
 
 export type RallarBlackBoxTestCrdtWaitCommand =
     & RallarBlackBoxTestCommandBase<'crdt.wait'>
@@ -538,13 +534,13 @@ export type RallarBlackBoxTestCrdtCommand =
     | RallarBlackBoxTestCrdtUndoRedoCommand
     | RallarBlackBoxTestCrdtCloseDestroyCommand;
 
-export type RallarBlackBoxTestRoomFields = Readonly<{
-    roomId?: string;
-    applicationId?: string;
-    workspaceId?: string;
-    scope?: RallarBlackBoxTestRecord;
-    roomRef?: RallarBlackBoxTestRecord;
-}>;
+export interface RallarBlackBoxTestRoomFields {
+    readonly roomId?: string;
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly scope?: RallarBlackBoxTestRecord;
+    readonly roomRef?: RallarBlackBoxTestRecord;
+}
 
 export type RallarBlackBoxTestDirectorAppointCommand =
     & RallarBlackBoxTestCommandBase<'director.appoint'>
@@ -672,179 +668,179 @@ export type RallarBlackBoxTestCommand =
 
 export type RallarBlackBoxTestResultStatus = 'ok' | 'failed' | 'cancelled' | 'skipped';
 
-export type RallarBlackBoxTestError = Readonly<{
-    code: string;
-    message: string;
-    details?: unknown;
-}>;
+export interface RallarBlackBoxTestError {
+    readonly code: string;
+    readonly message: string;
+    readonly details?: unknown;
+}
 
-export type RallarBlackBoxTestResult<T = unknown> = Readonly<{
-    commandId: string;
-    kind: RallarBlackBoxTestCommandKind;
-    status: RallarBlackBoxTestResultStatus;
-    ok: boolean;
-    startedAtEpochMs: number;
-    endedAtEpochMs: number;
-    durationMs: number;
-    value?: T;
-    error?: RallarBlackBoxTestError;
-    replayed?: boolean;
-}>;
+export interface RallarBlackBoxTestResult<T = unknown> {
+    readonly commandId: string;
+    readonly kind: RallarBlackBoxTestCommandKind;
+    readonly status: RallarBlackBoxTestResultStatus;
+    readonly ok: boolean;
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
+    readonly durationMs: number;
+    readonly value?: T;
+    readonly error?: RallarBlackBoxTestError;
+    readonly replayed?: boolean;
+}
 
-export type RallarBlackBoxTestCompositeChildResult = Readonly<{
-    commandId: string;
-    originalCommandId?: string;
-    parentCommandId?: string;
-    path?: string;
-    sourceRecipePath?: string;
-    childIndex?: number;
-    commandIndex: number;
-    iteration?: number;
-    groupId?: string;
-    groupIndex?: number;
-    result: RallarBlackBoxTestResult;
-}>;
+export interface RallarBlackBoxTestCompositeChildResult {
+    readonly commandId: string;
+    readonly originalCommandId?: string;
+    readonly parentCommandId?: string;
+    readonly path?: string;
+    readonly sourceRecipePath?: string;
+    readonly childIndex?: number;
+    readonly commandIndex: number;
+    readonly iteration?: number;
+    readonly groupId?: string;
+    readonly groupIndex?: number;
+    readonly result: RallarBlackBoxTestResult;
+}
 
-export type RallarBlackBoxTestLoopPacingIteration = Readonly<{
-    iteration: number;
-    scheduledAtEpochMs: number;
-    startedAtEpochMs: number;
-    endedAtEpochMs: number;
-    durationMs: number;
-    startDriftMs: number;
-    commandCount: number;
-    passed: number;
-    failed: number;
-    cancelled: boolean;
-}>;
+export interface RallarBlackBoxTestLoopPacingIteration {
+    readonly iteration: number;
+    readonly scheduledAtEpochMs: number;
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
+    readonly durationMs: number;
+    readonly startDriftMs: number;
+    readonly commandCount: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly cancelled: boolean;
+}
 
-export type RallarBlackBoxTestLoopPacingSummary = Readonly<{
-    requestedIntervalMs: number;
-    requestedRateHz?: number;
-    plannedIterations: number;
-    completedIterations: number;
-    skippedIterations: number;
-    cancelledIterations: number;
-    startedAtEpochMs: number;
-    endedAtEpochMs: number;
-    elapsedMs: number;
-    targetElapsedMs: number;
-    achievedRateHz?: number;
-    averageIterationDurationMs?: number;
-    minStartDriftMs?: number;
-    maxStartDriftMs?: number;
-    averageStartDriftMs?: number;
-    maxJitterMs?: number;
-    averageJitterMs?: number;
-    lateIterationCount: number;
-    lateThresholdMs: number;
-    iterations: readonly RallarBlackBoxTestLoopPacingIteration[];
-}>;
+export interface RallarBlackBoxTestLoopPacingSummary {
+    readonly requestedIntervalMs: number;
+    readonly requestedRateHz?: number;
+    readonly plannedIterations: number;
+    readonly completedIterations: number;
+    readonly skippedIterations: number;
+    readonly cancelledIterations: number;
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
+    readonly elapsedMs: number;
+    readonly targetElapsedMs: number;
+    readonly achievedRateHz?: number;
+    readonly averageIterationDurationMs?: number;
+    readonly minStartDriftMs?: number;
+    readonly maxStartDriftMs?: number;
+    readonly averageStartDriftMs?: number;
+    readonly maxJitterMs?: number;
+    readonly averageJitterMs?: number;
+    readonly lateIterationCount: number;
+    readonly lateThresholdMs: number;
+    readonly iterations: readonly RallarBlackBoxTestLoopPacingIteration[];
+}
 
-export type RallarBlackBoxTestSendObservation = Readonly<{
-    commandId: string;
-    kind: Extract<RallarBlackBoxTestCommandKind, 'rtc.send' | 'ws.send'>;
-    transport?: RallarBlackBoxTestTransport;
-    durationMs: number;
-    ok: boolean;
-    status?: string;
-    queued?: boolean;
-    enqueued?: boolean;
-    backpressured?: boolean;
-    droppedPayloadCount?: number;
-    replacedPayloadCount?: number;
-    errorCode?: string;
-}>;
+export interface RallarBlackBoxTestSendObservation {
+    readonly commandId: string;
+    readonly kind: Extract<RallarBlackBoxTestCommandKind, 'rtc.send' | 'ws.send'>;
+    readonly transport?: RallarBlackBoxTestTransport;
+    readonly durationMs: number;
+    readonly ok: boolean;
+    readonly status?: string;
+    readonly queued?: boolean;
+    readonly enqueued?: boolean;
+    readonly backpressured?: boolean;
+    readonly droppedPayloadCount?: number;
+    readonly replacedPayloadCount?: number;
+    readonly errorCode?: string;
+}
 
-export type RallarBlackBoxTestLoopSendSummary = Readonly<{
-    sendCount: number;
-    succeeded: number;
-    failed: number;
-    successRatio?: number;
-    duration?: Readonly<{
+export interface RallarBlackBoxTestLoopSendSummary {
+    readonly sendCount: number;
+    readonly succeeded: number;
+    readonly failed: number;
+    readonly successRatio?: number;
+    readonly duration?: Readonly<{
         minMs?: number;
         maxMs?: number;
         averageMs?: number;
         totalMs: number;
     }>;
-    queuedCount: number;
-    enqueuedCount: number;
-    backpressureCount: number;
-    droppedPayloadCount: number;
-    replacedPayloadCount: number;
-    perTransportFailureCounts: Readonly<Record<string, number>>;
-    observations: readonly RallarBlackBoxTestSendObservation[];
-}>;
+    readonly queuedCount: number;
+    readonly enqueuedCount: number;
+    readonly backpressureCount: number;
+    readonly droppedPayloadCount: number;
+    readonly replacedPayloadCount: number;
+    readonly perTransportFailureCounts: Readonly<Record<string, number>>;
+    readonly observations: readonly RallarBlackBoxTestSendObservation[];
+}
 
-export type RallarBlackBoxTestLoopThresholdFailure = Readonly<{
-    name: keyof RallarBlackBoxTestLoopThresholds;
-    category: 'pacing' | 'delivery' | 'backpressure';
-    threshold: number | boolean;
-    actual?: number | boolean;
-    message: string;
-}>;
+export interface RallarBlackBoxTestLoopThresholdFailure {
+    readonly name: keyof RallarBlackBoxTestLoopThresholds;
+    readonly category: 'pacing' | 'delivery' | 'backpressure';
+    readonly threshold: number | boolean;
+    readonly actual?: number | boolean;
+    readonly message: string;
+}
 
-export type RallarBlackBoxTestLoopResultValue = Readonly<{
-    commandId: string;
-    iterations: number;
-    childResultCount: number;
-    passed: number;
-    failed: number;
-    cancelled: boolean;
-    pacing?: RallarBlackBoxTestLoopPacingSummary;
-    sends?: RallarBlackBoxTestLoopSendSummary;
-    thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
-    results: readonly RallarBlackBoxTestCompositeChildResult[];
-}>;
+export interface RallarBlackBoxTestLoopResultValue {
+    readonly commandId: string;
+    readonly iterations: number;
+    readonly childResultCount: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly cancelled: boolean;
+    readonly pacing?: RallarBlackBoxTestLoopPacingSummary;
+    readonly sends?: RallarBlackBoxTestLoopSendSummary;
+    readonly thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
+    readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
+}
 
-export type RallarBlackBoxTestRtcStreamFrameObservation = Readonly<{
-    index: number;
-    iteration: number;
-    commandId: string;
-    scheduledAtEpochMs: number;
-    startedAtEpochMs?: number;
-    completedAtEpochMs?: number;
-    startDriftMs?: number;
-    durationMs?: number;
-    ok: boolean;
-    dropped?: boolean;
-    backpressured?: boolean;
-    status?: string;
-    errorCode?: string;
-}>;
+export interface RallarBlackBoxTestRtcStreamFrameObservation {
+    readonly index: number;
+    readonly iteration: number;
+    readonly commandId: string;
+    readonly scheduledAtEpochMs: number;
+    readonly startedAtEpochMs?: number;
+    readonly completedAtEpochMs?: number;
+    readonly startDriftMs?: number;
+    readonly durationMs?: number;
+    readonly ok: boolean;
+    readonly dropped?: boolean;
+    readonly backpressured?: boolean;
+    readonly status?: string;
+    readonly errorCode?: string;
+}
 
-export type RallarBlackBoxTestRtcStreamThresholdFailure = Readonly<{
-    name: keyof RallarBlackBoxTestRtcStreamThresholds;
-    category: 'pacing' | 'delivery' | 'backpressure';
-    threshold: number | boolean;
-    actual?: number | boolean;
-    message: string;
-}>;
+export interface RallarBlackBoxTestRtcStreamThresholdFailure {
+    readonly name: keyof RallarBlackBoxTestRtcStreamThresholds;
+    readonly category: 'pacing' | 'delivery' | 'backpressure';
+    readonly threshold: number | boolean;
+    readonly actual?: number | boolean;
+    readonly message: string;
+}
 
-export type RallarBlackBoxTestRtcStreamResultValue = Readonly<{
-    commandId: string;
-    transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
-    plannedFrames: number;
-    scheduledFrames: number;
-    attemptedFrames: number;
-    completedFrames: number;
-    failedFrames: number;
-    droppedFrames: number;
-    backpressureCount: number;
-    startedAtEpochMs: number;
-    endedAtEpochMs: number;
-    elapsedMs: number;
-    requestedRateHz?: number;
-    achievedScheduleHz?: number;
-    achievedCompletionHz?: number;
-    pacing: Readonly<{
+export interface RallarBlackBoxTestRtcStreamResultValue {
+    readonly commandId: string;
+    readonly transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    readonly plannedFrames: number;
+    readonly scheduledFrames: number;
+    readonly attemptedFrames: number;
+    readonly completedFrames: number;
+    readonly failedFrames: number;
+    readonly droppedFrames: number;
+    readonly backpressureCount: number;
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
+    readonly elapsedMs: number;
+    readonly requestedRateHz?: number;
+    readonly achievedScheduleHz?: number;
+    readonly achievedCompletionHz?: number;
+    readonly pacing: Readonly<{
         intervalMs: number;
         maxStartDriftMs?: number;
         averageStartDriftMs?: number;
         maxJitterMs?: number;
         lateFrameCount: number;
     }>;
-    duration: Readonly<{
+    readonly duration: Readonly<{
         minMs?: number;
         p50Ms?: number;
         p95Ms?: number;
@@ -852,72 +848,73 @@ export type RallarBlackBoxTestRtcStreamResultValue = Readonly<{
         maxMs?: number;
         averageMs?: number;
     }>;
-    thresholdFailures: readonly RallarBlackBoxTestRtcStreamThresholdFailure[];
-    observations: readonly RallarBlackBoxTestRtcStreamFrameObservation[];
-}>;
+    readonly thresholdFailures: readonly RallarBlackBoxTestRtcStreamThresholdFailure[];
+    readonly observations: readonly RallarBlackBoxTestRtcStreamFrameObservation[];
+}
 
-export type RallarBlackBoxTestParallelGroupResult = Readonly<{
-    groupId: string;
-    commandCount: number;
-    passed: number;
-    failed: number;
-    cancelled: boolean;
-    durationMs: number;
-    results: readonly RallarBlackBoxTestCompositeChildResult[];
-}>;
+export interface RallarBlackBoxTestParallelGroupResult {
+    readonly groupId: string;
+    readonly commandCount: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly cancelled: boolean;
+    readonly durationMs: number;
+    readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
+}
 
-export type RallarBlackBoxTestParallelResultValue = Readonly<{
-    commandId: string;
-    groupCount: number;
-    maxConcurrency: number;
-    passed: number;
-    failed: number;
-    cancelled: boolean;
-    groups: readonly RallarBlackBoxTestParallelGroupResult[];
-}>;
+export interface RallarBlackBoxTestParallelResultValue {
+    readonly commandId: string;
+    readonly groupCount: number;
+    readonly maxConcurrency: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly cancelled: boolean;
+    readonly groups: readonly RallarBlackBoxTestParallelGroupResult[];
+}
 
-export type RallarBlackBoxTestWaitResultValue = Readonly<{
-    commandId: string;
-    matched: boolean;
-    absent?: true;
-    timedOut?: boolean;
-    cancelled?: boolean;
-    match: RallarBlackBoxTestWaitMatch;
-    event?: RallarBlackBoxTestEvent;
-}>;
+export interface RallarBlackBoxTestWaitResultValue {
+    readonly commandId: string;
+    readonly matched: boolean;
+    readonly absent?: true;
+    readonly timedOut?: boolean;
+    readonly cancelled?: boolean;
+    readonly match: RallarBlackBoxTestWaitMatch;
+    readonly event?: RallarBlackBoxTestEvent;
+}
 
-export type RallarBlackBoxTestAssertResultValue = Readonly<{
-    commandId: string;
-    source: string;
-    operator: RallarBlackBoxTestAssertOperator;
-    expected?: unknown;
-    actual?: unknown;
-    exists: boolean;
-    passed: boolean;
-}>;
+export interface RallarBlackBoxTestAssertResultValue {
+    readonly commandId: string;
+    readonly source: string;
+    readonly operator: RallarBlackBoxTestAssertOperator;
+    readonly expected?: unknown;
+    readonly actual?: unknown;
+    readonly exists: boolean;
+    readonly passed: boolean;
+}
 
-export type RallarBlackBoxTestMessagesSendResultValue = Readonly<{
-    handleId: string;
-    msgId?: string;
-    carrier: RallarBlackBoxTestMessagesCarrier;
-    status: string;
-    reason?: string;
-}>;
+export interface RallarBlackBoxTestMessagesSendResultValue {
+    readonly handleId: string;
+    readonly msgId?: string;
+    readonly carrier: RallarBlackBoxTestMessagesCarrier;
+    readonly status: ALDeliveryState;
+    readonly reason?: string;
+}
 
-export type RallarBlackBoxTestMessagesObserveResultValue = Readonly<{
-    handleId: string;
-    state: string;
-    submitted: boolean;
-    confirmedPeerIds: readonly string[];
-    unconfirmedPeerIds: readonly string[];
-    attempts: number;
-}>;
+export interface RallarBlackBoxTestMessagesObserveResultValue {
+    readonly handleId: string;
+    readonly state: ALDeliveryState;
+    readonly submitted: boolean;
+    readonly confirmedHopPeerIds: readonly string[];
+    readonly unconfirmedHopPeerIds: readonly string[];
+    readonly attempts: number;
+    readonly reason: string | undefined;
+}
 
-export type RallarBlackBoxTestStorageCountersResultValue = Readonly<{
-    total: number;
-    byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;
-    byKind: Readonly<Record<string, number>>;
-}>;
+export interface RallarBlackBoxTestStorageCountersResultValue {
+    readonly total: number;
+    readonly byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;
+    readonly byKind: Readonly<Record<string, number>>;
+}
 
 export type RallarBlackBoxTestEventKind =
     | 'event'
@@ -943,12 +940,12 @@ export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
 
 export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs'>;
 
-export type RallarBlackBoxTestStatsSnapshot = Readonly<{
-    atEpochMs: number;
-    runId?: string;
-    agentId?: string;
-    status: RallarBlackBoxTestRuntimeStatus;
-    counters: Readonly<{
+export interface RallarBlackBoxTestStatsSnapshot {
+    readonly atEpochMs: number;
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly status: RallarBlackBoxTestRuntimeStatus;
+    readonly counters: Readonly<{
         commands: number;
         events: number;
         failures: number;
@@ -956,16 +953,16 @@ export type RallarBlackBoxTestStatsSnapshot = Readonly<{
         diagnostics: number;
         reconnects?: number;
     }>;
-    lastCommandId?: string;
-    lastEventAtEpochMs?: number;
-    commandLatency?: Readonly<{
+    readonly lastCommandId?: string;
+    readonly lastEventAtEpochMs?: number;
+    readonly commandLatency?: Readonly<{
         count: number;
         minMs?: number;
         maxMs?: number;
         averageMs?: number;
         lastMs?: number;
     }>;
-    rallar?: Readonly<{
+    readonly rallar?: Readonly<{
         connected?: boolean;
         actor?: string;
         sessionId?: string;
@@ -974,7 +971,7 @@ export type RallarBlackBoxTestStatsSnapshot = Readonly<{
         peerCount?: number;
         laneHealth?: unknown;
     }>;
-    load?: Readonly<{
+    readonly load?: Readonly<{
         loopCount: number;
         latestLoopCommandId?: string;
         latestPacing?: Omit<RallarBlackBoxTestLoopPacingSummary, 'iterations'>;
@@ -984,50 +981,50 @@ export type RallarBlackBoxTestStatsSnapshot = Readonly<{
         latestStreamCommandId?: string;
         latestStream?: Omit<RallarBlackBoxTestRtcStreamResultValue, 'observations'>;
     }>;
-}>;
+}
 
-export type RallarBlackBoxTestReportFragment = Readonly<{
-    reportId: string;
-    runId?: string;
-    agentId?: string;
-    atEpochMs: number;
-    summary?: unknown;
-    results?: readonly RallarBlackBoxTestResult[];
-    events?: readonly RallarBlackBoxTestEvent[];
-    stats?: RallarBlackBoxTestStatsSnapshot;
-}>;
+export interface RallarBlackBoxTestReportFragment {
+    readonly reportId: string;
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly atEpochMs: number;
+    readonly summary?: unknown;
+    readonly results?: readonly RallarBlackBoxTestResult[];
+    readonly events?: readonly RallarBlackBoxTestEvent[];
+    readonly stats?: RallarBlackBoxTestStatsSnapshot;
+}
 
-export type RallarBlackBoxTestState = Readonly<{
-    status: RallarBlackBoxTestRuntimeStatus;
-    currentConfig?: RallarBlackBoxTestConfig;
-    loadedRecipe?: RallarBlackBoxTestRecipe;
-    activeCommand?: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
-    activeCommandStartedAtEpochMs?: number;
-    commandHistory: readonly RallarBlackBoxTestResult[];
-    events: readonly RallarBlackBoxTestEvent[];
-    latestStats?: RallarBlackBoxTestStatsSnapshot;
-    failures: readonly RallarBlackBoxTestResult[];
-    resultCache: Readonly<Record<string, RallarBlackBoxTestResult>>;
-}>;
+export interface RallarBlackBoxTestState {
+    readonly status: RallarBlackBoxTestRuntimeStatus;
+    readonly currentConfig?: RallarBlackBoxTestConfig;
+    readonly loadedRecipe?: RallarBlackBoxTestRecipe;
+    readonly activeCommand?: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
+    readonly activeCommandStartedAtEpochMs?: number;
+    readonly commandHistory: readonly RallarBlackBoxTestResult[];
+    readonly events: readonly RallarBlackBoxTestEvent[];
+    readonly latestStats?: RallarBlackBoxTestStatsSnapshot;
+    readonly failures: readonly RallarBlackBoxTestResult[];
+    readonly resultCache: Readonly<Record<string, RallarBlackBoxTestResult>>;
+}
 
 export type RallarBlackBoxTestStateListener = (
     state: RallarBlackBoxTestState
 ) => void | Promise<void>;
 
-export type RallarBlackBoxTestCommandOutcome = Readonly<{
-    status: RallarBlackBoxTestResultStatus;
-    value?: unknown;
-    error?: RallarBlackBoxTestError;
-    nextStatus?: RallarBlackBoxTestRuntimeStatus;
-}>;
+export interface RallarBlackBoxTestCommandOutcome {
+    readonly status: RallarBlackBoxTestResultStatus;
+    readonly value?: unknown;
+    readonly error?: RallarBlackBoxTestError;
+    readonly nextStatus?: RallarBlackBoxTestRuntimeStatus;
+}
 
-export type RallarBlackBoxTestCommandContext = Readonly<{
+export interface RallarBlackBoxTestCommandContext {
     state(): RallarBlackBoxTestState;
     config(): RallarBlackBoxTestConfig | undefined;
     abortSignal?(): AbortSignal | undefined;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
     updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot;
-}>;
+}
 
 export type RallarBlackBoxTestCommandExecutor = (
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
@@ -1042,22 +1039,47 @@ export type RallarBlackBoxTestCleanupReason =
     | 'failed'
     | 'timed-out';
 
-export type RallarBlackBoxTestCleanupInput = Readonly<{
-    reason: RallarBlackBoxTestCleanupReason;
-    commandId?: string;
-    recipeId?: string;
-    status?: RallarBlackBoxTestResultStatus;
-    error?: RallarBlackBoxTestError;
-}>;
+export interface RallarBlackBoxTestCleanupInput {
+    readonly reason: RallarBlackBoxTestCleanupReason;
+    readonly commandId?: string;
+    readonly recipeId?: string;
+    readonly status?: RallarBlackBoxTestResultStatus;
+    readonly error?: RallarBlackBoxTestError;
+}
 
 export type RallarBlackBoxTestRuntimeCleanup = (
     input: RallarBlackBoxTestCleanupInput,
     context: RallarBlackBoxTestCommandContext
 ) => void | Promise<void>;
 
-export type RallarBlackBoxTestRuntime = Readonly<{
+export interface RallarBlackBoxTestRuntime {
     execute(command: RallarBlackBoxTestCommand): Promise<RallarBlackBoxTestResult>;
     state(): RallarBlackBoxTestState;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
     subscribe(listener: RallarBlackBoxTestStateListener): () => void;
-}>;
+}
+export type RallarBlackBoxCommandProviderMode =
+    | 'simulated'
+    | 'browser-rallar'
+    | 'rallar-browser'
+    | 'rallar-remote-browser'
+    | 'rallar-memory'
+    | 'rallar-server'
+    | 'mixed';
+export type RallarBlackBoxCommandRuntimeSurface =
+    | 'spa-local'
+    | 'control-agent'
+    | 'control-server'
+    | 'black-box-runner-adapter';
+export interface RallarBlackBoxCommandCapability {
+    readonly kind: typeof RALLAR_BLACK_BOX_TEST_COMMAND_KINDS[number];
+    readonly title: string;
+    readonly description: string;
+    readonly requiredFields: readonly string[];
+    readonly optionalFields: readonly string[];
+    readonly supportedProviderModes: readonly RallarBlackBoxCommandProviderMode[];
+    readonly runtimeSurfaces: readonly RallarBlackBoxCommandRuntimeSurface[];
+    readonly liveServiceRequirements: readonly string[];
+    readonly artifactExpectations: readonly string[];
+    readonly example: RallarBlackBoxTestCommand;
+}

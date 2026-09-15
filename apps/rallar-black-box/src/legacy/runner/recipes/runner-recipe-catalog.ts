@@ -1,5 +1,5 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { distributedRecipeCommandPreview, type DistributedRecipeCatalogItem } from '../../../distributed-recipes.ts';
 import { RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG } from '../../../shared-test-handoff-fixtures.ts';
 import { json } from '../../shared/json-presentation.ts';

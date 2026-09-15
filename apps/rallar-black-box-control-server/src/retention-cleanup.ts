@@ -8,8 +8,8 @@ import { parseRetentionCleanupQuery } from './retention-query.ts';
 export type RetentionCleanupService = Readonly<{
     createRetentionPlan(maxRuns: number | undefined): ControlRetentionPlan;
     applyRetentionPlan(plan: ControlRetentionPlan): readonly string[];
-    pruneRuns(maxRuns: number | undefined): readonly string[];
-    legacyRetainedRuns(): number;
+    applyRunRetention(maxRuns: number | undefined): readonly string[];
+    readRetainedRunCount(): number;
 }>;
 
 export type RetentionCleanupResult = Readonly<{
@@ -36,12 +36,12 @@ export async function handleRetentionCleanup(
     if (query.mode === 'invalid') {
         return result(400, { error: query.error });
     }
-    if (query.mode === 'legacy') {
-        const deletedRunIds = input.service.pruneRuns(input.maxRuns);
+    if (query.mode === 'immediate') {
+        const deletedRunIds = input.service.applyRunRetention(input.maxRuns);
         input.persist();
         return result(200, {
             deletedRunIds,
-            retainedRuns: input.service.legacyRetainedRuns(),
+            retainedRuns: input.service.readRetainedRunCount(),
             maxRuns: input.maxRuns
         });
     }

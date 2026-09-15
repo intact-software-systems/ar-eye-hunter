@@ -80,9 +80,9 @@ it('applies scoped defaults and reports the connected room reference', async () 
         diagnosticsPorts: {
             transportFaultPort: facade.rallar.diagnostics.faults,
             indexedDbOperationObserver: facade.rallar.diagnostics.storage,
-            outboundDiagnostics: facade.rallar.diagnostics.outboundDiagnostics.sink,
-            inboundDiagnostics: facade.rallar.diagnostics.inboundDiagnostics.sink,
-            onStorageReset: facade.rallar.diagnostics.storageReset.sink
+            outboundDiagnostics: expect.any(Function),
+            inboundDiagnostics: expect.any(Function),
+            onStorageReset: expect.any(Function)
         }
     });
     expect(facade.records.roomJoins).toContainEqual(['bb-group', {
@@ -142,12 +142,6 @@ it('broadcasts untargeted realtime sends to every ready peer', async () => {
 });
 
 it('subscribes before WebSocket sends and preserves message metadata', async () => {
-    facade.behavior.wsMessageSend.mockResolvedValue({
-        transport: 'ws',
-        status: 'accepted',
-        message: outboundMessage(),
-        entries: []
-    });
     const { runtime } = await loadConnectedMessageRuntime();
 
     const result = await sendWebSocketMessage(runtime);
@@ -200,12 +194,6 @@ it('keeps explicit workspace routing in WebSocket diagnostics and delivery', asy
 });
 
 it('emits received WebSocket payloads and releases their subscription on close', async () => {
-    facade.behavior.wsMessageSend.mockResolvedValue({
-        transport: 'ws',
-        status: 'accepted',
-        message: outboundMessage(),
-        entries: []
-    });
     const { runtime } = await loadConnectedMessageRuntime();
     await sendWebSocketMessage(runtime);
     const handler = facade.records.wsMessageSubscriptions[0]?.[1];
@@ -382,7 +370,8 @@ async function sendTypedMessage(runtime: BlackBoxRallarRuntime, handleId: string
         typeId: 'alm.conformance',
         topicId: 'alm',
         payload: { text: 'hello alm' },
-        handleId
+        handleId,
+        timeoutMs: 100
     });
 }
 

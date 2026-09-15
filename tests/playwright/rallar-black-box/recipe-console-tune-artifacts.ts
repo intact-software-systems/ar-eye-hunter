@@ -1,6 +1,6 @@
 import type { ControlResultEnvelope } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunArtifactBundle } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxTestRtcStreamResultValue } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRtcStreamResultValue } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AnalyzeUploadFile } from './recipe-console-analyze-artifacts.ts';
 import {
     createTuneControlRun,

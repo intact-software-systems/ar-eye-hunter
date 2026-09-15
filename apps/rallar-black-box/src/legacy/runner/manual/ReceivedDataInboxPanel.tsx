@@ -1,5 +1,5 @@
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useMemo } from 'react';
 import { deriveManualReceivedMessages } from '../../../manual-workbench.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';

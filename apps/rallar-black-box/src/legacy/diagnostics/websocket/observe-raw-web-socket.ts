@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { completedActionFeedback, type CommandCenterActionFeedback } from '../shared/action-feedback.ts';
 
 export interface WebSocketRecordedEvent {

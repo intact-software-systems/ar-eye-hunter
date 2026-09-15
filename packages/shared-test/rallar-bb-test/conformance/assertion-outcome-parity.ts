@@ -5,11 +5,11 @@ import { waitForWsMessageAbsence } from '../../black-box-runner/ws/ws-wait-expec
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import { assertValueMatches } from '../assert/assert-value-operators.ts';
-import { createRallarBlackBoxTestRuntime } from '../runtime.ts';
+import { createRallarBlackBoxTestRuntime } from '../create-rallar-black-box-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRuntime
-} from '../types.ts';
+} from '../rallar-black-box-test-contracts.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,

@@ -12,6 +12,7 @@
     {
       "recipeId": "rtc-realtime-stability",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rtc-realtime-stability",
         "name": "RTC realtime stability stream",
         "description": "Connect RTC and send a lower-rate stream intended as a green realtime stability baseline.",

@@ -11,7 +11,7 @@ import type {
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime,
     RallarBlackBoxBrowserWebSocketFactory
-} from './browser-adapter.ts';
+} from './create-rallar-black-box-browser-test-runtime.ts';
 
 let runtimeImportPromise: Promise<void> | undefined;
 

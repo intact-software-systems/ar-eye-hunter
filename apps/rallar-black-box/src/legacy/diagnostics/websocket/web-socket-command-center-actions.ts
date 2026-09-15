@@ -1,6 +1,6 @@
 import type {
     RallarBlackBoxTestState
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import { Either } from '@shared/resilience/Either.ts';

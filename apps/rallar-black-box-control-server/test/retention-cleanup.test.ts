@@ -30,11 +30,11 @@ Deno.test('retention cleanup authorizes before validating queries or reading pla
                 serviceCalls += 1;
                 return [];
             },
-            pruneRuns: () => {
+            applyRunRetention: () => {
                 serviceCalls += 1;
                 return [];
             },
-            legacyRetainedRuns: () => {
+            readRetainedRunCount: () => {
                 serviceCalls += 1;
                 return 0;
             }
@@ -65,8 +65,8 @@ Deno.test('retention preview whitelists safe consequence fields and never mutate
                 applyCalls += 1;
                 return [];
             },
-            pruneRuns: () => [],
-            legacyRetainedRuns: () => 2
+            applyRunRetention: () => [],
+            readRetainedRunCount: () => 2
         },
         tokens: tokenAdapter('v1.abc.safe-token'),
         persist: () => {
@@ -113,8 +113,8 @@ Deno.test('retention confirmation rejects crypto-race drift without deletion', a
                 applyCalls += 1;
                 return [];
             },
-            pruneRuns: () => [],
-            legacyRetainedRuns: () => 2
+            applyRunRetention: () => [],
+            readRetainedRunCount: () => 2
         },
         tokens: {
             issue: async () => 'v1.abc.safe-token',
@@ -156,8 +156,8 @@ Deno.test('retention confirmation replans compares and applies without an await 
                 assertEquals(applied, stable);
                 return ['run-old'];
             },
-            pruneRuns: () => [],
-            legacyRetainedRuns: () => 2
+            applyRunRetention: () => [],
+            readRetainedRunCount: () => 2
         },
         tokens: tokenAdapter('v1.abc.safe-token', true),
         persist: () => {
@@ -175,7 +175,7 @@ Deno.test('retention confirmation replans compares and applies without an await 
     assertEquals(microtaskRan, true);
 });
 
-Deno.test('retention legacy mode preserves exact cleanup shape and sequence', async () => {
+Deno.test('retention immediate mode preserves exact cleanup shape and sequence', async () => {
     const calls: string[] = [];
     const result = await handleRetentionCleanup({
         url: url('?unknown=value'),
@@ -184,11 +184,11 @@ Deno.test('retention legacy mode preserves exact cleanup shape and sequence', as
         service: {
             createRetentionPlan: () => plan(),
             applyRetentionPlan: () => [],
-            pruneRuns: () => {
+            applyRunRetention: () => {
                 calls.push('prune');
                 return ['run-old'];
             },
-            legacyRetainedRuns: () => {
+            readRetainedRunCount: () => {
                 calls.push('count');
                 return 1;
             }
@@ -204,7 +204,7 @@ Deno.test('retention legacy mode preserves exact cleanup shape and sequence', as
     });
 });
 
-Deno.test('retention planning limits fail closed without changing legacy cleanup', async () => {
+Deno.test('retention planning limits fail closed without changing immediate cleanup', async () => {
     const boundedService = {
         createRetentionPlan: () => {
             throw new ControlRetentionPlanLimitError('candidates', 1_000);
@@ -212,8 +212,8 @@ Deno.test('retention planning limits fail closed without changing legacy cleanup
         applyRetentionPlan: () => {
             throw new Error('bounded plans must not apply');
         },
-        pruneRuns: () => ['legacy-old'],
-        legacyRetainedRuns: () => 1
+        applyRunRetention: () => ['immediate-old'],
+        readRetainedRunCount: () => 1
     };
     const common = {
         maxRuns: 1,
@@ -233,7 +233,7 @@ Deno.test('retention planning limits fail closed without changing legacy cleanup
     );
     assertEquals(await handleRetentionCleanup({ ...common, url: url('?unknown=value') }), {
         status: 200,
-        body: { deletedRunIds: ['legacy-old'], retainedRuns: 1, maxRuns: 1 }
+        body: { deletedRunIds: ['immediate-old'], retainedRuns: 1, maxRuns: 1 }
     });
 });
 

@@ -120,6 +120,7 @@ function groupAssertionManifest(
             {
                 recipeId: 'probe-recipe',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'probe-recipe',
                     commands: [
                         {
@@ -248,4 +249,59 @@ Deno.test('redacted per-agent value tables hide sensitive evidence values', () =
     const serialized = JSON.stringify(snapshot.rollup.groupAssertions);
     assert(!serialized.includes('secret-token-a'), 'Expected token values to be redacted.');
     assert(!serialized.includes('secret-token-b'), 'Expected token values to be redacted.');
+});
+
+Deno.test('persistence snapshots preserve group evidence through JSON restore without materializing fleet reports', () => {
+    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
+        'agent-1': { body: { memberCount: 2 } },
+        'agent-2': { body: { memberCount: 2 } }
+    });
+    service.receiveClientEnvelope(recipeResultEnvelope('agent-1', 'ordinary-result', { body: { memberCount: 99 } }));
+    const persisted = service.snapshotForPersistence();
+    assertEquals(persisted.fleetReports, []);
+    const restored = createRallarBlackBoxControlService();
+    const decoded = JSON.parse(JSON.stringify(persisted)) as typeof persisted;
+    restored.restoreSnapshot({ ...decoded, distributedRuns: decoded.distributedRuns?.map((run) => ({ ...run, state: 'running' })) });
+    const run = restored.snapshotRun('run-1');
+    assert(run);
+    const evidence = run.results.find((result) => result.commandId.includes('-start-agent-1-'))?.result?.value;
+    assert(evidence && typeof evidence === 'object' && 'results' in evidence);
+    assert(Array.isArray(evidence.results));
+    assertEquals(evidence.results.length, 1);
+    const ordinary = run.results.find((result) => result.commandId === 'ordinary-result')?.result?.value;
+    assert(ordinary && typeof ordinary === 'object' && 'resultsOmitted' in ordinary);
+    assertEquals(ordinary.resultsOmitted, true);
+    assert(!('results' in ordinary));
+    const evaluated = restored.snapshotDistributedRun('dist-ga-1');
+    assertEquals(evaluated?.rollup.summary.passedGroupAssertions, 1);
+    assertEquals(restored.snapshotForPersistence().fleetReports, []);
+    assertEquals(restored.snapshot().fleetReports?.length, 1);
+});
+
+Deno.test('restore keeps group evidence isolated from concatenation-ambiguous run and command identities', () => {
+    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
+        'agent-1': { body: { memberCount: 2 } },
+        'agent-2': { body: { memberCount: 2 } }
+    });
+    const original = service.snapshotForPersistence();
+    const run = original.runs[0];
+    const group = original.distributedRuns?.[0];
+    assert(group);
+    const result = run.results.find((item) => item.commandId.includes('-start-agent-1-'));
+    assert(result);
+    const restored = createRallarBlackBoxControlService();
+    restored.restoreSnapshot({
+        runs: [
+            { ...run, runId: 'a', results: [{ ...result, runId: 'a', commandId: 'bc' }] },
+            { ...run, runId: 'ab', results: [{ ...result, runId: 'ab', commandId: 'c' }] }
+        ],
+        distributedRuns: [{ ...group, controlRunId: 'a', commandLinks: [{ phase: 'start', agentId: 'agent-1', commandId: 'bc', queuedAtEpochMs: 2000 }] }],
+        fleetReports: []
+    });
+    const groupValue = restored.snapshotRun('a')?.results[0].result?.value;
+    const ordinaryValue = restored.snapshotRun('ab')?.results[0].result?.value;
+    assert(groupValue && typeof groupValue === 'object' && 'results' in groupValue);
+    assert(Array.isArray(groupValue.results));
+    assert(ordinaryValue && typeof ordinaryValue === 'object' && 'resultsOmitted' in ordinaryValue);
+    assertEquals(ordinaryValue.resultsOmitted, true);
 });

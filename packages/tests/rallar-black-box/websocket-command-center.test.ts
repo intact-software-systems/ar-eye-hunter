@@ -18,7 +18,7 @@ import {
     webSocketRoutePreview
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(

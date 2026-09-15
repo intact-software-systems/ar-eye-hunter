@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRtcStreamThresholds } from './types.ts';
+import type { RallarBlackBoxTestRtcStreamThresholds } from './rallar-black-box-test-contracts.ts';
 
 export const DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES = [
     'minSendSuccessRatio',

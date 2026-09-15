@@ -3,7 +3,7 @@ import type {
     RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1;
 

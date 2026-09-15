@@ -66,15 +66,15 @@ Deno.test('control retention planning detects same-time issued-token drift witho
     assert(!after.canonicalConsequence.includes(issued.token));
 });
 
-Deno.test('legacy prune preserves response order independently from bounded preview planning', () => {
+Deno.test('immediate prune preserves response order independently from bounded preview planning', () => {
     const service = createRallarBlackBoxControlService();
     service.restoreSnapshot(retentionSnapshot());
 
-    assertEquals(service.pruneRuns(1), ['run-old']);
+    assertEquals(service.applyRunRetention(1), ['run-old']);
     assertEquals(service.createRetentionPlan(1).deletedRunIds, []);
 });
 
-Deno.test('legacy prune preserves its disabled and already-bounded fast paths', () => {
+Deno.test('immediate prune preserves its disabled and already-bounded fast paths', () => {
     class PlanningProbe extends RallarBlackBoxControlService {
         planCalls = 0;
 
@@ -86,28 +86,28 @@ Deno.test('legacy prune preserves its disabled and already-bounded fast paths', 
     const service = new PlanningProbe();
     service.restoreSnapshot(retentionSnapshot());
 
-    assertEquals(service.pruneRuns(undefined), []);
-    assertEquals(service.pruneRuns(0), []);
-    assertEquals(service.pruneRuns(2), []);
+    assertEquals(service.applyRunRetention(undefined), []);
+    assertEquals(service.applyRunRetention(0), []);
+    assertEquals(service.applyRunRetention(2), []);
     assertEquals(service.planCalls, 0);
-    assertEquals(service.pruneRuns(1), ['run-old']);
+    assertEquals(service.applyRunRetention(1), ['run-old']);
     assertEquals(service.planCalls, 0);
 });
 
-Deno.test('legacy prune remains available beyond bounded preview candidate limits', () => {
+Deno.test('immediate prune remains available beyond bounded preview candidate limits', () => {
     const service = createRallarBlackBoxControlService();
     const runs = Array.from(
         { length: 1_002 },
-        (_, index) => controlRun(`legacy-run-${index}`, index, false)
+        (_, index) => controlRun(`immediate-run-${index}`, index, false)
     );
     service.restoreSnapshot({ runs, distributedRuns: [], fleetReports: [] });
 
-    const deleted = service.pruneRuns(1);
+    const deleted = service.applyRunRetention(1);
 
     assertEquals(deleted.length, 1_001);
-    assertEquals(deleted[0], 'legacy-run-0');
-    assertEquals(deleted.at(-1), 'legacy-run-1000');
-    assert(service.snapshotRun('legacy-run-1001'));
+    assertEquals(deleted[0], 'immediate-run-0');
+    assertEquals(deleted.at(-1), 'immediate-run-1000');
+    assert(service.snapshotRun('immediate-run-1001'));
 });
 
 function retentionSnapshot(): ControlServerSnapshot {

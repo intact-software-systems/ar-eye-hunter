@@ -7,7 +7,7 @@ import type {
     RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestResultStatus
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION = 1;
 export const RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH = '$';

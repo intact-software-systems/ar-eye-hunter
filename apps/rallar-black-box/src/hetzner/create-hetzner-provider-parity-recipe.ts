@@ -1,6 +1,6 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { createRallarBlackBoxProviderParityLiveRecipe } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const OMITTED_DEMO_CREDENTIAL_KEYS = new Set([
     'username',

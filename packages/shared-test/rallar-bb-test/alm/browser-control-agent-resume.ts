@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRecord } from '../types.ts';
+import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
 const AGENT_RESUME_STORAGE_KEY = 'rallar-bb-agent-resume';
 

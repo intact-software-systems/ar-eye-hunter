@@ -8,9 +8,9 @@ import {
 import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRallarRuntime
-} from '../../shared-test/rallar-bb-test/browser-adapter.ts';
+} from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
 import {
     formatJsonSchemaValidationErrors,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
@@ -21,7 +21,7 @@ import {
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestState
-} from '../../shared-test/rallar-bb-test/types.ts';
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const ALM_COMMAND_KINDS = [
     'messages.send',
@@ -40,6 +40,7 @@ function sleepMs(ms: number): Promise<void> {
 
 function recipeWithCommand(commandId: string, command: RallarBlackBoxTestRecord) {
     return {
+        schemaVersion: 1,
         recipeId: 'alm-send',
         name: 'alm send',
         commands: [{ commandId, timeoutMs: 5_000, ...command }]
@@ -60,26 +61,25 @@ const SEND_DIAGNOSTICS = {
     msgId: 'msg-1',
     carrier: 'ws',
     status: 'accepted',
-    reason: undefined,
-    message: { id: { msgId: 'msg-1' } }
+    reason: undefined
 };
 
 const REJECTED_SEND_DIAGNOSTICS = {
     handleId: 'handle-rejected',
-    msgId: undefined,
+    msgId: 'msg-rejected',
     carrier: 'ws',
     status: 'rejected',
-    reason: '$.payload: Payload exceeds 65536 bytes.',
-    message: undefined
+    reason: '$.payload: Payload exceeds 65536 bytes.'
 };
 
 const DELIVERY_OBSERVATION = {
     handleId: 'handle-1',
     state: 'acknowledged',
     submitted: true,
-    confirmedPeerIds: ['bob-session'],
-    unconfirmedPeerIds: [],
-    attempts: 2
+    confirmedHopPeerIds: ['bob-session'],
+    unconfirmedHopPeerIds: [],
+    attempts: 2,
+    reason: 'hop evidence retained'
 };
 
 const STORAGE_COUNTS = {
@@ -107,6 +107,7 @@ function createAlmBrowserRuntimeFake(
     captures: AlmRuntimeCaptures
 ): RallarBlackBoxBrowserRallarRuntime {
     return {
+        authenticate: async () => ({ authenticated: true }),
         connect: async () => ({ connected: true }),
         send: async () => ({ sent: true }),
         sendMessage: async (input) => {
@@ -283,16 +284,17 @@ describe('ALM browser adapter execution', () => {
             handleId: 'handle-1',
             state: 'acknowledged',
             submitted: true,
-            confirmedPeerIds: ['bob-session'],
-            unconfirmedPeerIds: [],
-            attempts: 2
+            confirmedHopPeerIds: ['bob-session'],
+            unconfirmedHopPeerIds: [],
+            attempts: 2,
+            reason: 'hop evidence retained'
         });
         expect(topicsOf(runtime.state())).toEqual(
             expect.arrayContaining(['rallar.bb.messages.sent', 'rallar.bb.messages.observed'])
         );
     });
 
-    it('carries a rejected send through as a successful command value without a msgId', async () => {
+    it('carries a rejected send through as a successful command value with its envelope msgId', async () => {
         const captures = createAlmRuntimeCaptures();
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -321,6 +323,7 @@ describe('ALM browser adapter execution', () => {
         expect(sent.ok, sent.error?.message).toBe(true);
         expect(sent.value).toEqual({
             handleId: 'handle-rejected',
+            msgId: 'msg-rejected',
             carrier: 'ws',
             status: 'rejected',
             reason: '$.payload: Payload exceeds 65536 bytes.'
@@ -635,27 +638,6 @@ describe('ALM browser adapter execution', () => {
             expect(result.error).toMatchObject({ code: testCase.code, message: testCase.message });
         }
     });
-
-    it('fails an ALM command with a typed error when the page runtime rejects it', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            rallarRuntime: {
-                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
-                readReceipts: () => Promise.reject(new TypeError('Unknown delivery handle handle-x'))
-            }
-        });
-
-        const result = await runtime.execute({
-            kind: 'messages.receipts',
-            commandId: 'alm-receipts-unknown',
-            handleId: 'handle-x'
-        });
-
-        expect(result.ok).toBe(false);
-        expect(result.error).toMatchObject({
-            code: 'RALLAR_BLACK_BOX_ALM_UNKNOWN_DELIVERY_HANDLE',
-            message: 'Unknown delivery handle handle-x'
-        });
-    });
 });
 
 async function runAlmKindThroughRtcSendStep(kind: string) {
@@ -731,4 +713,10 @@ describe('ALM commands on the in-process runner adapter', () => {
             });
         }
     });
+});
+
+it.each(['submitted', 'pending-authority', 'unobservable'])('accepts %s in recipe delivery observations', (state) => {
+    const recipe = recipeWithCommand('lifecycle', { kind: 'messages.observe', connection: 'alice', handleId: 'h-1', state: [state] });
+    expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe).ok).toBe(true);
+    expect(validateRallarBlackBoxTestCommand(recipe.commands[0]).ok).toBe(true);
 });

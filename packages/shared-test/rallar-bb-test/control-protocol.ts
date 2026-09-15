@@ -1,20 +1,15 @@
 import {
-    formatRallarValidation,
-    validateRallarRouteId,
-    type RallarValidationIssue,
-    type RallarValidationResult
+    type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
-import { validateAlmControlCommand } from './alm/control-protocol-alm-commands.ts';
+import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from './distributed-run.ts';
 import { parseControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
+import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
-    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestCommandKind,
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestResult
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
 
@@ -86,10 +81,8 @@ export type ControlClientEnvelope =
     | ControlResultEnvelope
     | ControlEventEnvelope;
 
-export type ControlServerEnvelope = ControlCommandEnvelope;
-
 export type ParseControlMessageResult =
-    | Readonly<{ ok: true; envelope: ControlServerEnvelope; }>
+    | Readonly<{ ok: true; envelope: ControlCommandEnvelope; }>
     | Readonly<{ ok: false; error: string; issues?: readonly RallarValidationIssue[]; }>;
 
 export type ParseControlClientMessageResult =
@@ -100,998 +93,6 @@ export type ControlCommandValidationResult =
     | Readonly<{ ok: true; }>
     | Readonly<{ ok: false; error: string; issues?: readonly RallarValidationIssue[]; }>;
 
-const COMMAND_KINDS: readonly RallarBlackBoxTestCommandKind[] = RALLAR_BLACK_BOX_TEST_COMMAND_KINDS;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isCommandKind(value: unknown): value is RallarBlackBoxTestCommandKind {
-    return typeof value === 'string' &&
-        COMMAND_KINDS.includes(value as RallarBlackBoxTestCommandKind);
-}
-
-function isCommand(value: unknown): value is RallarBlackBoxTestCommand {
-    return isRecord(value) && isCommandKind(value.kind);
-}
-
-function unknownKeys(
-    value: Record<string, unknown>,
-    allowed: readonly string[]
-): string[] {
-    return Object.keys(value)
-        .filter((key) => !allowed.includes(key));
-}
-
-function fail(message: string): ControlCommandValidationResult {
-    return {
-        ok: false,
-        error: message
-    };
-}
-
-function failRallarValidation(
-    validation: RallarValidationResult
-): ControlCommandValidationResult {
-    return {
-        ok: false,
-        error: formatRallarValidation(validation),
-        issues: validation.issues
-    };
-}
-
-function validateKeys(
-    value: Record<string, unknown>,
-    allowed: readonly string[],
-    path: string
-): ControlCommandValidationResult {
-    const unexpected = unknownKeys(value, allowed);
-    return unexpected.length === 0
-        ? { ok: true }
-        : fail(`${path} has unsupported field: ${unexpected[0]}.`);
-}
-
-function validateStringField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    required = false
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return required ? fail(`${path}.${key} is required.`) : { ok: true };
-    }
-
-    return typeof value[key] === 'string'
-        ? { ok: true }
-        : fail(`${path}.${key} must be a string.`);
-}
-
-function validateRouteIdField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    label: string
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return { ok: true };
-    }
-    if (typeof value[key] !== 'string') {
-        return fail(`${path}.${key} must be a string.`);
-    }
-
-    const validation = validateRallarRouteId(value[key], `${path}.${key}`, label);
-    return validation.ok ? { ok: true } : failRallarValidation(validation);
-}
-
-function validateNumberField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return { ok: true };
-    }
-    if (typeof value[key] !== 'number') {
-        return fail(`${path}.${key} must be a number.`);
-    }
-    return Number.isFinite(value[key])
-        ? { ok: true }
-        : fail(`${path}.${key} must be a finite number.`);
-}
-
-function validatePositiveNumberField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string
-): ControlCommandValidationResult {
-    const result = validateNumberField(value, key, path);
-    if (!result.ok || value[key] === undefined) {
-        return result;
-    }
-
-    return (value[key] as number) > 0
-        ? { ok: true }
-        : fail(`${path}.${key} must be > 0.`);
-}
-
-function validateIntegerField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    options: Readonly<{ minimum?: number; maximum?: number; }> = {}
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return { ok: true };
-    }
-    if (!Number.isInteger(value[key])) {
-        return fail(`${path}.${key} must be an integer.`);
-    }
-    if (options.minimum !== undefined && (value[key] as number) < options.minimum) {
-        return fail(`${path}.${key} must be >= ${options.minimum}.`);
-    }
-    if (options.maximum !== undefined && (value[key] as number) > options.maximum) {
-        return fail(`${path}.${key} must be <= ${options.maximum}.`);
-    }
-    return { ok: true };
-}
-
-function validateBooleanField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string
-): ControlCommandValidationResult {
-    return value[key] === undefined || typeof value[key] === 'boolean'
-        ? { ok: true }
-        : fail(`${path}.${key} must be a boolean.`);
-}
-
-function validateEnumField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    allowed: readonly string[]
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return { ok: true };
-    }
-
-    return typeof value[key] === 'string' && allowed.includes(value[key])
-        ? { ok: true }
-        : fail(`${path}.${key} must be one of ${allowed.join(', ')}.`);
-}
-
-function validateObjectField(
-    value: Record<string, unknown>,
-    key: string,
-    path: string,
-    required = false
-): ControlCommandValidationResult {
-    if (value[key] === undefined) {
-        return required ? fail(`${path}.${key} is required.`) : { ok: true };
-    }
-
-    return isRecord(value[key])
-        ? { ok: true }
-        : fail(`${path}.${key} must be an object.`);
-}
-
-function validateHeaders(value: unknown, path: string): ControlCommandValidationResult {
-    if (value === undefined) {
-        return { ok: true };
-    }
-    if (!isRecord(value)) {
-        return fail(`${path} must be an object.`);
-    }
-    const invalid = Object.entries(value)
-        .find(([key, headerValue]) => typeof key !== 'string' || typeof headerValue !== 'string');
-    return invalid
-        ? fail(`${path}.${invalid[0]} must be a string.`)
-        : { ok: true };
-}
-
-function validateBaseCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    for (const field of ['commandId', 'label']) {
-        const result = validateStringField(command, field, 'command');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (const field of ['deadlineEpochMs', 'timeoutMs']) {
-        const result = validateNumberField(command, field, 'command');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    return validateObjectField(command, 'metadata', 'command');
-}
-
-function validateRecipe(value: unknown, path: string, depth = 0): ControlCommandValidationResult {
-    if (!isRecord(value)) {
-        return fail(`${path} must be an object.`);
-    }
-
-    let result = validateKeys(value, [
-        'schemaVersion',
-        'recipeId',
-        'name',
-        'description',
-        'continueOnFailure',
-        'commands',
-        'metadata'
-    ], path);
-    if (!result.ok) {
-        return result;
-    }
-    if (value.schemaVersion !== undefined && value.schemaVersion !== 1) {
-        return fail(`${path}.schemaVersion must be 1.`);
-    }
-    result = validateStringField(value, 'recipeId', path, true);
-    if (!result.ok) {
-        return result;
-    }
-    if (!Array.isArray(value.commands)) {
-        return fail(`${path}.commands must be an array.`);
-    }
-    for (const [index, command] of value.commands.entries()) {
-        result = validateRallarBlackBoxTestCommand(command, depth);
-        if (!result.ok) {
-            return fail(`${path}.commands[${index}]: ${result.error}`);
-        }
-    }
-    return { ok: true };
-}
-
-function validateCompositeChildCommands(
-    commands: unknown,
-    path: string,
-    depth: number
-): ControlCommandValidationResult {
-    if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
-        return fail(`${path} exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`);
-    }
-    if (!Array.isArray(commands)) {
-        return fail(`${path} must be an array.`);
-    }
-    if (commands.length === 0) {
-        return fail(`${path} requires at least one command.`);
-    }
-    for (const [index, child] of commands.entries()) {
-        const result = validateRallarBlackBoxTestCommand(child, depth + 1);
-        if (!result.ok) {
-            return fail(`${path}[${index}]: ${result.error}`);
-        }
-    }
-    return { ok: true };
-}
-
-function validateLoopCommand(
-    command: Record<string, unknown>,
-    depth: number
-): ControlCommandValidationResult {
-    let result = validateCompositeChildCommands(command.commands, 'loop.commands', depth);
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'count', 'loop', {
-        minimum: 1,
-        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount
-    });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'durationMs', 'loop', {
-        minimum: 1,
-        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
-    });
-    if (!result.ok) {
-        return result;
-    }
-    for (const field of ['intervalMs', 'delayMs']) {
-        result = validateIntegerField(command, field, 'loop', { minimum: 0 });
-        if (!result.ok) {
-            return result;
-        }
-    }
-    result = validateIntegerField(command, 'maxCommands', 'loop', {
-        minimum: 1,
-        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands
-    });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateBooleanField(command, 'continueOnFailure', 'loop');
-    if (!result.ok) {
-        return result;
-    }
-    result = validateEnumField(command, 'until', 'loop', ['first-success']);
-    if (!result.ok) {
-        return result;
-    }
-    result = validatePositiveNumberField(command, 'backoffMultiplier', 'loop');
-    if (!result.ok) {
-        return result;
-    }
-    if (command.backoffMultiplier !== undefined && (command.backoffMultiplier as number) < 1) {
-        return fail('loop.backoffMultiplier must be >= 1.');
-    }
-    if (command.backoffMultiplier !== undefined && command.until === undefined) {
-        return fail('loop.backoffMultiplier requires until mode.');
-    }
-    if (command.until !== undefined && command.continueOnFailure === true) {
-        return fail('loop.continueOnFailure contradicts until mode.');
-    }
-    return validateLoopThresholds(command.thresholds);
-}
-
-function validateLoopThresholds(value: unknown): ControlCommandValidationResult {
-    if (value === undefined) {
-        return { ok: true };
-    }
-    if (!isRecord(value)) {
-        return fail('loop.thresholds must be an object.');
-    }
-    let result = validateKeys(value, [
-        'minAchievedRateHz',
-        'maxAverageStartDriftMs',
-        'maxStartDriftMs',
-        'maxJitterMs',
-        'minSendSuccessRatio',
-        'failOnBackpressure'
-    ], 'loop.thresholds');
-    if (!result.ok) {
-        return result;
-    }
-    for (
-        const field of [
-            'minAchievedRateHz',
-            'maxAverageStartDriftMs',
-            'maxStartDriftMs',
-            'maxJitterMs'
-        ]
-    ) {
-        result = validateNumberField(value, field, 'loop.thresholds');
-        if (!result.ok) {
-            return result;
-        }
-        if (value[field] !== undefined && (value[field] as number) < 0) {
-            return fail(`loop.thresholds.${field} must be >= 0.`);
-        }
-    }
-    result = validateNumberField(value, 'minSendSuccessRatio', 'loop.thresholds');
-    if (!result.ok) {
-        return result;
-    }
-    if (
-        value.minSendSuccessRatio !== undefined &&
-        ((value.minSendSuccessRatio as number) < 0 || (value.minSendSuccessRatio as number) > 1)
-    ) {
-        return fail('loop.thresholds.minSendSuccessRatio must be between 0 and 1.');
-    }
-    return validateBooleanField(value, 'failOnBackpressure', 'loop.thresholds');
-}
-
-function validateParallelCommand(
-    command: Record<string, unknown>,
-    depth: number
-): ControlCommandValidationResult {
-    if (!Array.isArray(command.groups)) {
-        return fail('parallel.groups must be an array.');
-    }
-    if (command.groups.length === 0) {
-        return fail('parallel.groups requires at least one group.');
-    }
-    let result = validateIntegerField(command, 'maxConcurrency', 'parallel', {
-        minimum: 1,
-        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency
-    });
-    if (!result.ok) {
-        return result;
-    }
-    for (const field of ['failFast', 'continueOnFailure']) {
-        result = validateBooleanField(command, field, 'parallel');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (const [index, group] of command.groups.entries()) {
-        const path = `parallel.groups[${index}]`;
-        if (!isRecord(group)) {
-            return fail(`${path} must be an object.`);
-        }
-        result = validateKeys(group, ['groupId', 'label', 'commands', 'metadata'], path);
-        if (!result.ok) {
-            return result;
-        }
-        for (const field of ['groupId', 'label']) {
-            result = validateStringField(group, field, path);
-            if (!result.ok) {
-                return result;
-            }
-        }
-        result = validateObjectField(group, 'metadata', path);
-        if (!result.ok) {
-            return result;
-        }
-        result = validateCompositeChildCommands(group.commands, `${path}.commands`, depth);
-        if (!result.ok) {
-            return result;
-        }
-    }
-    return { ok: true };
-}
-
-function validateWaitCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    if (!isRecord(command.match)) {
-        return fail('wait.match is required.');
-    }
-    if (command.absent !== undefined && command.absent !== true) {
-        return fail('wait.absent must be true when present.');
-    }
-
-    let result = validateKeys(command.match, [
-        'kind',
-        'topic',
-        'commandId',
-        'connection',
-        'transport',
-        'severity',
-        'payloadPath',
-        'equals',
-        'contains',
-        'exists',
-        'sinceEpochMs'
-    ], 'wait.match');
-    if (!result.ok) {
-        return result;
-    }
-
-    result = validateEnumField(
-        command.match,
-        'kind',
-        'wait.match',
-        ['event', 'diagnostic', 'message', 'stats', 'report', 'result', 'state']
-    );
-    if (!result.ok) {
-        return result;
-    }
-    result = validateEnumField(
-        command.match,
-        'transport',
-        'wait.match',
-        ['realtime', 'messages.rtc', 'ws', 'http']
-    );
-    if (!result.ok) {
-        return result;
-    }
-    result = validateEnumField(
-        command.match,
-        'severity',
-        'wait.match',
-        ['debug', 'info', 'warning', 'error']
-    );
-    if (!result.ok) {
-        return result;
-    }
-    for (const field of ['topic', 'commandId', 'connection', 'payloadPath', 'contains']) {
-        result = validateStringField(command.match, field, 'wait.match');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    result = validateBooleanField(command.match, 'exists', 'wait.match');
-    if (!result.ok) {
-        return result;
-    }
-    return validateIntegerField(command.match, 'sinceEpochMs', 'wait.match', { minimum: 0 });
-}
-
-function validateAssertCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    let result = validateStringField(command, 'source', 'assert', true);
-    if (!result.ok) {
-        return result;
-    }
-    if (command.operator === undefined) {
-        return fail('assert.operator is required.');
-    }
-    return validateEnumField(
-        command,
-        'operator',
-        'assert',
-        [
-            'equals',
-            'notEquals',
-            'contains',
-            'exists',
-            'gte',
-            'lte',
-            'gt',
-            'lt',
-            'between',
-            'length',
-            'matches',
-            'matchesShape',
-            'matchesShapeComplete'
-        ]
-    );
-}
-
-function validateHttpCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    const request = command.request;
-    if (!isRecord(request)) {
-        return fail('http.request.request is required.');
-    }
-
-    let result = validateKeys(request, [
-        'url',
-        'path',
-        'method',
-        'headers',
-        'body',
-        'credentials',
-        'mode'
-    ], 'http.request.request');
-    if (!result.ok) {
-        return result;
-    }
-    if (request.url === undefined && request.path === undefined) {
-        return fail('http.request.request requires url or path.');
-    }
-    for (const field of ['url', 'path', 'method', 'credentials', 'mode']) {
-        result = validateStringField(request, field, 'http.request.request');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    result = validateHeaders(request.headers, 'http.request.request.headers');
-    if (!result.ok) {
-        return result;
-    }
-
-    if (command.response !== undefined) {
-        if (!isRecord(command.response)) {
-            return fail('http.request.response must be an object.');
-        }
-        result = validateKeys(
-            command.response,
-            ['body', 'maxBodyChars', 'acceptedStatusCodes'],
-            'http.request.response'
-        );
-        if (!result.ok) {
-            return result;
-        }
-        if (
-            command.response.body !== undefined &&
-            command.response.body !== 'none' &&
-            command.response.body !== 'text' &&
-            command.response.body !== 'json'
-        ) {
-            return fail('http.request.response.body must be none, text, or json.');
-        }
-        result = validateNumberField(command.response, 'maxBodyChars', 'http.request.response');
-        if (!result.ok) {
-            return result;
-        }
-        const acceptedStatusCodes = command.response.acceptedStatusCodes;
-        if (acceptedStatusCodes !== undefined) {
-            if (!Array.isArray(acceptedStatusCodes) || acceptedStatusCodes.length === 0) {
-                return fail('http.request.response.acceptedStatusCodes must be a non-empty array.');
-            }
-            if (
-                acceptedStatusCodes.some(
-                    (status) => !Number.isInteger(status) || status < 100 || status > 599
-                )
-            ) {
-                return fail(
-                    'http.request.response.acceptedStatusCodes must contain HTTP status integers from 100 through 599.'
-                );
-            }
-        }
-    }
-    return { ok: true };
-}
-
-function validateWsCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    let result = validateStringField(command, 'connection', 'ws');
-    if (!result.ok) {
-        return result;
-    }
-
-    if (command.kind === 'ws.open') {
-        result = validateStringField(command, 'url', 'ws.open');
-        if (!result.ok) {
-            return result;
-        }
-        if (
-            command.protocols !== undefined &&
-            typeof command.protocols !== 'string' &&
-            (!Array.isArray(command.protocols) ||
-                !command.protocols.every((protocol) => typeof protocol === 'string'))
-        ) {
-            return fail('ws.open.protocols must be a string or string array.');
-        }
-        return validateHeaders(command.headers, 'ws.open.headers');
-    }
-
-    if (command.kind === 'ws.close') {
-        result = validateNumberField(command, 'code', 'ws.close');
-        if (!result.ok) {
-            return result;
-        }
-        return validateStringField(command, 'reason', 'ws.close');
-    }
-
-    return { ok: true };
-}
-
-/** Only a connect accepts messages.ws: it subscribes the typed inbound channel with no RTC lane. */
-const RTC_CONNECT_TRANSPORTS = ['realtime', 'messages.rtc', 'messages.ws'];
-const RTC_SEND_TRANSPORTS = ['realtime', 'messages.rtc'];
-
-function validateRtcCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    for (const field of ['connection', 'actor', 'roomId', 'applicationId', 'workspaceId']) {
-        const result = validateStringField(command, field, 'rtc');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (
-        const [field, label] of [
-            ['roomId', 'Room ID'],
-            ['applicationId', 'Application ID'],
-            ['workspaceId', 'Workspace ID']
-        ] as const
-    ) {
-        const result = validateRouteIdField(command, field, 'rtc', label);
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (const field of ['scope', 'roomRef']) {
-        const result = validateObjectField(command, field, 'rtc');
-        if (!result.ok) {
-            return result;
-        }
-    }
-    const minSnapshotVersion = validateNumberField(command, 'minSnapshotVersion', 'rtc');
-    if (!minSnapshotVersion.ok) {
-        return minSnapshotVersion;
-    }
-    const transports = command.kind === 'rtc.connect'
-        ? RTC_CONNECT_TRANSPORTS
-        : RTC_SEND_TRANSPORTS;
-    if (command.transport !== undefined && !transports.includes(String(command.transport))) {
-        return fail(`rtc.transport must be ${transports.join(' or ')}.`);
-    }
-    if (command.kind === 'rtc.connect') {
-        const readiness = validateRtcConnectReadiness(command.readiness);
-        if (!readiness.ok) {
-            return readiness;
-        }
-    }
-    return validateObjectField(command, 'rallar', 'rtc');
-}
-
-function validateRtcConnectReadiness(value: unknown): ControlCommandValidationResult {
-    if (value === undefined) {
-        return { ok: true };
-    }
-    if (!isRecord(value)) {
-        return fail('rtc.readiness must be an object.');
-    }
-
-    let result = validateKeys(value, ['minReadyPeers', 'timeoutMs', 'intervalMs'], 'rtc.readiness');
-    if (!result.ok) {
-        return result;
-    }
-    for (const field of ['minReadyPeers', 'timeoutMs', 'intervalMs']) {
-        result = validateIntegerField(value, field, 'rtc.readiness', { minimum: 1 });
-        if (!result.ok) {
-            return result;
-        }
-    }
-    return { ok: true };
-}
-
-function validateRtcStreamThresholds(value: unknown): ControlCommandValidationResult {
-    if (value === undefined) {
-        return { ok: true };
-    }
-    if (!isRecord(value)) {
-        return fail('rtc.stream.thresholds must be an object.');
-    }
-
-    let result = validateKeys(value, [
-        'minSendSuccessRatio',
-        'maxDroppedFrames',
-        'maxBackpressureCount',
-        'maxP95SendDurationMs',
-        'maxP99SendDurationMs',
-        'maxAverageStartDriftMs',
-        'maxStartDriftMs',
-        'maxJitterMs'
-    ], 'rtc.stream.thresholds');
-    if (!result.ok) {
-        return result;
-    }
-
-    result = validateNumberField(value, 'minSendSuccessRatio', 'rtc.stream.thresholds');
-    if (!result.ok) {
-        return result;
-    }
-    if (
-        value.minSendSuccessRatio !== undefined &&
-        ((value.minSendSuccessRatio as number) < 0 || (value.minSendSuccessRatio as number) > 1)
-    ) {
-        return fail('rtc.stream.thresholds.minSendSuccessRatio must be between 0 and 1.');
-    }
-
-    for (
-        const field of [
-            'maxDroppedFrames',
-            'maxBackpressureCount',
-            'maxP95SendDurationMs',
-            'maxP99SendDurationMs',
-            'maxAverageStartDriftMs',
-            'maxStartDriftMs',
-            'maxJitterMs'
-        ]
-    ) {
-        result = validateNumberField(value, field, 'rtc.stream.thresholds');
-        if (!result.ok) {
-            return result;
-        }
-        if (value[field] !== undefined && (value[field] as number) < 0) {
-            return fail(`rtc.stream.thresholds.${field} must be >= 0.`);
-        }
-    }
-
-    return { ok: true };
-}
-
-function validateRtcStreamCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    if (command.send === undefined) {
-        return fail('rtc.stream.send is required.');
-    }
-    if (command.count === undefined && command.durationMs === undefined) {
-        return fail('rtc.stream requires count or durationMs.');
-    }
-    if (command.intervalMs === undefined && command.rateHz === undefined) {
-        return fail('rtc.stream requires intervalMs or rateHz.');
-    }
-
-    let result = validateIntegerField(command, 'count', 'rtc.stream', {
-        minimum: 1,
-        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount
-    });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'durationMs', 'rtc.stream', {
-        minimum: 1,
-        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
-    });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'intervalMs', 'rtc.stream', { minimum: 1 });
-    if (!result.ok) {
-        return result;
-    }
-    result = validatePositiveNumberField(command, 'rateHz', 'rtc.stream');
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'maxInFlight', 'rtc.stream', { minimum: 1 });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'drainTimeoutMs', 'rtc.stream', { minimum: 0 });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'progressEveryMs', 'rtc.stream', { minimum: 1 });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateIntegerField(command, 'sampleEvery', 'rtc.stream', { minimum: 1 });
-    if (!result.ok) {
-        return result;
-    }
-    result = validateBooleanField(command, 'continueOnSendFailure', 'rtc.stream');
-    if (!result.ok) {
-        return result;
-    }
-    return validateRtcStreamThresholds(command.thresholds);
-}
-
-function validateRoomFields(
-    command: Record<string, unknown>,
-    path: string
-): ControlCommandValidationResult {
-    for (const field of ['roomId', 'applicationId', 'workspaceId']) {
-        const result = validateStringField(command, field, path);
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (
-        const [field, label] of [
-            ['roomId', 'Room ID'],
-            ['applicationId', 'Application ID'],
-            ['workspaceId', 'Workspace ID']
-        ] as const
-    ) {
-        const result = validateRouteIdField(command, field, path, label);
-        if (!result.ok) {
-            return result;
-        }
-    }
-    for (const field of ['scope', 'roomRef']) {
-        const result = validateObjectField(command, field, path);
-        if (!result.ok) {
-            return result;
-        }
-    }
-    return { ok: true };
-}
-
-function validateDirectorRelayStartCommand(
-    command: Record<string, unknown>
-): ControlCommandValidationResult {
-    let result = validateRoomFields(command, 'director.relay.start');
-    if (!result.ok) {
-        return result;
-    }
-
-    for (
-        const field of [
-            'handle',
-            'laneId',
-            'topicId',
-            'intentTypeId',
-            'outputTypeId',
-            'heartbeatTypeId',
-            'snapshotTypeId',
-            'syncRequestTypeId'
-        ]
-    ) {
-        result = validateStringField(
-            command,
-            field,
-            'director.relay.start',
-            field === 'handle' || field === 'intentTypeId' || field === 'outputTypeId'
-        );
-        if (!result.ok) {
-            return result;
-        }
-    }
-
-    for (const field of ['heartbeatIntervalMs', 'snapshotIntervalMs']) {
-        result = validateIntegerField(command, field, 'director.relay.start', {
-            minimum: 0
-        });
-        if (!result.ok) {
-            return result;
-        }
-    }
-    return { ok: true };
-}
-
-/** The eight commands the browser's room formation handle exposes. */
-const FORMATION_COMMAND_NAMES = [
-    'plan',
-    'connect',
-    'activate',
-    'reconfigure',
-    'pause',
-    'resume',
-    'reset',
-    'start'
-];
-
-/**
- * A formation command addresses one room, so unlike `rtc.connect` it refuses to validate without
- * one: an exact `roomRef`, or an `applicationId` the runtime can pair with a room id.
- */
-function validateFormationRoomIdentity(
-    command: Record<string, unknown>,
-    path: string
-): ControlCommandValidationResult {
-    const result = validateRoomFields(command, path);
-    if (!result.ok) {
-        return result;
-    }
-    if (command.roomRef !== undefined) {
-        return { ok: true };
-    }
-    if (typeof command.applicationId === 'string' && typeof command.roomId === 'string') {
-        return { ok: true };
-    }
-    return fail(`${path} must name its room with roomRef, or with applicationId and roomId.`);
-}
-
-function validateFormationCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    switch (command.kind) {
-        case 'formation.command': {
-            const room = validateFormationRoomIdentity(command, 'formation.command');
-            if (!room.ok) {
-                return room;
-            }
-            const name = validateStringField(command, 'command', 'formation.command', true);
-            if (!name.ok) {
-                return name;
-            }
-            if (!FORMATION_COMMAND_NAMES.includes(String(command.command))) {
-                return fail(
-                    `formation.command.command must be one of ${FORMATION_COMMAND_NAMES.join(', ')}.`
-                );
-            }
-            if (command.layout !== undefined && command.command !== 'connect') {
-                return fail(`formation.command ${String(command.command)} does not take layout.`);
-            }
-            if (command.landing !== undefined && command.command !== 'reconfigure') {
-                return fail(`formation.command ${String(command.command)} does not take landing.`);
-            }
-            const layout = validateObjectField(command, 'layout', 'formation.command');
-            if (!layout.ok) {
-                return layout;
-            }
-            const landing = validateStringField(command, 'landing', 'formation.command');
-            if (!landing.ok) {
-                return landing;
-            }
-            return validateStringField(command, 'reason', 'formation.command');
-        }
-        case 'formation.readiness':
-            return validateFormationRoomIdentity(command, 'formation.readiness');
-        default:
-            return fail('Command kind is not supported.');
-    }
-}
-
-function validateDirectorCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    switch (command.kind) {
-        case 'director.appoint': {
-            const roomFields = validateRoomFields(command, 'director.appoint');
-            if (!roomFields.ok) {
-                return roomFields;
-            }
-            return validateIntegerField(command, 'heartbeatTtlMs', 'director.appoint', {
-                minimum: 1
-            });
-        }
-        case 'director.resign':
-            return validateRoomFields(command, 'director.resign');
-        case 'director.status': {
-            let result = validateRoomFields(command, 'director.status');
-            if (!result.ok) {
-                return result;
-            }
-            result = validateBooleanField(command, 'refresh', 'director.status');
-            if (!result.ok) {
-                return result;
-            }
-            return validateNumberField(command, 'now', 'director.status');
-        }
-        case 'director.relay.start':
-            return validateDirectorRelayStartCommand(command);
-        case 'director.intent': {
-            const handle = validateStringField(command, 'handle', 'director.intent', true);
-            if (!handle.ok) {
-                return handle;
-            }
-            return Object.prototype.hasOwnProperty.call(command, 'intent')
-                ? { ok: true }
-                : fail('director.intent.intent is required.');
-        }
-        case 'director.sync.request':
-        case 'director.relay.stop':
-            return validateStringField(command, 'handle', String(command.kind), true);
-        default:
-            return fail('Director command kind is not supported.');
-    }
-}
-
 function optionalString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value
@@ -1099,7 +100,7 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentIdentity | undefined {
-    if (!isRecord(value)) {
+    if (!isJsonRecordValue(value)) {
         return undefined;
     }
 
@@ -1138,7 +139,7 @@ function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentId
 }
 
 function parseGeoLocation(value: unknown): RallarBlackBoxGeoLocation | undefined {
-    if (!isRecord(value)) {
+    if (!isJsonRecordValue(value)) {
         return undefined;
     }
 
@@ -1175,270 +176,6 @@ function parseStringArray(value: unknown): readonly string[] | undefined {
     return strings.length > 0 ? strings : undefined;
 }
 
-export function validateRallarBlackBoxTestCommand(
-    value: unknown,
-    depth = 0
-): ControlCommandValidationResult {
-    if (!isCommand(value)) {
-        return fail('Command must be an object with a supported kind.');
-    }
-    if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
-        return fail(`Command exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`);
-    }
-
-    const command = value as Record<string, unknown>;
-    let result = validateBaseCommand(command);
-    if (!result.ok) {
-        return result;
-    }
-
-    const base = ['kind', 'commandId', 'label', 'deadlineEpochMs', 'timeoutMs', 'metadata'];
-    switch (value.kind) {
-        case 'configure':
-            result = validateKeys(command, [...base, 'config'], 'configure');
-            return !result.ok ? result : validateObjectField(command, 'config', 'configure', true);
-        case 'recipe.load':
-            result = validateKeys(command, [...base, 'recipe'], 'recipe.load');
-            return !result.ok ? result : validateRecipe(command.recipe, 'recipe.load.recipe', depth);
-        case 'recipe.run':
-            result = validateKeys(command, [...base, 'recipe'], 'recipe.run');
-            if (!result.ok || command.recipe === undefined) {
-                return result;
-            }
-            return validateRecipe(command.recipe, 'recipe.run.recipe', depth);
-        case 'recipe.cancel':
-            result = validateKeys(command, [...base, 'reason'], 'recipe.cancel');
-            return !result.ok ? result : validateStringField(command, 'reason', 'recipe.cancel');
-        case 'loop':
-            result = validateKeys(
-                command,
-                [
-                    ...base,
-                    'commands',
-                    'count',
-                    'durationMs',
-                    'intervalMs',
-                    'delayMs',
-                    'continueOnFailure',
-                    'until',
-                    'backoffMultiplier',
-                    'maxCommands',
-                    'thresholds'
-                ],
-                'loop'
-            );
-            return !result.ok ? result : validateLoopCommand(command, depth);
-        case 'parallel':
-            result = validateKeys(
-                command,
-                [
-                    ...base,
-                    'groups',
-                    'maxConcurrency',
-                    'failFast',
-                    'continueOnFailure'
-                ],
-                'parallel'
-            );
-            return !result.ok ? result : validateParallelCommand(command, depth);
-        case 'wait':
-            result = validateKeys(command, [...base, 'match', 'absent'], 'wait');
-            return !result.ok ? result : validateWaitCommand(command);
-        case 'assert':
-            result = validateKeys(command, [...base, 'source', 'operator', 'expected'], 'assert');
-            return !result.ok ? result : validateAssertCommand(command);
-        case 'rtc.connect':
-            result = validateKeys(
-                command,
-                [
-                    ...base,
-                    'connection',
-                    'actor',
-                    'roomId',
-                    'applicationId',
-                    'workspaceId',
-                    'scope',
-                    'roomRef',
-                    'minSnapshotVersion',
-                    'transport',
-                    'rallar',
-                    'readiness'
-                ],
-                'rtc.connect'
-            );
-            return !result.ok ? result : validateRtcCommand(command);
-        case 'rtc.send':
-            result = validateKeys(
-                command,
-                [
-                    ...base,
-                    'connection',
-                    'send',
-                    'applicationId',
-                    'workspaceId',
-                    'scope',
-                    'roomRef',
-                    'minSnapshotVersion',
-                    'transport'
-                ],
-                'rtc.send'
-            );
-            return !result.ok ? result : validateRtcCommand(command);
-        case 'rtc.stream':
-            result = validateKeys(
-                command,
-                [
-                    ...base,
-                    'connection',
-                    'actor',
-                    'roomId',
-                    'applicationId',
-                    'workspaceId',
-                    'scope',
-                    'roomRef',
-                    'minSnapshotVersion',
-                    'transport',
-                    'send',
-                    'count',
-                    'durationMs',
-                    'intervalMs',
-                    'rateHz',
-                    'maxInFlight',
-                    'drainTimeoutMs',
-                    'continueOnSendFailure',
-                    'progressEveryMs',
-                    'sampleEvery',
-                    'thresholds'
-                ],
-                'rtc.stream'
-            );
-            if (!result.ok) {
-                return result;
-            }
-            result = validateRtcCommand(command);
-            return !result.ok ? result : validateRtcStreamCommand(command);
-        case 'messages.send':
-        case 'messages.observe':
-        case 'messages.cancel':
-        case 'messages.received':
-        case 'messages.receipts':
-        case 'fault.inject':
-        case 'storage.counters':
-        case 'agent.reload':
-            return validateAlmControlCommand({ command, kind: value.kind, baseFields: base });
-        case 'ws.open':
-            result = validateKeys(command, [...base, 'connection', 'url', 'protocols', 'headers'], 'ws.open');
-            return !result.ok ? result : validateWsCommand(command);
-        case 'ws.send':
-            result = validateKeys(command, [...base, 'connection', 'data'], 'ws.send');
-            return !result.ok ? result : validateWsCommand(command);
-        case 'ws.close':
-            result = validateKeys(command, [...base, 'connection', 'code', 'reason'], 'ws.close');
-            return !result.ok ? result : validateWsCommand(command);
-        case 'http.request':
-            result = validateKeys(command, [...base, 'request', 'response'], 'http.request');
-            return !result.ok ? result : validateHttpCommand(command);
-        case 'formation.command':
-            result = validateKeys(command, [
-                ...base,
-                'roomId',
-                'applicationId',
-                'workspaceId',
-                'scope',
-                'roomRef',
-                'command',
-                'layout',
-                'landing',
-                'reason'
-            ], 'formation.command');
-            return !result.ok ? result : validateFormationCommand(command);
-        case 'formation.readiness':
-            result = validateKeys(command, [
-                ...base,
-                'roomId',
-                'applicationId',
-                'workspaceId',
-                'scope',
-                'roomRef'
-            ], 'formation.readiness');
-            return !result.ok ? result : validateFormationCommand(command);
-        case 'director.appoint':
-            result = validateKeys(command, [
-                ...base,
-                'roomId',
-                'applicationId',
-                'workspaceId',
-                'scope',
-                'roomRef',
-                'heartbeatTtlMs'
-            ], 'director.appoint');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'director.resign':
-            result = validateKeys(command, [
-                ...base,
-                'roomId',
-                'applicationId',
-                'workspaceId',
-                'scope',
-                'roomRef'
-            ], 'director.resign');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'director.status':
-            result = validateKeys(command, [
-                ...base,
-                'roomId',
-                'applicationId',
-                'workspaceId',
-                'scope',
-                'roomRef',
-                'refresh',
-                'now'
-            ], 'director.status');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'director.relay.start':
-            result = validateKeys(command, [
-                ...base,
-                'handle',
-                'roomId',
-                'applicationId',
-                'workspaceId',
-                'scope',
-                'roomRef',
-                'laneId',
-                'topicId',
-                'intentTypeId',
-                'outputTypeId',
-                'heartbeatTypeId',
-                'snapshotTypeId',
-                'syncRequestTypeId',
-                'heartbeatIntervalMs',
-                'snapshotIntervalMs',
-                'snapshot'
-            ], 'director.relay.start');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'director.intent':
-            result = validateKeys(command, [...base, 'handle', 'intent'], 'director.intent');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'director.sync.request':
-            result = validateKeys(command, [...base, 'handle', 'payload'], 'director.sync.request');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'director.relay.stop':
-            result = validateKeys(command, [...base, 'handle'], 'director.relay.stop');
-            return !result.ok ? result : validateDirectorCommand(command);
-        case 'health':
-            result = validateKeys(command, [...base, 'includeRtcDiagnostics'], 'health');
-            return !result.ok
-                ? result
-                : validateBooleanField(command, 'includeRtcDiagnostics', 'health');
-        case 'stats':
-        case 'close':
-        case 'reset':
-            return validateKeys(command, base, value.kind);
-        default:
-            return fail('Command kind is not supported.');
-    }
-}
-
 export function parseControlServerMessage(
     data: unknown,
     expected: Readonly<{
@@ -1446,25 +183,11 @@ export function parseControlServerMessage(
         agentId: string;
     }>
 ): ParseControlMessageResult {
-    let parsed: unknown;
-    try {
-        parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const input = parseControlEnvelopeInput(data, 'Control message');
+    if (!input.ok) {
+        return input;
     }
-    catch (error) {
-        return {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error)
-        };
-    }
-
-    if (!isRecord(parsed)) {
-        return { ok: false, error: 'Control message must be an object.' };
-    }
-
-    if (parsed.protocolVersion !== RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION) {
-        return { ok: false, error: 'Unsupported control protocol version.' };
-    }
-
+    const parsed = input.value;
     if (parsed.kind !== 'command') {
         return { ok: false, error: 'Unsupported control message kind.' };
     }
@@ -1515,129 +238,30 @@ export function parseControlServerMessage(
 }
 
 export function parseControlClientMessage(data: unknown): ParseControlClientMessageResult {
-    let parsed: unknown;
-    try {
-        parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const input = parseControlEnvelopeInput(data, 'Control client message');
+    if (!input.ok) {
+        return input;
     }
-    catch (error) {
-        return {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error)
-        };
-    }
-
-    if (!isRecord(parsed)) {
-        return { ok: false, error: 'Control client message must be an object.' };
-    }
-
-    if (parsed.protocolVersion !== RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION) {
-        return { ok: false, error: 'Unsupported control protocol version.' };
-    }
-
+    const parsed = input.value;
     if (typeof parsed.runId !== 'string' || parsed.runId.length === 0) {
         return { ok: false, error: 'Control client message requires runId.' };
     }
-
     if (typeof parsed.agentId !== 'string' || parsed.agentId.length === 0) {
         return { ok: false, error: 'Control client message requires agentId.' };
     }
-
+    const identity = { runId: parsed.runId, agentId: parsed.agentId };
     switch (parsed.kind) {
         case 'register':
-            if (typeof parsed.atEpochMs !== 'number') {
-                return { ok: false, error: 'Control register requires atEpochMs.' };
-            }
-            if (
-                !isRecord(parsed.resume) ||
-                !Array.isArray(parsed.resume.completedCommandIds) ||
-                !parsed.resume.completedCommandIds.every((id) => typeof id === 'string')
-            ) {
-                return {
-                    ok: false,
-                    error: 'Control register requires resume.completedCommandIds.'
-                };
-            }
-            return {
-                ok: true,
-                envelope: {
-                    kind: 'register',
-                    protocolVersion: 1,
-                    runId: parsed.runId,
-                    agentId: parsed.agentId,
-                    token: typeof parsed.token === 'string' ? parsed.token : undefined,
-                    atEpochMs: parsed.atEpochMs,
-                    identity: parseControlAgentIdentity(parsed.identity),
-                    resume: {
-                        completedCommandIds: parsed.resume.completedCommandIds
-                    }
-                }
-            };
+            return parseRegisterEnvelope(parsed, identity);
         case 'heartbeat':
-            if (typeof parsed.atEpochMs !== 'number') {
-                return { ok: false, error: 'Control heartbeat requires atEpochMs.' };
-            }
-            if (typeof parsed.status !== 'string') {
-                return { ok: false, error: 'Control heartbeat requires status.' };
-            }
-            return {
-                ok: true,
-                envelope: {
-                    kind: 'heartbeat',
-                    protocolVersion: 1,
-                    runId: parsed.runId,
-                    agentId: parsed.agentId,
-                    atEpochMs: parsed.atEpochMs,
-                    status: parsed.status,
-                    identity: parseControlAgentIdentity(parsed.identity),
-                    lastCommandId: typeof parsed.lastCommandId === 'string'
-                        ? parsed.lastCommandId
-                        : undefined,
-                    lastEventAtEpochMs: typeof parsed.lastEventAtEpochMs === 'number'
-                        ? parsed.lastEventAtEpochMs
-                        : undefined
-                }
-            };
+            return parseHeartbeatEnvelope(parsed, identity);
         case 'result':
-            if (typeof parsed.commandId !== 'string' || parsed.commandId.length === 0) {
-                return { ok: false, error: 'Control result requires commandId.' };
-            }
-            if (typeof parsed.ok !== 'boolean') {
-                return { ok: false, error: 'Control result requires ok.' };
-            }
-            return {
-                ok: true,
-                envelope: {
-                    kind: 'result',
-                    protocolVersion: 1,
-                    runId: parsed.runId,
-                    agentId: parsed.agentId,
-                    commandId: parsed.commandId,
-                    ok: parsed.ok,
-                    result: parsed.result as RallarBlackBoxTestResult | undefined,
-                    error: parsed.error as ControlResultEnvelope['error'],
-                    replayed: typeof parsed.replayed === 'boolean' ? parsed.replayed : undefined
-                }
-            };
+            return parseResultEnvelope(parsed, identity);
         case 'event':
         case 'diagnostic':
         case 'stats':
         case 'report':
-            if (typeof parsed.atEpochMs !== 'number') {
-                return { ok: false, error: 'Control event requires atEpochMs.' };
-            }
-            return {
-                ok: true,
-                envelope: {
-                    kind: parsed.kind,
-                    protocolVersion: 1,
-                    runId: parsed.runId,
-                    agentId: parsed.agentId,
-                    atEpochMs: parsed.atEpochMs,
-                    eventId: typeof parsed.eventId === 'string' ? parsed.eventId : undefined,
-                    commandId: typeof parsed.commandId === 'string' ? parsed.commandId : undefined,
-                    payload: parsed.payload
-                }
-            };
+            return parseEventEnvelope(parsed, identity, parsed.kind);
         default:
             return { ok: false, error: 'Unsupported control client message kind.' };
     }
@@ -1666,4 +290,149 @@ export function toControlEventEnvelope(
         commandId: event.commandId,
         payload: event
     };
+}
+
+export { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
+
+function parseRegisterEnvelope(
+    parsed: Record<string, unknown>,
+    identity: ControlClientIdentity
+): ParseControlClientMessageResult {
+    if (typeof parsed.atEpochMs !== 'number') {
+        return { ok: false, error: 'Control register requires atEpochMs.' };
+    }
+    if (
+        !isJsonRecordValue(parsed.resume) ||
+        !Array.isArray(parsed.resume.completedCommandIds) ||
+        !parsed.resume.completedCommandIds.every((id) => typeof id === 'string')
+    ) {
+        return {
+            ok: false,
+            error: 'Control register requires resume.completedCommandIds.'
+        };
+    }
+    return {
+        ok: true,
+        envelope: {
+            kind: 'register',
+            protocolVersion: 1,
+            runId: identity.runId,
+            agentId: identity.agentId,
+            token: typeof parsed.token === 'string' ? parsed.token : undefined,
+            atEpochMs: parsed.atEpochMs,
+            identity: parseControlAgentIdentity(parsed.identity),
+            resume: {
+                completedCommandIds: parsed.resume.completedCommandIds
+            }
+        }
+    };
+}
+
+function parseHeartbeatEnvelope(
+    parsed: Record<string, unknown>,
+    identity: ControlClientIdentity
+): ParseControlClientMessageResult {
+    if (typeof parsed.atEpochMs !== 'number') {
+        return { ok: false, error: 'Control heartbeat requires atEpochMs.' };
+    }
+    if (typeof parsed.status !== 'string') {
+        return { ok: false, error: 'Control heartbeat requires status.' };
+    }
+    return {
+        ok: true,
+        envelope: {
+            kind: 'heartbeat',
+            protocolVersion: 1,
+            runId: identity.runId,
+            agentId: identity.agentId,
+            atEpochMs: parsed.atEpochMs,
+            status: parsed.status,
+            identity: parseControlAgentIdentity(parsed.identity),
+            lastCommandId: typeof parsed.lastCommandId === 'string'
+                ? parsed.lastCommandId
+                : undefined,
+            lastEventAtEpochMs: typeof parsed.lastEventAtEpochMs === 'number'
+                ? parsed.lastEventAtEpochMs
+                : undefined
+        }
+    };
+}
+
+function parseResultEnvelope(
+    parsed: Record<string, unknown>,
+    identity: ControlClientIdentity
+): ParseControlClientMessageResult {
+    if (typeof parsed.commandId !== 'string' || parsed.commandId.length === 0) {
+        return { ok: false, error: 'Control result requires commandId.' };
+    }
+    if (typeof parsed.ok !== 'boolean') {
+        return { ok: false, error: 'Control result requires ok.' };
+    }
+    return {
+        ok: true,
+        envelope: {
+            kind: 'result',
+            protocolVersion: 1,
+            runId: identity.runId,
+            agentId: identity.agentId,
+            commandId: parsed.commandId,
+            ok: parsed.ok,
+            result: parsed.result as RallarBlackBoxTestResult | undefined,
+            error: parsed.error as ControlResultEnvelope['error'],
+            replayed: typeof parsed.replayed === 'boolean' ? parsed.replayed : undefined
+        }
+    };
+}
+
+function parseEventEnvelope(
+    parsed: Record<string, unknown>,
+    identity: ControlClientIdentity,
+    kind: 'event' | 'diagnostic' | 'stats' | 'report'
+): ParseControlClientMessageResult {
+    if (typeof parsed.atEpochMs !== 'number') {
+        return { ok: false, error: 'Control event requires atEpochMs.' };
+    }
+    return {
+        ok: true,
+        envelope: {
+            kind,
+            protocolVersion: 1,
+            runId: identity.runId,
+            agentId: identity.agentId,
+            atEpochMs: parsed.atEpochMs,
+            eventId: typeof parsed.eventId === 'string' ? parsed.eventId : undefined,
+            commandId: typeof parsed.commandId === 'string' ? parsed.commandId : undefined,
+            payload: parsed.payload
+        }
+    };
+}
+
+interface ControlClientIdentity {
+    readonly runId: string;
+    readonly agentId: string;
+}
+
+type ControlEnvelopeInputResult = { readonly ok: true; readonly value: Record<string, unknown>; } | {
+    readonly ok: false;
+    readonly error: string;
+};
+
+function parseControlEnvelopeInput(
+    data: unknown,
+    label: 'Control message' | 'Control client message'
+): ControlEnvelopeInputResult {
+    let parsed: unknown;
+    try {
+        parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    }
+    catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    if (!isJsonRecordValue(parsed)) {
+        return { ok: false, error: label + ' must be an object.' };
+    }
+    if (parsed.protocolVersion !== RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION) {
+        return { ok: false, error: 'Unsupported control protocol version.' };
+    }
+    return { ok: true, value: parsed };
 }

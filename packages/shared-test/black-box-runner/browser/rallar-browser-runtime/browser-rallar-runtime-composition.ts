@@ -1,13 +1,11 @@
-import {
-    resolveBrowserRtcOverlayALOutboundRuntimeStores,
-    resolveBrowserWsClientALOutboundRuntimeStores
-} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
+import { browserDeliveryComposition } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import {
     registerBrowserStateLifecycle,
     registerBrowserTransportLifecycle
@@ -39,8 +37,7 @@ import type {
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
-    RallarConnectionOperations,
-    RallarScopedOperationOptions
+    RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
@@ -51,23 +48,12 @@ import type {
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
-import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
-import type {
-    ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeDiagnosticsSink
-} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
 import {
     createCountingIndexedDbOperationObserver,
     type CountingIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
-import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
@@ -76,51 +62,10 @@ import type {
     BlackBoxRallarDirectorOutputRecord,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
-
-interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
-    readonly scope: StateScope;
-    readonly timeoutMs: number;
-}
-
-interface RefreshBlackBoxBrowserRoomStateInput {
-    readonly roomRef: GroupRef;
-    readonly options: BlackBoxRoomStateRefreshOptions;
-    readonly rooms: BlackBoxRoomStateRefreshRooms;
-    readonly session: BlackBoxRoomStateRefreshSession;
-}
-
-interface BlackBoxRoomStateRefreshRoom {
-    refresh(
-        options: Parameters<RallarRoomSession['refresh']>[0]
-    ): Promise<Pick<RallarRoomSession, 'snapshot'>>;
-}
-
-interface BlackBoxRoomStateRefreshRooms {
-    session(roomRef: GroupRef): BlackBoxRoomStateRefreshRoom;
-}
-
-interface BlackBoxRoomStateRefreshContext {
-    readonly session: AuthSession;
-    readonly middleware: {
-        readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
-    };
-}
-
-interface BlackBoxRoomStateRefreshSession {
-    connect(
-        options: RallarScopedOperationOptions
-    ): Promise<BlackBoxRoomStateRefreshContext>;
-}
-
-interface RoomStateRefreshAbortScope {
-    readonly signal: AbortSignal;
-    cleanup(): void;
-}
-
-interface AbortRejection {
-    readonly promise: Promise<never>;
-    cleanup(): void;
-}
+import {
+    refreshBlackBoxBrowserRoomState,
+    type BlackBoxRoomStateRefreshOptions
+} from './refresh-black-box-browser-room-state.ts';
 
 // The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency
@@ -133,10 +78,6 @@ export interface BlackBoxBrowserRallarRuntimeDependency
         roomRef: GroupRef,
         options: BlackBoxRoomStateRefreshOptions
     ): Promise<void>;
-    hasMessageAdmission(
-        messageId: string,
-        transport: 'rtc' | 'ws'
-    ): Promise<boolean>;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
@@ -166,33 +107,10 @@ export interface BlackBoxBrowserRoomsDependency {
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
 
-/**
- * Both the AL outbound runtime and the ALM database open call emit before the connection runtime
- * that owns the agent event log exists. `setRecorder` lets that runtime attach its recorder once
- * constructed, so `sink` forwards to whatever recorder is currently attached (a no-op until then).
- */
-export interface BlackBoxDiagnosticsRelay<TEvent> {
-    readonly sink: (event: TEvent) => void;
-    setRecorder(recorder: (event: TEvent) => void): void;
-}
-
-export function createBlackBoxDiagnosticsRelay<TEvent>(): BlackBoxDiagnosticsRelay<TEvent> {
-    let recorder: (event: TEvent) => void = () => {};
-    return {
-        sink: (event: TEvent) => recorder(event),
-        setRecorder: (next) => {
-            recorder = next;
-        }
-    };
-}
-
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
 export interface BlackBoxBrowserDiagnosticsDependency {
     readonly faults: ScriptedTransportFaultPort;
     readonly storage: CountingIndexedDbOperationObserver;
-    readonly outboundDiagnostics: BlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>;
-    readonly inboundDiagnostics: BlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>;
-    readonly storageReset: BlackBoxDiagnosticsRelay<ALStorageResetEvent>;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -230,29 +148,8 @@ export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFa
 export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserRallarRuntimeDependency {
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
-    const outboundDiagnostics = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
-    const inboundDiagnostics = createBlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>();
-    const storageReset = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
-    const foundation = createBrowserRuntimeFoundation();
-    const state = createBrowserStateComposition({
-        runtime: foundation.runtime,
-        stateRuntime: foundation.stateRuntime
-    });
-    const session = createBrowserSessionCoreComposition({ foundation, state });
-    const stateEvents = createBrowserStateEventComposition({
-        connectionRuntime: foundation.connectionRuntime,
-        session: session.session
-    });
-    const messaging = createBrowserMessagingComposition({
-        wsInbox: stateEvents.wsInbox,
-        state,
-        session: session.session
-    });
-    const realtime = createBrowserRealtimeCoreComposition({
-        runtime: foundation.runtime,
-        state,
-        session: session.session
-    });
+    const { foundation, state, session, stateEvents, messaging, realtime } =
+        createBlackBoxBrowserTransportComposition();
     const rooms = createBrowserRoomsComposition({
         state,
         stateEvents,
@@ -287,7 +184,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, outboundDiagnostics, inboundDiagnostics, storageReset }
+        diagnostics: { faults, storage }
     });
 }
 
@@ -314,123 +211,6 @@ export async function readBlackBoxRtcMessageNacks(
         })
     );
     return observation.nacks;
-}
-
-export async function hasBlackBoxBrowserMessageAdmission(
-    sessionId: string | undefined,
-    messageId: string,
-    transport: 'rtc' | 'ws'
-): Promise<boolean> {
-    if (!sessionId) {
-        throw new Error(
-            'Message admission diagnostics require an authenticated session.'
-        );
-    }
-    const { admissionStore } = transport === 'rtc'
-        ? resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId)
-        : resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
-    return await admissionStore.hasSentMessageAdmission(messageId);
-}
-
-export async function refreshBlackBoxBrowserRoomState(
-    input: RefreshBlackBoxBrowserRoomStateInput
-): Promise<void> {
-    const abortScope = createRoomStateRefreshAbortScope(input.options);
-    const options = { ...input.options, signal: abortScope.signal };
-    let abortRejection: AbortRejection | undefined;
-    try {
-        throwIfAborted(abortScope.signal);
-        abortRejection = createAbortRejection(abortScope.signal);
-        const refresh = Promise.resolve().then(async () => {
-            const refreshedRoom = await input.rooms
-                .session(input.roomRef)
-                .refresh(options);
-            const groupSnapshot = refreshedRoom.snapshot();
-            if (!groupSnapshot) {
-                return;
-            }
-            const context = await input.session.connect(options);
-            await hydrateGroupTopologyOverlays({
-                groupSnapshots: [groupSnapshot],
-                sessionId: context.session.sessionId,
-                webRtcGroupManager: context.middleware.webRtcGroupManager,
-                scope: options.scope,
-                apiRequest: {
-                    authSession: context.session,
-                    signal: abortScope.signal
-                }
-            });
-        });
-        await Promise.race([refresh, abortRejection.promise]);
-    }
-    finally {
-        abortRejection?.cleanup();
-        abortScope.cleanup();
-    }
-}
-
-function createRoomStateRefreshAbortScope(
-    options: BlackBoxRoomStateRefreshOptions
-): RoomStateRefreshAbortScope {
-    const controller = new AbortController();
-    const abortFromCaller = () => {
-        controller.abort(
-            options.signal?.reason ?? new Error('Room state refresh aborted.')
-        );
-    };
-    if (options.signal?.aborted) {
-        abortFromCaller();
-    }
-    else {
-        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
-    }
-    const timeout = controller.signal.aborted
-        ? undefined
-        : setTimeout(
-            () => {
-                const error = new Error(
-                    `Room state refresh timed out after ${options.timeoutMs} ms.`
-                );
-                error.name = 'TimeoutError';
-                controller.abort(error);
-            },
-            Math.max(0, options.timeoutMs)
-        );
-
-    return {
-        signal: controller.signal,
-        cleanup: () => {
-            if (timeout !== undefined) {
-                clearTimeout(timeout);
-            }
-            options.signal?.removeEventListener('abort', abortFromCaller);
-        }
-    };
-}
-
-function createAbortRejection(signal: AbortSignal): AbortRejection {
-    let rejectPromise: (reason: Error) => void = () => undefined;
-    const promise = new Promise<never>((_resolve, reject) => {
-        rejectPromise = reject;
-    });
-    const onAbort = () => rejectPromise(abortReason(signal));
-    signal.addEventListener('abort', onAbort, { once: true });
-    return {
-        promise,
-        cleanup: () => signal.removeEventListener('abort', onAbort)
-    };
-}
-
-function abortReason(signal: AbortSignal): Error {
-    return signal.reason instanceof Error
-        ? signal.reason
-        : new Error('Room state refresh aborted.');
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-    if (signal.aborted) {
-        throw abortReason(signal);
-    }
 }
 
 interface RegisterBlackBoxBrowserRallarLifecycleInput {
@@ -483,12 +263,6 @@ function toBlackBoxBrowserRuntimeDependency(
                 session.connection.session()?.sessionId,
                 messageId
             ),
-        hasMessageAdmission: async (messageId, transport) =>
-            await hasBlackBoxBrowserMessageAdmission(
-                session.connection.session()?.sessionId,
-                messageId,
-                transport
-            ),
         refreshRoomState: async (roomRef, options) =>
             await refreshBlackBoxBrowserRoomState({
                 roomRef,
@@ -517,4 +291,43 @@ function toBlackBoxBrowserRuntimeDependency(
         director: director.director,
         diagnostics
     };
+}
+
+function createBlackBoxBrowserTransportComposition(): BlackBoxBrowserTransportComposition {
+    const foundation = createBrowserRuntimeFoundation();
+    const state = createBrowserStateComposition({
+        runtime: foundation.runtime,
+        stateRuntime: foundation.stateRuntime
+    });
+    const session = createBrowserSessionCoreComposition({
+        foundation,
+        state,
+        sessionDeliveries: browserDeliveryComposition.sessionDeliveries
+    });
+    const stateEvents = createBrowserStateEventComposition({
+        connectionRuntime: foundation.connectionRuntime,
+        session: session.session
+    });
+    const messaging = createBrowserMessagingComposition({
+        ...browserDeliveryComposition,
+        wsInbox: stateEvents.wsInbox,
+        state,
+        session: session.session
+    });
+    const realtime = createBrowserRealtimeCoreComposition({
+        runtime: foundation.runtime,
+        state,
+        session: session.session
+    });
+
+    return { foundation, state, session, stateEvents, messaging, realtime };
+}
+
+interface BlackBoxBrowserTransportComposition {
+    readonly foundation: BrowserRuntimeFoundation;
+    readonly state: BrowserStateComposition;
+    readonly session: BrowserSessionCoreComposition;
+    readonly stateEvents: BrowserStateEventComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
 }

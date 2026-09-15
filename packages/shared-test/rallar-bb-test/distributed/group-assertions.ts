@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunValidationIssue
 } from '../distributed-run.ts';
-import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
+import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES = [
     'allMatch',

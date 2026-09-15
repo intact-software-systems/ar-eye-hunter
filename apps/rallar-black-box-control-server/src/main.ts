@@ -13,7 +13,7 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createControlArtifactRecorder } from './control-artifact-recorder.ts';
 import {
     controlRunArtifactContentType,
@@ -225,8 +225,8 @@ async function handleRequest(request: Request): Promise<Response> {
             service: {
                 createRetentionPlan: (maxRuns) => controlService.createRetentionPlan(maxRuns),
                 applyRetentionPlan: (plan) => controlService.applyRetentionPlan(plan),
-                pruneRuns: (maxRuns) => controlService.pruneRuns(maxRuns),
-                legacyRetainedRuns: () => controlService.snapshot().runs.length
+                applyRunRetention: (maxRuns) => controlService.applyRunRetention(maxRuns),
+                readRetainedRunCount: () => controlService.snapshot().runs.length
             },
             tokens: retentionPlanTokens,
             persist: () => snapshotPersistence.persist()

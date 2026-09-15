@@ -1,5 +1,5 @@
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../manual-workbench.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';

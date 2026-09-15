@@ -81,7 +81,7 @@ export function createControlSnapshotPersistence(
     }
 
     function schedulePersistence(): void {
-        const deletedRunIds = input.controlService.pruneRuns(input.retentionMaxRuns);
+        const deletedRunIds = input.controlService.applyRunRetention(input.retentionMaxRuns);
         if (deletedRunIds.length > 0) {
             input.deleteRuns(deletedRunIds);
         }

@@ -11,7 +11,7 @@ import {
     toControlAgentCapabilities,
     validateAgentAssertionCapability
 } from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
-import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {
     supported: true,

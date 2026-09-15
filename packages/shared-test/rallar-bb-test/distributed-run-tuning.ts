@@ -7,7 +7,7 @@ import {
     type DistributedRunTuningKnobName
 } from './distributed-run-tuning-types.ts';
 import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
-import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS, type RallarBlackBoxTestCommand } from './types.ts';
+import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS, type RallarBlackBoxTestCommand } from './rallar-black-box-test-contracts.ts';
 export * from './distributed-run-tuning-types.ts';
 
 type CommandContext = Readonly<{

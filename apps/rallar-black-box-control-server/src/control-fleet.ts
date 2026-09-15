@@ -17,7 +17,7 @@ import {
     type ControlFleetTimingDistribution
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const UNKNOWN_REGION = 'unlabeled-region';
 const UNKNOWN_PROVIDER = 'unknown-provider';

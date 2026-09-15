@@ -1,7 +1,8 @@
-import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type * as React from 'react';
+import { copyTextToClipboard } from '../../../copy-text-to-clipboard.ts';
 import {
     createDirectRallarRuntimeEvent,
     runDirectRallarGroupCreate,
@@ -51,7 +52,7 @@ export namespace QuickRallarTestActions {
         readonly selectorLabel: string;
         readonly payloadResult: {
             readonly ok: true;
-            readonly value: import('@shared-web/browser/messages/rallar-message-contracts.ts').RallarMessagePayload;
+            readonly value: RallarMessagePayload;
         } | { readonly ok: false; readonly error: string; };
         readonly lifetime: DiagnosticControllerLifecycle;
     }
@@ -61,12 +62,6 @@ export namespace QuickRallarTestActions {
         readonly completedAction: string;
         readonly failedAction: string;
         readonly onCompleted?: (result: DirectRallarOperationResult) => void;
-    }
-    export interface RunnerRecipe extends RallarBlackBoxTestRecipe {
-        readonly requirements: readonly string[];
-    }
-    export interface RunnerConfiguration extends RallarBlackBoxTestConfig {
-        readonly providerMode: QuickRallarTestActions.Input['providerMode'];
     }
 }
 export class QuickRallarTestActions {
@@ -357,7 +352,7 @@ export class QuickRallarTestActions {
         }
     };
     public readonly copyDiagnostics = (): void => {
-        void navigator.clipboard?.writeText(
+        void this.copyText(
             redactedJson(
                 {
                     providerMode: this.input.providerMode,
@@ -397,7 +392,7 @@ export class QuickRallarTestActions {
         );
     };
     public readonly copyRunnerRecipe = (): void => {
-        void navigator.clipboard?.writeText(
+        void this.copyText(
             redactedJson(
                 this.toRunnerRecipe(),
                 this.input.state,
@@ -405,6 +400,18 @@ export class QuickRallarTestActions {
             )
         );
     };
+
+    private async copyText(text: string): Promise<void> {
+        const signal = this.input.lifetime.signal;
+        if (!(!signal.aborted)) {
+            return;
+        }
+        this.input.setLocalError(undefined);
+        const error = await copyTextToClipboard(text);
+        if (!signal.aborted && error) {
+            this.input.setLocalError(error);
+        }
+    }
 
     private receiveMessage(
         context: DirectRallarOperationContext,
@@ -446,17 +453,20 @@ export class QuickRallarTestActions {
         });
     }
 
-    private toRunnerRecipe(): QuickRallarTestActions.RunnerRecipe {
+    private toRunnerRecipe(): RallarBlackBoxTestRecipe {
         const payload = this.input.payloadResult.ok ? this.input.payloadResult.value : {};
         return {
+            schemaVersion: 1,
             recipeId: 'rallar-quick-test-ws-group',
             name: 'Rallar Quick Test WS group send',
-            requirements: [
-                'provider=browser-rallar',
-                'logged-in browser session',
-                'Rallar Server API reachable',
-                'receiver browser subscribed to same group/type/topic'
-            ],
+            metadata: {
+                requirements: [
+                    'provider=browser-rallar',
+                    'logged-in browser session',
+                    'Rallar Server API reachable',
+                    'receiver browser subscribed to same group/type/topic'
+                ]
+            },
             continueOnFailure: false,
             commands: [
                 {
@@ -482,7 +492,7 @@ export class QuickRallarTestActions {
         };
     }
 
-    private toRunnerConfiguration(): QuickRallarTestActions.RunnerConfiguration {
+    private toRunnerConfiguration(): RallarBlackBoxTestConfig {
         return {
             runId: 'rallar-quick-test-export',
             apiBaseUrl: this.input.globalValues.apiBaseUrl,
@@ -490,7 +500,7 @@ export class QuickRallarTestActions {
             sessionId: this.input.authSession?.sessionId ??
                 this.input.globalValues.sessionId,
             roomId: this.input.activeGroupId,
-            providerMode: this.input.providerMode,
+            control: { providerMode: this.input.providerMode },
             rallar: {
                 restoreSession: true,
                 applicationId: this.input.globalValues.applicationId,

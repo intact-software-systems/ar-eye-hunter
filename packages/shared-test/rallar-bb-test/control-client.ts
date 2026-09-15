@@ -21,7 +21,7 @@ import type {
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxControlConnectionState =
     | 'idle'

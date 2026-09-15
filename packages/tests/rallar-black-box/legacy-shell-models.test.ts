@@ -9,7 +9,7 @@ import {
 } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const ticketMocks = vi.hoisted(() => ({
@@ -72,6 +72,7 @@ describe('legacy runner shell models', () => {
 
         expect(deriveQueue(state({
             loadedRecipe: {
+                schemaVersion: 1,
                 recipeId: 'queue-fixture',
                 commands: [
                     { kind: 'health', label: 'Pending health' },

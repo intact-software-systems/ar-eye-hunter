@@ -14,7 +14,7 @@ import type {
 import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
-} from '../../../packages/shared-test/rallar-bb-test/types.ts';
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const LARGE_MONITOR_CONTROL_RUN_ID = 'monitor-large-control-live';
 const LARGE_MONITOR_DISTRIBUTED_RUN_ID = 'monitor-large-distributed-live';

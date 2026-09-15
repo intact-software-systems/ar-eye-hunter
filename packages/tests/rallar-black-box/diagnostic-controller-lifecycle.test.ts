@@ -1,8 +1,10 @@
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '@shared-test/rallar-bb-test/schema.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthCommandCenterTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessage, RallarMessageHandler, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarStartResult } from '@shared-web/browser/rallar.ts';
 import { act, createElement, StrictMode, useLayoutEffect } from 'react';
@@ -143,6 +145,84 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         vi.useRealTimers();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('copies a canonical v1 runner recipe through the public quick-test action', async () => {
+        const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+        await act(async () =>
+            root.render(createElement(QuickHarness, {
+                input,
+                capture: (view) => {
+                    quick = view;
+                }
+            }))
+        );
+        quick.copyRunnerRecipe();
+        const text = clipboard.mock.calls.at(-1)?.[0];
+        expect(text).toBeDefined();
+        const recipe: unknown = JSON.parse(text ?? 'null');
+        expect.soft(recipe).toMatchObject({ schemaVersion: 1, metadata: { requirements: expect.arrayContaining(['logged-in browser session']) } });
+        expect.soft(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
+        expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
+    });
+
+    it.each(['copyDiagnostics', 'copyRunnerRecipe'] as const)('reports unavailable clipboard through %s', async (action) => {
+        vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => {
+            return Reflect.get({}, 'clipboard');
+        });
+        await act(async () =>
+            root.render(createElement(QuickHarness, {
+                input,
+                capture: (view) => {
+                    quick = view;
+                }
+            }))
+        );
+        await act(async () => quick[action]());
+        expect(quick.localError).toBe('Clipboard access is unavailable in this browser.');
+    });
+
+    it.each(['copyDiagnostics', 'copyRunnerRecipe'] as const)('reports rejected clipboard writes through %s', async (action) => {
+        const write = Promise.withResolvers<void>();
+        void write.promise.catch(() => {});
+        vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(write.promise);
+        await act(async () =>
+            root.render(createElement(QuickHarness, {
+                input,
+                capture: (view) => {
+                    quick = view;
+                }
+            }))
+        );
+        await act(async () => quick[action]());
+        await act(async () => write.reject(new Error('permission denied')));
+        expect(quick.localError).toBe('Unable to copy to the clipboard. Check browser permissions and try again.');
+    });
+
+    it('fences a pending copy failure from a replacement quick-test lifetime', async () => {
+        const write = Promise.withResolvers<void>();
+        void write.promise.catch(() => {});
+        vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(write.promise);
+        await act(async () =>
+            root.render(createElement(QuickHarness, {
+                input,
+                capture: (view) => {
+                    quick = view;
+                }
+            }))
+        );
+        await act(async () => quick.copyRunnerRecipe());
+        await act(async () => root.render(null));
+        await act(async () =>
+            root.render(createElement(QuickHarness, {
+                input,
+                capture: (view) => {
+                    quick = view;
+                }
+            }))
+        );
+        await act(async () => write.reject(new Error('late permission failure')));
+        expect(quick.localError).toBeUndefined();
     });
 
     it('keeps an in-flight subscription on its original room while later actions use the current render', async () => {

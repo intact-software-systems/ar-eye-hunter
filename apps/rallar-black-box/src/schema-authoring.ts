@@ -17,7 +17,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRecipe
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_SHARED_TEST_RUNNER_SCENARIO_SCHEMA } from './shared-test-handoff-fixtures.ts';
 
 export type SchemaAuthoringTarget =

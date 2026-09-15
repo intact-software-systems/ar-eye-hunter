@@ -16,7 +16,7 @@ import {
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 /** `ordering-resync` is withheld from `ws`: its first hop must be RTC. */
 const CARRIER_SCENARIO_IDS = {

@@ -10,7 +10,7 @@ import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestCrdtTransport,
     RallarBlackBoxTestRecipe
-} from '../types.ts';
+} from '../rallar-black-box-test-contracts.ts';
 import {
     CONTROL_AGENT_MESSAGING_CAPABILITY,
     decodeControlAgentMessagingCapability

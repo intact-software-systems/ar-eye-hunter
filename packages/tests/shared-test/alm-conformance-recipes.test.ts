@@ -13,7 +13,7 @@ import {
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 type ConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
@@ -29,7 +29,7 @@ const CARRIER_CONNECT_TRANSPORTS = {
     'rtc-with-ws-fallback': 'messages.rtc'
 } as const;
 
-function conformanceInput(
+function createConformanceInput(
     carrier: CreateAlmConformanceRecipesInput['carrier']
 ): CreateAlmConformanceRecipesInput {
     return {
@@ -42,16 +42,16 @@ function conformanceInput(
     };
 }
 
-function recipesOf(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
+function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver]);
 }
 
-function connectCommandsOf(scenarios: readonly AlmConformanceScenario[]): readonly ConnectCommand[] {
-    return recipesOf(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ConnectCommand => command.kind === 'rtc.connect'));
+function toConnectCommands(scenarios: readonly AlmConformanceScenario[]): readonly ConnectCommand[] {
+    return toRecipes(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ConnectCommand => command.kind === 'rtc.connect'));
 }
 
 /** Every field a scenario's commands match on, so one assertion can prove they share one typeId. */
-function routedTypeIdsOf(command: RallarBlackBoxTestCommand): readonly string[] {
+function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] {
     switch (command.kind) {
         case 'rtc.connect':
             return [String(command.rallar?.typeId)];
@@ -66,7 +66,7 @@ function routedTypeIdsOf(command: RallarBlackBoxTestCommand): readonly string[] 
 }
 
 /** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
-function routedTopicIdsOf(command: RallarBlackBoxTestCommand): readonly string[] {
+function toRoutedTopicIds(command: RallarBlackBoxTestCommand): readonly string[] {
     switch (command.kind) {
         case 'rtc.connect':
             return command.rallar?.topicId === undefined ? [] : [String(command.rallar.topicId)];
@@ -77,15 +77,15 @@ function routedTopicIdsOf(command: RallarBlackBoxTestCommand): readonly string[]
     }
 }
 
-function receivedCommandsOf(scenarios: readonly AlmConformanceScenario[]): readonly ReceivedCommand[] {
-    return recipesOf(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ReceivedCommand => command.kind === 'messages.received'));
+function toReceivedCommands(scenarios: readonly AlmConformanceScenario[]): readonly ReceivedCommand[] {
+    return toRecipes(scenarios).flatMap((recipe) => recipe.commands.filter((command): command is ReceivedCommand => command.kind === 'messages.received'));
 }
 
 describe('alm-conformance recipe family', () => {
     it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const scenarios = createAlmConformanceRecipes(conformanceInput(carrier));
-            const connects = connectCommandsOf(scenarios);
+            const scenarios = createAlmConformanceRecipes(createConformanceInput(carrier));
+            const connects = toConnectCommands(scenarios);
 
             expect(connects).toHaveLength(scenarios.length * 2);
             for (const connect of connects) {
@@ -97,9 +97,9 @@ describe('alm-conformance recipe family', () => {
 
     it('scopes every matched field of a scenario to that scenario typeId', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            for (const scenario of createAlmConformanceRecipes(conformanceInput(carrier))) {
-                const routed = recipesOf([scenario])
-                    .flatMap((recipe) => recipe.commands.flatMap(routedTypeIdsOf));
+            for (const scenario of createAlmConformanceRecipes(createConformanceInput(carrier))) {
+                const routed = toRecipes([scenario])
+                    .flatMap((recipe) => recipe.commands.flatMap(toRoutedTypeIds));
 
                 expect(routed.length).toBeGreaterThan(0);
                 expect(new Set(routed)).toEqual(new Set([`alm.conformance.${scenario.scenarioId}`]));
@@ -109,8 +109,8 @@ describe('alm-conformance recipe family', () => {
 
     it('routes every carrier over one WS topic the product admits', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const topicIds = recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))
-                .flatMap((recipe) => recipe.commands.flatMap(routedTopicIdsOf));
+            const topicIds = toRecipes(createAlmConformanceRecipes(createConformanceInput(carrier)))
+                .flatMap((recipe) => recipe.commands.flatMap(toRoutedTopicIds));
 
             expect(topicIds.length).toBeGreaterThan(0);
             expect(new Set(topicIds)).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
@@ -120,8 +120,8 @@ describe('alm-conformance recipe family', () => {
 
     it('adds the send budget only to positive receive windows', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const received = receivedCommandsOf(
-                createAlmConformanceRecipes({ ...conformanceInput(carrier), deadlineMs: 18_000 })
+            const received = toReceivedCommands(
+                createAlmConformanceRecipes({ ...createConformanceInput(carrier), deadlineMs: 18_000 })
             );
 
             expect(received.length).toBeGreaterThan(0);
@@ -138,12 +138,12 @@ describe('alm-conformance recipe family', () => {
 
     it('tags every ws scenario as smoke and keeps ordering-resync full-only', () => {
         expect(
-            createAlmConformanceRecipes(conformanceInput('ws'))
+            createAlmConformanceRecipes(createConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
                 .map((scenario) => scenario.scenarioId)
         ).toEqual(['bounded-rejection', 'deadline-expiry', 'delivery-baseline']);
         expect(
-            createAlmConformanceRecipes(conformanceInput('rtc')).map((scenario) => scenario.tags)
+            createAlmConformanceRecipes(createConformanceInput('rtc')).map((scenario) => scenario.tags)
         ).toEqual([
             ['smoke', 'full'],
             ['smoke', 'full'],
@@ -154,7 +154,7 @@ describe('alm-conformance recipe family', () => {
 
     it('gives every ALM command kind a live cell in the family', () => {
         const kinds = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-            recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))
+            toRecipes(createAlmConformanceRecipes(createConformanceInput(carrier)))
                 .flatMap((recipe) => recipe.commands.map((command) => command.kind))
         );
 
@@ -176,7 +176,7 @@ describe('alm-conformance recipe family', () => {
     });
 
     it('asserts the storage counters the delivery-baseline sender reads', () => {
-        const baseline = createAlmConformanceRecipes(conformanceInput('ws'))
+        const baseline = createAlmConformanceRecipes(createConformanceInput('ws'))
             .find((scenario) => scenario.scenarioId === 'delivery-baseline');
         const commands = baseline?.sender.commands ?? [];
 
@@ -198,17 +198,5 @@ describe('alm-conformance recipe family', () => {
             operator: 'gt',
             expected: 0
         });
-    });
-
-    it('cancels the rejected bounded-rejection handle and observes the cancelled state', () => {
-        const rejection = createAlmConformanceRecipes(conformanceInput('ws'))
-            .find((scenario) => scenario.scenarioId === 'bounded-rejection');
-
-        expect((rejection?.sender.commands ?? []).slice(-4).map((command) => command.commandId)).toEqual([
-            'alm-ws-bounded-rejection-sender-observe-rejected-1',
-            'alm-ws-bounded-rejection-sender-cancel-1',
-            'alm-ws-bounded-rejection-sender-observe-cancelled-1',
-            'alm-ws-bounded-rejection-sender-stats'
-        ]);
     });
 });

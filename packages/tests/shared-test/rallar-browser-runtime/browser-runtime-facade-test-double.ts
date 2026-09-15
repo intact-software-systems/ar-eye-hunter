@@ -1,5 +1,4 @@
 import {
-    createBlackBoxDiagnosticsRelay,
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDiagnosticsDependency,
@@ -9,8 +8,7 @@ import {
     type BlackBoxBrowserRealtimeDependency,
     type BlackBoxBrowserRoomsDependency,
     type BlackBoxBrowserRtcDependency,
-    type BlackBoxBrowserWsDependency,
-    type BlackBoxDiagnosticsRelay
+    type BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type {
     RallarMessageHandle,
@@ -29,9 +27,6 @@ import type {
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -145,7 +140,6 @@ export const facadeBehavior = {
     restore: vi.fn<BlackBoxBrowserAuthDependency['restore']>(),
     connect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['connect']>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
-    messageAdmission: vi.fn<BlackBoxBrowserRallarRuntimeDependency['hasMessageAdmission']>(),
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
@@ -335,9 +329,6 @@ const director: BlackBoxBrowserDirectorDependency = {
 
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
-let outboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
-let inboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>();
-let storageResetRelay = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
 
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get faults(): ScriptedTransportFaultPort {
@@ -345,21 +336,11 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get storage(): CountingIndexedDbOperationObserver {
         return countingStorage;
-    },
-    get outboundDiagnostics(): BlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent> {
-        return outboundDiagnosticsRelay;
-    },
-    get inboundDiagnostics(): BlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent> {
-        return inboundDiagnosticsRelay;
-    },
-    get storageReset(): BlackBoxDiagnosticsRelay<ALStorageResetEvent> {
-        return storageResetRelay;
     }
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     readRtcMessageNacks: async () => [],
-    hasMessageAdmission: async (messageId, transport) => await facadeBehavior.messageAdmission(messageId, transport),
     configure: (config) => {
         facadeRecords.configurationWrites.push(config);
         facadeBehavior.configure(config);
@@ -399,16 +380,12 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
-    outboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALOutboundRuntimeDiagnosticsEvent>();
-    inboundDiagnosticsRelay = createBlackBoxDiagnosticsRelay<ALInboundRuntimeDiagnosticsEvent>();
-    storageResetRelay = createBlackBoxDiagnosticsRelay<ALStorageResetEvent>();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);
     facadeBehavior.restore.mockReturnValue(undefined);
     facadeBehavior.connect.mockResolvedValue(undefined);
     facadeBehavior.disconnect.mockResolvedValue(undefined);
-    facadeBehavior.messageAdmission.mockResolvedValue(false);
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);

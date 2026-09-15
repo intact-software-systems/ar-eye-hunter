@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '../types.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
 type RtcConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
 type RecipeCommandNode = Readonly<{

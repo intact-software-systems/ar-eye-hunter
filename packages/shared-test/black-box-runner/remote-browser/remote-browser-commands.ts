@@ -6,7 +6,7 @@ import {
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     validateJsonSchema
 } from '../../rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isRecord } from '../execution/black-box-redaction.ts';
 import { toRallarScopeDiagnostics, type RecipeRallarScopeFields } from '../recipes/recipe-rallar-scope.ts';
 import { toRtcPayload } from '../rtc-provider.ts';

@@ -1,4 +1,4 @@
-import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS } from './types.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS } from './rallar-black-box-test-contracts.ts';
 
 export type RallarCompanionCoverageLayer =
     | 'black-box-runner'

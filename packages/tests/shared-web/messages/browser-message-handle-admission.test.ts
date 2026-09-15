@@ -1,26 +1,19 @@
-import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
-import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
-import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
-import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
-import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createBrowserMessageSenderFixture, toQueuedMessageAdmission } from './browser-message-sender-fixture.ts';
 
 afterEach(() => vi.useRealTimers());
 
 describe('message handle admission', () => {
     it.each(['ws', 'rtc', 'unicast', 'fallback'] as const)('captures the once-validated payload before deferred %s connection', async (path) => {
-        const fixture = createSender(20);
+        const fixture = createBrowserMessageSenderFixture(20);
         const connection = Promise.withResolvers<ApiMiddleware>();
         fixture.connect.mockReturnValue(connection.promise);
         const payload = { text: 'a' };
@@ -45,7 +38,7 @@ describe('message handle admission', () => {
 
     it.each(['rtc', 'ws'] as const)('returns the %s handle while carrier admission is pending', async (carrier) => {
         const admission = Promise.withResolvers<ALOutboundEnqueueResult>();
-        const fixture = createSender();
+        const fixture = createBrowserMessageSenderFixture();
         let envelope: ALMessage | undefined;
         fixture.middleware.middleware[carrier === 'rtc' ? 'rtcRxStreamer' : 'webSocketQueueBox'].enqueueOutboxIfAbsent = (message) => {
             envelope = message;
@@ -61,7 +54,7 @@ describe('message handle admission', () => {
         }
         finally {
             if (envelope) {
-                admission.resolve(toQueued(envelope));
+                admission.resolve(toQueuedMessageAdmission(envelope));
             }
             await sending;
         }
@@ -69,7 +62,7 @@ describe('message handle admission', () => {
     });
 
     it('retains synchronous transport settlement that arrives before admission returns', async () => {
-        const fixture = createSender();
+        const fixture = createBrowserMessageSenderFixture();
         fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => {
             fixture.registry.record({ kind: 'attempt-started', msgId: message.id.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'sync' });
             fixture.registry.record({
@@ -83,7 +76,7 @@ describe('message handle admission', () => {
                 detail: undefined,
                 willRetry: false
             });
-            return toQueued(message);
+            return toQueuedMessageAdmission(message);
         };
         const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
         expect((await handle.wait()).lifecycle).toMatchObject({
@@ -95,7 +88,7 @@ describe('message handle admission', () => {
     it('adopts a shortened admission deadline and expires an already waiting handle at that deadline', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
-        const fixture = createSender();
+        const fixture = createBrowserMessageSenderFixture();
         const admission = Promise.withResolvers<ALOutboundEnqueueResult>();
         let envelope: ALMessage | undefined;
         fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = (message) => {
@@ -113,7 +106,7 @@ describe('message handle admission', () => {
             throw new Error('Expected open handle and pending envelope');
         }
         const waiting = handle.wait();
-        admission.resolve(toQueued({ ...envelope, constraints: { ...envelope.constraints, expiresAtMs: 10_100 } }));
+        admission.resolve(toQueuedMessageAdmission({ ...envelope, constraints: { ...envelope.constraints, expiresAtMs: 10_100 } }));
         await vi.advanceTimersByTimeAsync(0);
         expect(handle.lifecycle().expiresAtMs).toBe(10_100);
         await vi.advanceTimersByTimeAsync(100);
@@ -122,18 +115,18 @@ describe('message handle admission', () => {
     });
 
     it('returns a rejected handle for an oversized serializable payload', async () => {
-        const fixture = createSender(8);
+        const fixture = createBrowserMessageSenderFixture(8);
         const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: { text: 'too large' } });
         expect(handle.lifecycle()).toMatchObject({ state: 'rejected', evidence: { reason: 'Payload exceeds 8 bytes.' } });
     });
 
     it('still throws validation when the payload cannot form an envelope', async () => {
-        const fixture = createSender(8);
+        const fixture = createBrowserMessageSenderFixture(8);
         await expect(fixture.sender.sendWs({ typeId: 'room.ready', payload: 1n })).rejects.toSatisfy(isRallarValidationError);
     });
 
     it('returns an unobservable handle without admitting through middleware replaced before sender continuation', async () => {
-        const fixture = createSender();
+        const fixture = createBrowserMessageSenderFixture();
         const admission = vi.spyOn(fixture.middleware.middleware.webSocketQueueBox, 'enqueueOutboxIfAbsent');
         const sending = fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
         fixture.replaceTransport();
@@ -143,7 +136,7 @@ describe('message handle admission', () => {
     });
 
     it('records a queue wake failure on the already returned handle', async () => {
-        const fixture = createSender();
+        const fixture = createBrowserMessageSenderFixture();
         fixture.middleware.middleware.qboxEngine.wake = () => {
             throw new Error('Queue wake failed');
         };
@@ -152,7 +145,7 @@ describe('message handle admission', () => {
     });
 
     it('records a carrier rejection as a failed handle instead of an unhandled admission promise', async () => {
-        const fixture = createSender();
+        const fixture = createBrowserMessageSenderFixture();
         fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async () => {
             throw new Error('Storage unavailable');
         };
@@ -160,56 +153,3 @@ describe('message handle admission', () => {
         expect((await handle.wait()).lifecycle).toMatchObject({ state: 'failed', evidence: { reason: 'Storage unavailable' } });
     });
 });
-
-interface SenderFixture {
-    readonly sender: BrowserRallarMessageSender;
-    readonly registry: BrowserRallarDeliveryRegistry;
-    readonly middleware: ApiMiddleware;
-    readonly connect: Mock<() => Promise<ApiMiddleware>>;
-    replaceTransport(): void;
-}
-
-function createSender(maxPayloadBytes = 64 * 1024): SenderFixture {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const middleware = createDefaultApiMiddlewareTestDouble();
-    let activeMiddleware = middleware;
-    const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => activeMiddleware });
-    sessionDeliveries.beginSession(middleware.session);
-    feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
-    const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-    const connect = vi.fn<() => Promise<ApiMiddleware>>().mockResolvedValue(middleware);
-    const sender = new BrowserRallarMessageSender({
-        creation: {
-            createUnicast: newALUnicastMessage,
-            createMulticast: newALMulticastMessage,
-            createBroadcast: newALBroadcastMessage,
-            newResourceId: crypto.randomUUID.bind(crypto)
-        },
-        deliveries: registry,
-        dispatch: new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now }),
-        inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => maxPayloadBytes }),
-        connect,
-        requireSession: () => middleware.session,
-        resolveDefaultRoom: () => roomRef,
-        resolveCurrentRoomRef: () => roomRef,
-        toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
-        resolveRoomRef: () => roomRef,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
-    });
-    return {
-        sender,
-        connect,
-        registry,
-        middleware,
-        replaceTransport: () => {
-            activeMiddleware = createDefaultApiMiddlewareTestDouble();
-            feed.close();
-            feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
-        }
-    };
-}
-
-function toQueued(message: ALMessage): ALOutboundEnqueueResult {
-    return { status: 'enqueued', verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }, message, entries: [] };
-}

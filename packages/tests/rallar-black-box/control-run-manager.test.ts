@@ -355,6 +355,7 @@ describe('rallar-black-box control run manager', () => {
                 {
                     recipeId: 'health-only',
                     recipe: {
+                        schemaVersion: 1,
                         recipeId: 'health-only',
                         commands: [{ kind: 'health' }]
                     }

@@ -981,6 +981,44 @@ removing assertions. Existing coupling metadata follows the moved semantic tests
 
 ### Task 9: The black-box ledger becomes a projection
 
+The alternate browser composition uses the canonical browser delivery composition and its one
+session registry. Its connection lifetime and completed diagnostics ports are explicit owners;
+settlements stay in-page. Command dispatch uses `dispatchAlmBrowserCommand` and the browser
+adapter's actual HTTP, WebSocket, RTC stream, event and command-input owners. The old adapter,
+runtime and schema files cannot retain oversized or duplicated ownership as a cutover shortcut.
+The existing `packages/shared-test/architecture.md` is the navigation map for the resulting owners.
+
+The maintainer approved strict recipe v1 during this slice: every recipe requires
+`schemaVersion: 1`, including nested and inline recipes. Schema, control-message validation and
+local execution reject missing or unsupported versions. Repository producers, examples and
+fixtures emit the canonical form; no saved/external recipe conversion or compatibility adapter
+is introduced. Remove the old recipe compatibility result, warnings and catalog status. Quick
+Test export keeps requirements in recipe metadata and provider selection in `config.control`.
+This public accepted-input/result change is limited to the approved recipe-format decision.
+
+That validation cutover brings the recipe runtime and control protocol into full-file closure.
+The runtime owns result caching, state and cleanup; per-command loop/parallel owners own scheduling
+and collected evidence, with explicit clocks and cancellation ports. Control command validation
+uses canonical schema field definitions; envelope parsing retains its public wire contracts.
+The unused exported `ControlServerEnvelope` rename-only alias is removed; the verified
+`ControlCommandEnvelope` name and wire shape remain. Every necessary support edit enters the
+same recursive standards closure, including recipe builders and their tests.
+
+The owner-name closure replaces the three repository source-module basenames with
+`create-rallar-black-box-test-runtime.ts`, `rallar-black-box-test-contracts.ts`, and
+`create-rallar-black-box-browser-test-runtime.ts`. These modules belong to the private source
+package; its intentional `mod.ts` entry preserves the canonical exports and callable behavior.
+Update the verified source consumers directly, without forwarding aliases. Every causally changed
+consumer enters the same closure, including the distributed monitor, control service, browser
+validation clients, SPA composition and their tests. The existing source navigation map follows the
+actual owner paths. New structural tests must prove behavior and boundaries rather than old paths.
+
+The SPA recipe producers expose explicit v1 at history, matrix, negative and quick copy actions.
+Manual draft synchronization, recipe preview, and action effects have distinct owners. Browser
+clipboard availability and permission failures are values from one app I/O boundary; each controller
+owns its lifetime fencing and UI publication. Recipe JSON schemas use finite recursive definitions
+and references so serialization preserves nested validation through control and OpenAPI consumers.
+
 **Files:**
 
 - Modify: `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts`
@@ -1024,11 +1062,13 @@ observation with `state: 'unobservable'`, `attempts: 0`, empty lists (the page-r
 of throwing; `resetDeliveryLedger` is deleted with its reconnect call: handles outlive a reconnect
 because the registry does, and the doc sentence "Connecting clears it" goes with it.
 
-- [ ] **Step 1: Failing tests.** Rewrite the ledger cases in `browser-rallar-runtime.test.ts`: the
-      11-row fold table becomes a table over lifecycle states produced by a test handle; send → observe
+- [ ] **Step 1: Failing tests.** Move the ledger cases to the dedicated browser-runtime delivery
+      suite and exercise the actual session registry and production sender. Prove send → observe
       `queued` → cancel `cancelled` → receipts with hop lists; observe timeout message unchanged; the
       unknown handle reads `unobservable`; the storage counters during an observe over a `pending`
-      admission stay flat (no poll). Update the adapter suite's `DELIVERY_OBSERVATION` fixture to the new
+      admission stay flat (no poll). Capture the canonical command deadline once, use the earlier
+      timeout/absolute deadline with a 5,000 ms default and clamp elapsed time to zero; TTL remains
+      a message policy, not the admission wait budget. Update the adapter suite's `DELIVERY_OBSERVATION` fixture to the new
       field names and the schema suite's corpus.
       Command: `npx vitest run packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts packages/tests/shared-test/rallar-browser-runtime`
       Expected: FAIL.

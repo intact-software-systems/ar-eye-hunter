@@ -1,4 +1,6 @@
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 
 import type {
     BlackBoxRallarConnectionConfig,
@@ -102,6 +104,30 @@ export class BlackBoxRallarRuntimeDiagnostics {
             laneId: this.#input.laneIdOf(config)
         };
     }
+}
+
+export function createBlackBoxRallarDiagnosticsPorts(
+    diagnostics: BlackBoxRallarRuntimeDiagnostics,
+    effects: BlackBoxBrowserDiagnosticsDependency
+): RallarDiagnosticsPorts {
+    return {
+        transportFaultPort: effects.faults,
+        indexedDbOperationObserver: effects.storage,
+        outboundDiagnostics: (event) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { ...event }
+            }),
+        inboundDiagnostics: (event) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { ...event }
+            }),
+        onStorageReset: (event) =>
+            diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage_reset', data: { ...event } })
+    };
 }
 
 function consoleWarningPart(value: unknown): string {

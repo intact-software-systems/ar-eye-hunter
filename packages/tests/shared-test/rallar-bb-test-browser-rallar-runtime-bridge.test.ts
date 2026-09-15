@@ -3,7 +3,7 @@ import type {
     RallarBlackBoxBrowserRallarEvent,
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime
-} from '../../shared-test/rallar-bb-test/browser-adapter.ts';
+} from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,

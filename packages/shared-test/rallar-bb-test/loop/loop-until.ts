@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxTestLoopCommand,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopThresholdFailure
-} from '../types.ts';
+} from '../rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED = 'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED';
 

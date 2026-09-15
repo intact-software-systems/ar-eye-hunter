@@ -1,4 +1,4 @@
-import type { RallarBlackBoxBrowserRallarRuntime } from '../browser-adapter.ts';
+import type { RallarBlackBoxBrowserRallarRuntime } from '../create-rallar-black-box-browser-test-runtime.ts';
 
 type RtcConnectReadinessBoundaryValue = Awaited<ReturnType<RallarBlackBoxBrowserRallarRuntime['health']>>;
 

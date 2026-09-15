@@ -70,7 +70,7 @@ import {
     type RallarBlackBoxTestTransport,
     type RallarBlackBoxTestWaitCommand,
     type RallarBlackBoxTestWaitResultValue
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'

@@ -4,7 +4,6 @@ import type {
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessageSelectorInput,
-    RallarMessageSendResult,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
     RallarRtcDiagnostics,
@@ -13,6 +12,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -217,7 +217,7 @@ export interface BlackBoxRallarSendDiagnostics {
     readonly resourceId?: string;
     readonly minSnapshotVersion?: number;
     readonly results?: readonly RallarRealtimeSendResult[];
-    readonly message?: RallarMessageSendResult;
+    readonly message?: BlackBoxRallarDeliveryObservation;
     readonly health: readonly RallarRealtimeLaneHealth[];
 }
 
@@ -237,12 +237,13 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly resourceId?: string;
     readonly minSnapshotVersion?: number;
     readonly message?: unknown;
-    readonly result: RallarMessageSendResult;
+    readonly result: BlackBoxRallarDeliveryObservation;
     readonly wsStatus: RallarWsStatus;
     readonly rtcStatus: RallarRtcStatus;
 }
 
 export interface BlackBoxRallarMessageSendInput {
+    readonly timeoutMs: number;
     readonly connection: string;
     readonly carrier: 'ws' | 'rtc' | 'rtc-with-ws-fallback';
     readonly typeId: string;
@@ -260,29 +261,20 @@ export interface BlackBoxRallarMessageSendInput {
 
 export interface BlackBoxRallarMessageSendDiagnostics {
     readonly handleId: string;
-    readonly msgId: string | undefined;
+    readonly msgId: string;
     readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
-    readonly status: string;
+    readonly status: ALDeliveryState;
     readonly reason: string | undefined;
-    readonly message: RallarMessageSendResult | undefined;
 }
 
 export interface BlackBoxRallarDeliveryObservation {
     readonly handleId: string;
-    readonly state:
-        | 'rejected'
-        | 'accepted'
-        | 'queued'
-        | 'transport-accepted'
-        | 'acknowledged'
-        | 'expired'
-        | 'superseded'
-        | 'failed'
-        | 'cancelled';
+    readonly state: ALDeliveryState;
     readonly submitted: boolean;
-    readonly confirmedPeerIds: readonly string[];
-    readonly unconfirmedPeerIds: readonly string[];
+    readonly confirmedHopPeerIds: readonly string[];
+    readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;
+    readonly reason: string | undefined;
 }
 
 export interface BlackBoxRallarDeliveryHandleInput {
@@ -291,7 +283,7 @@ export interface BlackBoxRallarDeliveryHandleInput {
 }
 
 export interface BlackBoxRallarDeliveryObserveInput extends BlackBoxRallarDeliveryHandleInput {
-    readonly state: readonly string[];
+    readonly state: readonly ALDeliveryState[];
     readonly timeoutMs: number;
 }
 

@@ -12,9 +12,9 @@ function parse(query = '') {
     return parseRetentionCleanupQuery(new URL(`http://control.test/retention/cleanup${query}`));
 }
 
-Deno.test('retention query preserves legacy mode and ignores unknown legacy fields', () => {
-    assertEquals(parse(), { mode: 'legacy' });
-    assertEquals(parse('?unknown=value&token=legacy-admin-query-token'), { mode: 'legacy' });
+Deno.test('retention query preserves immediate mode and ignores unknown immediate fields', () => {
+    assertEquals(parse(), { mode: 'immediate' });
+    assertEquals(parse('?unknown=value&token=immediate-admin-query-token'), { mode: 'immediate' });
 });
 
 Deno.test('retention query accepts only exact preview and guarded-confirm shapes', () => {

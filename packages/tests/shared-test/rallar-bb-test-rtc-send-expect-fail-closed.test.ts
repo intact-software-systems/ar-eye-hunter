@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createRallarBlackBoxRtcClient } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
 import { formatJsonSchemaValidationErrors, RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const rtcSendWithExpect = {
     kind: 'rtc.send',

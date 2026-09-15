@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestEventKind } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEventKind } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export type WebSocketPayloadPreset = Readonly<{
     presetId: string;

@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Sigma from 'sigma';
 import {

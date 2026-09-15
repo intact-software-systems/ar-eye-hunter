@@ -21,7 +21,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         },
         recipes: [{
             recipeId: 'tune-inline',
-            recipe: { recipeId: 'tune-inline', commands: [{ kind: 'health' }] }
+            recipe: { schemaVersion: 1, recipeId: 'tune-inline', commands: [{ kind: 'health' }] }
         }],
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] }
     };
@@ -295,27 +295,24 @@ describe('distributed recipe tuning Task 2 hardening', () => {
     });
 
     it('contains malformed and over-depth command trees without throwing', () => {
-        const malformed = {
-            ...manifest(),
-            recipes: [{
+        const malformed = manifest();
+        Reflect.set(malformed, 'recipes', [{
+            recipeId: 'malformed',
+            recipe: {
+                schemaVersion: 1,
                 recipeId: 'malformed',
-                recipe: {
-                    recipeId: 'malformed',
-                    commands: [{ kind: 'loop' }]
-                }
-            }]
-        } as unknown as RallarBlackBoxDistributedRunManifest;
+                commands: [{ kind: 'loop' }]
+            }
+        }]);
         const nested = (depth: number): Record<string, unknown> =>
             depth === 0
                 ? { kind: 'health' }
                 : { kind: 'loop', commands: [nested(depth - 1)] };
-        const tooDeep = {
-            ...manifest(),
-            recipes: [{
-                recipeId: 'too-deep',
-                recipe: { recipeId: 'too-deep', commands: [nested(6)] }
-            }]
-        } as unknown as RallarBlackBoxDistributedRunManifest;
+        const tooDeep = manifest();
+        Reflect.set(tooDeep, 'recipes', [{
+            recipeId: 'too-deep',
+            recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] }
+        }]);
 
         expect(() => inventoryDistributedRunTuningKnobs(malformed)).not.toThrow();
         expect(inventoryDistributedRunTuningKnobs(malformed).limitations)
@@ -334,16 +331,17 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 throw new Error('walked past group command bound');
             }
         });
-        const wide = {
+        const wide: RallarBlackBoxDistributedRunManifest = {
             ...manifest(),
             recipes: [{
                 recipeId: 'wide',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'wide',
                     commands: [{ kind: 'parallel', groups }]
                 }
             }]
-        } as RallarBlackBoxDistributedRunManifest;
+        };
 
         expect(() => inventoryDistributedRunTuningKnobs(wide)).not.toThrow();
         expect(inventoryDistributedRunTuningKnobs(wide).limitations)
@@ -353,19 +351,22 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             }));
 
         const firstCommands = Array.from({ length: 2_000 }, () => ({ kind: 'health' as const }));
-        const later = { recipeId: 'later', recipe: { recipeId: 'later', commands: [] } };
+        const later: RallarBlackBoxDistributedRunManifest['recipes'][number] = {
+            recipeId: 'later',
+            recipe: { schemaVersion: 1, recipeId: 'later', commands: [] }
+        };
         Object.defineProperty(later, 'recipe', {
             get: () => {
                 throw new Error('walked past recipe command bound');
             }
         });
-        const wideRecipes = {
+        const wideRecipes: RallarBlackBoxDistributedRunManifest = {
             ...manifest(),
             recipes: [{
                 recipeId: 'first',
-                recipe: { recipeId: 'first', commands: firstCommands }
+                recipe: { schemaVersion: 1, recipeId: 'first', commands: firstCommands }
             }, later]
-        } as RallarBlackBoxDistributedRunManifest;
+        };
         expect(() => inventoryDistributedRunTuningKnobs(wideRecipes)).not.toThrow();
 
         const references = Array.from({ length: 2_100 }, (_, index) => ({
@@ -376,10 +377,10 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 throw new Error('walked past recipe structure bound');
             }
         });
-        const wideReferences = {
+        const wideReferences: RallarBlackBoxDistributedRunManifest = {
             ...manifest(),
             recipes: references
-        } as RallarBlackBoxDistributedRunManifest;
+        };
         const referenceInventory = inventoryDistributedRunTuningKnobs(wideReferences);
         expect(referenceInventory.limitations).toContainEqual(expect.objectContaining({
             code: 'command-limit-exceeded'

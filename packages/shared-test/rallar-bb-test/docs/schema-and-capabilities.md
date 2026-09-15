@@ -128,25 +128,27 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
 `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq` and `handleId`. It returns
-`{ handleId, msgId?, carrier, status, reason? }`. `handleId` defaults to the
+`{ handleId, msgId, carrier, status, reason? }`. `handleId` defaults to the
 command's own `commandId`, and every later delivery command addresses the send
 through that handle. Supersedence (`key`) and unicast targeting (`toPeerId`) are
 not part of this release; naming either one fails recipe validation.
 
-`messages.observe` waits for a handle to reach one of the states it lists, and
-`messages.receipts` reads the same observation without waiting. The states are
-`rejected`, `accepted`, `queued`, `transport-accepted`, `acknowledged`,
-`expired`, `superseded`, `failed` and `cancelled`. **This release derives the
-ledger from local admission only.** A send settles on `accepted` or `rejected`
-at admission time and never advances on a peer receipt, and both
-`confirmedPeerIds` and `unconfirmedPeerIds` stay empty. An observe that names a
-state admission cannot produce burns its whole timeout and then fails.
-`messages.cancel` moves a handle to `cancelled` locally; it does not recall a
-message the transport already accepted.
+`messages.observe` waits on the in-page message handle; `messages.receipts` reads
+its current lifecycle without waiting. The shared states are `submitted`,
+`rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
+`acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
+Carrier settlements update the handle directly. Observations include
+`submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, and
+`reason`. The peer lists describe hop acknowledgements, not logical recipients.
+A terminal state ends a wait even when it was not requested; a true timeout
+reports the last state. A send waits for admission within the command's timeout
+and absolute deadline, independently of the message TTL.
 
-The delivery ledger lives on the connection. Connecting clears it, so every
-observe, receipts or cancel for a handle must run before the next
-`rtc.connect` on that connection.
+`messages.cancel` stops the owner's remaining attempts for a live handle;
+it preserves terminal evidence and cannot recall a submitted frame. Handles
+survive transport reconnects. Reload loses the in-page observation, so an
+unknown observe, receipts, or cancel returns `unobservable`, never an invented
+failure. The ledger projects handles and performs no admission-storage polling.
 
 `messages.received` counts inbound messages of a `typeId` (optionally one
 `msgId`). It scans the **whole** inbound event log rather than a trailing
@@ -374,13 +376,12 @@ Current automated coverage validates:
 
 Treat schema changes as public command-center contract changes.
 
-- New `rallar-bb-test` recipes should include `schemaVersion: 1`.
-- Recipes without `schemaVersion` remain legacy-compatible v1 recipes for now;
-  compatibility validation returns a warning so authoring tools can guide users
-  toward explicit versioning.
-- Unsupported explicit recipe schema versions are invalid.
+- Every `rallar-bb-test` recipe must include `schemaVersion: 1`, including
+  nested and inline recipes. Missing or unsupported versions are invalid.
+- Author or regenerate explicit v1 input before dispatch; no automatic conversion
+  or saved-recipe migration is provided.
 - Distributed run manifests should include `schemaVersion: 1`, and inline
-  recipes inside manifests should also include `schemaVersion: 1`.
+  recipes inside manifests must include `schemaVersion: 1`.
 - Adding optional fields to an existing command is compatible.
 - Tightening a field type is a breaking change unless all shipped recipes and
   examples already satisfy it.

@@ -465,10 +465,12 @@ HTTP request:
 
 ## Recipes
 
-A recipe is an ordered list of commands:
+A recipe is an ordered list of commands with explicit `schemaVersion: 1`.
+Nested and inline recipes require the same version; missing versions are rejected:
 
 ```json
 {
+  "schemaVersion": 1,
   "recipeId": "demo-recipe",
   "name": "Demo recipe",
   "continueOnFailure": false,

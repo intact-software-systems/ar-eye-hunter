@@ -3,7 +3,7 @@ import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestRecipe,
     type RallarBlackBoxTestRtcStreamCommand
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export const RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT = 2_000;
 export const RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND = 12;

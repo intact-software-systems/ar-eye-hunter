@@ -1,7 +1,7 @@
 import { RETENTION_PLAN_TOKEN_MAX_LENGTH } from './retention-plan-token.ts';
 
 export type RetentionCleanupQuery =
-    | Readonly<{ mode: 'legacy'; }>
+    | Readonly<{ mode: 'immediate'; }>
     | Readonly<{ mode: 'preview'; }>
     | Readonly<{ mode: 'confirm'; planToken: string; }>
     | Readonly<{ mode: 'invalid'; error: string; }>;
@@ -34,7 +34,7 @@ export function parseRetentionCleanupQuery(url: URL): RetentionCleanupQuery {
         }
         return { mode: 'confirm', planToken };
     }
-    return { mode: 'legacy' };
+    return { mode: 'immediate' };
 }
 
 function invalid(error: string): RetentionCleanupQuery {

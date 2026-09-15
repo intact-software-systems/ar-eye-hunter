@@ -3,7 +3,7 @@ import type {
     RallarBlackBoxTestWsCloseCommand,
     RallarBlackBoxTestWsOpenCommand,
     RallarBlackBoxTestWsSendCommand
-} from '../../rallar-bb-test/types.ts';
+} from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
 import {
     executeRallarRemoteBrowserCommand,

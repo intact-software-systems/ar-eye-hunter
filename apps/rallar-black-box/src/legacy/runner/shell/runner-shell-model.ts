@@ -1,5 +1,5 @@
 import { selectRallarBlackBoxActiveCommand } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { commandId } from '../../shared/command-presentation.ts';
 import type { CommandQueueRow } from '../runner-contracts.ts';
 

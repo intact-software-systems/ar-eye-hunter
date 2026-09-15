@@ -2,7 +2,7 @@
 
 import { isApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
@@ -227,59 +227,6 @@ describe('rallar-bb browser adapter auth', () => {
         expect(headers.get('authorization')).toBe('Bearer token-1');
         expect(headers.get('x-client-id')).toBe('controller-01');
     });
-
-    it('falls back to full connect for legacy runtimes without auth-only bootstrap', async () => {
-        const connectConfigs: unknown[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () => new Response('{}', { status: 200 })) as typeof fetch,
-            rallarRuntime: {
-                ...createBrowserRallarRequiredMethodsTestDouble(),
-                connect: async (config) => {
-                    connectConfigs.push(config);
-                    storage.setItem(
-                        'auth.session',
-                        JSON.stringify({
-                            clientId: 'legacy-client',
-                            accessToken: 'legacy-token',
-                            username: 'legacy',
-                            sessionId: 'legacy-session',
-                            expiresAtEpochMs: Date.now() + 60_000
-                        })
-                    );
-                    return { connected: true };
-                },
-                send: async () => ({ sent: true }),
-                refreshRoom: async () => undefined,
-                close: async () => ({ closed: true }),
-                health: async () => ({ connected: true })
-            }
-        });
-        await runtime.execute({
-            kind: 'configure',
-            commandId: 'configure-legacy-auth',
-            config: {
-                apiBaseUrl: 'https://api.example.test',
-                actor: 'legacy',
-                rallar: {
-                    username: 'legacy',
-                    password: 'secret'
-                }
-            }
-        });
-
-        const result = await runtime.execute({
-            kind: 'http.request',
-            commandId: 'legacy-auth-request',
-            request: {
-                path: '/api/state/apps/app/workspaces/ws/groups',
-                method: 'GET'
-            }
-        });
-
-        expect(result.ok).toBe(true);
-        expect(connectConfigs).toHaveLength(1);
-    });
-
     it(
         'preserves bootstrap Rallar credentials when recipe configure ' +
             'narrows live scope',

@@ -12,7 +12,7 @@ import type {
     RallarBlackBoxTestCrdtTransport,
     RallarBlackBoxTestMessagesCarrier,
     RallarBlackBoxTestRecipe
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export {
     isDistributedRunTerminalState,

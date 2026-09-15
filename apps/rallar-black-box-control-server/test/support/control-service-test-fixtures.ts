@@ -1,0 +1,219 @@
+import {
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    type ControlClientEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type {
+    RallarBlackBoxControlAgentIdentity,
+    RallarBlackBoxDistributedRunManifest
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxControlService } from '../../src/control-service.ts';
+interface ControlRegisterFixtureInput {
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly completedCommandIds?: readonly string[];
+    readonly identity?: RallarBlackBoxControlAgentIdentity;
+}
+interface ControlResultFixtureInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly command: Readonly<{ commandId: string; command: RallarBlackBoxTestCommand; }>;
+    readonly ok: boolean;
+}
+export function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
+    if (!condition) {
+        throw new Error(message);
+    }
+}
+export function assertEquals<T>(actual: T, expected: T): void {
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(
+            `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
+        );
+    }
+}
+export function assertThrows(callback: () => unknown, includes: string): void {
+    try {
+        callback();
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        assert(
+            message.includes(includes),
+            `Expected error to include ${includes}, got ${message}`
+        );
+        return;
+    }
+
+    throw new Error('Expected function to throw.');
+}
+export function toConfigureCommand(): RallarBlackBoxTestCommand {
+    return {
+        kind: 'configure',
+        config: {
+            runId: 'run-1',
+            agentId: 'agent-1',
+            actor: 'alice'
+        }
+    };
+}
+export function toRegisterEnvelope(
+    { runId = 'run-1', agentId = 'agent-1', completedCommandIds = [], identity }: ControlRegisterFixtureInput = {}
+): ControlClientEnvelope {
+    return {
+        kind: 'register',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId,
+        agentId,
+        atEpochMs: 1_000,
+        identity,
+        resume: {
+            completedCommandIds
+        }
+    };
+}
+export function toCommandResultEnvelope(
+    { runId, agentId, command, ok }: ControlResultFixtureInput
+): ControlClientEnvelope {
+    return {
+        kind: 'result',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId,
+        agentId,
+        commandId: command.commandId,
+        ok,
+        result: {
+            commandId: command.commandId,
+            kind: command.command.kind,
+            status: ok ? 'ok' : 'failed',
+            ok,
+            startedAtEpochMs: 2_000,
+            endedAtEpochMs: 2_010,
+            durationMs: 10,
+            value: command.command.kind === 'recipe.run'
+                ? {
+                    recipeId: 'health-only',
+                    results: [
+                        {
+                            commandId: 'health-child',
+                            kind: 'health',
+                            status: 'ok',
+                            ok: true,
+                            startedAtEpochMs: 2_001,
+                            endedAtEpochMs: 2_002,
+                            durationMs: 1
+                        }
+                    ]
+                }
+                : { ok },
+            error: ok ? undefined : {
+                code: 'TEST_FAILURE',
+                message: 'Simulated failure.'
+            }
+        }
+    };
+}
+export function toDistributedManifest(
+    overrides: Partial<RallarBlackBoxDistributedRunManifest> = {}
+): RallarBlackBoxDistributedRunManifest {
+    return {
+        schemaVersion: 1,
+        distributedRunId: 'dist-1',
+        controlRunId: 'run-1',
+        group: {
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'bb-group'
+        },
+        recipes: [
+            {
+                recipeId: 'health-only',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'health-only',
+                    commands: [
+                        {
+                            kind: 'health',
+                            commandId: 'health-child'
+                        }
+                    ]
+                }
+            }
+        ],
+        targetPolicy: {
+            mode: 'selected-agents',
+            agentIds: ['agent-1', 'agent-2']
+        },
+        startMode: 'manual',
+        ackTimeoutMs: 1_000,
+        ...overrides
+    };
+}
+export function toFleetIdentity(
+    agentId: string,
+    overrides: Partial<RallarBlackBoxControlAgentIdentity> = {}
+): RallarBlackBoxControlAgentIdentity {
+    return {
+        principalId: agentId,
+        clientId: agentId,
+        sessionId: `${agentId}-session`,
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'bb-group',
+        ...overrides
+    };
+}
+export function registerFleetAgents(
+    service: ReturnType<typeof createRallarBlackBoxControlService>,
+    count: number
+): void {
+    for (let index = 1; index <= count; index += 1) {
+        const agentId = `agent-${String(index).padStart(2, '0')}`;
+        service.receiveClientEnvelope(
+            toRegisterEnvelope({
+                runId: 'run-1',
+                agentId: agentId,
+                completedCommandIds: [],
+                identity: toFleetIdentity(agentId, {
+                    region: index <= Math.ceil(count / 2) ? 'eu-north' : 'us-east',
+                    provider: index % 2 === 0 ? 'fly' : 'hetzner'
+                })
+            })
+        );
+    }
+}
+export function toPrincipalWorldFleetManifest(
+    expectedParticipantCount: number
+): RallarBlackBoxDistributedRunManifest {
+    return toDistributedManifest({
+        recipes: [
+            {
+                recipeId: 'sender-recipe',
+                role: 'sender',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'sender-recipe',
+                    commands: [{ kind: 'health', commandId: 'sender-health' }]
+                }
+            },
+            {
+                recipeId: 'receiver-recipe',
+                role: 'receiver',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'receiver-recipe',
+                    commands: [{ kind: 'health', commandId: 'receiver-health' }]
+                }
+            }
+        ],
+        targetPolicy: {
+            mode: 'all-online-group-members',
+            expectedParticipantCount
+        },
+        roleAssignmentPolicy: {
+            mode: 'ordered-targets',
+            pattern: 'one-sender-many-receivers',
+            orderBy: 'agent-id'
+        }
+    });
+}

@@ -2,7 +2,8 @@ import type {
     RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { toHetznerRoomProofCommands } from './hetzner-room-proof-commands.ts';
 
 const CONTROL_TOPIC = 'black-box.group-assertions.control';
 const LEAK_PROBE_TOPIC = 'black-box.group-assertions.leak-probe';
@@ -27,6 +28,7 @@ export function createHetznerGroupAssertionsRecipe(
     const groupSnapshotPath = `${statePrefix}/groups/${group.groupId}`;
 
     return {
+        schemaVersion: 1,
         recipeId: HETZNER_GROUP_ASSERTIONS_RECIPE_ID,
         name: 'Group assertions recipe',
         continueOnFailure: false,
@@ -35,151 +37,18 @@ export function createHetznerGroupAssertionsRecipe(
             group: roomRef
         },
         commands: [
-            {
-                kind: 'http.request',
-                commandId: 'group-assertions-ensure-group',
-                timeoutMs: 5_000,
-                metadata: {
-                    purpose: 'Ensure the backend group exists before RTC room join.',
-                    idempotent: true,
-                    group: roomRef
-                },
-                request: {
-                    method: 'POST',
-                    path: `${statePrefix}/groups/requests/${ENSURE_GROUP_REQUEST_ID}`,
-                    body: {
-                        groupId: group.groupId,
-                        displayName: group.groupId,
-                        kind: 'room',
-                        joinMode: 'open'
-                    }
-                },
-                response: {
-                    body: 'json',
-                    acceptedStatusCodes: [200, 201, 409]
-                }
-            },
-            {
-                kind: 'http.request',
-                commandId: 'group-assertions-ensure-member',
-                timeoutMs: 5_000,
-                metadata: {
-                    purpose: 'Ensure the logged-in browser client is an active group member ' +
-                        'before RTC room join.',
-                    idempotent: true,
-                    group: roomRef
-                },
-                request: {
-                    method: 'PUT',
-                    path: `${statePrefix}/groups/${group.groupId}/members/{auth.clientId}` +
-                        `/requests/${ENSURE_MEMBER_REQUEST_ID}`,
-                    body: {
-                        status: 'active'
-                    }
-                },
-                response: {
-                    body: 'json',
-                    acceptedStatusCodes: [200, 201]
-                }
-            },
-            {
-                kind: 'rtc.connect',
-                commandId: 'group-assertions-connect',
+            ...toHetznerRoomProofCommands({
+                group: roomRef,
+                prefix: 'group-assertions',
                 connection: 'groupAssertionsRtc',
-                actor: '{auth.clientId}',
-                roomId: group.groupId,
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                roomRef,
-                transport: 'realtime',
-                timeoutMs: 15_000,
-                readiness: {
-                    minReadyPeers: 1,
-                    timeoutMs: 10_000,
-                    intervalMs: 100
-                }
-            },
-            {
-                kind: 'rtc.send',
-                commandId: 'group-assertions-send-control',
-                connection: 'groupAssertionsRtc',
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                roomRef,
-                transport: 'realtime',
-                send: {
-                    roomId: group.groupId,
-                    roomRef,
-                    data: {
-                        topic: CONTROL_TOPIC,
-                        marker: 'same-room-positive-control',
-                        actor: '{auth.clientId}'
-                    }
-                },
-                timeoutMs: 3_000
-            },
-            {
-                kind: 'wait',
-                commandId: 'group-assertions-positive-control',
-                timeoutMs: 10_000,
-                metadata: {
-                    purpose: 'Same-room positive control: the control frame must arrive ' +
-                        'before any absence claim.'
-                },
-                match: {
-                    kind: 'message',
-                    connection: 'groupAssertionsRtc',
-                    topic: 'rallar.browser.realtime.message',
-                    payloadPath: 'data.topic',
-                    equals: CONTROL_TOPIC
-                }
-            },
-            {
-                kind: 'wait',
-                commandId: 'group-assertions-no-leak-probe',
-                absent: true,
-                timeoutMs: 4_000,
-                metadata: {
-                    purpose: 'Per-agent absence window; the coordinator noneMatch assertion ' +
-                        'then proves no agent anywhere recorded a leak-probe match.'
-                },
-                match: {
-                    kind: 'message',
-                    connection: 'groupAssertionsRtc',
-                    topic: 'rallar.browser.realtime.message',
-                    payloadPath: 'data.topic',
-                    equals: LEAK_PROBE_TOPIC
-                }
-            },
-            {
-                kind: 'loop',
-                commandId: 'group-assertions-membership-poll',
-                until: 'first-success',
-                count: 20,
-                intervalMs: 500,
-                commands: [
-                    {
-                        kind: 'http.request',
-                        commandId: 'group-assertions-membership-read',
-                        timeoutMs: 5_000,
-                        request: {
-                            method: 'GET',
-                            path: groupSnapshotPath
-                        },
-                        response: {
-                            body: 'json',
-                            acceptedStatusCodes: [200]
-                        }
-                    },
-                    {
-                        kind: 'assert',
-                        commandId: 'group-assertions-membership-converged',
-                        source: 'lastResult.value.body.memberCount',
-                        operator: 'gte',
-                        expected: 2
-                    }
-                ]
-            },
+                controlTopic: CONTROL_TOPIC,
+                leakProbeTopic: LEAK_PROBE_TOPIC,
+                groupRequestId: ENSURE_GROUP_REQUEST_ID,
+                memberRequestId: ENSURE_MEMBER_REQUEST_ID,
+                absencePurpose:
+                    'Per-agent absence window; the coordinator noneMatch assertion then proves no agent anywhere recorded a leak-probe match.'
+            }),
+            toGroupMembershipConvergenceLoop(groupSnapshotPath),
             {
                 kind: 'http.request',
                 commandId: 'group-assertions-members-read',
@@ -252,4 +121,36 @@ export function createHetznerGroupAssertions(
             }
         }
     ];
+}
+
+function toGroupMembershipConvergenceLoop(groupSnapshotPath: string): RallarBlackBoxTestCommand {
+    return {
+        kind: 'loop',
+        commandId: 'group-assertions-membership-poll',
+        until: 'first-success',
+        count: 20,
+        intervalMs: 500,
+        commands: [
+            {
+                kind: 'http.request',
+                commandId: 'group-assertions-membership-read',
+                timeoutMs: 5_000,
+                request: {
+                    method: 'GET',
+                    path: groupSnapshotPath
+                },
+                response: {
+                    body: 'json',
+                    acceptedStatusCodes: [200]
+                }
+            },
+            {
+                kind: 'assert',
+                commandId: 'group-assertions-membership-converged',
+                source: 'lastResult.value.body.memberCount',
+                operator: 'gte',
+                expected: 2
+            }
+        ]
+    };
 }

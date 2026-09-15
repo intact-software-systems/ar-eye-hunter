@@ -1,6 +1,6 @@
 import type {
     RallarMessage,
-    RallarMessageSendResult,
+    RallarMessageHandle,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
     RallarRtcSendInput,
@@ -8,15 +8,15 @@ import type {
     RallarTypedMessageSendOptions,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
+import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarDeliveryObservation,
+    BlackBoxRallarDeliveryObserveInput,
     BlackBoxRallarEvent,
     BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarMessageSendInput,
@@ -154,113 +154,19 @@ function toTypedSendOptions(
     };
 }
 
-type TypedSendAdmission = Either<string, RallarMessageSendResult>;
-
-interface PendingMessageAdmission {
-    readonly messageId: string;
-    readonly transport: 'rtc' | 'ws';
-}
-
-interface DeliveryRecord {
-    readonly observation: BlackBoxRallarDeliveryObservation;
-    readonly pendingAdmission?: PendingMessageAdmission;
-}
-
-function toDeliveryObservationState(
-    status: RallarMessageSendResult['status']
-): BlackBoxRallarDeliveryObservation['state'] {
-    switch (status) {
-        case 'enqueued':
-        case 'accepted':
-        case 'skipped':
-        case 'duplicate':
-            return 'accepted';
-        case 'pending-admission':
-            return 'queued';
-        case 'superseded':
-            return 'superseded';
-        case 'expired':
-            return 'expired';
-        case 'rate-limited':
-            return 'rejected';
-        default:
-            return 'failed';
-    }
-}
-
-async function readTypedSendAdmission(
-    sent: Promise<RallarMessageSendResult>
-): Promise<TypedSendAdmission> {
-    try {
-        return Either.ofRight(await sent);
-    }
-    catch (caught) {
-        if (!isRallarValidationError(caught)) {
-            throw caught;
-        }
-        return Either.ofLeft(caught.message);
-    }
-}
-
-function toDeliveryRecordFromAdmission(
+function toDeliveryObservation(
     handleId: string,
-    admission: TypedSendAdmission
-): DeliveryRecord {
-    return admission.fold<DeliveryRecord>(
-        () => ({
-            observation: {
-                handleId,
-                state: 'rejected',
-                submitted: false,
-                confirmedPeerIds: [],
-                unconfirmedPeerIds: [],
-                attempts: 1
-            }
-        }),
-        (result) => {
-            const observation: BlackBoxRallarDeliveryObservation = {
-                handleId,
-                state: toDeliveryObservationState(result.status),
-                submitted: result.status === 'enqueued' || result.status === 'accepted',
-                confirmedPeerIds: [],
-                unconfirmedPeerIds: [],
-                attempts: 1
-            };
-            return result.status === 'pending-admission' && result.transport !== 'replay'
-                ? {
-                    observation,
-                    pendingAdmission: {
-                        messageId: result.message.id.msgId,
-                        transport: result.transport
-                    }
-                }
-                : { observation };
-        }
-    );
-}
-
-function toMessageSendDiagnostics(
-    send: BlackBoxRallarMessageSendInput,
-    admission: TypedSendAdmission
-): BlackBoxRallarMessageSendDiagnostics {
-    return admission.fold<BlackBoxRallarMessageSendDiagnostics>(
-        (reason) => ({
-            handleId: send.handleId,
-            msgId: undefined,
-            carrier: send.carrier,
-            status: 'rejected',
-            reason,
-            message: undefined
-        }),
-        (result) => ({
-            handleId: send.handleId,
-            msgId: result.message.id.msgId,
-            carrier: send.carrier,
-            status: result.status,
-            reason: result.reason,
-            message: result
-        })
-    );
+    lifecycle: ALDeliveryLifecycle | undefined
+): BlackBoxRallarDeliveryObservation {
+    return {
+        handleId,
+        state: lifecycle?.state ?? 'unobservable',
+        submitted: lifecycle?.evidence.attempts.some((attempt) => attempt.submissionAttempted) ?? false,
+        confirmedHopPeerIds: lifecycle?.evidence.confirmedHopPeerIds ?? [],
+        unconfirmedHopPeerIds: lifecycle?.evidence.unconfirmedHopPeerIds ?? [],
+        attempts: lifecycle?.evidence.attempts.length ?? 0,
+        reason: lifecycle?.evidence.reason
+    };
 }
 
 function messageRoutingDiagnostics(
@@ -296,14 +202,13 @@ export namespace BlackBoxRallarMessagingController {
         emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
         emitDiagnostic(config: BlackBoxRallarConnectionConfig, topic: string, data?: object): void;
         readonly emitError: BlackBoxRallarRuntimeDiagnostics['emitError'];
-        hasMessageAdmission(messageId: string, transport: 'rtc' | 'ws'): Promise<boolean>;
     }
 }
 
 export class BlackBoxRallarMessagingController {
     readonly #options: BlackBoxRallarMessagingController.Input;
     readonly #resources: BlackBoxRallarMessagingResourceController;
-    readonly #deliveries = new Map<string, DeliveryRecord>();
+    readonly #deliveries = new Map<string, RallarMessageHandle>();
     constructor(options: BlackBoxRallarMessagingController.Input) {
         this.#options = options;
         this.#resources = createBlackBoxRallarMessagingResourceController(options);
@@ -450,7 +355,7 @@ export class BlackBoxRallarMessagingController {
             actor: config.actor,
             transport: this.#options.transportOf(config),
             ...context,
-            message,
+            message: toDeliveryObservation(message.msgId, message.lifecycle()),
             health: this.#options.readHealth(config)
         };
         this.#options.emitDiagnostic(config, 'rallar.browser.messages.rtc.send_completed', diagnostics);
@@ -589,7 +494,7 @@ export class BlackBoxRallarMessagingController {
                 scope: request.scope,
                 minSnapshotVersion: request.minSnapshotVersion,
                 message: request.payload,
-                result,
+                result: toDeliveryObservation(result.msgId, result.lifecycle()),
                 wsStatus: this.#options.wsStatus(),
                 rtcStatus: this.#options.rtcStatus(config)
             };
@@ -614,11 +519,9 @@ export class BlackBoxRallarMessagingController {
     };
 
     private emitTypedChannelMessage = (
-        config: BlackBoxRallarConnectionConfig,
-        topic: string,
-        transport: BlackBoxRallarEvent['transport'],
-        message: RallarMessage<unknown>
+        input: TypedChannelMessageEvent
     ): void => {
+        const { config, topic, transport, message } = input;
         this.#options.emit({
             kind: 'message',
             topic,
@@ -654,10 +557,15 @@ export class BlackBoxRallarMessagingController {
         });
         this.#resources.ensureWsSubscription(typedSelectorKey(route.typeId, route.topicId), () => {
             const unsubscribeWs = channel.onWs((_payload, message) => {
-                this.emitTypedChannelMessage(config, 'rallar.browser.ws.message', 'ws', message);
+                this.emitTypedChannelMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
             });
             const unsubscribeRtc = channel.onRtc((_payload, message) => {
-                this.emitTypedChannelMessage(config, 'rallar.browser.messages.rtc.message', 'messages.rtc', message);
+                this.emitTypedChannelMessage({
+                    config,
+                    topic: 'rallar.browser.messages.rtc.message',
+                    transport: 'messages.rtc',
+                    message
+                });
             });
             return () => {
                 unsubscribeWs();
@@ -695,12 +603,17 @@ export class BlackBoxRallarMessagingController {
             roomId: config.roomId,
             roomRef
         });
-        const admission = await readTypedSendAdmission(
-            channel.send(send.payload, toTypedSendOptions(send))
-        );
+        const handle = await channel.send(send.payload, toTypedSendOptions(send));
+        this.#deliveries.set(send.handleId, handle);
+        const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: send.timeoutMs });
         this.#resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
-        this.#deliveries.set(send.handleId, toDeliveryRecordFromAdmission(send.handleId, admission));
-        const diagnostics = toMessageSendDiagnostics(send, admission);
+        const diagnostics: BlackBoxRallarMessageSendDiagnostics = {
+            handleId: send.handleId,
+            msgId: handle.msgId,
+            carrier: send.carrier,
+            status: outcome.lifecycle.state,
+            reason: outcome.lifecycle.evidence.reason
+        };
         this.#options.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
     };
@@ -712,53 +625,38 @@ export class BlackBoxRallarMessagingController {
         return await this.sendTypedMessage(decodeBlackBoxRallarMessageSendInput(input), config, lease);
     };
 
-    readDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
-        const record = this.#deliveries.get(handleId);
-        if (record === undefined) {
+    readDelivery = (handleId: string): BlackBoxRallarDeliveryObservation =>
+        toDeliveryObservation(handleId, this.#deliveries.get(handleId)?.lifecycle());
+
+    observeDelivery = async (
+        observe: BlackBoxRallarDeliveryObserveInput
+    ): Promise<BlackBoxRallarDeliveryObservation> => {
+        const handle = this.#deliveries.get(observe.handleId);
+        if (!handle) {
+            return this.readDelivery(observe.handleId);
+        }
+        const outcome = await handle.wait({ until: observe.state, timeoutMs: observe.timeoutMs });
+        if (outcome.status === 'timeout') {
             throw new TypeError(
-                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.unknownDeliveryHandle} ${handleId}`
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.deliveryStateTimeout} ` +
+                    `${observe.handleId} did not reach [${observe.state.join(', ')}]; ` +
+                    `last state ${outcome.lifecycle.state}`
             );
         }
-        return record.observation;
-    };
-
-    refreshDelivery = async (handleId: string): Promise<BlackBoxRallarDeliveryObservation> => {
-        const record = this.#deliveries.get(handleId);
-        if (record === undefined) {
-            return this.readDelivery(handleId);
-        }
-        const pending = record.pendingAdmission;
-        if (!pending || !await this.#options.hasMessageAdmission(pending.messageId, pending.transport)) {
-            return record.observation;
-        }
-        const current = this.#deliveries.get(handleId);
-        if (current !== record) {
-            return this.readDelivery(handleId);
-        }
-        const admitted: DeliveryRecord = {
-            observation: {
-                ...record.observation,
-                state: 'accepted',
-                submitted: true
-            }
-        };
-        this.#deliveries.set(handleId, admitted);
-        return admitted.observation;
+        return toDeliveryObservation(observe.handleId, outcome.lifecycle);
     };
 
     cancelDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
-        const cancelled: BlackBoxRallarDeliveryObservation = {
-            ...this.readDelivery(handleId),
-            state: 'cancelled'
-        };
-        this.#deliveries.set(handleId, { observation: cancelled });
-        return cancelled;
+        this.#deliveries.get(handleId)?.cancel();
+        return this.readDelivery(handleId);
     };
 
     cleanupWsSubscriptions = (): number => this.#resources.cleanupWsSubscriptions();
+}
 
-    /** Handles are per-connection: a reconnect starts a fresh ledger, so observes must precede it. */
-    resetDeliveryLedger = (): void => {
-        this.#deliveries.clear();
-    };
+interface TypedChannelMessageEvent {
+    readonly config: BlackBoxRallarConnectionConfig;
+    readonly topic: string;
+    readonly transport: BlackBoxRallarEvent['transport'];
+    readonly message: RallarMessage<unknown>;
 }

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '@shared-test/rallar-bb-test/schema.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +15,7 @@ import {
 import { flowBuilderVariablesFromGlobalValues } from '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-support.ts';
 import { FlowBuilderPanel } from '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx';
 import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -137,6 +138,12 @@ describe('rallar-black-box flow builder helpers', () => {
                 roomId: 'group-1'
             }
         });
+    });
+
+    it.each(FLOW_BUILDER_TEMPLATES)('exports canonical v1 from $templateId', ({ flow }) => {
+        const recipe = buildFlowBuilderRecipe(flow);
+        expect.soft(recipe.schemaVersion).toBe(1);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
     });
 
     it('exports a runner-style scenario with variables, connections, and steps', () => {

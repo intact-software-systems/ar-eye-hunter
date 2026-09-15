@@ -1,5 +1,5 @@
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useMemo, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {

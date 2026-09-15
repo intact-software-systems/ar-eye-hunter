@@ -1,5 +1,6 @@
+import { AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ControlCommandValidationResult } from '../control-protocol.ts';
-import type { RallarBlackBoxTestRecord } from '../types.ts';
+import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxTestAlmCommandKind =
     | 'messages.send'
@@ -10,12 +11,6 @@ export type RallarBlackBoxTestAlmCommandKind =
     | 'fault.inject'
     | 'storage.counters'
     | 'agent.reload';
-
-export interface ValidateAlmControlCommandInput {
-    readonly command: RallarBlackBoxTestRecord;
-    readonly kind: RallarBlackBoxTestAlmCommandKind;
-    readonly baseFields: readonly string[];
-}
 
 interface ValidateEnumFieldInput {
     readonly command: RallarBlackBoxTestRecord;
@@ -37,57 +32,9 @@ const MESSAGES_RELIABILITIES = ['best-effort', 'at-least-once'];
 const MESSAGES_ACKS = ['none', 'receiver', 'all-logical-recipients', 'group-leader'];
 const FAULT_CARRIERS = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES = ['ack', 'nack', 'repair'];
-const MESSAGES_DELIVERY_STATES = [
-    'rejected',
-    'accepted',
-    'queued',
-    'transport-accepted',
-    'acknowledged',
-    'expired',
-    'superseded',
-    'failed',
-    'cancelled'
-];
-
-const ALM_COMMAND_FIELDS: Readonly<Record<RallarBlackBoxTestAlmCommandKind, readonly string[]>> = {
-    'messages.send': [
-        'connection',
-        'carrier',
-        'typeId',
-        'topicId',
-        'payload',
-        'roomRef',
-        'scope',
-        'reliability',
-        'ack',
-        'ttlMs',
-        'orderingKey',
-        'seq',
-        'handleId'
-    ],
-    'messages.observe': ['connection', 'handleId', 'state'],
-    'messages.cancel': ['connection', 'handleId'],
-    'messages.received': ['connection', 'typeId', 'msgId', 'count', 'absent', 'windowMs'],
-    'messages.receipts': ['connection', 'handleId'],
-    'fault.inject': ['faultId', 'carrier', 'match', 'action', 'remaining'],
-    'storage.counters': ['reset'],
-    'agent.reload': ['readyTimeoutMs']
-};
-
 const accepted: ControlCommandValidationResult = { ok: true };
 
 export function validateAlmControlCommand(
-    input: ValidateAlmControlCommandInput
-): ControlCommandValidationResult {
-    const keys = validateKeysOf(
-        input.command,
-        [...input.baseFields, ...ALM_COMMAND_FIELDS[input.kind]],
-        input.kind
-    );
-    return keys.ok ? validateAlmCommandFields(input.command, input.kind) : keys;
-}
-
-function validateAlmCommandFields(
     command: RallarBlackBoxTestRecord,
     kind: RallarBlackBoxTestAlmCommandKind
 ): ControlCommandValidationResult {
@@ -279,9 +226,9 @@ function validateDeliveryStateField(
     if (!Array.isArray(state) || state.length === 0) {
         return fail('messages.observe.state must list at least one delivery state.');
     }
-    return state.every((entry) => typeof entry === 'string' && MESSAGES_DELIVERY_STATES.includes(entry))
+    return state.every((entry) => typeof entry === 'string' && AL_DELIVERY_STATES.some((state) => state === entry))
         ? accepted
-        : fail(`messages.observe.state must list only ${MESSAGES_DELIVERY_STATES.join(', ')}.`);
+        : fail(`messages.observe.state must list only ${AL_DELIVERY_STATES.join(', ')}.`);
 }
 
 function validateKeysOf(

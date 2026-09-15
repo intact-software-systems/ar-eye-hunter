@@ -1,3 +1,4 @@
+import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ScriptedTransportFault,
     TransportFaultCarrier,
@@ -28,24 +29,13 @@ const FAULT_CONTROL_TYPES: readonly string[] = ['ack', 'nack', 'repair'];
 /** The RTC data channel treats a delay decision as pass, so arming one there would be inert. */
 const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
 
-const DELIVERY_STATES: readonly string[] = [
-    'rejected',
-    'accepted',
-    'queued',
-    'transport-accepted',
-    'acknowledged',
-    'expired',
-    'superseded',
-    'failed',
-    'cancelled'
-];
-
 export function decodeBlackBoxRallarMessageSendInput(value: unknown): BlackBoxRallarMessageSendInput {
     const record = decodeRequiredBlackBoxCommandRecord(value, 'messages.send input');
     if (!('payload' in record)) {
         throw new TypeError('messages.send.payload is required.');
     }
     return {
+        timeoutMs: decodeRequiredBlackBoxCommandNumber(record.timeoutMs, 'messages.send.timeoutMs'),
         connection: decodeRequiredBlackBoxCommandString(record.connection, 'messages.send.connection'),
         carrier: decodeMessageCarrier(record.carrier),
         typeId: decodeRequiredBlackBoxCommandString(record.typeId, 'messages.send.typeId'),
@@ -133,13 +123,13 @@ function decodeMessageReliability(value: unknown): BlackBoxRallarMessageSendInpu
     throw new TypeError('messages.send.reliability must be best-effort or at-least-once.');
 }
 
-function decodeDeliveryStates(value: unknown): readonly string[] {
+function decodeDeliveryStates(value: unknown): readonly ALDeliveryState[] {
     if (
         !Array.isArray(value) || value.length === 0 ||
-        !value.every((entry): entry is string => typeof entry === 'string' && DELIVERY_STATES.includes(entry))
+        !value.every((entry): entry is ALDeliveryState => AL_DELIVERY_STATES.some((state) => state === entry))
     ) {
         throw new TypeError(
-            `messages.observe.state must list at least one of ${DELIVERY_STATES.join(', ')}.`
+            `messages.observe.state must list at least one of ${AL_DELIVERY_STATES.join(', ')}.`
         );
     }
     return value;

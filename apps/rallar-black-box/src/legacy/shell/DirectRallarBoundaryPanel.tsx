@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../client-defaults.ts';

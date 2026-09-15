@@ -5,7 +5,7 @@ import {
     type ControlResultEnvelope
 } from '../../rallar-bb-test/control-protocol.ts';
 
-import type { RallarBlackBoxTestEvent } from '../../rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export interface RemoteBrowserObservationEvent extends ControlEventEnvelope {
     readonly payload: RallarBlackBoxTestEvent;

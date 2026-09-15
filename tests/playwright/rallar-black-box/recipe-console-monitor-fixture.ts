@@ -12,7 +12,7 @@ import type {
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRunState } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const MONITOR_CONTROL_RUN_ID = 'monitor-control-live';
 export const MONITOR_DISTRIBUTED_RUN_ID = 'monitor-distributed-live';

@@ -13,7 +13,7 @@ import type {
     RallarBlackBoxControlAgentCapabilities,
     RallarBlackBoxDistributedGroupRef
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const group: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',

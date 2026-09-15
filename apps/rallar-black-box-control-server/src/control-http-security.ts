@@ -1,5 +1,5 @@
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { createControlRequestBodyReader, type ControlJsonValue } from './control-request-body.ts';
 import type { BlackBoxControlServerConfiguration } from './control-server-configuration.ts';

@@ -353,10 +353,10 @@ helper.
 
 ## Compatibility
 
-Distributed run manifests should include `schemaVersion: 1`. Inline
-`rallar-bb-test` recipes inside a manifest should also include
-`schemaVersion: 1`; older unversioned recipes remain legacy-compatible v1 only
-through the recipe compatibility validator.
+Distributed run manifests should include `schemaVersion: 1`. Every inline
+`rallar-bb-test` recipe must include `schemaVersion: 1`, including recipes nested
+inside commands. Missing or unsupported versions fail validation before dispatch;
+no automatic conversion or saved-recipe migration is provided.
 
 Adding optional manifest fields or new artifact policy flags is compatible.
 

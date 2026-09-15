@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRecipe } from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
 import { assertShapeCompleteViolatedRecipe } from '../assert/assert-shape-complete-violated-recipe.ts';
 import type {
@@ -6,20 +6,21 @@ import type {
     RallarBlackBoxCompositeConformanceRecipeOptions
 } from '../composite-conformance.ts';
 import { loopUntilConvergenceRecipe, loopUntilExhaustedRecipe } from '../loop/loop-until-conformance-recipes.ts';
+import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 import { waitAbsenceHoldRecipe, waitAbsenceViolatedRecipe } from '../wait/wait-absence-conformance-recipes.ts';
 import {
-    closeCommand,
-    commandMetadata,
-    configureCommand,
     DEFAULT_CONNECTION,
     DEFAULT_ROOM_ID,
     DEFAULT_WS_CONNECTION,
-    recipeId,
-    recipeMetadata,
-    rtcConnectCommand,
-    scopeFields,
-    statsCommand,
-    timeoutMs
+    toCloseCommand,
+    toCommandMetadata,
+    toConfigureCommand,
+    toRecipeId,
+    toRecipeMetadata,
+    toRtcConnectCommand,
+    toScopeFields,
+    toStatsCommand,
+    toTimeoutMs
 } from './composite-conformance-command-fixtures.ts';
 import { waitAssertRecipe } from './wait-assert-recipe.ts';
 
@@ -58,20 +59,21 @@ function loopedRtcRecipe(
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
     return {
-        recipeId: recipeId('looped-rtc-send', options),
+        schemaVersion: 1,
+        recipeId: toRecipeId('looped-rtc-send', options),
         name: 'Composite conformance: looped RTC send',
         continueOnFailure: false,
-        metadata: recipeMetadata('looped-rtc-send'),
+        metadata: toRecipeMetadata('looped-rtc-send'),
         commands: [
-            configureCommand('looped-rtc-send', options),
-            rtcConnectCommand(
-                'looped-rtc-send',
-                'looped-rtc-send-connect',
-                connection,
-                roomId,
-                transport,
-                options
-            ),
+            toConfigureCommand('looped-rtc-send', options),
+            toRtcConnectCommand({
+                caseId: 'looped-rtc-send',
+                commandId: 'looped-rtc-send-connect',
+                connection: connection,
+                roomId: roomId,
+                transport: transport,
+                options: options
+            }),
             {
                 kind: 'loop',
                 commandId: 'looped-rtc-send-loop',
@@ -81,14 +83,14 @@ function loopedRtcRecipe(
                     minSendSuccessRatio: 1,
                     maxStartDriftMs: 1_000
                 },
-                metadata: commandMetadata('looped-rtc-send', 'looped-rtc-send-loop'),
+                metadata: toCommandMetadata('looped-rtc-send', 'looped-rtc-send-loop'),
                 commands: [
                     {
                         kind: 'rtc.send',
                         commandId: 'looped-rtc-send-frame',
                         connection,
                         transport,
-                        timeoutMs: timeoutMs(options),
+                        timeoutMs: toTimeoutMs(options),
                         send: {
                             data: {
                                 topic: 'rallar.conformance.looped-rtc-send',
@@ -97,14 +99,14 @@ function loopedRtcRecipe(
                                 elapsedMs: '{loop.elapsedMs}'
                             },
                             roomId,
-                            ...scopeFields(options)
+                            ...toScopeFields(options)
                         },
-                        metadata: commandMetadata('looped-rtc-send', 'looped-rtc-send-frame')
+                        metadata: toCommandMetadata('looped-rtc-send', 'looped-rtc-send-frame')
                     }
                 ]
             },
-            statsCommand('looped-rtc-send-stats', 'looped-rtc-send'),
-            closeCommand('looped-rtc-send-close', 'looped-rtc-send')
+            toStatsCommand('looped-rtc-send-stats', 'looped-rtc-send'),
+            toCloseCommand('looped-rtc-send-close', 'looped-rtc-send')
         ]
     };
 }
@@ -117,90 +119,40 @@ function parallelWsRtcRecipe(
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'messages.rtc';
     return {
-        recipeId: recipeId('parallel-ws-rtc-groups', options),
+        schemaVersion: 1,
+        recipeId: toRecipeId('parallel-ws-rtc-groups', options),
         name: 'Composite conformance: parallel WS and RTC groups',
         continueOnFailure: false,
-        metadata: recipeMetadata('parallel-ws-rtc-groups'),
+        metadata: toRecipeMetadata('parallel-ws-rtc-groups'),
         commands: [
-            configureCommand('parallel-ws-rtc-groups', options),
+            toConfigureCommand('parallel-ws-rtc-groups', options),
             {
                 kind: 'ws.open',
                 commandId: 'parallel-ws-open',
                 connection: wsConnection,
                 url: '{config.wsBaseUrl}/api/ws',
-                timeoutMs: timeoutMs(options),
-                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-open')
+                timeoutMs: toTimeoutMs(options),
+                metadata: toCommandMetadata('parallel-ws-rtc-groups', 'parallel-ws-open')
             },
-            rtcConnectCommand(
-                'parallel-ws-rtc-groups',
-                'parallel-rtc-connect',
-                connection,
-                roomId,
-                transport,
-                options
-            ),
-            {
-                kind: 'parallel',
-                commandId: 'parallel-ws-rtc',
-                maxConcurrency: 2,
-                groups: [
-                    {
-                        groupId: 'ws',
-                        commands: [
-                            {
-                                kind: 'ws.send',
-                                commandId: 'parallel-ws-send',
-                                connection: wsConnection,
-                                data: {
-                                    topic: 'rallar.conformance.parallel.ws',
-                                    payload: {
-                                        source: 'ws'
-                                    }
-                                },
-                                metadata: commandMetadata(
-                                    'parallel-ws-rtc-groups',
-                                    'parallel-ws-send'
-                                )
-                            }
-                        ]
-                    },
-                    {
-                        groupId: 'rtc',
-                        commands: [
-                            {
-                                kind: 'rtc.send',
-                                commandId: 'parallel-rtc-send',
-                                connection,
-                                transport,
-                                timeoutMs: timeoutMs(options),
-                                send: {
-                                    payload: {
-                                        topic: 'rallar.conformance.parallel.rtc',
-                                        source: 'rtc'
-                                    },
-                                    roomId,
-                                    ...scopeFields(options)
-                                },
-                                metadata: commandMetadata(
-                                    'parallel-ws-rtc-groups',
-                                    'parallel-rtc-send'
-                                )
-                            }
-                        ]
-                    }
-                ],
-                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-rtc')
-            },
-            statsCommand('parallel-ws-rtc-stats', 'parallel-ws-rtc-groups'),
+            toRtcConnectCommand({
+                caseId: 'parallel-ws-rtc-groups',
+                commandId: 'parallel-rtc-connect',
+                connection: connection,
+                roomId: roomId,
+                transport: transport,
+                options: options
+            }),
+            toParallelSendCommand({ options, connection, wsConnection, roomId, transport }),
+            toStatsCommand('parallel-ws-rtc-stats', 'parallel-ws-rtc-groups'),
             {
                 kind: 'ws.close',
                 commandId: 'parallel-ws-close',
                 connection: wsConnection,
                 code: 1000,
                 reason: 'conformance complete',
-                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-close')
+                metadata: toCommandMetadata('parallel-ws-rtc-groups', 'parallel-ws-close')
             },
-            closeCommand('parallel-close', 'parallel-ws-rtc-groups')
+            toCloseCommand('parallel-close', 'parallel-ws-rtc-groups')
         ]
     };
 }
@@ -209,33 +161,34 @@ function cancelDuringLoopRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     return {
-        recipeId: recipeId('cancel-during-loop', options),
+        schemaVersion: 1,
+        recipeId: toRecipeId('cancel-during-loop', options),
         name: 'Composite conformance: cancellation during loop',
         continueOnFailure: false,
-        metadata: recipeMetadata('cancel-during-loop'),
+        metadata: toRecipeMetadata('cancel-during-loop'),
         commands: [
-            configureCommand('cancel-during-loop', options),
+            toConfigureCommand('cancel-during-loop', options),
             {
                 kind: 'loop',
                 commandId: 'cancel-during-loop-loop',
                 count: 3,
                 intervalMs: 10,
-                metadata: commandMetadata('cancel-during-loop', 'cancel-during-loop-loop'),
+                metadata: toCommandMetadata('cancel-during-loop', 'cancel-during-loop-loop'),
                 commands: [
                     {
                         kind: 'health',
                         commandId: 'cancel-loop-health',
-                        metadata: commandMetadata('cancel-during-loop', 'cancel-loop-health')
+                        metadata: toCommandMetadata('cancel-during-loop', 'cancel-loop-health')
                     },
                     {
                         kind: 'recipe.cancel',
                         commandId: 'cancel-loop-request',
                         reason: 'composite conformance cancellation case',
-                        metadata: commandMetadata('cancel-during-loop', 'cancel-loop-request')
+                        metadata: toCommandMetadata('cancel-during-loop', 'cancel-loop-request')
                     }
                 ]
             },
-            statsCommand('cancel-during-loop-stats', 'cancel-during-loop')
+            toStatsCommand('cancel-during-loop-stats', 'cancel-during-loop')
         ]
     };
 }
@@ -247,26 +200,27 @@ function negativeNoPeerRecipe(
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
     return {
-        recipeId: recipeId('negative-no-peer', options),
+        schemaVersion: 1,
+        recipeId: toRecipeId('negative-no-peer', options),
         name: 'Composite conformance: no-peer negative case',
         continueOnFailure: false,
-        metadata: recipeMetadata('negative-no-peer'),
+        metadata: toRecipeMetadata('negative-no-peer'),
         commands: [
-            configureCommand('negative-no-peer', options),
-            rtcConnectCommand(
-                'negative-no-peer',
-                'negative-no-peer-connect',
-                connection,
-                roomId,
-                transport,
-                options
-            ),
+            toConfigureCommand('negative-no-peer', options),
+            toRtcConnectCommand({
+                caseId: 'negative-no-peer',
+                commandId: 'negative-no-peer-connect',
+                connection: connection,
+                roomId: roomId,
+                transport: transport,
+                options: options
+            }),
             {
                 kind: 'rtc.send',
                 commandId: 'negative-no-peer-send',
                 connection,
                 transport,
-                timeoutMs: timeoutMs(options),
+                timeoutMs: toTimeoutMs(options),
                 send: {
                     data: {
                         topic: 'rallar.conformance.negative-no-peer',
@@ -274,11 +228,84 @@ function negativeNoPeerRecipe(
                     },
                     roomId,
                     peerIds: ['missing-peer'],
-                    ...scopeFields(options)
+                    ...toScopeFields(options)
                 },
-                metadata: commandMetadata('negative-no-peer', 'negative-no-peer-send')
+                metadata: toCommandMetadata('negative-no-peer', 'negative-no-peer-send')
             },
-            statsCommand('negative-no-peer-stats', 'negative-no-peer')
+            toStatsCommand('negative-no-peer-stats', 'negative-no-peer')
         ]
+    };
+}
+
+interface ParallelConformanceContext {
+    readonly options: RallarBlackBoxCompositeConformanceRecipeOptions;
+    readonly connection: string;
+    readonly wsConnection: string;
+    readonly roomId: string;
+    readonly transport: 'realtime' | 'messages.rtc';
+}
+
+function toParallelWsSend(context: ParallelConformanceContext): RallarBlackBoxTestCommand {
+    const { options, connection, wsConnection, roomId, transport } = context;
+    return {
+        kind: 'ws.send',
+        commandId: 'parallel-ws-send',
+        connection: wsConnection,
+        data: {
+            topic: 'rallar.conformance.parallel.ws',
+            payload: {
+                source: 'ws'
+            }
+        },
+        metadata: toCommandMetadata(
+            'parallel-ws-rtc-groups',
+            'parallel-ws-send'
+        )
+    };
+}
+
+function toParallelRtcSend(context: ParallelConformanceContext): RallarBlackBoxTestCommand {
+    const { options, connection, wsConnection, roomId, transport } = context;
+    return {
+        kind: 'rtc.send',
+        commandId: 'parallel-rtc-send',
+        connection,
+        transport,
+        timeoutMs: toTimeoutMs(options),
+        send: {
+            payload: {
+                topic: 'rallar.conformance.parallel.rtc',
+                source: 'rtc'
+            },
+            roomId,
+            ...toScopeFields(options)
+        },
+        metadata: toCommandMetadata(
+            'parallel-ws-rtc-groups',
+            'parallel-rtc-send'
+        )
+    };
+}
+
+function toParallelSendCommand(context: ParallelConformanceContext): RallarBlackBoxTestCommand {
+    return {
+        kind: 'parallel',
+        commandId: 'parallel-ws-rtc',
+        maxConcurrency: 2,
+        groups: [
+            {
+                groupId: 'ws',
+                commands: [
+                    toParallelWsSend(context)
+                ]
+            },
+            {
+                groupId: 'rtc',
+                commands: [
+                    toParallelRtcSend(context)
+                ]
+            }
+        ],
+        metadata: toCommandMetadata('parallel-ws-rtc-groups', 'parallel-ws-rtc')
     };
 }

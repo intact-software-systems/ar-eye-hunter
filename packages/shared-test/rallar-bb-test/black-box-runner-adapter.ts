@@ -12,7 +12,7 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 // The eight ALM kinds only exist inside a browser agent: this client owns an RTC connection, not a
 // Rallar page runtime, so translating one of them into an rtc.send would hide the gap.

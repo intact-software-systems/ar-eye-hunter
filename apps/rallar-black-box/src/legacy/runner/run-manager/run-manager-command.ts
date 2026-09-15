@@ -3,7 +3,7 @@ import {
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
     const value = JSON.parse(text) as unknown;

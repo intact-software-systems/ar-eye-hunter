@@ -12,6 +12,7 @@
     {
       "recipeId": "rtc-absence-wait-recipe",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rtc-absence-wait-recipe",
         "name": "RTC absence wait recipe",
         "continueOnFailure": false,

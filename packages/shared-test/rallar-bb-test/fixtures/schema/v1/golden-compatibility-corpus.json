@@ -602,17 +602,6 @@
       "metadata": {
         "source": "golden-compatibility-corpus"
       }
-    },
-    {
-      "recipeId": "golden-legacy-compatible-v1",
-      "name": "Golden legacy compatible recipe",
-      "description": "Validates that pre-version recipes without schemaVersion remain compatible during v1.",
-      "commands": [
-        {
-          "kind": "health",
-          "commandId": "legacy-health-v1"
-        }
-      ]
     }
   ],
   "validDistributedManifests": [
@@ -852,6 +841,23 @@
     }
   ],
   "invalidRecipes": [
+    {
+      "caseId": "missing-recipe-schema-version",
+      "expectedErrors": [
+        "Missing required property schemaVersion."
+      ],
+      "value": {
+        "recipeId": "golden-unversioned-rejected",
+        "name": "Unversioned recipe rejected",
+        "description": "Recipes require explicit schemaVersion: 1 at every nesting level.",
+        "commands": [
+          {
+            "kind": "health",
+            "commandId": "legacy-health-v1"
+          }
+        ]
+      }
+    },
     {
       "caseId": "unsupported-recipe-schema-version",
       "expectedErrors": [

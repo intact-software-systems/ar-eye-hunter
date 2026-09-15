@@ -5,7 +5,7 @@ import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import type {
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserRallarTransport
-} from '../browser-adapter.ts';
+} from '../create-rallar-black-box-browser-test-runtime.ts';
 import {
     createRtcConnectReadinessAbortScope,
     raceWithRtcConnectReadinessAbort,

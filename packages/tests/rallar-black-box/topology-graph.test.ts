@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveRallarTopologyGraph, visibleTopologyCounts } from '../../../apps/rallar-black-box/src/topology-graph.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function baseState(events: readonly RallarBlackBoxTestEvent[]): RallarBlackBoxTestState {
     return {

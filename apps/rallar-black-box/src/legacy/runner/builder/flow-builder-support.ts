@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { FlowBuilderStepKind } from '../../../flow-builder.ts';
 import { recordValue } from '../../shared/record-value.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';

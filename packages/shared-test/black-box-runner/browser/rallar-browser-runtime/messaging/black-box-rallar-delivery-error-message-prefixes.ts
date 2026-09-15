@@ -4,7 +4,6 @@
  * below builds its message from one of them, and the adapter matches on the same constant.
  */
 export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
-    unknownDeliveryHandle: 'Unknown delivery handle',
     deliveryStateTimeout: 'Delivery handle',
     scriptedPortsUnavailable: 'Scripted transport and storage ports are not installed'
 } as const;

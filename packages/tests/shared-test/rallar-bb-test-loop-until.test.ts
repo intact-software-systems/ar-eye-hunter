@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestLoopResultValue, RallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestLoopResultValue, RallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function createPollingRuntime(): Readonly<{
     runtime: RallarBlackBoxTestRuntime;

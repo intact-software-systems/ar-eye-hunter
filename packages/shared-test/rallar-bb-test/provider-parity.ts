@@ -5,7 +5,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxParityOperation =
     | 'configure'
@@ -29,90 +29,90 @@ export type RallarBlackBoxParityDeliveryMode =
     | 'multicast'
     | 'broadcast';
 
-export type RallarBlackBoxParityCommandMetadata = Readonly<{
-    operation: RallarBlackBoxParityOperation;
-    deliveryMode?: RallarBlackBoxParityDeliveryMode;
-    expectedConnections?: readonly string[];
-    targetPeerIds?: readonly string[];
-    runnerAction?: 'connect' | 'send' | 'wait' | 'close';
-    providerSpecificFields?: readonly string[];
-}>;
+export interface RallarBlackBoxParityCommandMetadata {
+    readonly operation: RallarBlackBoxParityOperation;
+    readonly deliveryMode?: RallarBlackBoxParityDeliveryMode;
+    readonly expectedConnections?: readonly string[];
+    readonly targetPeerIds?: readonly string[];
+    readonly runnerAction?: 'connect' | 'send' | 'wait' | 'close';
+    readonly providerSpecificFields?: readonly string[];
+}
 
-export type RallarBlackBoxProviderParityRecipeOptions = Readonly<{
-    recipeId?: string;
-    name?: string;
-    description?: string;
-    runId?: string;
-    agentId?: string;
-    environment?: string;
-    apiBaseUrl?: string;
-    actor?: string;
-    sessionId?: string;
-    roomId?: string;
-    connection?: string;
-    transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
-    timeoutMs?: number;
-    providerMode?: 'simulated' | 'browser-rallar';
-    includeDemoAuth?: boolean;
-    rallar?: Readonly<Record<string, unknown>>;
-    browser?: Readonly<Record<string, unknown>>;
-    control?: Readonly<Record<string, unknown>>;
-    directPeerIds?: readonly string[];
-    directExpectedConnections?: readonly string[];
-    multicastPeerIds?: readonly string[];
-    multicastExpectedConnections?: readonly string[];
-    broadcastExpectedConnections?: readonly string[];
-}>;
+export interface RallarBlackBoxProviderParityRecipeOptions {
+    readonly recipeId?: string;
+    readonly name?: string;
+    readonly description?: string;
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly environment?: string;
+    readonly apiBaseUrl?: string;
+    readonly actor?: string;
+    readonly sessionId?: string;
+    readonly roomId?: string;
+    readonly connection?: string;
+    readonly transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    readonly timeoutMs?: number;
+    readonly providerMode?: 'simulated' | 'browser-rallar';
+    readonly includeDemoAuth?: boolean;
+    readonly rallar?: Readonly<Record<string, unknown>>;
+    readonly browser?: Readonly<Record<string, unknown>>;
+    readonly control?: Readonly<Record<string, unknown>>;
+    readonly directPeerIds?: readonly string[];
+    readonly directExpectedConnections?: readonly string[];
+    readonly multicastPeerIds?: readonly string[];
+    readonly multicastExpectedConnections?: readonly string[];
+    readonly broadcastExpectedConnections?: readonly string[];
+}
 
-export type RallarBlackBoxRunnerParityOptions = Readonly<{
-    provider?: RallarBlackBoxRunnerProviderName;
-    scenarioExecutionNumber?: number;
-    includeReceiveWaits?: boolean;
-    messageShape?: 'raw' | 'event';
-}>;
+export interface RallarBlackBoxRunnerParityOptions {
+    readonly provider?: RallarBlackBoxRunnerProviderName;
+    readonly scenarioExecutionNumber?: number;
+    readonly includeReceiveWaits?: boolean;
+    readonly messageShape?: 'raw' | 'event';
+}
 
-export type RallarBlackBoxRunnerParityOmittedCommand = Readonly<{
-    commandId: string;
-    kind: RallarBlackBoxTestCommand['kind'];
-    operation: RallarBlackBoxParityOperation | string;
-    reason: string;
-}>;
+export interface RallarBlackBoxRunnerParityOmittedCommand {
+    readonly commandId: string;
+    readonly kind: RallarBlackBoxTestCommand['kind'];
+    readonly operation: RallarBlackBoxParityOperation | string;
+    readonly reason: string;
+}
 
-export type RallarBlackBoxRunnerParityConversion = Readonly<{
-    interactions: readonly Record<string, unknown>[];
-    omittedCommands: readonly RallarBlackBoxRunnerParityOmittedCommand[];
-}>;
+export interface RallarBlackBoxRunnerParityConversion {
+    readonly interactions: readonly Record<string, unknown>[];
+    readonly omittedCommands: readonly RallarBlackBoxRunnerParityOmittedCommand[];
+}
 
-export type RallarBlackBoxProviderParityStep = Readonly<{
-    key: string;
-    operation: RallarBlackBoxParityOperation | string;
-    status: 'ok' | 'failed' | 'cancelled' | 'skipped';
-    commandId?: string;
-    kind?: string;
-    action?: string;
-    connection?: string;
-    transport?: string;
-    comparable: Readonly<Record<string, unknown>>;
-    providerSpecific: Readonly<Record<string, unknown>>;
-}>;
+export interface RallarBlackBoxProviderParityStep {
+    readonly key: string;
+    readonly operation: RallarBlackBoxParityOperation | string;
+    readonly status: 'ok' | 'failed' | 'cancelled' | 'skipped';
+    readonly commandId?: string;
+    readonly kind?: string;
+    readonly action?: string;
+    readonly connection?: string;
+    readonly transport?: string;
+    readonly comparable: Readonly<Record<string, unknown>>;
+    readonly providerSpecific: Readonly<Record<string, unknown>>;
+}
 
-export type RallarBlackBoxProviderParityReport = Readonly<{
-    source: 'rallar-bb-test' | 'black-box-runner';
-    steps: readonly RallarBlackBoxProviderParityStep[];
-    providerSpecificFields: readonly string[];
-}>;
+export interface RallarBlackBoxProviderParityReport {
+    readonly source: 'rallar-bb-test' | 'black-box-runner';
+    readonly steps: readonly RallarBlackBoxProviderParityStep[];
+    readonly providerSpecificFields: readonly string[];
+}
 
-export type RallarBlackBoxProviderParityComparison = Readonly<{
-    ok: boolean;
-    matchedKeys: readonly string[];
-    missingLeft: readonly string[];
-    missingRight: readonly string[];
-    statusMismatches: readonly Readonly<{
+export interface RallarBlackBoxProviderParityComparison {
+    readonly ok: boolean;
+    readonly matchedKeys: readonly string[];
+    readonly missingLeft: readonly string[];
+    readonly missingRight: readonly string[];
+    readonly statusMismatches: readonly Readonly<{
         key: string;
         left: string;
         right: string;
     }>[];
-}>;
+}
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CONNECTION = 'aliceRtc';
@@ -120,7 +120,7 @@ const DEFAULT_ROOM_ID = 'rallar-black-box-room';
 const DEFAULT_DIRECT_PEER_IDS = ['bob-session'] as const;
 const DEFAULT_MULTICAST_PEER_IDS = ['bob-session', 'charlie-session'] as const;
 
-function cleanStrings(values: readonly string[] | undefined): readonly string[] {
+function toNonEmptyStrings(values: readonly string[] | undefined): readonly string[] {
     return values
         ?.map((value) => value.trim())
         .filter((value) => value.length > 0) ?? [];
@@ -132,7 +132,7 @@ function toTimeoutMs(value: number | undefined): number {
         : DEFAULT_TIMEOUT_MS;
 }
 
-function parityMetadata(
+function toParityMetadata(
     operation: RallarBlackBoxParityOperation,
     options: Readonly<{
         deliveryMode?: RallarBlackBoxParityDeliveryMode;
@@ -160,62 +160,52 @@ function parityMetadata(
     };
 }
 
-function parityPayload(
-    transport: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>,
-    deliveryMode: RallarBlackBoxParityDeliveryMode,
-    roomId: string,
-    payload: Readonly<Record<string, unknown>>,
-    peerIds: readonly string[]
-): Readonly<Record<string, unknown>> {
+interface ParityPayloadInput {
+    readonly transport: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    readonly deliveryMode: RallarBlackBoxParityDeliveryMode;
+    readonly roomId: string;
+    readonly sequence: number;
+    readonly peerIds: readonly string[];
+}
+function toParityPayload(input: ParityPayloadInput): Readonly<Record<string, unknown>> {
+    const { transport, deliveryMode, roomId, peerIds } = input;
     const envelope = {
         topic: 'rallar.parity.probe',
         deliveryMode,
         roomId,
-        payload
+        payload: { sequence: input.sequence, kind: deliveryMode }
     };
-
     if (transport === 'messages.rtc') {
         return {
             payload: envelope,
             roomId,
             typeId: 'room.black-box.parity',
             topicId: `room.black-box.parity.${deliveryMode}`,
-            ...(deliveryMode !== 'broadcast' && peerIds.length > 0
-                ? { nextHopPeerIds: peerIds }
-                : {})
+            ...(deliveryMode !== 'broadcast' && peerIds.length > 0 ? { nextHopPeerIds: peerIds } : {})
         };
     }
-
-    return {
-        data: envelope,
-        roomId,
-        ...(deliveryMode !== 'broadcast' && peerIds.length > 0 ? { peerIds } : {})
-    };
+    return { data: envelope, roomId, ...(deliveryMode !== 'broadcast' && peerIds.length > 0 ? { peerIds } : {}) };
 }
 
+interface ParityRecipeContext {
+    readonly options: RallarBlackBoxProviderParityRecipeOptions;
+    readonly transport: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    readonly connection: string;
+    readonly roomId: string;
+    readonly timeoutMs: number;
+}
 export function createRallarBlackBoxProviderParityRecipe(
     options: RallarBlackBoxProviderParityRecipeOptions = {}
 ): RallarBlackBoxTestRecipe {
-    const transport = options.transport ?? 'realtime';
-    const connection = options.connection ?? DEFAULT_CONNECTION;
-    const roomId = options.roomId ?? DEFAULT_ROOM_ID;
-    const timeoutMs = toTimeoutMs(options.timeoutMs);
-    const directPeerIds = cleanStrings(options.directPeerIds ?? DEFAULT_DIRECT_PEER_IDS);
-    const multicastPeerIds = cleanStrings(options.multicastPeerIds ?? DEFAULT_MULTICAST_PEER_IDS);
-    const directExpectedConnections = cleanStrings(
-        options.directExpectedConnections ?? [connection]
-    );
-    const multicastExpectedConnections = cleanStrings(options.multicastExpectedConnections);
-    const broadcastExpectedConnections = cleanStrings(options.broadcastExpectedConnections);
-    const demoRallarAuth = options.includeDemoAuth === false
-        ? {}
-        : {
-            username: 'alice',
-            password: 'local-demo-password',
-            token: 'local-demo-token'
-        };
-
+    const context: ParityRecipeContext = {
+        options,
+        transport: options.transport ?? 'realtime',
+        connection: options.connection ?? DEFAULT_CONNECTION,
+        roomId: options.roomId ?? DEFAULT_ROOM_ID,
+        timeoutMs: toTimeoutMs(options.timeoutMs)
+    };
     return {
+        schemaVersion: 1,
         recipeId: options.recipeId ?? 'rallar-provider-parity-recipe',
         name: options.name ?? 'Rallar provider parity recipe',
         description: options.description ??
@@ -225,161 +215,133 @@ export function createRallarBlackBoxProviderParityRecipe(
             parity: {
                 version: 1,
                 providerMode: options.providerMode ?? 'simulated',
-                transport,
-                connection,
-                roomId
+                transport: context.transport,
+                connection: context.connection,
+                roomId: context.roomId
             }
         },
         commands: [
-            {
-                kind: 'configure',
-                commandId: 'parity-configure',
-                label: 'Configure provider parity run',
-                config: {
-                    runId: options.runId ?? 'rallar-provider-parity-run',
-                    agentId: options.agentId ?? 'visible-agent-local',
-                    environment: options.environment ?? 'local',
-                    apiBaseUrl: options.apiBaseUrl ?? 'https://api.example.invalid',
-                    actor: options.actor ?? 'alice',
-                    sessionId: options.sessionId ?? 'alice-session',
-                    roomId,
-                    transport,
-                    rallar: {
-                        ...demoRallarAuth,
-                        ...(options.rallar ?? {})
-                    },
-                    ...(options.browser ? { browser: options.browser } : {}),
-                    control: {
-                        providerMode: options.providerMode ?? 'simulated',
-                        parity: true,
-                        ...(options.control ?? {})
-                    },
-                    defaults: {
-                        timeoutMs,
-                        connection
-                    }
-                },
-                metadata: {
-                    parity: parityMetadata('configure')
-                }
-            },
-            {
-                kind: 'rtc.connect',
-                commandId: 'parity-connect',
-                label: 'Connect provider parity RTC client',
-                connection,
-                actor: options.actor ?? 'alice',
-                roomId,
-                transport,
-                timeoutMs,
-                rallar: {
-                    sessionId: options.sessionId ?? 'alice-session'
-                },
-                metadata: {
-                    parity: parityMetadata('connect', {
-                        expectedConnections: [connection],
-                        runnerAction: 'connect'
-                    })
-                }
-            },
-            {
-                kind: 'rtc.send',
-                commandId: 'parity-send-direct',
-                label: 'Send provider parity direct payload',
-                connection,
-                transport,
-                timeoutMs,
-                send: parityPayload(transport, 'direct', roomId, {
-                    sequence: 1,
-                    kind: 'direct'
-                }, directPeerIds),
-                metadata: {
-                    parity: parityMetadata('send.direct', {
-                        deliveryMode: 'direct',
-                        expectedConnections: directExpectedConnections,
-                        targetPeerIds: directPeerIds,
-                        runnerAction: 'send'
-                    })
-                }
-            },
-            {
-                kind: 'rtc.send',
-                commandId: 'parity-send-multicast',
-                label: 'Send provider parity multicast payload',
-                connection,
-                transport,
-                timeoutMs,
-                send: parityPayload(transport, 'multicast', roomId, {
-                    sequence: 2,
-                    kind: 'multicast'
-                }, multicastPeerIds),
-                metadata: {
-                    parity: parityMetadata('send.multicast', {
-                        deliveryMode: 'multicast',
-                        expectedConnections: multicastExpectedConnections,
-                        targetPeerIds: multicastPeerIds,
-                        runnerAction: 'send'
-                    })
-                }
-            },
-            {
-                kind: 'rtc.send',
-                commandId: 'parity-send-broadcast',
-                label: 'Send provider parity broadcast payload',
-                connection,
-                transport,
-                timeoutMs,
-                send: parityPayload(transport, 'broadcast', roomId, {
-                    sequence: 3,
-                    kind: 'broadcast'
-                }, []),
-                metadata: {
-                    parity: parityMetadata('send.broadcast', {
-                        deliveryMode: 'broadcast',
-                        expectedConnections: broadcastExpectedConnections,
-                        runnerAction: 'send'
-                    })
-                }
-            },
-            {
-                kind: 'health',
-                commandId: 'parity-health',
-                label: 'Collect provider parity health',
-                metadata: {
-                    parity: parityMetadata('health')
-                }
-            },
-            {
-                kind: 'close',
-                commandId: 'parity-close',
-                label: 'Close provider parity runtime',
-                metadata: {
-                    parity: parityMetadata('close', {
-                        expectedConnections: [connection],
-                        runnerAction: 'close'
-                    })
-                }
-            },
-            {
-                kind: 'reset',
-                commandId: 'parity-reset',
-                label: 'Reset provider parity runtime',
-                metadata: {
-                    parity: parityMetadata('reset')
-                }
-            }
+            toParityConfigureCommand(context),
+            toParityConnectCommand(context),
+            ...toParitySendCommands(context),
+            ...toParityCompletionCommands(context.connection)
         ]
     };
 }
+function toParityConfigureCommand(context: ParityRecipeContext): RallarBlackBoxTestCommand {
+    const { options, roomId, transport, timeoutMs, connection } = context;
+    const demoRallarAuth = options.includeDemoAuth === false
+        ? {}
+        : { username: 'alice', password: 'local-demo-password', token: 'local-demo-token' };
+    return {
+        kind: 'configure',
+        commandId: 'parity-configure',
+        label: 'Configure provider parity run',
+        config: {
+            runId: options.runId ?? 'rallar-provider-parity-run',
+            agentId: options.agentId ?? 'visible-agent-local',
+            environment: options.environment ?? 'local',
+            apiBaseUrl: options.apiBaseUrl ?? 'https://api.example.invalid',
+            actor: options.actor ?? 'alice',
+            sessionId: options.sessionId ?? 'alice-session',
+            roomId,
+            transport,
+            rallar: { ...demoRallarAuth, ...(options.rallar ?? {}) },
+            ...(options.browser ? { browser: options.browser } : {}),
+            control: { providerMode: options.providerMode ?? 'simulated', parity: true, ...(options.control ?? {}) },
+            defaults: { timeoutMs, connection }
+        },
+        metadata: { parity: toParityMetadata('configure') }
+    };
+}
+function toParityConnectCommand(context: ParityRecipeContext): RallarBlackBoxTestCommand {
+    const { options, roomId, transport, timeoutMs, connection } = context;
+    return {
+        kind: 'rtc.connect',
+        commandId: 'parity-connect',
+        label: 'Connect provider parity RTC client',
+        connection,
+        actor: options.actor ?? 'alice',
+        roomId,
+        transport,
+        timeoutMs,
+        rallar: { sessionId: options.sessionId ?? 'alice-session' },
+        metadata: {
+            parity: toParityMetadata('connect', { expectedConnections: [connection], runnerAction: 'connect' })
+        }
+    };
+}
+interface ParitySendTarget {
+    readonly mode: RallarBlackBoxParityDeliveryMode;
+    readonly peers: readonly string[];
+    readonly expected: readonly string[];
+}
+function toParitySendCommands(context: ParityRecipeContext): readonly RallarBlackBoxTestCommand[] {
+    const { options, connection, transport, timeoutMs, roomId } = context;
+    const targets: readonly ParitySendTarget[] = [
+        {
+            mode: 'direct',
+            peers: toNonEmptyStrings(options.directPeerIds ?? DEFAULT_DIRECT_PEER_IDS),
+            expected: toNonEmptyStrings(options.directExpectedConnections ?? [connection])
+        },
+        {
+            mode: 'multicast',
+            peers: toNonEmptyStrings(options.multicastPeerIds ?? DEFAULT_MULTICAST_PEER_IDS),
+            expected: toNonEmptyStrings(options.multicastExpectedConnections)
+        },
+        { mode: 'broadcast', peers: [], expected: toNonEmptyStrings(options.broadcastExpectedConnections) }
+    ];
+    return targets.map(({ mode, peers, expected }, index) => ({
+        kind: 'rtc.send',
+        commandId: `parity-send-${mode}`,
+        label: `Send provider parity ${mode} payload`,
+        connection,
+        transport,
+        timeoutMs,
+        send: toParityPayload({ transport, deliveryMode: mode, roomId, sequence: index + 1, peerIds: peers }),
+        metadata: {
+            parity: toParityMetadata(`send.${mode}`, {
+                deliveryMode: mode,
+                expectedConnections: expected,
+                ...(mode === 'broadcast' ? {} : { targetPeerIds: peers }),
+                runnerAction: 'send'
+            })
+        }
+    }));
+}
+function toParityCompletionCommands(connection: string): readonly RallarBlackBoxTestCommand[] {
+    return [
+        {
+            kind: 'health',
+            commandId: 'parity-health',
+            label: 'Collect provider parity health',
+            metadata: { parity: toParityMetadata('health') }
+        },
+        {
+            kind: 'close',
+            commandId: 'parity-close',
+            label: 'Close provider parity runtime',
+            metadata: {
+                parity: toParityMetadata('close', { expectedConnections: [connection], runnerAction: 'close' })
+            }
+        },
+        {
+            kind: 'reset',
+            commandId: 'parity-reset',
+            label: 'Reset provider parity runtime',
+            metadata: { parity: toParityMetadata('reset') }
+        }
+    ];
+}
 
-function parityFromCommand(command: RallarBlackBoxTestCommand): RallarBlackBoxParityCommandMetadata | undefined {
+function toParityFromCommand(command: RallarBlackBoxTestCommand): RallarBlackBoxParityCommandMetadata | undefined {
     const metadata = command.metadata?.parity;
     return metadata && typeof metadata === 'object' && !Array.isArray(metadata)
         ? metadata as RallarBlackBoxParityCommandMetadata
         : undefined;
 }
 
-function configCommands(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestConfig[] {
+function toConfigCommands(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestConfig[] {
     return recipe.commands
         .filter((command): command is Extract<RallarBlackBoxTestCommand, { kind: 'configure'; }> =>
             command.kind === 'configure'
@@ -387,41 +349,43 @@ function configCommands(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCon
         .map((command) => command.config);
 }
 
-function firstConfig(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestConfig {
-    return configCommands(recipe)[0] ?? {};
+function toFirstConfig(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestConfig {
+    return toConfigCommands(recipe)[0] ?? {};
 }
 
-function commandId(command: RallarBlackBoxTestCommand, fallback: string): string {
+function toCommandId(command: RallarBlackBoxTestCommand, fallback: string): string {
     return command.commandId ?? fallback;
 }
 
-function defaultConnection(config: RallarBlackBoxTestConfig): string {
+function toDefaultConnection(config: RallarBlackBoxTestConfig): string {
     const configured = config.defaults?.connection;
     return typeof configured === 'string' && configured.length > 0
         ? configured
         : DEFAULT_CONNECTION;
 }
 
-function operationName(operation: RallarBlackBoxParityOperation): string {
+function toOperationName(operation: RallarBlackBoxParityOperation): string {
     return operation
         .split('.')
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join('');
 }
 
-function runnerName(operation: RallarBlackBoxParityOperation, commandIdValue: string): string {
+function toRunnerName(operation: RallarBlackBoxParityOperation, commandIdValue: string): string {
     const compactId = commandIdValue
         .replace(/^parity-/, '')
         .replace(/[^a-zA-Z0-9]+(.)/g, (_match, next: string) => next.toUpperCase());
-    return `parity${operationName(operation)}${compactId ? `_${compactId}` : ''}`;
+    return `parity${toOperationName(operation)}${compactId ? `_${compactId}` : ''}`;
 }
 
-function runnerInteraction(
-    name: string,
-    request: Readonly<Record<string, unknown>>,
-    response: Readonly<Record<string, unknown>>,
-    parity: RallarBlackBoxParityCommandMetadata
-): Record<string, unknown> {
+interface RunnerInteractionInput {
+    readonly name: string;
+    readonly request: Readonly<Record<string, unknown>>;
+    readonly response: Readonly<Record<string, unknown>>;
+    readonly parity: RallarBlackBoxParityCommandMetadata;
+}
+function toRunnerInteraction(input: RunnerInteractionInput): Record<string, unknown> {
+    const { name, request, response, parity } = input;
     return {
         RTC: {
             request: {
@@ -436,23 +400,25 @@ function runnerInteraction(
     };
 }
 
-function runnerRequestBase(
-    provider: RallarBlackBoxRunnerProviderName,
-    command: RallarBlackBoxTestCommand,
-    config: RallarBlackBoxTestConfig,
-    interactionExecutionNumber: number,
-    scenarioExecutionNumber: number
-): Record<string, unknown> {
+interface RunnerRequestBaseInput {
+    readonly provider: RallarBlackBoxRunnerProviderName;
+    readonly command: RallarBlackBoxTestCommand;
+    readonly config: RallarBlackBoxTestConfig;
+    readonly interactionExecutionNumber: number;
+    readonly scenarioExecutionNumber: number;
+}
+function toRunnerRequestBase(input: RunnerRequestBaseInput): Record<string, unknown> {
+    const { provider, command, config, interactionExecutionNumber, scenarioExecutionNumber } = input;
     const connection = 'connection' in command && typeof command.connection === 'string'
         ? command.connection
-        : defaultConnection(config);
+        : toDefaultConnection(config);
     const timeoutMs = 'timeoutMs' in command && typeof command.timeoutMs === 'number'
         ? command.timeoutMs
         : config.defaults?.timeoutMs;
 
     return {
         provider,
-        commandId: commandId(command, `parity-${interactionExecutionNumber}`),
+        commandId: toCommandId(command, `parity-${interactionExecutionNumber}`),
         connection,
         actor: 'actor' in command && typeof command.actor === 'string'
             ? command.actor
@@ -470,7 +436,7 @@ function runnerRequestBase(
 }
 
 function toExpectedConnections(command: RallarBlackBoxTestCommand): readonly string[] {
-    return parityFromCommand(command)?.expectedConnections ?? [];
+    return toParityFromCommand(command)?.expectedConnections ?? [];
 }
 
 function usesEventShapedRtcMessages(
@@ -484,7 +450,7 @@ function usesEventShapedRtcMessages(
     return provider === 'rallar-remote-browser';
 }
 
-function expectedRtcMessage(
+function toExpectedRtcMessage(
     provider: RallarBlackBoxRunnerProviderName,
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>,
     messageShape?: RallarBlackBoxRunnerParityOptions['messageShape']
@@ -495,7 +461,7 @@ function expectedRtcMessage(
         : expected;
 }
 
-function sendResponse(
+function toSendResponse(
     provider: RallarBlackBoxRunnerProviderName,
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>,
     messageShape?: RallarBlackBoxRunnerParityOptions['messageShape']
@@ -508,19 +474,21 @@ function sendResponse(
     return {
         connection: expectedConnections[0],
         withinMs: command.timeoutMs,
-        message: expectedRtcMessage(provider, command, messageShape)
+        message: toExpectedRtcMessage(provider, command, messageShape)
     };
 }
 
-function waitInteractions(
-    provider: RallarBlackBoxRunnerProviderName,
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>,
-    config: RallarBlackBoxTestConfig,
-    scenarioExecutionNumber: number,
-    nextInteractionNumber: number,
-    messageShape?: RallarBlackBoxRunnerParityOptions['messageShape']
-): readonly Record<string, unknown>[] {
-    const parity = parityFromCommand(command);
+interface WaitInteractionsInput {
+    readonly provider: RallarBlackBoxRunnerProviderName;
+    readonly command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>;
+    readonly config: RallarBlackBoxTestConfig;
+    readonly scenarioExecutionNumber: number;
+    readonly nextInteractionNumber: number;
+    readonly messageShape?: RallarBlackBoxRunnerParityOptions['messageShape'];
+}
+function toWaitInteractions(input: WaitInteractionsInput): readonly Record<string, unknown>[] {
+    const { provider, command, config, scenarioExecutionNumber, nextInteractionNumber, messageShape } = input;
+    const parity = toParityFromCommand(command);
     if (!parity) {
         return [];
     }
@@ -539,18 +507,18 @@ function waitInteractions(
     return expectedConnections.map((connection, index) => {
         const operation = receiveOperation satisfies RallarBlackBoxParityOperation;
         const interactionNumber = nextInteractionNumber + index;
-        const waitParity = parityMetadata(operation, {
+        const waitParity = toParityMetadata(operation, {
             deliveryMode: parity.deliveryMode,
             expectedConnections: [connection],
             targetPeerIds: parity.targetPeerIds,
             runnerAction: 'wait'
         });
-        return runnerInteraction(
-            runnerName(operation, `${commandId(command, 'send')}-wait-${index + 1}`),
-            {
+        return toRunnerInteraction({
+            name: toRunnerName(operation, `${toCommandId(command, 'send')}-wait-${index + 1}`),
+            request: {
                 provider,
                 action: 'wait',
-                commandId: `${commandId(command, 'send')}-wait-${index + 1}`,
+                commandId: `${toCommandId(command, 'send')}-wait-${index + 1}`,
                 connection,
                 actor: config.actor,
                 roomId: config.roomId,
@@ -559,13 +527,13 @@ function waitInteractions(
                 scenarioExecutionNumber,
                 interactionExecutionNumber: interactionNumber
             },
-            {
+            response: {
                 connection,
                 withinMs: command.timeoutMs,
-                message: expectedRtcMessage(provider, command, messageShape)
+                message: toExpectedRtcMessage(provider, command, messageShape)
             },
-            waitParity
-        );
+            parity: waitParity
+        });
     });
 }
 
@@ -575,123 +543,96 @@ export function toRallarBlackBoxRunnerParityInteractions(
 ): RallarBlackBoxRunnerParityConversion {
     const provider = options.provider ?? 'rallar-remote-browser';
     const scenarioExecutionNumber = options.scenarioExecutionNumber ?? 1;
-    const config = firstConfig(recipe);
+    const config = toFirstConfig(recipe);
     const interactions: Record<string, unknown>[] = [];
     const omittedCommands: RallarBlackBoxRunnerParityOmittedCommand[] = [];
-    let interactionExecutionNumber = 1;
-
-    recipe.commands.forEach((command, commandIndex) => {
-        const parity = parityFromCommand(command);
-        const operation = parity?.operation ?? operationFromCommand(command);
+    for (const [commandIndex, command] of recipe.commands.entries()) {
+        const operation = toParityFromCommand(command)?.operation ?? toOperationFromCommand(command);
         if (command.kind === 'configure' || command.kind === 'health' || command.kind === 'reset') {
             omittedCommands.push({
-                commandId: commandId(command, `${command.kind}-${commandIndex + 1}`),
+                commandId: toCommandId(command, `${command.kind}-${commandIndex + 1}`),
                 kind: command.kind,
                 operation,
                 reason: command.kind === 'configure'
                     ? 'runner RTC providers receive resolved config on each RTC request'
                     : 'runner RTC provider vocabulary has no first-class command for this SPA operation'
             });
-            return;
         }
-
-        if (command.kind === 'rtc.connect') {
-            const request = runnerRequestBase(
-                provider,
-                command,
-                config,
-                interactionExecutionNumber,
-                scenarioExecutionNumber
-            );
-            interactions.push(runnerInteraction(
-                runnerName(operation, commandId(command, 'connect')),
-                {
-                    ...request,
-                    action: 'connect',
-                    rallar: {
-                        ...(config.rallar ?? {}),
-                        ...(command.rallar ?? {}),
-                        ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {})
-                    }
-                },
-                {},
-                parity ?? parityMetadata('connect', {
-                    expectedConnections: [String(request.connection)],
-                    runnerAction: 'connect'
-                })
-            ));
-            interactionExecutionNumber += 1;
-            return;
-        }
-
-        if (command.kind === 'rtc.send') {
-            const request = runnerRequestBase(
-                provider,
-                command,
-                config,
-                interactionExecutionNumber,
-                scenarioExecutionNumber
-            );
-            interactions.push(runnerInteraction(
-                runnerName(operation, commandId(command, 'send')),
-                {
-                    ...request,
-                    action: 'send',
-                    send: command.send
-                },
-                sendResponse(provider, command, options.messageShape),
-                parity ?? parityMetadata('send.direct', {
-                    runnerAction: 'send'
-                })
-            ));
-            interactionExecutionNumber += 1;
-
-            if (options.includeReceiveWaits !== false) {
-                const waits = waitInteractions(
+        else if (command.kind === 'rtc.connect' || command.kind === 'rtc.send' || command.kind === 'close') {
+            interactions.push(
+                ...toRunnerCommandInteractions({
                     provider,
                     command,
                     config,
+                    interactionExecutionNumber: interactions.length + 1,
                     scenarioExecutionNumber,
-                    interactionExecutionNumber,
-                    options.messageShape
-                );
-                interactions.push(...waits);
-                interactionExecutionNumber += waits.length;
-            }
-            return;
-        }
-
-        if (command.kind === 'close') {
-            const request = runnerRequestBase(
-                provider,
-                command,
-                config,
-                interactionExecutionNumber,
-                scenarioExecutionNumber
-            );
-            interactions.push(runnerInteraction(
-                runnerName(operation, commandId(command, 'close')),
-                {
-                    ...request,
-                    action: 'close'
-                },
-                {},
-                parity ?? parityMetadata('close', {
-                    expectedConnections: [String(request.connection)],
-                    runnerAction: 'close'
+                    options
                 })
-            ));
-            interactionExecutionNumber += 1;
+            );
         }
+    }
+    return { interactions, omittedCommands };
+}
+interface RunnerCommandInteractionsInput extends RunnerRequestBaseInput {
+    readonly command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' | 'close'; }>;
+    readonly options: RallarBlackBoxRunnerParityOptions;
+}
+function toRunnerCommandInteractions(input: RunnerCommandInteractionsInput): readonly Record<string, unknown>[] {
+    const { command, provider, config, options, scenarioExecutionNumber, interactionExecutionNumber } = input;
+    const request = toRunnerRequestBase(input);
+    const parity = toParityFromCommand(command);
+    const operation = parity?.operation ?? toOperationFromCommand(command);
+    const action = command.kind === 'rtc.connect' ? 'connect' : command.kind === 'rtc.send' ? 'send' : 'close';
+    const first = toRunnerInteraction({
+        name: toRunnerName(operation, toCommandId(command, action)),
+        request: toRunnerRequest(command, request, config),
+        response: command.kind === 'rtc.send' ? toSendResponse(provider, command, options.messageShape) : {},
+        parity: parity ??
+            toParityMetadata(action === 'send' ? 'send.direct' : action, {
+                ...(action === 'send' ? {} : { expectedConnections: [String(request.connection)] }),
+                runnerAction: action
+            })
     });
-
-    return {
-        interactions,
-        omittedCommands
-    };
+    if (command.kind !== 'rtc.send' || options.includeReceiveWaits === false) {
+        return [first];
+    }
+    return [
+        first,
+        ...toWaitInteractions({
+            provider,
+            command,
+            config,
+            scenarioExecutionNumber,
+            nextInteractionNumber: interactionExecutionNumber + 1,
+            messageShape: options.messageShape
+        })
+    ];
+}
+function toRunnerRequest(
+    command: RunnerCommandInteractionsInput['command'],
+    request: Readonly<Record<string, unknown>>,
+    config: RallarBlackBoxTestConfig
+): Readonly<Record<string, unknown>> {
+    if (command.kind === 'rtc.connect') {
+        return {
+            ...request,
+            action: 'connect',
+            rallar: {
+                ...(config.rallar ?? {}),
+                ...(command.rallar ?? {}),
+                ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {})
+            }
+        };
+    }
+    if (command.kind === 'rtc.send') {
+        return { ...request, action: 'send', send: command.send };
+    }
+    return { ...request, action: 'close' };
 }
 
-function operationFromCommand(command: RallarBlackBoxTestCommand): RallarBlackBoxParityOperation {
+function toOperationFromCommand(
+    command: Pick<RallarBlackBoxTestCommand, 'kind' | 'commandId'>
+): RallarBlackBoxParityOperation {
     if (command.kind === 'configure') {
         return 'configure';
     }
@@ -720,14 +661,11 @@ function operationFromCommand(command: RallarBlackBoxTestCommand): RallarBlackBo
     return 'configure';
 }
 
-function operationFromResult(result: RallarBlackBoxTestResult): string {
-    return operationFromCommand({
-        kind: result.kind,
-        commandId: result.commandId
-    } as RallarBlackBoxTestCommand);
+function toOperationFromResult(result: RallarBlackBoxTestResult): string {
+    return toOperationFromCommand(result);
 }
 
-function operationFromRunnerResult(result: Record<string, unknown>): string {
+function toOperationFromRunnerResult(result: Record<string, unknown>): string {
     const name = typeof result.name === 'string' ? result.name.toLowerCase() : '';
     if (name.includes('receive') && name.includes('broadcast')) {
         return 'receive.broadcast';
@@ -756,11 +694,11 @@ function operationFromRunnerResult(result: Record<string, unknown>): string {
     return name || 'unknown';
 }
 
-function stepKey(operation: string, commandId: string | undefined, index: number): string {
+function toStepKey(operation: string, commandId: string | undefined, index: number): string {
     return commandId ? `${operation}:${commandId}` : `${operation}:${index + 1}`;
 }
 
-function normalizeStatus(value: unknown): 'ok' | 'failed' | 'cancelled' | 'skipped' {
+function toParityStatus(value: unknown): 'ok' | 'failed' | 'cancelled' | 'skipped' {
     if (value === 'SUCCESS' || value === 'ok' || value === true) {
         return 'ok';
     }
@@ -793,18 +731,18 @@ export function normalizeRallarBlackBoxRuntimeParityReport(
         result: RallarBlackBoxTestResult,
         index: number
     ): RallarBlackBoxProviderParityStep => {
-        const operation = operationFromResult(result);
+        const operation = toOperationFromResult(result);
         return {
-            key: stepKey(operation, result.commandId, index),
+            key: toStepKey(operation, result.commandId, index),
             operation,
-            status: normalizeStatus(result.status),
+            status: toParityStatus(result.status),
             commandId: result.commandId,
             kind: result.kind,
             comparable: {
                 operation,
                 commandId: result.commandId,
                 kind: result.kind,
-                status: normalizeStatus(result.status)
+                status: toParityStatus(result.status)
             },
             providerSpecific: {
                 startedAtEpochMs: result.startedAtEpochMs,
@@ -838,7 +776,7 @@ export function normalizeBlackBoxRunnerParityReport(
     return {
         source: 'black-box-runner',
         steps: results.map((result, index): RallarBlackBoxProviderParityStep => {
-            const operation = operationFromRunnerResult(result);
+            const operation = toOperationFromRunnerResult(result);
             const actual = result.actual && typeof result.actual === 'object'
                 ? result.actual as Record<string, unknown>
                 : {};
@@ -848,9 +786,9 @@ export function normalizeBlackBoxRunnerParityReport(
                 ? result.commandId
                 : undefined;
             return {
-                key: stepKey(operation, commandIdValue, index),
+                key: toStepKey(operation, commandIdValue, index),
                 operation,
-                status: normalizeStatus(result.status),
+                status: toParityStatus(result.status),
                 commandId: commandIdValue,
                 kind: typeof result.transport === 'string' ? result.transport : undefined,
                 action: typeof result.action === 'string' ? result.action : undefined,
@@ -859,7 +797,7 @@ export function normalizeBlackBoxRunnerParityReport(
                 comparable: {
                     operation,
                     commandId: commandIdValue,
-                    status: normalizeStatus(result.status),
+                    status: toParityStatus(result.status),
                     action: result.action,
                     connection: result.connection,
                     transport: result.transport

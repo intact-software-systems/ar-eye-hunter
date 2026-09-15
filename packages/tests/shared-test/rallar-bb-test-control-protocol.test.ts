@@ -4,9 +4,9 @@ import {
     validateRallarBlackBoxTestCommand,
     type ControlCommandEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
-import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-function envelope(commandId: string, command: RallarBlackBoxTestCommand): ControlCommandEnvelope {
+function toControlEnvelope(commandId: string, command: RallarBlackBoxTestCommand): ControlCommandEnvelope {
     return {
         kind: 'command',
         protocolVersion: 1,
@@ -43,7 +43,7 @@ describe('rallar-bb-test control protocol', () => {
             timeoutMs: 5_000
         }
     ])('accepts $commandId', (command) => {
-        expect(validateRallarBlackBoxTestCommand(command as never)).toEqual({ ok: true });
+        expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
     });
 
     it.each([
@@ -75,7 +75,7 @@ describe('rallar-bb-test control protocol', () => {
             timeoutMs: 5_000
         }
     ])('rejects $commandId', (command) => {
-        expect(validateRallarBlackBoxTestCommand(command as never).ok).toBe(false);
+        expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
     });
 
     it('accepts the RTC diagnostics option on health commands', () => {
@@ -87,7 +87,7 @@ describe('rallar-bb-test control protocol', () => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'health',
             includeRtcDiagnostics: 'yes'
-        } as never)).toEqual({
+        })).toEqual({
             ok: false,
             error: 'health.includeRtcDiagnostics must be a boolean.'
         });
@@ -95,7 +95,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('accepts recipe.load containing rtc.connect readiness', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-readiness-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-readiness-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-readiness-1',
                 recipe: {
@@ -127,7 +127,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('rejects malformed rtc.connect readiness in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-readiness-invalid-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-readiness-invalid-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-readiness-invalid-1',
                 recipe: {
@@ -156,7 +156,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('accepts recipe.load containing rtc.stream', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-stream-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-stream-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-stream-1',
                 recipe: {
@@ -198,7 +198,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('rejects malformed rtc.stream in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-stream-invalid-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-stream-invalid-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-stream-invalid-1',
                 recipe: {
@@ -225,9 +225,10 @@ describe('rallar-bb-test control protocol', () => {
 
     it('accepts schema-supported loop thresholds in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-loop-thresholds', {
+            JSON.stringify(toControlEnvelope('recipe-load-loop-thresholds', {
                 kind: 'recipe.load',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'loop-thresholds',
                     commands: [{
                         kind: 'loop',
@@ -253,9 +254,10 @@ describe('rallar-bb-test control protocol', () => {
 
     it('rejects malformed loop thresholds in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-loop-thresholds-invalid', {
+            JSON.stringify(toControlEnvelope('recipe-load-loop-thresholds-invalid', {
                 kind: 'recipe.load',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'loop-thresholds-invalid',
                     commands: [{
                         kind: 'loop',
@@ -286,6 +288,6 @@ describe('rallar-bb-test control protocol', () => {
             kind: 'loop',
             commands: [{ kind: 'health' }],
             thresholds
-        } as never)).toEqual({ ok: false, error });
+        })).toEqual({ ok: false, error });
     });
 });

@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestTransport } from '../types.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestTransport } from '../rallar-black-box-test-contracts.ts';
 
 import type {
     RallarBlackBoxCompositeConformanceCaseId,
@@ -10,7 +10,7 @@ export const DEFAULT_CONNECTION = 'conformanceRtc';
 export const DEFAULT_WS_CONNECTION = 'conformanceWs';
 export const DEFAULT_ROOM_ID = 'rallar-conformance-room';
 
-export function configureCommand(
+export function toConfigureCommand(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): Extract<RallarBlackBoxTestCommand, { kind: 'configure'; }> {
@@ -28,7 +28,7 @@ export function configureCommand(
             transport: options.transport ?? 'realtime',
             rallar: {
                 apiBaseUrl: options.apiBaseUrl ?? 'http://localhost:8080',
-                wsBaseUrl: wsBaseUrl(options.apiBaseUrl ?? 'http://localhost:8080'),
+                wsBaseUrl: toWsBaseUrl(options.apiBaseUrl ?? 'http://localhost:8080'),
                 applicationId: options.applicationId ?? 'rallar-server',
                 workspaceId: options.workspaceId ?? 'default',
                 roomId: options.roomId ?? DEFAULT_ROOM_ID
@@ -38,25 +38,21 @@ export function configureCommand(
                 conformance: true
             },
             defaults: {
-                timeoutMs: timeoutMs(options),
+                timeoutMs: toTimeoutMs(options),
                 connection: options.connection ?? DEFAULT_CONNECTION
             },
             redaction: {
                 keys: ['password', 'accessToken', 'token']
             }
         },
-        metadata: commandMetadata(caseId, `${caseId}-configure`)
+        metadata: toCommandMetadata(caseId, `${caseId}-configure`)
     };
 }
 
-export function rtcConnectCommand(
-    caseId: RallarBlackBoxCompositeConformanceCaseId,
-    commandId: string,
-    connection: string,
-    roomId: string,
-    transport: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>,
-    options: RallarBlackBoxCompositeConformanceRecipeOptions
+export function toRtcConnectCommand(
+    input: ConformanceRtcConnectInput
 ): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }> {
+    const { caseId, commandId, connection, roomId, transport, options } = input;
     return {
         kind: 'rtc.connect',
         commandId,
@@ -64,53 +60,53 @@ export function rtcConnectCommand(
         actor: options.actor ?? 'alice',
         roomId,
         transport,
-        timeoutMs: timeoutMs(options),
-        ...scopeFields(options),
+        timeoutMs: toTimeoutMs(options),
+        ...toScopeFields(options),
         rallar: {
             sessionId: options.sessionId ?? 'alice-session',
             transport
         },
-        metadata: commandMetadata(caseId, commandId)
+        metadata: toCommandMetadata(caseId, commandId)
     };
 }
 
-export function statsCommand(
+export function toStatsCommand(
     commandId: string,
     caseId: RallarBlackBoxCompositeConformanceCaseId
 ): Extract<RallarBlackBoxTestCommand, { kind: 'stats'; }> {
     return {
         kind: 'stats',
         commandId,
-        metadata: commandMetadata(caseId, commandId)
+        metadata: toCommandMetadata(caseId, commandId)
     };
 }
 
-export function closeCommand(
+export function toCloseCommand(
     commandId: string,
     caseId: RallarBlackBoxCompositeConformanceCaseId
 ): Extract<RallarBlackBoxTestCommand, { kind: 'close'; }> {
     return {
         kind: 'close',
         commandId,
-        metadata: commandMetadata(caseId, commandId)
+        metadata: toCommandMetadata(caseId, commandId)
     };
 }
 
-export function recipeId(
+export function toRecipeId(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): string {
     return [options.recipeIdPrefix ?? 'composite-conformance', caseId].join('-');
 }
 
-export function timeoutMs(options: RallarBlackBoxCompositeConformanceRecipeOptions): number {
+export function toTimeoutMs(options: RallarBlackBoxCompositeConformanceRecipeOptions): number {
     return Number.isFinite(options.timeoutMs) && options.timeoutMs !== undefined &&
             options.timeoutMs > 0
         ? Math.round(options.timeoutMs)
         : DEFAULT_TIMEOUT_MS;
 }
 
-export function scopeFields(
+export function toScopeFields(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): Record<string, unknown> {
     return {
@@ -124,7 +120,7 @@ export function scopeFields(
     };
 }
 
-function wsBaseUrl(apiBaseUrl: string): string {
+function toWsBaseUrl(apiBaseUrl: string): string {
     try {
         const url = new URL(apiBaseUrl);
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -135,7 +131,7 @@ function wsBaseUrl(apiBaseUrl: string): string {
     }
 }
 
-export function recipeMetadata(
+export function toRecipeMetadata(
     caseId: RallarBlackBoxCompositeConformanceCaseId
 ): Record<string, unknown> {
     return {
@@ -146,7 +142,7 @@ export function recipeMetadata(
     };
 }
 
-export function commandMetadata(
+export function toCommandMetadata(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
     commandId: string
 ): Record<string, unknown> {
@@ -156,5 +152,53 @@ export function commandMetadata(
             caseId,
             commandId
         }
+    };
+}
+
+export interface ConformanceRtcConnectInput {
+    readonly caseId: RallarBlackBoxCompositeConformanceCaseId;
+    readonly commandId: string;
+    readonly connection: string;
+    readonly roomId: string;
+    readonly transport: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    readonly options: RallarBlackBoxCompositeConformanceRecipeOptions;
+}
+
+export interface ConformanceMessageProbeInput extends ConformanceRtcConnectInput {
+    readonly data: Readonly<Record<string, unknown>>;
+}
+
+export function toConformanceMessageProbe(
+    input: ConformanceMessageProbeInput
+): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }> {
+    return {
+        kind: 'rtc.send',
+        commandId: input.commandId,
+        connection: input.connection,
+        transport: input.transport,
+        timeoutMs: toTimeoutMs(input.options),
+        send: { data: input.data, roomId: input.roomId, ...toScopeFields(input.options) },
+        metadata: toCommandMetadata(input.caseId, input.commandId)
+    };
+}
+
+export interface ConformanceMessageWaitInput {
+    readonly caseId: RallarBlackBoxCompositeConformanceCaseId;
+    readonly commandId: string;
+    readonly timeoutMs: number;
+    readonly topic: string;
+    readonly absent?: true;
+}
+
+export function toConformanceMessageWait(
+    input: ConformanceMessageWaitInput
+): Extract<RallarBlackBoxTestCommand, { kind: 'wait'; }> {
+    return {
+        kind: 'wait',
+        commandId: input.commandId,
+        ...(input.absent === undefined ? {} : { absent: input.absent }),
+        timeoutMs: input.timeoutMs,
+        match: { kind: 'message', topic: 'rallar.conformance.message', payloadPath: 'data.topic', equals: input.topic },
+        metadata: toCommandMetadata(input.caseId, input.commandId)
     };
 }

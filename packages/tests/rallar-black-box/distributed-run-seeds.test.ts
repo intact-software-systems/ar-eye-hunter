@@ -10,7 +10,7 @@ import {
     distributedRunSeedIdFromValue
 } from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>[0]) {
     const seed = createSyntheticDistributedRunSeed(seedId);
@@ -96,7 +96,17 @@ describe('synthetic distributed run seeds', () => {
     });
 
     it('derives pass-with-review wording from evidence warning seeds', () => {
-        const { verdict } = verdictFor('passed-warnings');
+        const { verdict, seed, monitor } = verdictFor('passed-warnings');
+        const diagnostic = seed.controlRun.events.find((event) => event.kind === 'diagnostic');
+        expect(diagnostic?.payload).toMatchObject({
+            diagnosticSchemaVersion: 1,
+            diagnosticTypeId: 'rallar.browser.realtime.synthetic_seed',
+            topic: 'rallar.browser.realtime.synthetic_seed',
+            severity: 'warning',
+            transport: 'messages.rtc',
+            message: 'Synthetic RTC evidence includes a warning diagnostic.'
+        });
+        expect(monitor.runtimeDiagnostics).toHaveLength(1);
 
         expect(verdict).toMatchObject({
             title: 'Outcome passed; evidence needs review',

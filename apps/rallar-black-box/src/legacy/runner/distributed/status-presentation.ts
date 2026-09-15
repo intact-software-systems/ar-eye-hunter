@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestSeverity } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestSeverity } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { DistributedRunAnalysisReport, DistributedRunProgressStatus } from '../../../distributed-recipes.ts';
 
 const RTC_STREAM_PERFORMANCE_CATEGORY = 'rtc-stream-performance';

@@ -1,5 +1,5 @@
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { eventPayloadDetails, isRallarBrowserEvent } from '../diagnostics/events/event-presentation.ts';
 import { optionalNumber } from '../shared/finite-number.ts';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';

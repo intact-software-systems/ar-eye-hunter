@@ -10,7 +10,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestHttpRequestCommand
-} from '../../shared-test/rallar-bb-test/types.ts';
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export namespace FakeRemoteBrowserControlServer {
     export type CommandResultValue =
