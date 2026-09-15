@@ -3,6 +3,7 @@ import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browse
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -41,6 +42,13 @@ function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined) {
 function sendThroughProductionSender(maxPayloadBytes: number): void {
     const sender = createBrowserMessageSenderFixture(maxPayloadBytes, facade.deliveries).sender;
     facade.behavior.typedSend.mockImplementation(async (payload) => await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }));
+}
+
+/** One live send per registry entry, so the send before them is the oldest one the registry evicts. */
+async function sendPastTheEntryBound(runtime: BlackBoxRallarRuntime): Promise<void> {
+    for (let index = 0; index < BROWSER_DELIVERY_RETENTION.maxEntries; index += 1) {
+        await runtime.sendMessage({ ...send, handleId: `h-${index}`, payload: index });
+    }
 }
 
 async function readEveryLedgerView(
@@ -197,7 +205,7 @@ it('reads a handle the session registry dropped after terminal retention as unob
     expect(await runtime.sendMessage({ ...send, handleId: 'h-old', payload: { text: 'too large' } })).toMatchObject({ status: 'rejected' });
     expect(await runtime.readReceipts({ ...query, handleId: 'h-old' })).toMatchObject({ state: 'rejected', reason: 'Payload exceeds 8 bytes.' });
 
-    vi.setSystemTime(61_001);
+    vi.setSystemTime(1_000 + BROWSER_DELIVERY_RETENTION.retainTerminalMs + 1);
     await runtime.sendMessage({ ...send, handleId: 'h-new', payload: true });
 
     expect(await readEveryLedgerView(runtime, 'h-old')).toEqual(Array(3).fill({ handleId: 'h-old', ...unknownObservation }));
@@ -209,12 +217,21 @@ it('reads a live handle the session registry evicted past its entry bound as uno
     sendThroughProductionSender(64);
     await runtime.connect(connection);
     await runtime.sendMessage({ ...send, handleId: 'h-first', payload: true });
-    for (let index = 0; index < 512; index += 1) {
-        await runtime.sendMessage({ ...send, handleId: `h-${index}`, payload: index });
-    }
+    await sendPastTheEntryBound(runtime);
 
     expect(await readEveryLedgerView(runtime, 'h-first')).toEqual(Array(3).fill({ handleId: 'h-first', ...unknownObservation }));
-    expect(await runtime.readReceipts({ ...query, handleId: 'h-511' })).toMatchObject({ state: 'queued' });
+    expect(await runtime.readReceipts({ ...query, handleId: `h-${BROWSER_DELIVERY_RETENTION.maxEntries - 1}` })).toMatchObject({ state: 'queued' });
+});
+
+it('reads a handle the session registry evicted while an observe waited on it as unobservable', async () => {
+    const runtime = await loadRuntime();
+    sendThroughProductionSender(64);
+    await runtime.connect(connection);
+    await runtime.sendMessage({ ...send, handleId: 'h-first', payload: true });
+    const observing = runtime.observeDelivery({ ...query, handleId: 'h-first', state: ['acknowledged'], timeoutMs: 1_000 });
+    await sendPastTheEntryBound(runtime);
+
+    expect(await observing).toEqual({ handleId: 'h-first', ...unknownObservation });
 });
 
 it('waits the 5,000 ms default admission budget when a send names neither timeout nor deadline', async () => {

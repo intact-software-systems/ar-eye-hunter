@@ -1,3 +1,4 @@
+import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
@@ -20,7 +21,7 @@ interface BrowserMessageSenderFixture {
 
 export function createBrowserMessageSenderFixture(
     maxPayloadBytes = 64 * 1024,
-    registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} })
+    registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} })
 ): BrowserMessageSenderFixture {
     const middleware = createDefaultApiMiddlewareTestDouble();
     let activeMiddleware = middleware;

@@ -11,6 +11,7 @@ import {
     type BlackBoxBrowserRtcDependency,
     type BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
     RallarMessageHandle,
@@ -459,12 +460,11 @@ export function openFacadeDelivery(
     return handle;
 }
 
-/** The session registry's own bounds from browser-delivery-composition.ts, driven by the faked clock. */
+/** The session registry's own bounds, driven by the faked clock. */
 function createFacadeDeliveryRegistry(): BrowserRallarDeliveryRegistry {
     return new BrowserRallarDeliveryRegistry({
         nowMs: () => Date.now(),
-        retainTerminalMs: 60_000,
-        maxEntries: 512,
+        ...BROWSER_DELIVERY_RETENTION,
         cancel: (msgId) => {
             facadeRecords.cancelledMessageIds.push(msgId);
         }

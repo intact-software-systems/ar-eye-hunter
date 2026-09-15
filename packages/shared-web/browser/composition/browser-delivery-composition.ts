@@ -2,11 +2,13 @@ import { browserTransportRuntime } from '@shared-web/browser/connection/browser-
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 
+/** One browser-wide bound matches the existing shared session/carrier work owner. */
+export const BROWSER_DELIVERY_RETENTION = { retainTerminalMs: 60_000, maxEntries: 512 } as const;
+
 const nowMs = Date.now;
 const deliveries = new BrowserRallarDeliveryRegistry({
     nowMs,
-    retainTerminalMs: 60_000,
-    maxEntries: 512,
+    ...BROWSER_DELIVERY_RETENTION,
     cancel: (msgId) => {
         const middleware = browserTransportRuntime.readMiddleware()?.middleware;
         try {
@@ -19,5 +21,4 @@ const deliveries = new BrowserRallarDeliveryRegistry({
 });
 const sessionDeliveries = new BrowserSessionDeliveries(deliveries, browserTransportRuntime);
 
-/** One browser-wide bound matches the existing shared session/carrier work owner. */
 export const browserDeliveryComposition = { nowMs, deliveries, sessionDeliveries };

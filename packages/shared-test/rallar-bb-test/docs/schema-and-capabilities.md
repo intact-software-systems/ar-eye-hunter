@@ -159,11 +159,16 @@ once the deadline has already passed), independently of the message TTL.
 `messages.cancel` stops the owner's remaining attempts for a live handle;
 it preserves terminal evidence and cannot recall a submitted frame. Handles
 survive transport reconnects. The ledger reads every handle through the browser
-session's delivery registry, which alone bounds how long an observation is kept
-(512 entries, and 60 seconds after a terminal state). Once the registry drops a
-handle, and after a reload, observe, receipts, and cancel return `unobservable`
-with no attempts or hop lists, never an invented failure. The ledger projects
-handles and performs no admission-storage polling.
+session's delivery registry, which alone bounds how long an observation is kept.
+The registry applies its bounds only when a later send opens a new delivery, and no
+timer evicts anything: that send drops terminal handles whose terminal state is more
+than 60 seconds old, then drops the oldest handles beyond 512 entries (terminal ones
+first, and a live one ends `unobservable` for its own waiters). A terminal handle
+therefore stays readable until the first send after its 60 seconds. Once the
+registry drops a handle, including while an observe waits on it, and after a
+reload, observe, receipts, and cancel return `unobservable` with no attempts or
+hop lists, never an invented failure. The ledger projects handles and performs no
+admission-storage polling.
 
 `messages.received` counts inbound messages of a `typeId` (optionally one
 `msgId`). It scans the **whole** inbound event log rather than a trailing
