@@ -14,7 +14,7 @@ import type { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from 
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
 import { decodeBrowserCommandRecord, decodeRtcTransport, toPositiveInteger } from './browser-command-values.ts';
-import { decodeRtcSendPayload, toRallarConnectionConfig, toScopedRtcSend } from './browser-rallar-command-input.ts';
+import { toRallarConnectionConfig } from './browser-rallar-command-input.ts';
 import {
     decodeRtcSendResult,
     toRtcSendFailure,
@@ -28,6 +28,7 @@ import {
     type RtcConnectReadinessResult
 } from './rtc-connect-readiness.ts';
 import { replaceRtcReadyPeerPlaceholders, requiresRtcReadyPeerPlaceholder } from './rtc-ready-peer-placeholders.ts';
+import { decodeRtcSendPayload, toScopedRtcSend } from './to-scoped-rtc-send.ts';
 
 type RtcConnectCommand = Extract<CommandWithId, { kind: 'rtc.connect'; }>;
 type RtcSendCommand = Extract<CommandWithId, { kind: 'rtc.send'; }>;

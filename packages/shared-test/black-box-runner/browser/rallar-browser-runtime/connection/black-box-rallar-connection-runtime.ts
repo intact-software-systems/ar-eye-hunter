@@ -13,6 +13,8 @@ import {
 } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarHealthDiagnostics,
+    BlackBoxRallarHealthInput,
     BlackBoxRallarStorageCountersInput
 } from '../black-box-rallar-operation-contracts.ts';
 import {
@@ -76,6 +78,16 @@ export namespace BlackBoxRallarConnectionRuntime {
         readonly delay: (ms: number) => Promise<void>;
     }
 
+    export type MessagingMethod =
+        | 'send'
+        | 'sendWs'
+        | 'sendMessage'
+        | 'observeDelivery'
+        | 'cancelDelivery'
+        | 'readReceipts'
+        | 'injectFault'
+        | 'readStorageCounters';
+
     export interface Installation {
         readonly runtime: BlackBoxRallarRuntime;
         emitRuntimeLoaded(): void;
@@ -129,13 +141,32 @@ export class BlackBoxRallarConnectionRuntime {
         });
     }
 
-    /** The window surface is the page boundary: each command input is decoded here before any owner sees it. */
     installation(): BlackBoxRallarConnectionRuntime.Installation {
         const { authentication, diagnostics, rallar } = this.#foundation;
-        const { crdt, director, formation, rtcSend, wsSend, deliveryLedger } = this.#controllers;
+        const { crdt, director, formation } = this.#controllers;
         const runtime: BlackBoxRallarRuntime = {
             authenticate: authentication.authenticate,
             connect: this.#connectOperation.connect,
+            ...this.#messagingSurface(),
+            refreshRoom: async (options) => await this.#refreshRoom(options),
+            waitForRoom: async (options) => await this.#waitForRoom(options),
+            readRtcMessageNacks: (messageId) => rallar.readRtcMessageNacks(messageId),
+            crdt,
+            director,
+            formation,
+            close: this.#closeOperation.close,
+            health: async (input = {}) => await this.#readHealth(input)
+        };
+        return {
+            runtime,
+            emitRuntimeLoaded: () => diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.runtime_loaded' })
+        };
+    }
+
+    /** The window surface is the page boundary: each command input is decoded here before any owner sees it. */
+    #messagingSurface(): Pick<BlackBoxRallarRuntime, BlackBoxRallarConnectionRuntime.MessagingMethod> {
+        const { rtcSend, wsSend, deliveryLedger } = this.#controllers;
+        return {
             send: async (input) =>
                 await rtcSend.send(requireBlackBoxRallarInput(decodeBlackBoxRallarSendCommand(input))),
             sendWs: async (input) =>
@@ -159,32 +190,23 @@ export class BlackBoxRallarConnectionRuntime {
             injectFault: async (input) =>
                 this.#injectFault(requireBlackBoxRallarInput(decodeBlackBoxRallarFaultInput(input))),
             readStorageCounters: async (input) =>
-                this.#readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(input))),
-            refreshRoom: async (options) => await this.#refreshRoom(options),
-            waitForRoom: async (options) => await this.#waitForRoom(options),
-            readRtcMessageNacks: (messageId) => rallar.readRtcMessageNacks(messageId),
-            crdt,
-            director,
-            formation,
-            close: this.#closeOperation.close,
-            health: async (input = {}) => {
-                const config = this.#foundation.connectionState.get()?.config;
-                const roomRef = config ? blackBoxRallarRoomRefOf(config) : undefined;
-                return await this.#foundation.health.health({
-                    input,
-                    config,
-                    crdt: crdt.summary(),
-                    director: director.summary(),
-                    // Always present when a room resolves, and handed the resolved ref rather than a room id, so
-                    // the one throwing path in the facade is unreachable on the hot paths that call `health`.
-                    formation: roomRef ? formation.summary(roomRef) : undefined
-                });
-            }
+                this.#readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(input)))
         };
-        return {
-            runtime,
-            emitRuntimeLoaded: () => diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.runtime_loaded' })
-        };
+    }
+
+    async #readHealth(input: BlackBoxRallarHealthInput): Promise<BlackBoxRallarHealthDiagnostics> {
+        const { crdt, director, formation } = this.#controllers;
+        const config = this.#foundation.connectionState.get()?.config;
+        const roomRef = config ? blackBoxRallarRoomRefOf(config) : undefined;
+        return await this.#foundation.health.health({
+            input,
+            config,
+            crdt: crdt.summary(),
+            director: director.summary(),
+            // Always present when a room resolves, and handed the resolved ref rather than a room id, so
+            // the one throwing path in the facade is unreachable on the hot paths that call `health`.
+            formation: roomRef ? formation.summary(roomRef) : undefined
+        });
     }
 
     #injectFault(fault: ScriptedTransportFault): void {

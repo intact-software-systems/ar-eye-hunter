@@ -26,8 +26,8 @@ import type { CommandWithId, RallarBlackBoxBrowserRallarRuntime } from './browse
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
 import { toPositiveInteger } from './browser-command-values.ts';
-import { decodeRtcSendPayload, toScopedRtcSend } from './browser-rallar-command-input.ts';
 import { decodeRtcSendResult, toRtcSendFailure, toRtcSendStatus } from './browser-rtc-send-observation.ts';
+import { decodeRtcSendPayload, toScopedRtcSend } from './to-scoped-rtc-send.ts';
 
 type RtcStreamCommand = Extract<CommandWithId, { kind: 'rtc.stream'; }>;
 

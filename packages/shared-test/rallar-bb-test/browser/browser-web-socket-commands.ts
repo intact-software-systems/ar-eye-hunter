@@ -46,6 +46,13 @@ export namespace BrowserWebSocketCommands {
         readonly error: Error;
     }
 
+    export interface RawSend {
+        readonly command: WsSendCommand;
+        readonly context: RallarBlackBoxTestCommandContext;
+        readonly connection: string;
+        readonly data: RallarMessagePayload;
+    }
+
     export interface OpenedSocket {
         readonly connection: string;
         readonly url: string;
@@ -97,8 +104,8 @@ export class BrowserWebSocketCommands {
         command: WsSendCommand,
         context: RallarBlackBoxTestCommandContext
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const commandData = command.data;
-        if (!isRallarMessagePayload(commandData)) {
+        const data = command.data;
+        if (!isRallarMessagePayload(data)) {
             return {
                 status: 'failed',
                 error: { code: 'RALLAR_BB_WS_SEND_DATA_REQUIRED', message: 'ws.send requires data.' },
@@ -106,39 +113,9 @@ export class BrowserWebSocketCommands {
             };
         }
         const connection = command.connection ?? 'default';
-        if (this.usesRallarSignaling(commandData, context)) {
-            return await sendRallarWebSocketMessage({
-                environment: this.environment,
-                command,
-                context,
-                connection,
-                data: commandData
-            });
-        }
-        const socket = this.webSockets.get(connection);
-        if (!socket) {
-            throw new Error('WebSocket connection is not open: ' + connection);
-        }
-
-        const data = toWebSocketSendData(replaceCommandPlaceholders(commandData, {
-            config: context.config(),
-            session: this.environment.readSession(),
-            wsTicket: undefined
-        }));
-        const sendStartedAtEpochMs = this.environment.now();
-        socket.send(data);
-        const durationMs = Math.max(0, this.environment.now() - sendStartedAtEpochMs);
-        const queued = typeof socket.bufferedAmount === 'number' && socket.bufferedAmount > 0;
-        const sendObservation: RallarBlackBoxTestSendObservation = {
-            commandId: command.commandId,
-            kind: command.kind,
-            transport: 'ws',
-            durationMs,
-            ok: true,
-            status: queued ? 'queued' : 'sent',
-            queued
-        };
-        return { status: 'ok', value: { connection, sent: data, sendObservation } };
+        return this.usesRallarSignaling(data, context)
+            ? await sendRallarWebSocketMessage({ environment: this.environment, command, context, connection, data })
+            : this.writeRawWebSocket({ command, context, connection, data });
     }
 
     closeWebSocket(command: Extract<CommandWithId, { kind: 'ws.close'; }>): RallarBlackBoxTestCommandOutcome {
@@ -187,6 +164,33 @@ export class BrowserWebSocketCommands {
 
     connectionNames(): string[] {
         return [...this.webSockets.keys()];
+    }
+
+    private writeRawWebSocket(send: BrowserWebSocketCommands.RawSend): RallarBlackBoxTestCommandOutcome {
+        const { command, context, connection } = send;
+        const socket = this.webSockets.get(connection);
+        if (!socket) {
+            throw new Error('WebSocket connection is not open: ' + connection);
+        }
+        const data = toWebSocketSendData(replaceCommandPlaceholders(send.data, {
+            config: context.config(),
+            session: this.environment.readSession(),
+            wsTicket: undefined
+        }));
+        const sendStartedAtEpochMs = this.environment.now();
+        socket.send(data);
+        const durationMs = Math.max(0, this.environment.now() - sendStartedAtEpochMs);
+        const queued = typeof socket.bufferedAmount === 'number' && socket.bufferedAmount > 0;
+        const sendObservation: RallarBlackBoxTestSendObservation = {
+            commandId: command.commandId,
+            kind: command.kind,
+            transport: 'ws',
+            durationMs,
+            ok: true,
+            status: queued ? 'queued' : 'sent',
+            queued
+        };
+        return { status: 'ok', value: { connection, sent: data, sendObservation } };
     }
 
     /** Only a structured Rallar envelope in browser-rallar provider mode travels over the Rallar signaling socket. */

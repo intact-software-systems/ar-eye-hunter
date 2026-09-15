@@ -274,8 +274,8 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // The browser adapter's provider port: page runtime results and forwarded page event data arrive
-    // untrusted, and each command owner decodes a result before reading or recording it.
+    // The provider port of the browser adapter: page runtime results and forwarded page event data
+    // arrive untrusted, and each command owner decodes a result before reading or recording it.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/browser/browser-command-contracts.ts',
         rule: 'boundary.unknown',
