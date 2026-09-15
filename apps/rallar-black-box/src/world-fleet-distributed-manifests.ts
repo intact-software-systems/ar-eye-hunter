@@ -94,17 +94,21 @@ export function createWorldFleetDistributedManifestCatalog(): readonly WorldFlee
             durationSeconds: 3_600,
             diagnostic: true
         }),
-        ...[5, 10, 20].map((rateHz, index) =>
-            allPeerEntry({
-                filePath: WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER[index + 2],
-                durationSeconds: 3_600,
-                rateHz,
-                minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
-                receiverExpectedFrames: 49 * 3_600 * rateHz,
-                diagnostic: true
-            })
-        )
+        ...createLongAllPeerDiagnosticEntries()
     ];
+}
+
+function createLongAllPeerDiagnosticEntries(): readonly WorldFleetDistributedManifestEntry[] {
+    return [5, 10, 20].map((rateHz, index) =>
+        allPeerEntry({
+            filePath: WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER[index + 2],
+            durationSeconds: 3_600,
+            rateHz,
+            minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
+            receiverExpectedFrames: 49 * 3_600 * rateHz,
+            diagnostic: true
+        })
+    );
 }
 
 function principalEntry(
