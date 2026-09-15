@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
-    buildWorldFleetDistributedManifestCatalog,
+    createWorldFleetDistributedManifestCatalog,
     WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER,
     WORLD_FLEET_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/world-fleet-distributed-manifests.ts';
@@ -35,14 +35,14 @@ function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): reado
 
 describe('world fleet distributed manifest catalog', () => {
     it('writes checked-in JSON that matches the generated catalog exactly', async () => {
-        for (const entry of buildWorldFleetDistributedManifestCatalog()) {
+        for (const entry of createWorldFleetDistributedManifestCatalog()) {
             const current = await readFile(entry.filePath, 'utf8');
             expect(current).toBe(`${JSON.stringify(entry.manifest, null, 2)}\n`);
         }
     });
 
     it('builds no-spawn all-online manifests with expected 50 participants', () => {
-        const catalog = buildWorldFleetDistributedManifestCatalog();
+        const catalog = createWorldFleetDistributedManifestCatalog();
 
         expect(catalog.map((entry) => entry.filePath)).toEqual([
             ...WORLD_FLEET_DISTRIBUTED_MANIFEST_GREEN_ORDER,
@@ -77,7 +77,7 @@ describe('world fleet distributed manifest catalog', () => {
     });
 
     it('uses ordered target role policy for principal world-fleet multicast', () => {
-        const principal = buildWorldFleetDistributedManifestCatalog()
+        const principal = createWorldFleetDistributedManifestCatalog()
             .find((entry) => entry.manifest.distributedRunId.includes('principal-50-agent-30s-20hz-tree'));
 
         expect(principal?.manifest.roleAssignmentPolicy).toEqual({
@@ -93,7 +93,7 @@ describe('world fleet distributed manifest catalog', () => {
     });
 
     it('configures matching selectors for every messages.rtc connection', () => {
-        for (const entry of buildWorldFleetDistributedManifestCatalog()) {
+        for (const entry of createWorldFleetDistributedManifestCatalog()) {
             for (const command of manifestCommands(entry.manifest)) {
                 if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
                     continue;
@@ -108,7 +108,7 @@ describe('world fleet distributed manifest catalog', () => {
     });
 
     it('keeps 20 Hz all-peer and 60m world-fleet runs diagnostic', () => {
-        const catalog = buildWorldFleetDistributedManifestCatalog();
+        const catalog = createWorldFleetDistributedManifestCatalog();
         const diagnostics = catalog.filter((entry) => entry.diagnostic);
 
         expect(diagnostics.map((entry) => entry.filePath)).toEqual(WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER);

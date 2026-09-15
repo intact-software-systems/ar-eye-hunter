@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildWorldFleetDistributedManifestCatalog } from '../src/world-fleet-distributed-manifests.ts';
+import { createWorldFleetDistributedManifestCatalog } from '../src/world-fleet-distributed-manifests.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has('--check');
 
 async function main(): Promise<void> {
-    const catalog = buildWorldFleetDistributedManifestCatalog();
+    const catalog = createWorldFleetDistributedManifestCatalog();
     const mismatches: string[] = [];
 
     for (const entry of catalog) {

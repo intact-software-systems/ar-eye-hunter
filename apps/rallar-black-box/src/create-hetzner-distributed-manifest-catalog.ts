@@ -32,7 +32,7 @@ import {
     createRtcSmoke2AgentEntry
 } from './hetzner/hetzner-rtc-manifest-entries.ts';
 
-export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistributedManifestEntry[] {
+export function createHetznerDistributedManifestCatalog(): readonly HetznerDistributedManifestEntry[] {
     return [
         createHealth2AgentEntry(),
         createCompositeEvidence2AgentEntry(),
