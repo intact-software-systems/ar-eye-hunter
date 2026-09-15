@@ -1,24 +1,21 @@
-import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessageHandle, RallarTypedMessageSendOptions } from '@shared-web/browser/rallar.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObservation,
-    BlackBoxRallarMessageSendDiagnostics
+    BlackBoxRallarDeliveryObserveInput,
+    BlackBoxRallarMessageSendDiagnostics,
+    BlackBoxRallarMessageSendInput
 } from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf } from '../black-box-rallar-operation-policy.ts';
-import type { BlackBoxRallarRuntime } from '../black-box-rallar-runtime-contract.ts';
 import type { BlackBoxBrowserDeliveriesDependency } from '../browser-rallar-runtime-composition.ts';
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
 import type { BlackBoxRallarTypedChannels } from './black-box-rallar-typed-channels.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
-import {
-    decodeBlackBoxRallarDeliveryHandleInput,
-    decodeBlackBoxRallarDeliveryObserveInput,
-    decodeBlackBoxRallarMessageSendInput
-} from './decode-black-box-rallar-messaging-input.ts';
-import { toTypedSendOptions } from './to-black-box-rallar-send-requests.ts';
 
 export namespace BlackBoxRallarDeliveryLedger {
     export interface Input {
@@ -55,13 +52,10 @@ export class BlackBoxRallarDeliveryLedger {
         this.#input = input;
     }
 
-    sendMessage = async (
-        input: Parameters<BlackBoxRallarRuntime['sendMessage']>[0]
-    ): Promise<BlackBoxRallarMessageSendDiagnostics> => {
+    sendMessage = async (send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> => {
         const config = this.#input.requireConfig();
         const lease = this.#input.resources.lease();
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
-        const send = decodeBlackBoxRallarMessageSendInput(input);
         const roomRef = blackBoxRallarRoomRefOf(config, { roomRef: send.roomRef });
         const channel = this.#input.typedChannels.open(config, { typeId: send.typeId, topicId: send.topicId, roomRef });
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
@@ -89,16 +83,14 @@ export class BlackBoxRallarDeliveryLedger {
     };
 
     readReceipts = async (
-        input: Parameters<BlackBoxRallarRuntime['readReceipts']>[0]
+        { handleId }: BlackBoxRallarDeliveryHandleInput
     ): Promise<BlackBoxRallarDeliveryObservation> => {
-        const { handleId } = decodeBlackBoxRallarDeliveryHandleInput(input);
         return toDeliveryObservation(handleId, this.#getDeliveryHandle(handleId)?.lifecycle());
     };
 
     observeDelivery = async (
-        input: Parameters<BlackBoxRallarRuntime['observeDelivery']>[0]
+        observe: BlackBoxRallarDeliveryObserveInput
     ): Promise<BlackBoxRallarDeliveryObservation> => {
-        const observe = decodeBlackBoxRallarDeliveryObserveInput(input);
         const handle = this.#getDeliveryHandle(observe.handleId);
         if (!handle) {
             return toDeliveryObservation(observe.handleId, undefined);
@@ -116,9 +108,8 @@ export class BlackBoxRallarDeliveryLedger {
     };
 
     cancelDelivery = async (
-        input: Parameters<BlackBoxRallarRuntime['cancelDelivery']>[0]
+        { handleId }: BlackBoxRallarDeliveryHandleInput
     ): Promise<BlackBoxRallarDeliveryObservation> => {
-        const { handleId } = decodeBlackBoxRallarDeliveryHandleInput(input);
         const handle = this.#getDeliveryHandle(handleId);
         handle?.cancel();
         return toDeliveryObservation(handleId, handle?.lifecycle());
@@ -136,4 +127,16 @@ export class BlackBoxRallarDeliveryLedger {
             }
         }
     }
+}
+
+function toTypedSendOptions(send: BlackBoxRallarMessageSendInput): RallarTypedMessageSendOptions<RallarMessagePayload> {
+    return {
+        strategy: send.carrier,
+        ...(send.reliability === undefined ? {} : { reliability: send.reliability }),
+        ...(send.ack === undefined ? {} : { ack: send.ack }),
+        ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
+        ...(send.orderingKey === undefined ? {} : { orderingKey: send.orderingKey }),
+        ...(send.seq === undefined ? {} : { seq: send.seq }),
+        ...(send.scope === undefined ? {} : { scope: send.scope })
+    };
 }

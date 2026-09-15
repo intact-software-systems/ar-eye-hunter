@@ -1,5 +1,10 @@
-import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarDeliveryObservation,
+    BlackBoxRallarMessageSendInput
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-messaging-input.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
@@ -261,11 +266,11 @@ it('clamps an already-elapsed command deadline to a zero admission wait', async 
     const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
-    const pageInputs: Parameters<BlackBoxRallarRuntime['sendMessage']>[0][] = [];
+    const pageInputs: BlackBoxRallarMessageSendInput[] = [];
     const recordingRuntime: BlackBoxRallarRuntime = {
         ...native,
         sendMessage: async (input) => {
-            pageInputs.push(input);
+            pageInputs.push(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(input)));
             return await native.sendMessage(input);
         }
     };

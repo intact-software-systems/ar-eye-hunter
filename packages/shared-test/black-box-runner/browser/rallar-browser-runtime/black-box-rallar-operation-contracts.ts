@@ -1,3 +1,4 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
@@ -108,8 +109,8 @@ export interface BlackBoxRallarConnectionConfig {
 }
 
 export interface BlackBoxRallarSendInput {
-    readonly data?: unknown;
-    readonly payload?: unknown;
+    readonly data?: RallarMessagePayload;
+    readonly payload?: RallarMessagePayload;
     readonly laneId?: string;
     readonly roomId?: string;
     readonly roomRef?: BlackBoxRallarRoomRef;
@@ -250,7 +251,7 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly contextId: string | undefined;
     readonly resourceId: string | undefined;
     readonly minSnapshotVersion: number | undefined;
-    readonly message: unknown;
+    readonly message: RallarMessagePayload;
     readonly result: BlackBoxRallarDeliveryObservation;
     readonly wsStatus: RallarWsStatus;
     readonly rtcStatus: RallarRtcStatus;
@@ -262,7 +263,7 @@ export interface BlackBoxRallarMessageSendInput {
     readonly carrier: 'ws' | 'rtc' | 'rtc-with-ws-fallback';
     readonly typeId: string;
     readonly topicId: string | undefined;
-    readonly payload: unknown;
+    readonly payload: RallarMessagePayload;
     readonly roomRef: BlackBoxRallarRoomRef | undefined;
     readonly scope: 'room' | 'world' | 'all' | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;

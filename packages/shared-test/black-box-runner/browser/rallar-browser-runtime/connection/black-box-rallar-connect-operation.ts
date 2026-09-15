@@ -19,7 +19,6 @@ import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-r
 import type { BlackBoxRallarFormationController } from '../formation/formation-controller.ts';
 import type { BlackBoxRallarLifecycleOperationContext } from '../lifecycle-controller.ts';
 import type { BlackBoxRallarTypedChannels } from '../messaging/black-box-rallar-typed-channels.ts';
-import type { BlackBoxRallarMessagingResourceController } from '../messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import type { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import {
     isBlackBoxRallarTypedMessagesTransport,
@@ -33,11 +32,7 @@ import {
     toConnectedTargetRejection
 } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
-import {
-    stopBlackBoxRallarConnectionSubscriptions,
-    subscribeBlackBoxRallarMessagesRtc,
-    subscribeBlackBoxRallarRealtime
-} from './black-box-rallar-connection-subscriptions.ts';
+import type { BlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
 import type { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
 import { configureBlackBoxRallarConnection } from './configure-black-box-rallar-connection.ts';
 
@@ -66,7 +61,7 @@ export namespace BlackBoxRallarConnectOperation {
         readonly consoleDiagnostics: BlackBoxRallarConsoleDiagnostics<BlackBoxRallarConnectionConfig>;
         readonly formation: BlackBoxRallarFormationController;
         readonly typedChannels: BlackBoxRallarTypedChannels;
-        readonly messagingResources: Pick<BlackBoxRallarMessagingResourceController, 'cleanupWsSubscriptions'>;
+        readonly subscriptions: BlackBoxRallarConnectionSubscriptions;
     }
 }
 
@@ -140,12 +135,7 @@ export class BlackBoxRallarConnectOperation {
         attempt.lifecycleSubscriptions = this.#installLifecycleDiagnostics(config);
         await this.#openConnection(attempt);
         const state = this.#subscribeConnection(attempt, session);
-        stopBlackBoxRallarConnectionSubscriptions({
-            state: previousState,
-            config,
-            diagnostics,
-            messagingResources: this.#input.messagingResources
-        });
+        this.#input.subscriptions.stop({ state: previousState, config });
         if (isBlackBoxRallarTypedMessagesTransport(resolveBlackBoxRallarTransport(config))) {
             this.#input.typedChannels.subscribe(config);
         }
@@ -219,7 +209,7 @@ export class BlackBoxRallarConnectOperation {
         session: BlackBoxRallarConnectionState.Session
     ): BlackBoxRallarConnectionState.Value {
         const { config } = attempt;
-        const { rallar, diagnostics } = this.#input;
+        const { diagnostics } = this.#input;
         const transport = resolveBlackBoxRallarTransport(config);
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
         const phaseData = {
@@ -232,9 +222,8 @@ export class BlackBoxRallarConnectOperation {
             ...phaseData,
             selector: transport === 'messages.rtc' ? resolveBlackBoxRallarMessageSelector(config) : undefined
         });
-        const subscription = { rallar, diagnostics, config, session };
-        const unsubscribeRealtime = subscribeBlackBoxRallarRealtime(subscription);
-        const unsubscribeMessagesRtc = subscribeBlackBoxRallarMessagesRtc(subscription);
+        const unsubscribeRealtime = this.#input.subscriptions.subscribeRealtime({ config, session });
+        const unsubscribeMessagesRtc = this.#input.subscriptions.subscribeMessagesRtc({ config, session });
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             ...phaseData,
             ...this.#input.health.getStatusDiagnostics(config)

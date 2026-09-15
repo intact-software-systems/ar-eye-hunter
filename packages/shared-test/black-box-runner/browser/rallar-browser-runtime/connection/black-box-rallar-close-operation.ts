@@ -22,11 +22,10 @@ import {
 import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarDirectorController } from '../director-controller.ts';
 import type { BlackBoxRallarLifecycleCloseContext } from '../lifecycle-controller.ts';
-import type { BlackBoxRallarMessagingResourceController } from '../messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import type { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import { resolveBlackBoxRallarTransport } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
-import { stopBlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
+import type { BlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
 
 interface TransportCloseResult {
     readonly logout: boolean;
@@ -48,7 +47,7 @@ export namespace BlackBoxRallarCloseOperation {
         readonly consoleDiagnostics: BlackBoxRallarConsoleDiagnostics<BlackBoxRallarConnectionConfig>;
         readonly crdt: BlackBoxRallarCrdtController;
         readonly director: BlackBoxRallarDirectorController;
-        readonly messagingResources: Pick<BlackBoxRallarMessagingResourceController, 'cleanupWsSubscriptions'>;
+        readonly subscriptions: BlackBoxRallarConnectionSubscriptions;
     }
 }
 
@@ -146,12 +145,7 @@ export class BlackBoxRallarCloseOperation {
         const { runtimeState, config } = preparation;
         let unsubscribed = 0;
         try {
-            unsubscribed = stopBlackBoxRallarConnectionSubscriptions({
-                state: runtimeState,
-                config,
-                diagnostics: this.#input.diagnostics,
-                messagingResources: this.#input.messagingResources
-            });
+            unsubscribed = this.#input.subscriptions.stop({ state: runtimeState, config });
         }
         catch (caught) {
             const error = toError(caught);

@@ -1,12 +1,9 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
-import type {
-    BlackBoxRallarConnectionConfig,
-    BlackBoxRallarEvent,
-    BlackBoxRallarMessageSendInput
-} from '../black-box-rallar-operation-contracts.ts';
+import type { BlackBoxRallarConnectionConfig, BlackBoxRallarEvent } from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf, blackBoxRallarScopeDiagnosticsOf } from '../black-box-rallar-operation-policy.ts';
 import type { BlackBoxBrowserMessagesDependency } from '../browser-rallar-runtime-composition.ts';
 import {
@@ -14,8 +11,6 @@ import {
     resolveBlackBoxRallarTypeId
 } from '../connection/black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
-
-type TypedChannelPayload = BlackBoxRallarMessageSendInput['payload'];
 
 export interface TypedChannelRoute {
     readonly typeId: string;
@@ -27,7 +22,7 @@ interface TypedChannelMessageEvent {
     readonly config: BlackBoxRallarConnectionConfig;
     readonly topic: string;
     readonly transport: BlackBoxRallarEvent['transport'];
-    readonly message: RallarMessage<TypedChannelPayload>;
+    readonly message: RallarMessage<RallarMessagePayload>;
 }
 
 export namespace BlackBoxRallarTypedChannels {
@@ -48,8 +43,8 @@ export class BlackBoxRallarTypedChannels {
     open(
         config: BlackBoxRallarConnectionConfig,
         route: TypedChannelRoute
-    ): RallarTypedMessageChannel<TypedChannelPayload> {
-        const channel = this.#input.messages.room<TypedChannelPayload>({
+    ): RallarTypedMessageChannel<RallarMessagePayload> {
+        const channel = this.#input.messages.room<RallarMessagePayload>({
             typeId: route.typeId,
             topicId: route.topicId,
             roomId: config.roomId,

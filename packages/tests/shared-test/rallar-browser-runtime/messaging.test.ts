@@ -1,9 +1,10 @@
 import type { BlackBoxRallarConnectDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import {
+    decodeBlackBoxRallarSendCommand,
     decodeBlackBoxRallarSendInput,
     decodeBlackBoxRallarWsSendInput
-} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-send-input.ts';
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -47,20 +48,28 @@ afterEach(() => {
 
 it('preserves opaque application payloads while decoding the command envelope', () => {
     const payload = { nested: { arbitraryField: ['value', null] } };
-    const realtime = decodeBlackBoxRallarSendInput(payload, 'realtime');
-    const rtc = decodeBlackBoxRallarSendInput({ payload, ttlMs: '1200' }, 'messages.rtc');
+    expect(decodeBlackBoxRallarSendCommand(payload).right).toEqual({ kind: 'envelope', envelope: payload });
+    const realtime = decodeBlackBoxRallarSendInput({ kind: 'envelope', envelope: payload }, 'realtime');
+    const rtc = decodeBlackBoxRallarSendInput({ kind: 'envelope', envelope: { payload, ttlMs: '1200' } }, 'messages.rtc');
     const ws = decodeBlackBoxRallarWsSendInput({ payload, ack: 'all-logical-recipients' });
-    expect(realtime.data).toBe(payload);
-    expect(rtc.payload).toBe(payload);
-    expect(rtc.ttlMs).toBe(1200);
-    expect(ws.payload).toBe(payload);
-    expect(ws.ack).toBe('all-logical-recipients');
+    expect(realtime.right?.data).toBe(payload);
+    expect(rtc.right).toMatchObject({ payload, ttlMs: 1200 });
+    expect(ws.right).toMatchObject({ payload, ack: 'all-logical-recipients' });
+});
+
+it('rejects a send carrying no message payload at the page boundary', () => {
+    expect(decodeBlackBoxRallarSendCommand(undefined).left).toEqual({ message: 'Rallar send requires a message payload.' });
+    expect(decodeBlackBoxRallarWsSendInput(undefined).left).toEqual({ message: 'ws.send requires a message payload.' });
 });
 
 it('rejects incomplete room identity and unsupported acknowledgement modes at command ingress', () => {
-    expect(() => decodeBlackBoxRallarSendInput({ roomRef: { groupId: 'room-1' } }, 'messages.rtc'))
-        .toThrow('roomRef requires applicationId and groupId');
-    expect(() => decodeBlackBoxRallarWsSendInput({ ack: 'unsupported' })).toThrow('ack mode is invalid');
+    const envelope = { kind: 'envelope', envelope: { roomRef: { groupId: 'room-1' } } } as const;
+    expect(decodeBlackBoxRallarSendInput(envelope, 'messages.rtc').left).toEqual({
+        message: 'Rallar command roomRef requires applicationId and groupId.'
+    });
+    expect(decodeBlackBoxRallarWsSendInput({ ack: 'unsupported' }).left).toEqual({
+        message: 'Rallar command ack mode is invalid.'
+    });
 });
 
 it('applies scoped defaults and reports the connected room reference', async () => {

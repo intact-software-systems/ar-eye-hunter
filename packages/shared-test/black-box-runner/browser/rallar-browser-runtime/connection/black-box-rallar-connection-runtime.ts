@@ -2,6 +2,7 @@ import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rall
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { BlackBoxRallarCrdtController } from '../black-box-rallar-crdt-controller.ts';
 import {
@@ -10,7 +11,10 @@ import {
     createBlackBoxRallarDiagnosticsPorts,
     type BlackBoxRallarConsoleDiagnostics
 } from '../black-box-rallar-diagnostics.ts';
-import type { BlackBoxRallarConnectionConfig } from '../black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarStorageCountersInput
+} from '../black-box-rallar-operation-contracts.ts';
 import {
     blackBoxRallarRoomRefOf,
     blackBoxRallarScopeDiagnosticsOf,
@@ -24,21 +28,30 @@ import type {
 } from '../black-box-rallar-runtime-contract.ts';
 import type { BlackBoxRallarRuntimeInstallationTarget } from '../black-box-rallar-runtime.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
+import { requireBlackBoxRallarInput } from '../decode-black-box-rallar-command-input.ts';
 import { BlackBoxRallarDirectorController } from '../director-controller.ts';
 import { BlackBoxRallarFormationController } from '../formation/formation-controller.ts';
 import { createBlackBoxRallarLifecycleController } from '../lifecycle-controller.ts';
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { BlackBoxRallarDeliveryLedger } from '../messaging/black-box-rallar-delivery-ledger.ts';
-import { BlackBoxRallarMessagingController } from '../messaging/black-box-rallar-messaging-controller.ts';
+import { BlackBoxRallarRtcSendController } from '../messaging/black-box-rallar-rtc-send-controller.ts';
 import { BlackBoxRallarTypedChannels } from '../messaging/black-box-rallar-typed-channels.ts';
+import { BlackBoxRallarWsSendController } from '../messaging/black-box-rallar-ws-send-controller.ts';
 import {
     createBlackBoxRallarMessagingResourceController,
     type BlackBoxRallarMessagingResourceController
 } from '../messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import {
+    decodeBlackBoxRallarDeliveryHandleInput,
+    decodeBlackBoxRallarDeliveryObserveInput,
     decodeBlackBoxRallarFaultInput,
+    decodeBlackBoxRallarMessageSendInput,
     decodeBlackBoxRallarStorageCountersInput
 } from '../messaging/decode-black-box-rallar-messaging-input.ts';
+import {
+    decodeBlackBoxRallarSendCommand,
+    decodeBlackBoxRallarWsSendInput
+} from '../messaging/decode-black-box-rallar-send-input.ts';
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import { BlackBoxRallarCloseOperation } from './black-box-rallar-close-operation.ts';
 import { BlackBoxRallarConnectOperation } from './black-box-rallar-connect-operation.ts';
@@ -49,6 +62,7 @@ import {
     toBlackBoxRallarDefaults
 } from './black-box-rallar-connection-policy.ts';
 import { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import { BlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
 import { BlackBoxRallarCrdtLiveConnection } from './black-box-rallar-crdt-live-connection.ts';
 import { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
 
@@ -83,8 +97,10 @@ export namespace BlackBoxRallarConnectionRuntime {
         readonly director: BlackBoxRallarDirectorController;
         readonly formation: BlackBoxRallarFormationController;
         readonly messagingResources: BlackBoxRallarMessagingResourceController;
+        readonly subscriptions: BlackBoxRallarConnectionSubscriptions;
         readonly typedChannels: BlackBoxRallarTypedChannels;
-        readonly messaging: BlackBoxRallarMessagingController;
+        readonly rtcSend: BlackBoxRallarRtcSendController;
+        readonly wsSend: BlackBoxRallarWsSendController;
         readonly deliveryLedger: BlackBoxRallarDeliveryLedger;
     }
 }
@@ -98,35 +114,52 @@ export class BlackBoxRallarConnectionRuntime {
     constructor(input: BlackBoxRallarConnectionRuntime.Input) {
         this.#foundation = createConnectionFoundation(input);
         this.#controllers = createProductControllers(input, this.#foundation);
-        const { crdt, director, formation, typedChannels, messagingResources } = this.#controllers;
+        const { crdt, director, formation, typedChannels, subscriptions } = this.#controllers;
         this.#connectOperation = new BlackBoxRallarConnectOperation({
             ...this.#foundation,
             formation,
             typedChannels,
-            messagingResources
+            subscriptions
         });
         this.#closeOperation = new BlackBoxRallarCloseOperation({
             ...this.#foundation,
             crdt,
             director,
-            messagingResources
+            subscriptions
         });
     }
 
+    /** The window surface is the page boundary: each command input is decoded here before any owner sees it. */
     installation(): BlackBoxRallarConnectionRuntime.Installation {
         const { authentication, diagnostics, rallar } = this.#foundation;
-        const { crdt, director, formation, messaging, deliveryLedger } = this.#controllers;
+        const { crdt, director, formation, rtcSend, wsSend, deliveryLedger } = this.#controllers;
         const runtime: BlackBoxRallarRuntime = {
             authenticate: authentication.authenticate,
             connect: this.#connectOperation.connect,
-            send: messaging.send,
-            sendWs: messaging.sendWs,
-            sendMessage: deliveryLedger.sendMessage,
-            observeDelivery: deliveryLedger.observeDelivery,
-            cancelDelivery: deliveryLedger.cancelDelivery,
-            readReceipts: deliveryLedger.readReceipts,
-            injectFault: async (input) => this.#injectFault(input),
-            readStorageCounters: async (input) => this.#readStorageCounters(input),
+            send: async (input) =>
+                await rtcSend.send(requireBlackBoxRallarInput(decodeBlackBoxRallarSendCommand(input))),
+            sendWs: async (input) =>
+                await wsSend.sendWs(requireBlackBoxRallarInput(decodeBlackBoxRallarWsSendInput(input))),
+            sendMessage: async (input) =>
+                await deliveryLedger.sendMessage(
+                    requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(input))
+                ),
+            observeDelivery: async (input) =>
+                await deliveryLedger.observeDelivery(
+                    requireBlackBoxRallarInput(decodeBlackBoxRallarDeliveryObserveInput(input))
+                ),
+            cancelDelivery: async (input) =>
+                await deliveryLedger.cancelDelivery(
+                    requireBlackBoxRallarInput(decodeBlackBoxRallarDeliveryHandleInput(input))
+                ),
+            readReceipts: async (input) =>
+                await deliveryLedger.readReceipts(
+                    requireBlackBoxRallarInput(decodeBlackBoxRallarDeliveryHandleInput(input))
+                ),
+            injectFault: async (input) =>
+                this.#injectFault(requireBlackBoxRallarInput(decodeBlackBoxRallarFaultInput(input))),
+            readStorageCounters: async (input) =>
+                this.#readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(input))),
             refreshRoom: async (options) => await this.#refreshRoom(options),
             waitForRoom: async (options) => await this.#waitForRoom(options),
             readRtcMessageNacks: (messageId) => rallar.readRtcMessageNacks(messageId),
@@ -154,14 +187,13 @@ export class BlackBoxRallarConnectionRuntime {
         };
     }
 
-    #injectFault(input: Parameters<BlackBoxRallarRuntime['injectFault']>[0]): void {
+    #injectFault(fault: ScriptedTransportFault): void {
         this.#requireScriptedPorts('fault.inject');
-        this.#foundation.rallar.diagnostics.faults.inject(decodeBlackBoxRallarFaultInput(input));
+        this.#foundation.rallar.diagnostics.faults.inject(fault);
     }
 
-    #readStorageCounters(input: Parameters<BlackBoxRallarRuntime['readStorageCounters']>[0]): IndexedDbOperationCounts {
+    #readStorageCounters(counters: BlackBoxRallarStorageCountersInput): IndexedDbOperationCounts {
         this.#requireScriptedPorts('storage.counters');
-        const counters = decodeBlackBoxRallarStorageCountersInput(input);
         const storage = this.#foundation.rallar.diagnostics.storage;
         const counts = storage.getCounts();
         if (counters.reset) {
@@ -306,7 +338,7 @@ function createMessagingControllers(
     foundation: BlackBoxRallarConnectionRuntime.Foundation
 ): Pick<
     BlackBoxRallarConnectionRuntime.Controllers,
-    'messagingResources' | 'typedChannels' | 'messaging' | 'deliveryLedger'
+    'messagingResources' | 'subscriptions' | 'typedChannels' | 'rtcSend' | 'wsSend' | 'deliveryLedger'
 > {
     const { rallar, diagnostics, lifecycle, connectionState } = foundation;
     const requireConfig = () => requireConnectionConfig(connectionState);
@@ -315,14 +347,27 @@ function createMessagingControllers(
         isCurrent: lifecycle.isCurrent
     });
     const typedChannels = new BlackBoxRallarTypedChannels({ messages: rallar.messages, resources, diagnostics });
+    const health = foundation.health;
     return {
         messagingResources: resources,
+        subscriptions: new BlackBoxRallarConnectionSubscriptions({
+            rallar,
+            diagnostics,
+            messagingResources: resources
+        }),
         typedChannels,
-        messaging: new BlackBoxRallarMessagingController({
+        rtcSend: new BlackBoxRallarRtcSendController({
             messages: rallar.messages,
             realtime: rallar.realtime,
             resources,
-            health: foundation.health,
+            health,
+            diagnostics,
+            requireConfig
+        }),
+        wsSend: new BlackBoxRallarWsSendController({
+            messages: rallar.messages,
+            resources,
+            health,
             diagnostics,
             requireConfig
         }),
