@@ -18,8 +18,10 @@ interface BrowserMessageSenderFixture {
     replaceTransport(): void;
 }
 
-export function createBrowserMessageSenderFixture(maxPayloadBytes = 64 * 1024): BrowserMessageSenderFixture {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
+export function createBrowserMessageSenderFixture(
+    maxPayloadBytes = 64 * 1024,
+    registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} })
+): BrowserMessageSenderFixture {
     const middleware = createDefaultApiMiddlewareTestDouble();
     let activeMiddleware = middleware;
     const feed = new BrowserDeliverySettlements();

@@ -35,6 +35,7 @@ import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarConnectionOperations
@@ -88,6 +89,7 @@ export interface BlackBoxBrowserRallarRuntimeDependency
     readonly crdt: BlackBoxBrowserCrdtDependency;
     readonly director: BlackBoxBrowserDirectorDependency;
     readonly diagnostics: BlackBoxBrowserDiagnosticsDependency;
+    readonly deliveries: BlackBoxBrowserDeliveriesDependency;
 }
 
 export interface BlackBoxBrowserAuthDependency
@@ -106,6 +108,9 @@ export interface BlackBoxBrowserRoomsDependency {
 }
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
+
+/** The session registry the facade's senders open handles in; the ledger reads every handle back through it. */
+export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {}
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
 export interface BlackBoxBrowserDiagnosticsDependency {
@@ -184,7 +189,8 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage }
+        diagnostics: { faults, storage },
+        deliveries: browserDeliveryComposition.deliveries
     });
 }
 
@@ -248,11 +254,12 @@ interface BlackBoxBrowserRuntimeComponents {
     readonly crdt: BrowserCrdtComposition;
     readonly director: BrowserDirectorComposition;
     readonly diagnostics: BlackBoxBrowserDiagnosticsDependency;
+    readonly deliveries: BlackBoxBrowserDeliveriesDependency;
 }
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents
 ): BlackBoxBrowserRallarRuntimeDependency {
-    const { session, rooms, messaging, realtime, crdt, director, diagnostics } = components;
+    const { session, rooms, messaging, realtime, crdt, director, diagnostics, deliveries } = components;
     return {
         ...session.connection,
         connect: async (options) => {
@@ -289,7 +296,8 @@ function toBlackBoxBrowserRuntimeDependency(
         rtc: realtime.rtc,
         crdt: crdt.crdt,
         director: director.director,
-        diagnostics
+        diagnostics,
+        deliveries
     };
 }
 

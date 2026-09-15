@@ -27,6 +27,7 @@ import type {
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
 import type {
+    BlackBoxBrowserDeliveriesDependency,
     BlackBoxBrowserMessagesDependency,
     BlackBoxBrowserRealtimeDependency
 } from './browser-rallar-runtime-composition.ts';
@@ -186,6 +187,7 @@ function messageRoutingDiagnostics(
 export namespace BlackBoxRallarMessagingController {
     export interface Input extends BlackBoxRallarGenerationPort {
         readonly facade: MessagingFacade;
+        readonly deliveries: BlackBoxBrowserDeliveriesDependency;
         requireConfig(): BlackBoxRallarConnectionConfig;
         transportOf(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport;
         laneIdOf(config: BlackBoxRallarConnectionConfig): string;
@@ -208,7 +210,8 @@ export namespace BlackBoxRallarMessagingController {
 export class BlackBoxRallarMessagingController {
     readonly #options: BlackBoxRallarMessagingController.Input;
     readonly #resources: BlackBoxRallarMessagingResourceController;
-    readonly #deliveries = new Map<string, RallarMessageHandle>();
+    /** handleId to msgId only: the session registry alone decides how long a handle stays observable. */
+    readonly #deliveryMsgIds = new Map<string, string>();
     constructor(options: BlackBoxRallarMessagingController.Input) {
         this.#options = options;
         this.#resources = createBlackBoxRallarMessagingResourceController(options);
@@ -604,7 +607,8 @@ export class BlackBoxRallarMessagingController {
             roomRef
         });
         const handle = await channel.send(send.payload, toTypedSendOptions(send));
-        this.#deliveries.set(send.handleId, handle);
+        this.#deliveryMsgIds.set(send.handleId, handle.msgId);
+        this.#dropEvictedDeliveries();
         const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: send.timeoutMs });
         this.#resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const diagnostics: BlackBoxRallarMessageSendDiagnostics = {
@@ -626,12 +630,12 @@ export class BlackBoxRallarMessagingController {
     };
 
     readDelivery = (handleId: string): BlackBoxRallarDeliveryObservation =>
-        toDeliveryObservation(handleId, this.#deliveries.get(handleId)?.lifecycle());
+        toDeliveryObservation(handleId, this.#getDeliveryHandle(handleId)?.lifecycle());
 
     observeDelivery = async (
         observe: BlackBoxRallarDeliveryObserveInput
     ): Promise<BlackBoxRallarDeliveryObservation> => {
-        const handle = this.#deliveries.get(observe.handleId);
+        const handle = this.#getDeliveryHandle(observe.handleId);
         if (!handle) {
             return this.readDelivery(observe.handleId);
         }
@@ -643,13 +647,27 @@ export class BlackBoxRallarMessagingController {
                     `last state ${outcome.lifecycle.state}`
             );
         }
-        return toDeliveryObservation(observe.handleId, outcome.lifecycle);
+        const retained = this.#getDeliveryHandle(observe.handleId) !== undefined;
+        return toDeliveryObservation(observe.handleId, retained ? outcome.lifecycle : undefined);
     };
 
     cancelDelivery = (handleId: string): BlackBoxRallarDeliveryObservation => {
-        this.#deliveries.get(handleId)?.cancel();
+        this.#getDeliveryHandle(handleId)?.cancel();
         return this.readDelivery(handleId);
     };
+
+    #getDeliveryHandle(handleId: string): RallarMessageHandle | undefined {
+        const msgId = this.#deliveryMsgIds.get(handleId);
+        return msgId === undefined ? undefined : this.#options.deliveries.getHandle(msgId);
+    }
+
+    #dropEvictedDeliveries(): void {
+        for (const [handleId, msgId] of this.#deliveryMsgIds) {
+            if (this.#options.deliveries.getHandle(msgId) === undefined) {
+                this.#deliveryMsgIds.delete(handleId);
+            }
+        }
+    }
 
     cleanupWsSubscriptions = (): number => this.#resources.cleanupWsSubscriptions();
 }

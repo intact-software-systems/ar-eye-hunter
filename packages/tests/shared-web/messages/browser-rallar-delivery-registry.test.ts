@@ -458,6 +458,34 @@ describe('BrowserRallarDeliveryRegistry', () => {
         });
     });
 
+    describe('getHandle', () => {
+        it('returns the retained handle for its msgId and nothing for a msgId it never opened', () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+
+            expect(harness.registry.getHandle('msg-1')).toBe(handle);
+            expect(harness.registry.getHandle('msg-unknown')).toBeUndefined();
+        });
+
+        it('returns nothing once retention evicted an aged terminal entry or the oldest live one', () => {
+            const harness = new DeliveryRegistryHarness({ retainTerminalMs: 1_000, maxEntries: 2 });
+            harness.registry.open(toTestMessage('msg-terminal'), 'rtc');
+            harness.registry.record(toAcknowledgementSettlement('msg-terminal', START_MS));
+            harness.registry.open(toTestMessage('msg-live'), 'rtc');
+
+            harness.setNowMs(START_MS + 1_001);
+            harness.registry.open(toTestMessage('msg-2'), 'rtc');
+            expect(harness.registry.getHandle('msg-terminal')).toBeUndefined();
+            expect(harness.registry.getHandle('msg-live')?.lifecycle().state).toBe('submitted');
+
+            harness.registry.open(toTestMessage('msg-3'), 'rtc');
+            expect(harness.registry.getHandle('msg-live')).toBeUndefined();
+            expect(harness.registry.size()).toBe(2);
+            expect(vi.getTimerCount()).toBe(0);
+        });
+    });
+
     describe('releaseAll', () => {
         it('resolves every non-terminal entry unobservable and keeps the entries', async () => {
             const harness = new DeliveryRegistryHarness();

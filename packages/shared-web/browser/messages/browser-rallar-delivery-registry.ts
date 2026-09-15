@@ -134,6 +134,11 @@ export class BrowserRallarDeliveryRegistry {
         }
     }
 
+    /** Undefined once retention removed the entry, so a caller holds no observation beyond the registry's bounds. */
+    getHandle(msgId: string): RallarMessageHandle | undefined {
+        return this.entries.get(msgId)?.handle;
+    }
+
     size(): number {
         return this.entries.size;
     }

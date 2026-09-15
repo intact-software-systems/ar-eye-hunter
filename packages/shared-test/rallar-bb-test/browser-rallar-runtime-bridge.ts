@@ -108,11 +108,7 @@ function readOptionalReason(value: unknown): string | undefined {
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
         async authenticate(config) {
-            const runtime = await resolveBrowserRallarRuntime();
-            if (!runtime.authenticate) {
-                throw new Error('browser-rallar provider did not expose authenticate.');
-            }
-            return await runtime.authenticate(
+            return await (await resolveBrowserRallarRuntime()).authenticate(
                 decodeBlackBoxRallarConnectionConfig(config)
             );
         },

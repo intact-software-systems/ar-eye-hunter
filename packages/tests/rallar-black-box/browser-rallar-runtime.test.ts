@@ -10,13 +10,13 @@ import {
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from '../../../apps/rallar-black-box/src/browser-rallar-runtime.ts';
+import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
+import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
+import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRoomRefreshOptions
 } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
-import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
-import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from '../shared-test/browser-rallar-required-methods-test-double.ts';
 import {
@@ -24,6 +24,7 @@ import {
     facade,
     resetFacade
 } from '../shared-test/rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
+import { openFacadeDelivery } from '../shared-test/rallar-browser-runtime/browser-runtime-facade-test-double.ts';
 
 interface BrowserRuntimeTiming {
     readonly now: () => number;
@@ -1170,54 +1171,63 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         ).toBe(true);
     });
 
-    it('fails messages.rtc send commands when the browser runtime reports no route', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            rallarRuntime: {
-                ...createBrowserRallarRequiredMethodsTestDouble(),
-                connect: vi.fn(async () => ({ connected: true })),
-                send: vi.fn(async () => ({
-                    status: 'sent',
-                    transport: 'messages.rtc',
-                    roomId: 'awesome',
-                    message: {
-                        status: 'no-route',
-                        reason: 'No outbound transport route for message test-msg'
-                    },
-                    health: []
-                })),
-                refreshRoom: vi.fn(async () => undefined),
-                close: vi.fn(),
-                health: vi.fn()
-            }
-        });
-
-        const result = await runtime.execute({
-            kind: 'rtc.send',
-            commandId: 'manual-send-no-route',
-            connection: 'aliceRtc',
-            transport: 'messages.rtc',
-            send: {
+    it('fails a messages.rtc send whose delivery lifecycle ends failed because no route remained', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            const detail = 'No outbound transport route for the room message.';
+            facade.behavior.rtcMessageSend.mockImplementation(async () => {
+                const handle = openFacadeDelivery('rtc', { kind: 'unroutable', reason: 'no-route', detail });
+                facade.deliveries.record({ kind: 'attempts-exhausted', msgId: handle.msgId, carrier: 'rtc', atMs: Date.now(), detail });
+                return handle;
+            });
+            await nativeRuntime.connect({
+                connection: 'aliceRtc',
                 roomId: 'awesome',
-                typeId: 'manual.type',
-                topicId: 'manual.topic',
-                payload: {
-                    text: 'hello solo room'
+                rallar: {
+                    apiBaseUrl: 'https://api.example.test',
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    username: 'alice',
+                    password: 'secret',
+                    transport: 'messages.rtc',
+                    typeId: 'manual.type'
                 }
-            }
-        });
+            });
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: createSpaBrowserRallarRuntime()
+            });
 
-        expect(result.ok).toBe(false);
-        expect(result.error).toMatchObject({
-            code: 'RALLAR_BB_RTC_NO_ROUTE',
-            message: 'RTC send failed with status no-route: No outbound transport route for message test-msg'
+            const result = await runtime.execute({
+                kind: 'rtc.send',
+                commandId: 'manual-send-no-route',
+                connection: 'aliceRtc',
+                transport: 'messages.rtc',
+                send: {
+                    roomId: 'awesome',
+                    typeId: 'manual.type',
+                    topicId: 'manual.topic',
+                    payload: {
+                        text: 'hello solo room'
+                    }
+                }
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.error).toMatchObject({
+                code: 'RALLAR_BB_RTC_SEND_FAILED',
+                message: `RTC send failed with status failed: ${detail}`
+            });
+            expect(result.value).toMatchObject({
+                message: { state: 'failed', submitted: false, attempts: 1, reason: detail },
+                sendObservation: { status: 'failed', ok: false, errorCode: 'RALLAR_BB_RTC_SEND_FAILED' }
+            });
+            expect(
+                selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                    (event) =>
+                        event.topic === 'rallar.bb.rtc.send_failed' &&
+                        event.commandId === 'manual-send-no-route' &&
+                        event.severity === 'error'
+                )
+            ).toBe(true);
         });
-        expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).some(
-                (event) =>
-                    event.topic === 'rallar.bb.rtc.send_failed' &&
-                    event.commandId === 'manual-send-no-route' &&
-                    event.severity === 'error'
-            )
-        ).toBe(true);
     });
 });

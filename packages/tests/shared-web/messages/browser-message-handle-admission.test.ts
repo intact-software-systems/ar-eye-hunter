@@ -127,12 +127,16 @@ describe('message handle admission', () => {
 
     it('returns an unobservable handle without admitting through middleware replaced before sender continuation', async () => {
         const fixture = createBrowserMessageSenderFixture();
-        const admission = vi.spyOn(fixture.middleware.middleware.webSocketQueueBox, 'enqueueOutboxIfAbsent');
+        const admittedMsgIds: string[] = [];
+        fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => {
+            admittedMsgIds.push(message.id.msgId);
+            return toQueuedMessageAdmission(message);
+        };
         const sending = fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
         fixture.replaceTransport();
         const handle = await sending;
         await vi.waitFor(() => expect(handle.lifecycle().state).toBe('unobservable'), { timeout: 100 });
-        expect(admission).not.toHaveBeenCalled();
+        expect(admittedMsgIds).toEqual([]);
     });
 
     it('records a queue wake failure on the already returned handle', async () => {

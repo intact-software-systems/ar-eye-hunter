@@ -1,6 +1,7 @@
 import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
+    type BlackBoxBrowserDeliveriesDependency,
     type BlackBoxBrowserDiagnosticsDependency,
     type BlackBoxBrowserDirectorDependency,
     type BlackBoxBrowserMessagesDependency,
@@ -10,6 +11,7 @@ import {
     type BlackBoxBrowserRtcDependency,
     type BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
     RallarMessageHandle,
     RallarMessageHandler,
@@ -27,6 +29,7 @@ import type {
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -39,7 +42,6 @@ import {
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { vi } from 'vitest';
-import { createMessageDelivery } from '../../shared-web/messages/test-message-delivery.ts';
 
 export interface BrowserRuntimeFacadeRecords {
     readonly configurationWrites: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['configure']>[0]>;
@@ -86,6 +88,7 @@ export interface BrowserRuntimeFacadeRecords {
     readonly rtcRoomWaits: Array<Parameters<BlackBoxBrowserRtcDependency['waitForRoom']>>;
     readonly crdtOpens: Array<Parameters<BlackBoxBrowserCrdtDependency['open']>>;
     readonly directorAppointments: Array<Parameters<BlackBoxBrowserDirectorDependency['appoint']>>;
+    readonly cancelledMessageIds: string[];
 }
 
 export const facadeRecords: BrowserRuntimeFacadeRecords = {
@@ -120,8 +123,11 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
     rtcDiagnosticsReads: [],
     rtcRoomWaits: [],
     crdtOpens: [],
-    directorAppointments: []
+    directorAppointments: [],
+    cancelledMessageIds: []
 };
+
+const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 
 export const facadeSession: AuthSession = {
     clientId: 'client-1',
@@ -329,6 +335,17 @@ const director: BlackBoxBrowserDirectorDependency = {
 
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
+let deliveryRegistry = createFacadeDeliveryRegistry();
+let deliverySequence = 0;
+
+const deliveries: BlackBoxBrowserDeliveriesDependency = {
+    getHandle: (msgId) => deliveryRegistry.getHandle(msgId)
+};
+
+/** The one session registry the facade's senders open handles in and the harness reads them back from. */
+export function getFacadeDeliveryRegistry(): BrowserRallarDeliveryRegistry {
+    return deliveryRegistry;
+}
 
 const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     get faults(): ScriptedTransportFaultPort {
@@ -372,7 +389,8 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     ws,
     crdt,
     director,
-    diagnostics
+    diagnostics,
+    deliveries
 };
 
 export function resetBrowserRuntimeFacadeTestDouble(): void {
@@ -380,6 +398,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
+    deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);
@@ -415,11 +434,41 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     });
     facadeBehavior.realtimeSend.mockResolvedValue([]);
     facadeBehavior.realtimeOnJson.mockReturnValue(() => undefined);
-    facadeBehavior.rtcMessageSend.mockImplementation(async () => createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
+    facadeBehavior.rtcMessageSend.mockImplementation(async () => openFacadeDelivery('rtc', QUEUED_ADMISSION));
     facadeBehavior.rtcMessageOnMessage.mockReturnValue(() => undefined);
-    facadeBehavior.wsMessageSend.mockImplementation(async () => createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
+    facadeBehavior.wsMessageSend.mockImplementation(async () => openFacadeDelivery('ws', QUEUED_ADMISSION));
     facadeBehavior.wsMessageOnMessage.mockReturnValue(() => undefined);
-    facadeBehavior.typedSend.mockImplementation(async () => createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
+    facadeBehavior.typedSend.mockImplementation(async () => openFacadeDelivery('ws', QUEUED_ADMISSION));
+}
+
+/** Opens a handle the way the facade's sender would, in the registry the harness reads back from. */
+export function openFacadeDelivery(
+    carrier: ALDeliveryCarrier,
+    verdict: ALDeliveryAdmissionVerdict | undefined
+): RallarMessageHandle {
+    deliverySequence += 1;
+    const handle = deliveryRegistry.open({
+        id: { v: 2, msgId: `facade-message-${deliverySequence}`, ts: Date.now(), senderId: 'client-1' },
+        route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+        payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
+        delivery: { ack: 'receiver', reliability: 'at-least-once' }
+    }, carrier);
+    if (verdict) {
+        deliveryRegistry.record({ kind: 'admission', msgId: handle.msgId, carrier, atMs: Date.now(), verdict });
+    }
+    return handle;
+}
+
+/** The session registry's own bounds from browser-delivery-composition.ts, driven by the faked clock. */
+function createFacadeDeliveryRegistry(): BrowserRallarDeliveryRegistry {
+    return new BrowserRallarDeliveryRegistry({
+        nowMs: () => Date.now(),
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: (msgId) => {
+            facadeRecords.cancelledMessageIds.push(msgId);
+        }
+    });
 }
 
 function clearRecords(): void {
@@ -448,7 +497,8 @@ function clearRecords(): void {
             facadeRecords.rtcDiagnosticsReads,
             facadeRecords.rtcRoomWaits,
             facadeRecords.crdtOpens,
-            facadeRecords.directorAppointments
+            facadeRecords.directorAppointments,
+            facadeRecords.cancelledMessageIds
         ]
     ) {
         entries.length = 0;

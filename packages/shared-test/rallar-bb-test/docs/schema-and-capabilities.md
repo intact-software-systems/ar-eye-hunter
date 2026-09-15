@@ -152,14 +152,18 @@ Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, and
 `reason`. The peer lists describe hop acknowledgements, not logical recipients.
 A terminal state ends a wait even when it was not requested; a true timeout
-reports the last state. A send waits for admission within the command's timeout
-and absolute deadline, independently of the message TTL.
+reports the last state. A send waits for admission until the earlier of the
+command's timeout and absolute deadline (5,000 ms when it names neither, zero
+once the deadline has already passed), independently of the message TTL.
 
 `messages.cancel` stops the owner's remaining attempts for a live handle;
 it preserves terminal evidence and cannot recall a submitted frame. Handles
-survive transport reconnects. Reload loses the in-page observation, so an
-unknown observe, receipts, or cancel returns `unobservable`, never an invented
-failure. The ledger projects handles and performs no admission-storage polling.
+survive transport reconnects. The ledger reads every handle through the browser
+session's delivery registry, which alone bounds how long an observation is kept
+(512 entries, and 60 seconds after a terminal state). Once the registry drops a
+handle, and after a reload, observe, receipts, and cancel return `unobservable`
+with no attempts or hop lists, never an invented failure. The ledger projects
+handles and performs no admission-storage polling.
 
 `messages.received` counts inbound messages of a `typeId` (optionally one
 `msgId`). It scans the **whole** inbound event log rather than a trailing

@@ -221,6 +221,7 @@ export class BlackBoxRallarConnectionRuntime {
             generation: this.#lifecycle.generation,
             isCurrent: this.#lifecycle.isCurrent,
             facade: this.#rallar,
+            deliveries: this.#rallar.deliveries,
             requireConfig: () => this.#requireState().config,
             transportOf: resolveBlackBoxRallarTransport,
             laneIdOf: resolveBlackBoxRallarLaneId,

@@ -1,12 +1,14 @@
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
 import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import { openFacadeDelivery } from './browser-runtime-facade-test-double.ts';
 
 const connection = {
     connection: 'aliceAlm',
@@ -22,27 +24,35 @@ const connection = {
 };
 const send = { connection: 'aliceAlm', carrier: 'ws' as const, typeId: 'alm.conformance', payload: { n: 1 }, handleId: 'h-1', timeoutMs: 100 };
 const query = { connection: 'aliceAlm', handleId: 'h-1' };
+const unknownObservation = {
+    state: 'unobservable',
+    submitted: false,
+    attempts: 0,
+    confirmedHopPeerIds: [],
+    unconfirmedHopPeerIds: [],
+    reason: undefined
+};
 
-function createDelivery(verdict: ALDeliveryAdmissionVerdict | undefined) {
-    const cancelled: string[] = [];
-    const registry = new BrowserRallarDeliveryRegistry({
-        nowMs: Date.now,
-        retainTerminalMs: 60_000,
-        maxEntries: 10,
-        cancel: (msgId) => {
-            cancelled.push(msgId);
-        }
-    });
-    const handle = registry.open({
-        id: { v: 2, msgId: 'msg-1', ts: Date.now(), senderId: 'client-1' },
-        route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
-        payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
-        delivery: { ack: 'receiver', reliability: 'at-least-once' }
-    }, 'ws');
-    if (verdict) {
-        registry.record({ kind: 'admission', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), verdict });
-    }
-    return { registry, handle, cancelled };
+function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined) {
+    const handle = openFacadeDelivery('ws', verdict);
+    return { registry: facade.deliveries, handle, msgId: handle.msgId };
+}
+
+function sendThroughProductionSender(maxPayloadBytes: number): void {
+    const sender = createBrowserMessageSenderFixture(maxPayloadBytes, facade.deliveries).sender;
+    facade.behavior.typedSend.mockImplementation(async (payload) => await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }));
+}
+
+async function readEveryLedgerView(
+    runtime: BlackBoxRallarRuntime,
+    handleId: string
+): Promise<readonly BlackBoxRallarDeliveryObservation[]> {
+    const handle = { connection: 'aliceAlm', handleId };
+    return [
+        await runtime.observeDelivery({ ...handle, state: ['acknowledged'], timeoutMs: 100 }),
+        await runtime.readReceipts(handle),
+        await runtime.cancelDelivery(handle)
+    ];
 }
 
 beforeEach(() => {
@@ -56,10 +66,10 @@ afterEach(() => {
 
 it('projects queued, submitted and acknowledged evidence without bridging settlements', async () => {
     const runtime = await loadRuntime();
-    const delivery = createDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
-    expect(await runtime.sendMessage(send)).toEqual({ handleId: 'h-1', msgId: 'msg-1', carrier: 'ws', status: 'queued', reason: undefined });
+    expect(await runtime.sendMessage(send)).toEqual({ handleId: 'h-1', msgId: delivery.msgId, carrier: 'ws', status: 'queued', reason: undefined });
     expect(await runtime.observeDelivery({ ...query, state: ['queued'], timeoutMs: 100 })).toEqual({
         handleId: 'h-1',
         state: 'queued',
@@ -70,10 +80,10 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         reason: undefined
     });
     const before = events.slice();
-    delivery.registry.record({ kind: 'attempt-started', msgId: 'msg-1', carrier: 'ws', atMs: Date.now(), attemptId: 'attempt-1' });
+    delivery.registry.record({ kind: 'attempt-started', msgId: delivery.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'attempt-1' });
     delivery.registry.record({
         kind: 'attempt-settled',
-        msgId: 'msg-1',
+        msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
         attemptId: 'attempt-1',
@@ -89,7 +99,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
     });
     delivery.registry.record({
         kind: 'acknowledgement',
-        msgId: 'msg-1',
+        msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
         confirmedHopPeerIds: ['peer-1'],
@@ -107,7 +117,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
 
 it('cancels owner attempts, preserves handles on reconnect and ends waits on an unrequested terminal state', async () => {
     const runtime = await loadRuntime();
-    const delivery = createDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
     await runtime.sendMessage(send);
@@ -115,26 +125,21 @@ it('cancels owner attempts, preserves handles on reconnect and ends waits on an 
     await runtime.connect(connection);
     const observing = runtime.observeDelivery({ ...query, state: ['acknowledged'], timeoutMs: 100 });
     expect(await runtime.cancelDelivery(query)).toMatchObject({ state: 'cancelled' });
-    expect(delivery.cancelled).toEqual(['msg-1']);
+    expect(facade.records.cancelledMessageIds).toEqual([delivery.msgId]);
     expect(await observing).toMatchObject({ state: 'cancelled' });
     expect(await runtime.readReceipts(query)).toMatchObject({ state: 'cancelled' });
     const reloaded = await loadRuntime();
     for (const operation of ['observeDelivery', 'cancelDelivery', 'readReceipts'] as const) {
         expect(await reloaded[operation]({ ...query, state: ['acknowledged'], timeoutMs: 100 })).toEqual({
             handleId: 'h-1',
-            state: 'unobservable',
-            submitted: false,
-            attempts: 0,
-            confirmedHopPeerIds: [],
-            unconfirmedHopPeerIds: [],
-            reason: undefined
+            ...unknownObservation
         });
     }
 });
 
 it('bounds a genuinely pending admission and observation with no storage polling', async () => {
     const runtime = await loadRuntime();
-    const delivery = createDelivery({ kind: 'pending' });
+    const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
     const storageBefore = await runtime.readStorageCounters({ reset: false });
@@ -148,7 +153,7 @@ it('bounds a genuinely pending admission and observation with no storage polling
     expect(await runtime.readStorageCounters({ reset: false })).toEqual(storageBefore);
     delivery.registry.record({
         kind: 'admission',
-        msgId: 'msg-1',
+        msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
         verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }
@@ -163,8 +168,7 @@ it.each(AL_DELIVERY_STATES)('decodes the shared %s state and returns a lost obse
 
 it('projects the real rejected handle and preserves its reason', async () => {
     const runtime = await loadRuntime();
-    const sender = createBrowserMessageSenderFixture(8).sender;
-    facade.behavior.typedSend.mockImplementation(async (payload) => await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }));
+    sendThroughProductionSender(8);
     await runtime.connect(connection);
     expect(await runtime.sendMessage({ ...send, payload: { text: 'too large' } })).toMatchObject({
         msgId: expect.any(String),
@@ -185,10 +189,82 @@ it.each([new Error('ws lane closed'), new RallarValidationError('Invalid payload
     }
 );
 
+it('reads a handle the session registry dropped after terminal retention as unobservable', async () => {
+    vi.setSystemTime(1_000);
+    const runtime = await loadRuntime();
+    sendThroughProductionSender(8);
+    await runtime.connect(connection);
+    expect(await runtime.sendMessage({ ...send, handleId: 'h-old', payload: { text: 'too large' } })).toMatchObject({ status: 'rejected' });
+    expect(await runtime.readReceipts({ ...query, handleId: 'h-old' })).toMatchObject({ state: 'rejected', reason: 'Payload exceeds 8 bytes.' });
+
+    vi.setSystemTime(61_001);
+    await runtime.sendMessage({ ...send, handleId: 'h-new', payload: true });
+
+    expect(await readEveryLedgerView(runtime, 'h-old')).toEqual(Array(3).fill({ handleId: 'h-old', ...unknownObservation }));
+    expect(await runtime.readReceipts({ ...query, handleId: 'h-new' })).toMatchObject({ state: 'queued' });
+});
+
+it('reads a live handle the session registry evicted past its entry bound as unobservable', async () => {
+    const runtime = await loadRuntime();
+    sendThroughProductionSender(64);
+    await runtime.connect(connection);
+    await runtime.sendMessage({ ...send, handleId: 'h-first', payload: true });
+    for (let index = 0; index < 512; index += 1) {
+        await runtime.sendMessage({ ...send, handleId: `h-${index}`, payload: index });
+    }
+
+    expect(await readEveryLedgerView(runtime, 'h-first')).toEqual(Array(3).fill({ handleId: 'h-first', ...unknownObservation }));
+    expect(await runtime.readReceipts({ ...query, handleId: 'h-511' })).toMatchObject({ state: 'queued' });
+});
+
+it('waits the 5,000 ms default admission budget when a send names neither timeout nor deadline', async () => {
+    vi.setSystemTime(1_000);
+    const native = await loadRuntime();
+    const delivery = openDelivery({ kind: 'pending' });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await native.connect(connection);
+    vi.stubGlobal('window', { __blackBoxRallar: native });
+    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now });
+    const { timeoutMs: _timeoutMs, ...unbounded } = send;
+    let settled = false;
+    const sending = runtime.execute({ kind: 'messages.send', commandId: 'default-budget', ...unbounded, ttlMs: 60_000 });
+    void sending.then(() => {
+        settled = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await sending).value).toMatchObject({ status: 'submitted', msgId: delivery.msgId });
+});
+
+it('clamps an already-elapsed command deadline to a zero admission wait', async () => {
+    vi.setSystemTime(2_000);
+    const native = await loadRuntime();
+    const delivery = openDelivery({ kind: 'pending' });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await native.connect(connection);
+    const pageInputs: Parameters<BlackBoxRallarRuntime['sendMessage']>[0][] = [];
+    const recordingRuntime: BlackBoxRallarRuntime = {
+        ...native,
+        sendMessage: async (input) => {
+            pageInputs.push(input);
+            return await native.sendMessage(input);
+        }
+    };
+    vi.stubGlobal('window', { __blackBoxRallar: recordingRuntime });
+    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now });
+    const sending = runtime.execute({ kind: 'messages.send', commandId: 'elapsed', ...send, timeoutMs: 500, deadlineEpochMs: 1_500, ttlMs: 60_000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await sending).value).toMatchObject({ status: 'submitted', msgId: delivery.msgId });
+    expect(pageInputs).toEqual([expect.objectContaining({ timeoutMs: 0 })]);
+});
+
 it('carries the earlier absolute command deadline into a pending admission wait', async () => {
     vi.setSystemTime(1_000);
     const native = await loadRuntime();
-    const delivery = createDelivery({ kind: 'pending' });
+    const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
     vi.stubGlobal('window', { __blackBoxRallar: native });
@@ -197,7 +273,7 @@ it('carries the earlier absolute command deadline into a pending admission wait'
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(37);
     const outcome = await sending;
-    expect(outcome.value).toMatchObject({ status: 'submitted', msgId: 'msg-1' });
+    expect(outcome.value).toMatchObject({ status: 'submitted', msgId: delivery.msgId });
     expect(await native.readReceipts(query)).toMatchObject({ state: 'submitted', attempts: 0 });
 });
 
@@ -206,7 +282,7 @@ it.each([
     { verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 } as const, state: 'queued', ok: true }
 ])('uses the typed RTC $state lifecycle in the command outcome', async ({ verdict, state, ok }) => {
     const native = await loadRuntime();
-    const delivery = createDelivery(verdict);
+    const delivery = openDelivery(verdict);
     facade.behavior.rtcMessageSend.mockResolvedValue(delivery.handle);
     await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
     vi.stubGlobal('window', { __blackBoxRallar: native });
@@ -226,7 +302,7 @@ it.each([
 
 it('projects typed RTC lifecycle evidence for each stream frame', async () => {
     const native = await loadRuntime();
-    facade.behavior.rtcMessageSend.mockResolvedValue(createDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
+    facade.behavior.rtcMessageSend.mockResolvedValue(openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
     await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
     vi.stubGlobal('window', { __blackBoxRallar: native });
     const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
@@ -244,8 +320,7 @@ it('projects typed RTC lifecycle evidence for each stream frame', async () => {
 
 it('keeps the authored bounded-rejection cancellation probe aligned with a real terminal handle', async () => {
     const native = await loadRuntime();
-    const sender = createBrowserMessageSenderFixture(8).sender;
-    facade.behavior.typedSend.mockImplementation(async (payload) => await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }));
+    sendThroughProductionSender(8);
     await native.connect(connection);
     vi.stubGlobal('window', { __blackBoxRallar: native });
     const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
