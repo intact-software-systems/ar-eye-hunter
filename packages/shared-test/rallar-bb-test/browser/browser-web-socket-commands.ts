@@ -93,6 +93,13 @@ export class BrowserWebSocketCommands {
         command: WsSendCommand,
         context: RallarBlackBoxTestCommandContext
     ): Promise<RallarBlackBoxTestCommandOutcome> {
+        if (command.data === undefined) {
+            return {
+                status: 'failed',
+                error: { code: 'RALLAR_BB_WS_SEND_DATA_REQUIRED', message: 'ws.send requires data.' },
+                nextStatus: 'failed'
+            };
+        }
         const connection = command.connection ?? 'default';
         if (this.usesRallarSignaling(command, context)) {
             return await sendRallarWebSocketMessage({ environment: this.environment, command, context, connection });

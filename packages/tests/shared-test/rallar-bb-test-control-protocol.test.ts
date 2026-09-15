@@ -293,6 +293,14 @@ describe('rallar-bb-test control protocol', () => {
         })).toEqual({ ok: false, error, messages: [error] });
     });
 
+    it('rejects a ws.send that carries no data', () => {
+        expect(validateRallarBlackBoxTestCommand({ kind: 'ws.send', connection: 'control' })).toEqual({
+            ok: false,
+            error: 'ws.send.data is required.',
+            messages: ['ws.send.data is required.']
+        });
+    });
+
     it('reports every issue in a command, prefixing nested issues with their path', () => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'recipe.load',

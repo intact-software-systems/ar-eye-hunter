@@ -115,7 +115,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     'storage.counters': { required: [], optional: ['reset'] },
     'agent.reload': { required: ['readyTimeoutMs'], optional: [] },
     'ws.open': { required: [], optional: ['connection', 'url', 'protocols', 'headers'] },
-    'ws.send': { required: [], optional: ['connection', 'data'] },
+    'ws.send': { required: ['data'], optional: ['connection'] },
     'ws.close': { required: [], optional: ['connection', 'code', 'reason'] },
     'http.request': { required: ['request'], optional: ['response'] },
     'crdt.open': {

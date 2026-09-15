@@ -60,6 +60,41 @@ describe('rallar-bb runtime sockets', () => {
         expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.closed')).toBe(true);
     });
 
+    it('refuses a ws.send without data before writing to the raw socket or the Rallar signaling', async () => {
+        const sockets: BrowserWebSocketFixture[] = [];
+        const signalingSends: Parameters<NonNullable<RallarBlackBoxBrowserRallarRuntime['sendWs']>>[0][] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            webSocketFactory: (url) => {
+                const socket = new BrowserWebSocketFixture(url, {});
+                sockets.push(socket);
+                return socket;
+            },
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                sendWs: async (input) => {
+                    signalingSends.push(input);
+                    return { status: 'sent', transport: 'ws' };
+                },
+                refreshRoom: async () => undefined,
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true })
+            }
+        });
+        await runtime.execute({ kind: 'ws.open', commandId: 'ws-open', connection: 'control', url: 'wss://control.example.test/ws' });
+
+        const raw = await runtime.execute({ kind: 'ws.send', commandId: 'ws-send-raw', connection: 'control', data: undefined });
+        const signaling = await runtime.execute({ kind: 'ws.send', commandId: 'ws-send-rallar', connection: 'rallarApi', data: undefined });
+
+        for (const result of [raw, signaling]) {
+            expect(result.ok).toBe(false);
+            expect(result.error).toMatchObject({ code: 'RALLAR_BB_WS_SEND_DATA_REQUIRED', message: 'ws.send requires data.' });
+        }
+        expect(sockets[0].sent).toEqual([]);
+        expect(signalingSends).toEqual([]);
+    });
+
     it('keeps ws.send on an open raw socket in browser Rallar provider mode', async () => {
         const sockets: BrowserWebSocketFixture[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({

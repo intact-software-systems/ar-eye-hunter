@@ -397,7 +397,7 @@ export type RallarBlackBoxTestWsSendCommand =
     & RallarBlackBoxTestCommandBase<'ws.send'>
     & Readonly<{
         connection?: string;
-        data?: unknown;
+        data: unknown;
     }>;
 
 export type RallarBlackBoxTestWsCloseCommand =

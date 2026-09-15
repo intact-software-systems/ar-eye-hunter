@@ -111,7 +111,8 @@ describe('schema authoring helpers', () => {
                                 {
                                     kind: 'ws.send',
                                     commandId: 'send-ws',
-                                    connection: 'apiWs'
+                                    connection: 'apiWs',
+                                    data: { text: 'probe' }
                                 }
                             ]
                         },
